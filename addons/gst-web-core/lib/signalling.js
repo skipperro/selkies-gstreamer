@@ -231,6 +231,7 @@ export class WebRTCDemoSignalling {
         if (event.data === "HELLO") {
             this._setStatus("Registered with server.");
             this._setStatus("Waiting for stream.");
+            this.sendSessionRequest(); // Call sendSessionRequest after HELLO
             return;
         }
 
@@ -323,6 +324,16 @@ export class WebRTCDemoSignalling {
         this._setDebug("sending local sdp: " + JSON.stringify(sdp));
         this._ws_conn.send(JSON.stringify({ 'sdp': sdp }));
     }
+
+    /**
+     * Send SESSION request to the server to initiate WebRTC session.
+     * @private
+     */
+    sendSessionRequest() {
+        this._setDebug("Sending SESSION request to server, peer ID: " + this.peer_id);
+        this._ws_conn.send(`SESSION ${this.peer_id}`);
+    }
+
     /**
      * Sets the webrtc input object
      * @param {object} input - The webrtc.input object.
