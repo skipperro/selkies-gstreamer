@@ -103,7 +103,7 @@ let videoElement;
 let audioElement;
 let playButtonElement;
 let spinnerElement;
-
+let overlayInput;
 
 const getIntParam = (key, default_value) => {
   const prefixedKey = appName + "_" + key;
@@ -249,7 +249,7 @@ body {
   align-items: center;
   height: 100%;
   width: 100%;
-  position: relative;
+  position: relative; /* Keep position relative for video-container */
 }
 video {
   max-width: 100%;
@@ -316,6 +316,22 @@ video {
   border-radius: 3px;
   backdrop-filter: blur(5px);
 }
+#overlayInput {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    z-index: 1;
+    caret-color: transparent;
+    background-color: transparent;
+    color: transparent;
+    border: none;
+    outline: none;
+    padding: 0;
+    margin: 0;
+}
   `;
   document.head.appendChild(style);
 };
@@ -337,6 +353,11 @@ const initializeUI = () => {
   }
   appDiv.appendChild(statusDisplayElement);
 
+  overlayInput = document.createElement('input'); 
+  overlayInput.type = 'text';
+  overlayInput.id = 'overlayInput';
+  appDiv.appendChild(overlayInput); 
+
   const videoContainer = document.createElement('div');
   videoContainer.className = 'video-container';
   appDiv.appendChild(videoContainer);
@@ -346,6 +367,7 @@ const initializeUI = () => {
   videoElement.className = 'video';
   videoElement.autoplay = true;
   videoElement.playsInline = true;
+  videoElement.contentEditable = "true";
   videoContainer.appendChild(videoElement);
 
   audioElement = document.createElement('audio');
@@ -514,7 +536,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log("signalling disconnected");
     status = 'connecting';
     updateStatusDisplay();
-    videoElement.style.cursor = "auto";
+    overlayInput.style.cursor = "auto";
     webrtc.reset();
     status = 'checkconnect';
     if (!checkconnect) audio_signalling.disconnect();
@@ -532,7 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log("audio signalling disconnected");
     status = 'connecting';
     updateStatusDisplay();
-    videoElement.style.cursor = "auto";
+    overlayInput.style.cursor = "auto";
     audio_webrtc.reset();
     status = 'checkconnect';
     if (!checkconnect) signalling.disconnect();
@@ -827,11 +849,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   webrtc.oncursorchange = (handle, curdata, hotspot, override) => {
     if (parseInt(handle) === 0) {
-      videoElement.style.cursor = "auto";
+      overlayInput.style.cursor = "auto";
       return;
     }
     if (override) {
-      videoElement.style.cursor = override;
+      overlayInput.style.cursor = override;
       return;
     }
     if (!webrtc.cursor_cache.has(handle)) {
@@ -844,7 +866,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       cursor_url += ", auto";
     }
-    videoElement.style.cursor = cursor_url;
+    overlayInput.style.cursor = cursor_url;
   };
 
   webrtc.onsystemaction = (action) => {

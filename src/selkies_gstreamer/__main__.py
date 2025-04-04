@@ -1,6 +1,6 @@
 # Logging setup
 import logging
-LOGLEVEL = logging.DEBUG
+LOGLEVEL = logging.INFO
 logging.basicConfig(level=LOGLEVEL)
 logger_selkies_gamepad = logging.getLogger("selkies_gamepad")
 logger_gpu_monitor = logging.getLogger("gpu_monitor")
@@ -3884,6 +3884,14 @@ class WebRTCInput:
                 logger_webrtc_input.error(
                     "failed to parse WebRTC Statistics JSON object"
                 )
+        elif toks[0] == "co":
+            if toks[1] == "end":
+                try:
+                    subprocess.run(["xdotool", "type", toks[2]], check=True)
+                except subprocess.CalledProcessError as e:
+                    logger_webrtc_input.warning(f"Error calling xdotool type: {e}")
+                except FileNotFoundError:
+                    logger_webrtc_input.warning(f"Xdotool not found on this system: {e}")
         else:
             logger_webrtc_input.info("unknown data channel message: %s" % msg)
 class WebRTCSignallingError(Exception):

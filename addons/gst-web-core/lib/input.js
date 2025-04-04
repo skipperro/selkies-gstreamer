@@ -24,7 +24,319 @@
 
 import { GamepadManager } from './gamepad.js';
 import { Queue } from './util.js';
-import Guacamole from './guacamole.js';
+// import Guacamole from './guacamole.js'; // REMOVE GUACAMOLE IMPORT
+
+/**
+ * Map of known JavaScript keycodes which do not map to typable characters
+ * to their X11 keysym equivalents.
+ *
+ * @private
+ * @type {!Object.<number, number[]>}
+ */
+const keycodeKeysyms = {
+    8:   [0xFF08], // backspace
+    9:   [0xFF09], // tab
+    12:  [0xFF0B, 0xFF0B, 0xFF0B, 0xFFB5], // clear       / KP 5
+    13:  [0xFF0D], // enter
+    16:  [0xFFE1, 0xFFE1, 0xFFE2], // shift
+    17:  [0xFFE3, 0xFFE3, 0xFFE4], // ctrl
+    18:  [0xFFE9, 0xFFE9, 0xFFEA], // alt
+    19:  [0xFF13], // pause/break
+    20:  [0xFFE5], // caps lock
+    27:  [0xFF1B], // escape
+    32:  [0x0020], // space
+    33:  [0xFF55, 0xFF55, 0xFF55, 0xFFB9], // page up     / KP 9
+    34:  [0xFF56, 0xFF56, 0xFF56, 0xFFB3], // page down   / KP 3
+    35:  [0xFF57, 0xFF57, 0xFF57, 0xFFB1], // end         / KP 1
+    36:  [0xFF50, 0xFF50, 0xFF50, 0xFFB7], // home        / KP 7
+    37:  [0xFF51, 0xFF51, 0xFF51, 0xFFB4], // left arrow  / KP 4
+    38:  [0xFF52, 0xFF52, 0xFF52, 0xFFB8], // up arrow    / KP 8
+    39:  [0xFF53, 0xFF53, 0xFF53, 0xFFB6], // right arrow / KP 6
+    40:  [0xFF54, 0xFF54, 0xFF54, 0xFFB2], // down arrow  / KP 2
+    45:  [0xFF63, 0xFF63, 0xFF63, 0xFFB0], // insert      / KP 0
+    46:  [0xFFFF, 0xFFFF, 0xFFFF, 0xFFAE], // delete      / KP decimal
+    91:  [0xFFE7], // left windows/command key (meta_l)
+    92:  [0xFFE8], // right window/command key (meta_r)
+    93:  [0xFF67], // menu key
+    96:  [0xFFB0], // KP 0
+    97:  [0xFFB1], // KP 1
+    98:  [0xFFB2], // KP 2
+    99:  [0xFFB3], // KP 3
+    100: [0xFFB4], // KP 4
+    101: [0xFFB5], // KP 5
+    102: [0xFFB6], // KP 6
+    103: [0xFFB7], // KP 7
+    104: [0xFFB8], // KP 8
+    105: [0xFFB9], // KP 9
+    106: [0xFFAA], // KP multiply
+    107: [0xFFAB], // KP add
+    109: [0xFFAD], // KP subtract
+    110: [0xFFAE], // KP decimal
+    111: [0xFFAF], // KP divide
+    112: [0xFFBE], // f1
+    113: [0xFFBF], // f2
+    114: [0xFFC0], // f3
+    115: [0xFFC1], // f4
+    116: [0xFFC2], // f5
+    117: [0xFFC3], // f6
+    118: [0xFFC4], // f7
+    119: [0xFFC5], // f8
+    120: [0xFFC6], // f9
+    121: [0xFFC7], // f10
+    122: [0xFFC8], // f11
+    123: [0xFFC9], // f12
+    144: [0xFF7F], // num lock
+    145: [0xFF14], // scroll lock
+    225: [0xFE03]  // altgraph (iso_level3_shift)
+};
+
+/**
+ * Map of known JavaScript keyidentifiers which do not map to typable
+ * characters to their unshifted X11 keysym equivalents.
+ *
+ * @private
+ * @type {!Object.<string, number[]>}
+ */
+const keyidentifier_keysym = {
+    "Again": [0xFF66],
+    "AllCandidates": [0xFF3D],
+    "Alphanumeric": [0xFF30],
+    "Alt": [0xFFE9, 0xFFE9, 0xFFEA],
+    "Attn": [0xFD0E],
+    "AltGraph": [0xFE03],
+    "ArrowDown": [0xFF54],
+    "ArrowLeft": [0xFF51],
+    "ArrowRight": [0xFF53],
+    "ArrowUp": [0xFF52],
+    "Backspace": [0xFF08],
+    "CapsLock": [0xFFE5],
+    "Cancel": [0xFF69],
+    "Clear": [0xFF0B],
+    "Convert": [0xFF21],
+    "Copy": [0xFD15],
+    "Crsel": [0xFD1C],
+    "CrSel": [0xFD1C],
+    "CodeInput": [0xFF37],
+    "Compose": [0xFF20],
+    "Control": [0xFFE3, 0xFFE3, 0xFFE4],
+    "ContextMenu": [0xFF67],
+    "Delete": [0xFFFF],
+    "Down": [0xFF54],
+    "End": [0xFF57],
+    "Enter": [0xFF0D],
+    "EraseEof": [0xFD06],
+    "Escape": [0xFF1B],
+    "Execute": [0xFF62],
+    "Exsel": [0xFD1D],
+    "ExSel": [0xFD1D],
+    "F1": [0xFFBE],
+    "F2": [0xFFBF],
+    "F3": [0xFFC0],
+    "F4": [0xFFC1],
+    "F5": [0xFFC2],
+    "F6": [0xFFC3],
+    "F7": [0xFFC4],
+    "F8": [0xFFC5],
+    "F9": [0xFFC6],
+    "F10": [0xFFC7],
+    "F11": [0xFFC8],
+    "F12": [0xFFC9],
+    "F13": [0xFFCA],
+    "F14": [0xFFCB],
+    "F15": [0xFFCC],
+    "F16": [0xFFCD],
+    "F17": [0xFFCE],
+    "F18": [0xFFCF],
+    "F19": [0xFFD0],
+    "F20": [0xFFD1],
+    "F21": [0xFFD2],
+    "F22": [0xFFD3],
+    "F23": [0xFFD4],
+    "F24": [0xFFD5],
+    "Find": [0xFF68],
+    "GroupFirst": [0xFE0C],
+    "GroupLast": [0xFE0E],
+    "GroupNext": [0xFE08],
+    "GroupPrevious": [0xFE0A],
+    "FullWidth": null,
+    "HalfWidth": null,
+    "HangulMode": [0xFF31],
+    "Hankaku": [0xFF29],
+    "HanjaMode": [0xFF34],
+    "Help": [0xFF6A],
+    "Hiragana": [0xFF25],
+    "HiraganaKatakana": [0xFF27],
+    "Home": [0xFF50],
+    "Hyper": [0xFFED, 0xFFED, 0xFFEE],
+    "Insert": [0xFF63],
+    "JapaneseHiragana": [0xFF25],
+    "JapaneseKatakana": [0xFF26],
+    "JapaneseRomaji": [0xFF24],
+    "JunjaMode": [0xFF38],
+    "KanaMode": [0xFF2D],
+    "KanjiMode": [0xFF21],
+    "Katakana": [0xFF26],
+    "Left": [0xFF51],
+    "Meta": [0xFFE7, 0xFFE7, 0xFFE8],
+    "ModeChange": [0xFF7E],
+    "NumLock": [0xFF7F],
+    "PageDown": [0xFF56],
+    "PageUp": [0xFF55],
+    "Pause": [0xFF13],
+    "Play": [0xFD16],
+    "PreviousCandidate": [0xFF3E],
+    "PrintScreen": [0xFF61],
+    "Redo": [0xFF66],
+    "Right": [0xFF53],
+    "RomanCharacters": null,
+    "Scroll": [0xFF14],
+    "Select": [0xFF60],
+    "Separator": [0xFFAC],
+    "Shift": [0xFFE1, 0xFFE1, 0xFFE2],
+    "SingleCandidate": [0xFF3C],
+    "Super": [0xFFEB, 0xFFEB, 0xFFEC],
+    "Tab": [0xFF09],
+    "UIKeyInputDownArrow": [0xFF54],
+    "UIKeyInputEscape": [0xFF1B],
+    "UIKeyInputLeftArrow": [0xFF51],
+    "UIKeyInputRightArrow": [0xFF53],
+    "UIKeyInputUpArrow": [0xFF52],
+    "Up": [0xFF52],
+    "Undo": [0xFF65],
+    "Win": [0xFFE7, 0xFFE7, 0xFFE8],
+    "Zenkaku": [0xFF28],
+    "ZenkakuHankaku": [0xFF2A]
+};
+
+
+/**
+ * Returns the keyboard location of the key associated with the given
+ * keyboard event. The location differentiates key events which otherwise
+ * have the same keycode, such as left shift vs. right shift.
+ *
+ * @private
+ * @param {!KeyboardEvent} e
+ *     A JavaScript keyboard event, as received through the DOM via a
+ *     "keydown", "keyup", or "keypress" handler.
+ *
+ * @returns {!number}
+ *     The location of the key event on the keyboard, as defined at:
+ *     http://www.w3.org/TR/DOM-Level-3-Events/#events-KeyboardEvent
+ */
+const getEventLocation = function getEventLocation(e) {
+
+    // Use standard location, if possible
+    if ('location' in e)
+        return e.location;
+
+    // Failing that, attempt to use deprecated keyLocation
+    if ('keyLocation' in e)
+        return e.keyLocation;
+
+    // If no location is available, assume left side
+    return 0;
+};
+
+/**
+ * Given an array of keysyms indexed by location, returns the keysym
+ * for the given location, or the keysym for the standard location if
+ * undefined.
+ *
+ * @private
+ * @param {number[]} keysyms
+ *     An array of keysyms, where the index of the keysym in the array is
+ *     the location value.
+ *
+ * @param {!number} location
+ *     The location on the keyboard corresponding to the key pressed, as
+ *     defined at: http://www.w3.org/TR/DOM-Level-3-Events/#events-KeyboardEvent
+ */
+const get_keysym = function get_keysym(keysyms, location) {
+
+    if (!keysyms)
+        return null;
+
+    return keysyms[location] || keysyms[0];
+};
+
+/**
+ * Returns true if the given keysym corresponds to a printable character,
+ * false otherwise.
+ *
+ * @param {!number} keysym
+ *     The keysym to check.
+ *
+ * @returns {!boolean}
+ *     true if the given keysym corresponds to a printable character,
+ *     false otherwise.
+ */
+const isPrintable = function isPrintable(keysym) {
+
+    // Keysyms with Unicode equivalents are printable
+    return (keysym >= 0x00 && keysym <= 0xFF)
+        || (keysym & 0xFFFF0000) === 0x01000000;
+
+};
+
+function keysym_from_key_identifier(identifier, location, shifted) {
+
+    if (!identifier)
+        return null;
+
+    var typedCharacter;
+
+    // If identifier is U+xxxx, decode Unicode character
+    var unicodePrefixLocation = identifier.indexOf("U+");
+    if (unicodePrefixLocation >= 0) {
+        var hex = identifier.substring(unicodePrefixLocation+2);
+        typedCharacter = String.fromCharCode(parseInt(hex, 16));
+    }
+
+    // If single character and not keypad, use that as typed character
+    else if (identifier.length === 1 && location !== 3)
+        typedCharacter = identifier;
+
+    // Otherwise, look up corresponding keysym
+    else
+        return get_keysym(keyidentifier_keysym[identifier], location);
+
+    // Alter case if necessary
+    if (shifted === true)
+        typedCharacter = typedCharacter.toUpperCase();
+    else if (shifted === false)
+        typedCharacter = typedCharacter.toLowerCase();
+
+    // Get codepoint
+    var codepoint = typedCharacter.charCodeAt(0);
+    return keysym_from_charcode(codepoint);
+
+}
+
+function isControlCharacter(codepoint) {
+    return codepoint <= 0x1F || (codepoint >= 0x7F && codepoint <= 0x9F);
+}
+
+function keysym_from_charcode(codepoint) {
+
+    // Keysyms for control characters
+    if (isControlCharacter(codepoint)) return 0xFF00 | codepoint;
+
+    // Keysyms for ASCII chars
+    if (codepoint >= 0x0000 && codepoint <= 0x00FF)
+        return codepoint;
+
+    // Keysyms for Unicode
+    if (codepoint >= 0x0100 && codepoint <= 0x10FFFF)
+        return 0x01000000 | codepoint;
+
+    return null;
+
+}
+
+function keysym_from_keycode(keyCode, location) {
+    return get_keysym(keycodeKeysyms[keyCode], location);
+}
+
 
 export class Input {
     /**
@@ -63,9 +375,9 @@ export class Input {
         this.buttonMask = 0;
 
         /**
-         * @type {Guacamole.Keyboard}
+         * @type {Guacamole.Keyboard} // REMOVE Guacamole.Keyboard TYPE
          */
-        this.keyboard = null;
+        this.keyboard = null; // REMOVE keyboard property
 
         /**
          * @type {GamepadManager}
@@ -133,7 +445,32 @@ export class Input {
 
         // variable used to scale cursor speed
         this.cursorScaleFactor = null;
+
+        /**
+         * @type {boolean}
+         * Indicates if a composition is in progress.
+         */
+        this.isComposing = false;
+
+        /**
+         * @type {string}
+         * Stores the current composition string.
+         */
+        this.compositionString = "";
     }
+
+
+    /**
+     * Gets the keysym from a keyboard event.
+     * @private
+     * @param {KeyboardEvent} event
+     * @returns {number} keysym
+     */
+    _getKeysymFromEvent(event) {
+        return  keysym_from_key_identifier(event.key, getEventLocation(event))
+             || keysym_from_keycode(event.keyCode, getEventLocation(event));
+    }
+
 
     /**
      * Calculates cursor scale factor when client and server have different resolutions
@@ -147,8 +484,8 @@ export class Input {
         }
 
         var clientResolution = this.getWindowResolution();
-        var serverHeight = this.element.videoHeight;
-        var serverWidth = this.element.videoWidth;
+        var serverHeight = this.element.offsetHeight;
+        var serverWidth = this.element.offsetWidth;
 
         if (isNaN(serverWidth) || isNaN(serverHeight)) {
             console.log("Invaid video height and width");
@@ -234,7 +571,7 @@ export class Input {
 
         this.send(toks.join(","));
 
-        event.preventDefault();
+        //event.preventDefault();
     }
 
     /**
@@ -277,7 +614,7 @@ export class Input {
         while (!this._queue.isEmpty()) {
             var valNext = this._queue.dequeue();
 
-            // mouse input values would typically be constant and higher in magnitude, generally 
+            // mouse input values would typically be constant and higher in magnitude, generally
             // in the range of 80 to 130
             if (valNext >= 80 && val1 == valNext) {
                 count ++;
@@ -298,7 +635,7 @@ export class Input {
      */
     _mouseWheelWrapper(event) {
         var deltaY = Math.trunc(Math.abs(event.deltaY));
-        
+
         if (this._queue.size() < 4) {
             this._queue.enqueue(deltaY);
         }
@@ -368,7 +705,7 @@ export class Input {
             this.send(toks.join(","));
         }
 
-        event.preventDefault();
+        //event.preventDefault();
     }
 
     /**
@@ -378,6 +715,34 @@ export class Input {
     _contextMenu(event) {
         event.preventDefault();
     }
+
+
+    /**
+     * Handles keydown events and sends keysym to WebRTC app.
+     * @param {KeyboardEvent} event
+     */
+    _keydown(event) {
+        if (!this.isComposing) { // Only send keyboard events if not composing
+            const keysym = this._getKeysymFromEvent(event);
+            if (keysym != null) {
+                 this.send("kd," + keysym);
+            }
+        }
+    }
+
+    /**
+     * Handles keyup events and sends keysym to WebRTC app.
+     * @param {KeyboardEvent} event
+     */
+    _keyup(event) {
+        if (!this.isComposing) { // Only send keyboard events if not composing
+            const keysym = this._getKeysymFromEvent(event);
+            if (keysym != null) {
+                this.send("ku," + keysym);
+            }
+        }
+    }
+
 
     /**
      * Captures keyboard events to detect pressing of CTRL-SHIFT hotkeys.
@@ -414,6 +779,41 @@ export class Input {
     }
 
     /**
+     * Handles compositionstart events.
+     * @param {CompositionEvent} event
+     */
+    _compositionStart(event) {
+        this.isComposing = true;
+        this.compositionString = "";
+        this.send("co,start");
+    }
+
+    /**
+     * Handles compositionupdate events.
+     * @param {CompositionEvent} event
+     */
+    _compositionUpdate(event) {
+        if (event.data) {
+            this.compositionString = event.data;
+        }
+        this.send("co,update," + this.compositionString);
+    }
+
+    /**
+     * Handles compositionend events.
+     * @param {CompositionEvent} event
+     */
+    _compositionEnd(event) {
+        this.isComposing = false;
+        if (event.data) {
+            this.compositionString = event.data;
+        }
+        this.send("co,end," + this.compositionString);
+        this.compositionString = "";
+    }
+
+
+    /**
      * Sends WebRTC app command to toggle display of the remote mouse pointer.
      */
     _pointerLock() {
@@ -443,8 +843,8 @@ export class Input {
     _windowMath() {
         const windowW = this.element.offsetWidth;
         const windowH = this.element.offsetHeight;
-        const frameW = this.element.videoWidth;
-        const frameH = this.element.videoHeight;
+        const frameW = this.element.offsetWidth;
+        const frameH = this.element.offsetHeight;
 
         const multi = Math.min(windowW / frameW, windowH / frameH);
         const vpWidth = frameW * multi;
@@ -571,8 +971,8 @@ export class Input {
             this.requestKeyboardLock();
         }
         // Reset local keyboard. When holding to exit full-screen the escape key can get stuck.
-        if (this.keyboard !== null) {
-            this.keyboard.reset();
+        if (this.keyboard !== null) { // REMOVE keyboard null check
+            this.keyboard.reset(); // REMOVE keyboard reset call
         }
 
         // Reset stuck keys on server side.
@@ -633,6 +1033,12 @@ export class Input {
         this.listeners_context.push(addListener(window, 'keydown', this._key, this));
         this.listeners_context.push(addListener(window, 'keyup', this._key, this));
 
+        // Composition events
+        this.listeners_context.push(addListener(this.element, 'compositionstart', this._compositionStart, this));
+        this.listeners_context.push(addListener(this.element, 'compositionupdate', this._compositionUpdate, this));
+        this.listeners_context.push(addListener(this.element, 'compositionend', this._compositionEnd, this));
+
+
         if ('ontouchstart' in window) {
             this.listeners_context.push(addListener(window, 'touchstart', this._touch, this));
             this.listeners_context.push(addListener(this.element, 'touchend', this._touch, this));
@@ -648,13 +1054,10 @@ export class Input {
         }
 
         // Using guacamole keyboard because it has the keysym translations.
-        this.keyboard = new Guacamole.Keyboard(window);
-        this.keyboard.onkeydown = (keysym) => {
-            this.send("kd," + keysym);
-        };
-        this.keyboard.onkeyup = (keysym) => {
-            this.send("ku," + keysym);
-        };
+        // this.keyboard = new Guacamole.Keyboard(window); // REMOVE Guacamole.Keyboard instantiation
+        this.listeners_context.push(addListener(window, 'keydown', this._keydown, this)); // ADD keydown listener
+        this.listeners_context.push(addListener(window, 'keyup', this._keyup, this));   // ADD keyup listener
+
 
         if (document.fullscreenElement !== null && document.pointerLockElement === null) {
             this.element.requestPointerLock().then(
@@ -680,13 +1083,16 @@ export class Input {
     detach_context() {
         removeListeners(this.listeners_context);
 
-        if (this.keyboard) {
-            this.keyboard.onkeydown = null;
-            this.keyboard.onkeyup = null;
-            this.keyboard.reset();
-            delete this.keyboard;
+        if (this.keyboard) { // REMOVE keyboard null check
+            this.keyboard.onkeydown = null; // REMOVE keyboard event unsetting
+            this.keyboard.onkeyup = null;  // REMOVE keyboard event unsetting
+            this.keyboard.reset();         // REMOVE keyboard reset call
+            delete this.keyboard;          // REMOVE keyboard property deletion
             this.send("kr");
+        } else { // ADD manual reset in case keyboard was never initialized (after removal)
+            this.send("kr"); // Send keyboard reset even if no keyboard object
         }
+
 
         this._exitPointerLock();
     }
@@ -761,7 +1167,11 @@ export class Input {
  */
 function addListener(obj, name, func, ctx) {
     const newFunc = ctx ? func.bind(ctx) : func;
-    obj.addEventListener(name, newFunc);
+    if (name === "mouseup" || name === "mousedown" || name === "mousemove") {
+        obj.addEventListener(name, newFunc);
+    } else {
+        obj.addEventListener(name, newFunc, { passive: true});
+    }
 
     return [obj, name, newFunc];
 }

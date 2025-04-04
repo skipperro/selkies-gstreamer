@@ -181,7 +181,7 @@ export class WebRTCDemo {
         /**
          * @type {Input}
          */
-        this.input = new Input(this.element, (data) => {
+        this.input = new Input(document.getElementById('overlayInput'), (data) => {
             if (this._connected && this._send_channel !== null && this._send_channel.readyState === 'open') {
                 this._setDebug("data channel: " + data);
                 this._send_channel.send(data);
