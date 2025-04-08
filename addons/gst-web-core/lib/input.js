@@ -1167,7 +1167,7 @@ export class Input {
  */
 function addListener(obj, name, func, ctx) {
     const newFunc = ctx ? func.bind(ctx) : func;
-    if (name === "mouseup" || name === "mousedown" || name === "mousemove") {
+    if (name === "mouseup" || name === "mousedown" || name === "mousemove" || name === "contextmenu") {
         obj.addEventListener(name, newFunc);
     } else {
         obj.addEventListener(name, newFunc, { passive: true});

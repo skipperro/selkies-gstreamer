@@ -29,6 +29,9 @@ var webrtc;
 var audio_webrtc;
 var signalling;
 var audio_signalling;
+var decoder;
+var canvas = null;
+var canvasContext = null;
 
 window.onload = () => {
   'use strict';
@@ -323,17 +326,40 @@ video {
     width: 100%;
     height: 100%;
     opacity: 0;
-    z-index: 1;
+    z-index: 3;
     caret-color: transparent;
     background-color: transparent;
     color: transparent;
+    z-index: 3; /* Input on top */
+    pointer-events: auto; /* Ensure input events are captured */
+    -webkit-user-select: none; /* Prevent text selection */
     border: none;
     outline: none;
     padding: 0;
     margin: 0;
 }
+#videoCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+}
   `;
   document.head.appendChild(style);
+
+    // Ensure canvas is behind input and in front of video via JS if CSS fails
+    if (canvas && overlayInput && videoElement) {
+        // Get the parent of videoElement, which is videoContainer
+        const videoContainer = videoElement.parentNode;
+        if (videoContainer) {
+            videoContainer.insertBefore(canvas, videoElement); // Canvas before video
+        }
+        // overlayInput is already appended to appDiv, should naturally be after videoContainer
+        // CSS z-index should handle the ordering, but DOM order also matters for stacking context
+    }
 };
 
 
@@ -353,10 +379,10 @@ const initializeUI = () => {
   }
   appDiv.appendChild(statusDisplayElement);
 
-  overlayInput = document.createElement('input'); 
+  overlayInput = document.createElement('input');
   overlayInput.type = 'text';
   overlayInput.id = 'overlayInput';
-  appDiv.appendChild(overlayInput); 
+  appDiv.appendChild(overlayInput);
 
   const videoContainer = document.createElement('div');
   videoContainer.className = 'video-container';
@@ -369,6 +395,27 @@ const initializeUI = () => {
   videoElement.playsInline = true;
   videoElement.contentEditable = "true";
   videoContainer.appendChild(videoElement);
+
+    // Check if canvas exists, create if not
+    if (!canvas) {
+        canvas = document.getElementById('videoCanvas');
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.id = 'videoCanvas';
+            // Position in front of video, behind input
+            canvas.style.position = 'absolute';
+            canvas.style.top = '0';
+            canvas.style.left = '0';
+            canvas.style.zIndex = '2'; // Between video (0) and input (3)
+            canvas.style.pointerEvents = 'none'; // Make it non-interactive
+            videoContainer.appendChild(canvas);
+        }
+        canvasContext = canvas.getContext('2d');
+        if (!canvasContext) {
+            console.error("Failed to get 2D rendering context");
+        }
+    }
+
 
   audioElement = document.createElement('audio');
   audioElement.id = 'audio_stream';
@@ -1019,6 +1066,111 @@ document.addEventListener('DOMContentLoaded', () => {
       webrtc.connect();
       audio_webrtc.connect();
     });
+
+  // Video decode helpers
+  function handleFrame(frame) {
+    console.log("Decoded VideoFrame:", frame);
+
+    // Check if canvas exists, create if not
+    if (!canvas) {
+        canvas = document.getElementById('videoCanvas');
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.id = 'videoCanvas';
+            // Max z-index and fixed position for visibility
+            canvas.style.zIndex = '9999';
+            canvas.style.position = 'fixed';
+            canvas.style.top = '0';
+            canvas.style.left = '0';
+            document.body.appendChild(canvas);
+        }
+        canvasContext = canvas.getContext('2d');
+        if (!canvasContext) {
+            console.error("Failed to get 2D rendering context");
+            frame.close();
+            return; // Exit if no context
+        }
+    }
+
+    // Set canvas dimensions to frame dimensions
+    canvas.width = frame.codedWidth;
+    canvas.height = frame.codedHeight;
+
+    // Paint the frame
+    canvasContext.drawImage(frame, 0, 0);
+
+    frame.close();
+  }
+  async function initializeDecoder() {
+      decoder = new VideoDecoder({
+          output: handleFrame,
+          error: (e) => {
+              console.error("Decoder error:", e);
+          }
+      });
+      let windowResolution = webrtc.input.getWindowResolution();
+
+      const decoderConfig = {
+          codec: "avc1.42E01E",
+          codedWidth: windowResolution[0],
+          codedHeight: windowResolution[1]
+      };
+
+      try {
+          decoder.configure(decoderConfig);
+          console.log("VideoDecoder configured");
+      } catch (e) {
+          console.error("Error configuring VideoDecoder:", e);
+          decoder = null;
+      }
+  }
+  // New WebSocket connection
+  const ws_protocol = (location.protocol == "http:" ? "ws://" : "wss://");
+  const websocketEndpointURL = new URL(ws_protocol + window.location.host + pathname + "websockets");
+  const websocket = new WebSocket(websocketEndpointURL);
+  websocket.binaryType = "arraybuffer";
+
+  websocket.onopen = () => {
+    console.log('[websockets] Connection opened!');
+    initializeDecoder();
+  };
+
+  websocket.onmessage = (event) => {
+    const arrayBuffer = event.data;
+    const dataView = new DataView(arrayBuffer);
+    const frameTypeFlag = dataView.getUint8(0);
+    var isKey;
+    if (dataView.getUint8(0) === 1) {
+      isKey = true;
+    } else {
+      isKey = false;
+    }
+    const frameDataArrayBuffer = arrayBuffer.slice(1);
+    if (decoder && decoder.state === "configured") {
+      const chunk = new EncodedVideoChunk({
+        type: isKey ? "key" : "delta",
+        timestamp: 0,
+        duration: 0,
+        data: frameDataArrayBuffer
+      });
+      try {
+        decoder.decode(chunk);
+      } catch (e) {
+        console.error("Decoding error:", e);
+        decoder.reset();
+      }
+    } else {
+      console.warn("Decoder not ready or not configured yet, frame dropped.");
+    }
+  };
+
+  websocket.onerror = (event) => {
+    console.error('[websockets] Error:', event);
+  };
+
+  websocket.onclose = (event) => {
+    console.log('[websockets] Connection closed', event);
+  };
 });
 
 function cleanup() {
