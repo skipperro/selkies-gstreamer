@@ -20,10 +20,330 @@
  *   limitations under the License.
  */
 
+/*eslint no-unused-vars: ["error", { "vars": "local" }]*/
+
+
+/**
+* @typedef {Object} WebRTCDemoSignalling
+* @property {function} ondebug - Callback fired when a new debug message is set.
+* @property {function} onstatus - Callback fired when a new status message is set.
+* @property {function} onerror - Callback fired when an error occurs.
+* @property {function} onice - Callback fired when a new ICE candidate is received.
+* @property {function} onsdp - Callback fired when SDP is received.
+* @property {function} connect - initiate connection to server.
+* @property {function} disconnect - close connection to server.
+*/
+export class WebRTCDemoSignalling {
+    /**
+     * Interface to WebRTC demo signalling server.
+     * Protocol: https://github.com/GStreamer/gstreamer/blob/main/subprojects/gst-examples/webrtc/signalling/Protocol.md
+     *
+     * @constructor
+     * @param {URL} [server]
+     *    The URL object of the signalling server to connect to, created with `new URL()`.
+     *    Signalling implementation is here:
+     *      https://github.com/GStreamer/gstreamer/tree/main/subprojects/gst-examples/webrtc/signalling
+     * @param {number} peerId - The peer ID for this signalling instance (1 for video, 3 for audio).
+     */
+    constructor(server, peerId) {
+        /**
+         * @private
+         * @type {URL}
+         */
+        this._server = server;
+
+        /**
+         * @private
+         * @type {number}
+         */
+        this.peer_id = peerId;
+
+        /**
+         * @private
+         * @type {WebSocket}
+         */
+        this._ws_conn = null;
+
+        /**
+         * @event
+         * @type {function}
+         */
+        this.onstatus = null;
+
+        /**
+         * @event
+         * @type {function}
+         */
+        this.onerror = null;
+
+        /**
+         * @type {function}
+         */
+        this.ondebug = null;
+
+        /**
+         * @event
+         * @type {function}
+         */
+        this.onice = null;
+
+        /**
+         * @event
+         * @type {function}
+         */
+        this.onsdp = null;
+
+        /**
+         * @event
+         * @type {function}
+         */
+        this.ondisconnect = null;
+
+        /**
+         * @type {string}
+         */
+        this.state = 'disconnected';
+
+        /**
+         * @type {number}
+         */
+        this.retry_count = 0;
+        /**
+         * @type {object}
+         */
+        this.webrtcInput = null;
+    }
+
+    /**
+     * Sets status message.
+     *
+     * @private
+     * @param {String} message
+     */
+    _setStatus(message) {
+        if (this.onstatus !== null) {
+            this.onstatus(message);
+        }
+    }
+
+    /**
+     * Sets a debug message.
+     * @private
+     * @param {String} message
+     */
+    _setDebug(message) {
+        if (this.ondebug !== null) {
+            this.ondebug(message);
+        }
+    }
+
+    /**
+     * Sets error message.
+     *
+     * @private
+     * @param {String} message
+     */
+    _setError(message) {
+        if (this.onerror !== null) {
+            this.onerror(message);
+        }
+    }
+
+    /**
+     * Sets SDP
+     *
+     * @private
+     * @param {String} message
+     */
+    _setSDP(sdp) {
+        if (this.onsdp !== null) {
+            this.onsdp(sdp);
+        }
+    }
+
+    /**
+     * Sets ICE
+     *
+     * @private
+     * @param {RTCIceCandidate} icecandidate
+     */
+    _setICE(icecandidate) {
+        if (this.onice !== null) {
+            this.onice(icecandidate);
+        }
+    }
+
+    /**
+     * Fired whenever the signalling websocket is opened.
+     * Sends the peer id to the signalling server.
+     *
+     * @private
+     * @event
+     */
+    _onServerOpen() {
+        var currRes = this.webrtcInput.getWindowResolution();
+        var meta = {
+            "res": parseInt(currRes[0]) + "x" + parseInt(currRes[1]),
+            "scale": window.devicePixelRatio
+        };
+        this.state = 'connected';
+        this._ws_conn.send(`HELLO ${this.peer_id} ${btoa(JSON.stringify(meta))}`);
+        this._setStatus("Registering with server, peer ID: " + this.peer_id);
+        this.retry_count = 0;
+    }
+
+    /**
+     * Fired whenever the signalling websocket emits and error.
+     * Reconnects after 3 seconds.
+     *
+     * @private
+     * @event
+     */
+    _onServerError() {
+        this._setStatus("Connection error, retry in 3 seconds.");
+        this.retry_count++;
+        if (this._ws_conn.readyState === this._ws_conn.CLOSED) {
+            setTimeout(() => {
+                if (this.retry_count > 3) {
+                    window.location.replace(window.location.href.replace(window.location.pathname, "/"));
+                } else {
+                    this.connect();
+                }
+            }, 3000);
+        }
+    }
+
+    /**
+     * Fired whenever a message is received from the signalling server.
+     * Message types:
+     *   HELLO: response from server indicating peer is registered.
+     *   ERROR*: error messages from server.
+     *   {"sdp": ...}: JSON SDP message
+     *   {"ice": ...}: JSON ICE message
+     *
+     * @private
+     * @event
+     * @param {Event} event The event: https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent
+     */
+    _onServerMessage(event) {
+        this._setDebug("server message: " + event.data);
+
+        if (event.data === "HELLO") {
+            this._setStatus("Registered with server.");
+            this._setStatus("Waiting for stream.");
+            this.sendSessionRequest();
+            return;
+        }
+
+        if (event.data.startsWith("ERROR")) {
+            this._setStatus("Error from server: " + event.data);
+            return;
+        }
+
+        var msg;
+        try {
+            msg = JSON.parse(event.data);
+        } catch (e) {
+            if (e instanceof SyntaxError) {
+                this._setError("error parsing message as JSON: " + event.data);
+            } else {
+                this._setError("failed to parse message: " + event.data);
+            }
+            return;
+        }
+
+        if (msg.sdp != null) {
+            this._setSDP(new RTCSessionDescription(msg.sdp));
+        } else if (msg.ice != null) {
+            var icecandidate = new RTCIceCandidate(msg.ice);
+            this._setICE(icecandidate);
+        } else {
+            this._setError("unhandled JSON message: " + msg);
+        }
+    }
+
+    /**
+     * Fired whenever the signalling websocket is closed.
+     * Reconnects after 1 second.
+     *
+     * @private
+     * @event
+     */
+    _onServerClose() {
+        if (this.state !== 'connecting') {
+            this.state = 'disconnected';
+            this._setError("Server closed connection.");
+            if (this.ondisconnect !== null) this.ondisconnect();
+        }
+    }
+
+    /**
+     * Initiates the connection to the signalling server.
+     * After this is called, a series of handshakes occurs between the signalling
+     * server and the server (peer) to negotiate ICE candidates and media capabilities.
+     */
+    connect() {
+        this.state = 'connecting';
+        this._setStatus("Connecting to server.");
+
+        this._ws_conn = new WebSocket(this._server);
+
+        this._ws_conn.addEventListener('open', this._onServerOpen.bind(this));
+        this._ws_conn.addEventListener('error', this._onServerError.bind(this));
+        this._ws_conn.addEventListener('message', this._onServerMessage.bind(this));
+        this._ws_conn.addEventListener('close', this._onServerClose.bind(this));
+    }
+
+    /**
+     * Closes connection to signalling server.
+     * Triggers onServerClose event.
+     */
+    disconnect() {
+        this._ws_conn.close();
+    }
+
+    /**
+     * Send ICE candidate.
+     *
+     * @param {RTCIceCandidate} ice
+     */
+    sendICE(ice) {
+        this._setDebug("sending ice candidate: " + JSON.stringify(ice));
+        this._ws_conn.send(JSON.stringify({ 'ice': ice }));
+    }
+
+    /**
+     * Send local session description.
+     *
+     * @param {RTCSessionDescription} sdp
+     */
+    sendSDP(sdp) {
+        this._setDebug("sending local sdp: " + JSON.stringify(sdp));
+        this._ws_conn.send(JSON.stringify({ 'sdp': sdp }));
+    }
+
+    /**
+     * Send SESSION request to the server to initiate WebRTC session.
+     * @private
+     */
+    sendSessionRequest() {
+        this._setDebug("Sending SESSION request to server, peer ID: " + this.peer_id);
+        this._ws_conn.send(`SESSION ${this.peer_id}`);
+    }
+
+    /**
+     * Sets the webrtc input object
+     * @param {object} input - The webrtc.input object.
+     */
+    setInput(input) {
+        this.webrtcInput = input;
+    }
+}
+
+
 import { GamepadManager } from './lib/gamepad.js';
 import { Input } from './lib/input.js';
 import { WebRTCDemo } from './lib/webrtc.js';
-import { WebRTCDemoSignalling } from './lib/signalling.js';
 
 var webrtc;
 var audio_webrtc;
@@ -32,6 +352,11 @@ var audio_signalling;
 var decoder;
 var canvas = null;
 var canvasContext = null;
+var websocket;
+let clientMode = null;
+var videoConnected = "";
+var audioConnected = "";
+
 
 window.onload = () => {
   'use strict';
@@ -100,6 +425,8 @@ let publishingAppDisplayName = "";
 let publishingAppDescription = "";
 let publishingAppIcon = "";
 let publishingValid = false;
+let streamStarted = false;
+let inputInitialized = false;
 
 let statusDisplayElement;
 let videoElement;
@@ -140,27 +467,38 @@ const getUsername = () => {
 };
 
 const enterFullscreen = () => {
-  if (webrtc && 'input' in webrtc && 'enterFullscreen' in webrtc.input) {
+  if (clientMode === 'webrtc' && webrtc && 'input' in webrtc && 'enterFullscreen' in webrtc.input) {
     webrtc.input.enterFullscreen();
   }
 };
 
 const playStream = () => {
-  webrtc.playStream();
-  audio_webrtc.playStream();
+  if (clientMode === 'webrtc') {
+    webrtc.playStream();
+    audio_webrtc.playStream();
+  }
   showStart = false;
   playButtonElement.classList.add('hidden');
   statusDisplayElement.classList.add('hidden');
+  spinnerElement.classList.add('hidden');
 };
 
 const enableClipboard = () => {
   navigator.clipboard.readText()
     .then(text => {
-      webrtc._setStatus("clipboard enabled");
-      webrtc.sendDataChannelMessage("cr");
+      if (clientMode === 'webrtc') {
+        webrtc._setStatus("clipboard enabled");
+        webrtc.sendDataChannelMessage("cr");
+      } else if (clientMode === 'websockets') {
+        console.log("Clipboard not supported in websockets mode yet (or implement websocket send)");
+      }
     })
     .catch(err => {
-      webrtc._setError('Failed to read clipboard contents: ' + err);
+      if (clientMode === 'webrtc') {
+        webrtc._setError('Failed to read clipboard contents: ' + err);
+      } else if (clientMode === 'websockets') {
+        console.error('Failed to read clipboard contents: ' + err);
+      }
     });
 };
 
@@ -171,7 +509,6 @@ const publish = () => {
     description: publishingAppDescription,
     icon: publishingAppIcon,
   }
-  console.log("Publishing new image", data);
 
   fetch("./publish/" + appName, {
     method: "POST",
@@ -342,23 +679,20 @@ video {
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    width: 100%;  /* Make canvas responsive */
+    height: 100%; /* Make canvas responsive */
     z-index: 2;
     pointer-events: none;
+    display: block; /* Ensure canvas is block level */
 }
   `;
   document.head.appendChild(style);
 
-    // Ensure canvas is behind input and in front of video via JS if CSS fails
     if (canvas && overlayInput && videoElement) {
-        // Get the parent of videoElement, which is videoContainer
         const videoContainer = videoElement.parentNode;
         if (videoContainer) {
-            videoContainer.insertBefore(canvas, videoElement); // Canvas before video
+            videoContainer.insertBefore(canvas, videoElement);
         }
-        // overlayInput is already appended to appDiv, should naturally be after videoContainer
-        // CSS z-index should handle the ordering, but DOM order also matters for stacking context
     }
 };
 
@@ -376,6 +710,8 @@ const initializeUI = () => {
   statusDisplayElement.textContent = 'Connecting...';
   if (!showStart) {
     statusDisplayElement.classList.add('hidden');
+  } else {
+    statusDisplayElement.classList.remove('hidden');
   }
   appDiv.appendChild(statusDisplayElement);
 
@@ -396,18 +732,16 @@ const initializeUI = () => {
   videoElement.contentEditable = "true";
   videoContainer.appendChild(videoElement);
 
-    // Check if canvas exists, create if not
     if (!canvas) {
         canvas = document.getElementById('videoCanvas');
         if (!canvas) {
             canvas = document.createElement('canvas');
             canvas.id = 'videoCanvas';
-            // Position in front of video, behind input
             canvas.style.position = 'absolute';
             canvas.style.top = '0';
             canvas.style.left = '0';
-            canvas.style.zIndex = '2'; // Between video (0) and input (3)
-            canvas.style.pointerEvents = 'none'; // Make it non-interactive
+            canvas.style.zIndex = '2';
+            canvas.style.pointerEvents = 'none';
             videoContainer.appendChild(canvas);
         }
         canvasContext = canvas.getContext('2d');
@@ -427,15 +761,21 @@ const initializeUI = () => {
   spinnerElement = document.createElement('div');
   spinnerElement.id = 'spinner';
   spinnerElement.className = 'spinner-container';
-  if (!showStart) {
+  if (showStart) {
     spinnerElement.classList.add('hidden');
+  } else {
+    spinnerElement.classList.remove('hidden');
   }
   videoContainer.appendChild(spinnerElement);
 
   playButtonElement = document.createElement('button');
   playButtonElement.id = 'playButton';
-  playButtonElement.className = 'hidden';
   playButtonElement.textContent = 'Play Stream';
+  if (!showStart) {
+    playButtonElement.classList.add('hidden');
+  } else {
+    playButtonElement.classList.remove('hidden');
+  }
   videoContainer.appendChild(playButtonElement);
 
 
@@ -455,13 +795,110 @@ const initializeUI = () => {
   playButtonElement.addEventListener('click', playStream);
 };
 
+const startStream = () => {
+    if (streamStarted) return;
+    streamStarted = true;
+    spinnerElement.classList.add('hidden');
+    statusDisplayElement.classList.add('hidden');
+    playButtonElement.classList.add('hidden');
+};
+
+function debounce(func, delay) {
+  let timeoutId;
+  return function(...args) {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      func.apply(this, args);
+    }, delay);
+  };
+}
+
+const initializeInput = () => {
+    if (inputInitialized) {
+        return;
+    }
+    inputInitialized = true;
+
+    let inputInstance;
+
+    const websocketSendInput = (message) => {
+        if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+            websocket.send(message);
+        }
+    };
+
+    const webrtcSendInput = (message) => {
+        if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+            webrtc.sendDataChannelMessage(message);
+        }
+    };
+
+    let sendInputFunction;
+    if (clientMode === 'websockets') {
+        sendInputFunction = websocketSendInput;
+    } else if (clientMode === 'webrtc') {
+        sendInputFunction = webrtcSendInput;
+    } else {
+        sendInputFunction = () => {};
+    }
+
+    inputInstance = new Input(overlayInput, sendInputFunction);
+
+    inputInstance.ongamepadconnected = (gamepad_id) => {
+        gamepad.gamepadState = "connected";
+        gamepad.gamepadName = gamepad_id;
+    }
+
+    inputInstance.ongamepaddisconnected = () => {
+        gamepad.gamepadState = "disconnected";
+        gamepad.gamepadName = "none";
+    }
+    inputInstance.attach();
+
+
+    const handleResizeUI = () => {
+        windowResolution = inputInstance.getWindowResolution();
+        var newRes = parseInt(windowResolution[0]) + "x" + parseInt(windowResolution[1]);
+
+        if (videoElement) {
+            videoElement.style.width = '100%';
+            videoElement.style.height = '100%';
+        }
+        if (canvas) {
+            canvas.width = windowResolution[0];
+            canvas.height = windowResolution[1];
+        }
+        if (overlayInput) {
+            overlayInput.style.width = '100%';
+            overlayInput.style.height = '100%';
+        }
+
+
+        if (clientMode === 'webrtc') {
+            webrtcSendInput("r," + newRes);
+            webrtcSendInput("s," + window.devicePixelRatio);
+        } else if (clientMode === 'websockets') {
+            websocketSendInput("r," + newRes);
+            websocketSendInput("s," + window.devicePixelRatio);
+        }
+    };
+
+    const debouncedHandleResizeUI = debounce(handleResizeUI, 1000);
+    window.addEventListener('resize', debouncedHandleResizeUI);
+    handleResizeUI();
+
+
+    if (clientMode === 'webrtc') {
+        if (webrtc) {
+            webrtc.input = inputInstance;
+        }
+    }
+};
 
 window.addEventListener('message', receiveMessage, false);
 
 function receiveMessage(event) {
   if (event.origin !== window.location.origin) {
-    console.log("Message received from:", event.origin,
-      "ignored, expected origin:", window.location.origin);
     return;
   }
 
@@ -476,29 +913,34 @@ function receiveMessage(event) {
 }
 
 function handleSettingsMessage(settings) {
-  console.log("Settings received via message:", settings);
   if (settings.videoBitRate !== undefined) {
     videoBitRate = parseInt(settings.videoBitRate);
-    webrtc.sendDataChannelMessage('vb,' + videoBitRate);
+    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+      webrtc.sendDataChannelMessage('vb,' + videoBitRate);
+    } else if (clientMode === 'websockets') {
+    }
     setIntParam("videoBitRate", videoBitRate);
   }
   if (settings.videoFramerate !== undefined) {
     videoFramerate = parseInt(settings.videoFramerate);
-    console.log("video framerate changed to " + videoFramerate);
-    webrtc.sendDataChannelMessage('_arg_fps,' + videoFramerate);
+    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+      webrtc.sendDataChannelMessage('_arg_fps,' + videoFramerate);
+    } else if (clientMode === 'websockets') {
+    }
     setIntParam("videoFramerate", videoFramerate);
   }
   if (settings.resizeRemote !== undefined) {
     resizeRemote = settings.resizeRemote;
-    console.log("resize remote changed to " + resizeRemote);
-    windowResolution = webrtc.input.getWindowResolution();
+    windowResolution = (clientMode === 'webrtc' && webrtc && webrtc.input) ? webrtc.input.getWindowResolution() : [window.innerWidth, window.innerHeight];
     var res = windowResolution[0] + "x" + windowResolution[1];
-    webrtc.sendDataChannelMessage('_arg_resize,' + resizeRemote + "," + res);
+    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+      webrtc.sendDataChannelMessage('_arg_resize,' + resizeRemote + "," + res);
+    } else if (clientMode === 'websockets') {
+    }
     setBoolParam("resizeRemote", resizeRemote);
   }
   if (settings.scaleLocal !== undefined) {
     scaleLocal = settings.scaleLocal;
-    console.log("scaleLocal changed to " + scaleLocal);
     if (scaleLocal === true) {
       videoElement.style.width = '';
       videoElement.style.height = '';
@@ -510,13 +952,16 @@ function handleSettingsMessage(settings) {
   }
   if (settings.audioBitRate !== undefined) {
     audioBitRate = parseInt(settings.audioBitRate);
-    webrtc.sendDataChannelMessage('ab,' + audioBitRate);
+    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+      webrtc.sendDataChannelMessage('ab,' + audioBitRate);
+    } else if (clientMode === 'websockets') {
+    }
     setIntParam("audioBitRate", audioBitRate);
   }
   if (settings.turnSwitch !== undefined) {
     turnSwitch = settings.turnSwitch;
     setBoolParam("turnSwitch", turnSwitch);
-    if (webrtc === undefined || webrtc.peerConnection === null) return;
+    if (clientMode === 'webrtc' && (webrtc === undefined || webrtc.peerConnection === null)) return;
     setTimeout(() => {
       document.location.reload();
     }, 700);
@@ -524,7 +969,7 @@ function handleSettingsMessage(settings) {
   if (settings.debug !== undefined) {
     debug = settings.debug;
     setBoolParam("debug", debug);
-    if (webrtc === undefined || webrtc.peerConnection === null) return;
+    if (clientMode === 'webrtc' && (webrtc === undefined || webrtc.peerConnection === null)) return;
     setTimeout(() => {
       document.location.reload();
     }, 700);
@@ -548,45 +993,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   videoElement.addEventListener('loadeddata', (e) => {
-    webrtc.input.getCursorScaleFactor();
+    if (clientMode === 'webrtc' && webrtc && webrtc.input) {
+      webrtc.input.getCursorScaleFactor();
+    }
   });
 
   var pathname = window.location.pathname;
   var pathname = pathname.slice(0, pathname.lastIndexOf("/") + 1);
   var protocol = (location.protocol == "http:" ? "ws://" : "wss://");
-  signalling = new WebRTCDemoSignalling(
-    new URL(protocol + window.location.host + pathname + appName +
-      "/signalling/"));
-  webrtc = new WebRTCDemo(signalling, videoElement, 1);
+
   audio_signalling = new WebRTCDemoSignalling(
     new URL(protocol + window.location.host + pathname + appName +
-      "/signalling/"));
+      "/signalling/"), 3);
   audio_webrtc = new WebRTCDemo(audio_signalling, audioElement, 3);
-  signalling.setInput(webrtc.input);
   audio_signalling.setInput(audio_webrtc.input);
+
 
   window.applyTimestamp = (msg) => {
     var now = new Date();
     var ts = now.getHours() + ":" + now.getMinutes() + ":" + now.getSeconds();
     return "[" + ts + "]" + " " + msg;
-  };
-
-  signalling.onstatus = (message) => {
-    loadingText = message;
-    appendLogEntry(message);
-    updateStatusDisplay();
-  };
-  signalling.onerror = (message) => { appendLogError(message) };
-
-  signalling.ondisconnect = () => {
-    var checkconnect = status == checkconnect;
-    console.log("signalling disconnected");
-    status = 'connecting';
-    updateStatusDisplay();
-    overlayInput.style.cursor = "auto";
-    webrtc.reset();
-    status = 'checkconnect';
-    if (!checkconnect) audio_signalling.disconnect();
   };
 
   audio_signalling.onstatus = (message) => {
@@ -598,486 +1024,220 @@ document.addEventListener('DOMContentLoaded', () => {
 
   audio_signalling.ondisconnect = () => {
     var checkconnect = status == checkconnect;
-    console.log("audio signalling disconnected");
     status = 'connecting';
     updateStatusDisplay();
     overlayInput.style.cursor = "auto";
     audio_webrtc.reset();
     status = 'checkconnect';
-    if (!checkconnect) signalling.disconnect();
+    if (!checkconnect) {
+      if (signalling) signalling.disconnect();
+    }
   };
 
-  webrtc.onstatus = (message) => {
-    appendLogEntry(applyTimestamp("[webrtc] " + message))
-  };
-  webrtc.onerror = (message) => {
-    appendLogError(applyTimestamp("[webrtc] [ERROR] " + message))
-  };
+  const setupWebRTCMode = () => {
+    signalling = new WebRTCDemoSignalling(
+      new URL(protocol + window.location.host + pathname + appName +
+        "/signalling/"), 1);
+    webrtc = new WebRTCDemo(signalling, videoElement, 1);
+
+
+    signalling.setInput(webrtc.input);
+
+    signalling.onstatus = (message) => {
+      loadingText = message;
+      appendLogEntry(message);
+      updateStatusDisplay();
+    };
+    signalling.onerror = (message) => { appendLogError(message) };
+
+    signalling.ondisconnect = () => {
+      var checkconnect = status == checkconnect;
+      status = 'connecting';
+      updateStatusDisplay();
+      overlayInput.style.cursor = "auto";
+      if (clientMode === 'webrtc' && webrtc) {
+        webrtc.reset();
+      }
+      status = 'checkconnect';
+      if (!checkconnect) audio_signalling.disconnect();
+    };
+
+    webrtc.onstatus = (message) => {
+      appendLogEntry(applyTimestamp("[webrtc] " + message))
+    };
+    webrtc.onerror = (message) => {
+      appendLogError(applyTimestamp("[webrtc] [ERROR] " + message))
+    };
+    webrtc.onconnectionstatechange = (state) => {
+      videoConnected = state;
+      if (videoConnected === "connected") {
+        if (!videoElement.paused) {
+          playButtonElement.classList.add('hidden');
+          statusDisplayElement.classList.add('hidden');
+          spinnerElement.classList.add('hidden');
+        }
+        if (webrtc && webrtc.peerConnection) {
+          webrtc.peerConnection.getReceivers().forEach((receiver) => {
+            let intervalLoop = setInterval(async () => {
+              if (receiver.track.readyState !== "live" ||
+                receiver.transport.state !== "connected") {
+                clearInterval(intervalLoop);
+                return;
+              } else {
+                receiver.jitterBufferTarget = receiver.jitterBufferDelayHint =
+                  receiver.playoutDelayHint = 0;
+              }
+            }, 15);
+          });
+        }
+      }
+      if (videoConnected === "connected" && audioConnected === "connected") {
+        status = state;
+        updateStatusDisplay();
+        if (clientMode === 'webrtc' && !inputInitialized) {
+        }
+      } else {
+        status = state === "connected" ? audioConnected : videoConnected;
+        updateStatusDisplay();
+      }
+    };
+    webrtc.ondatachannelopen = () => {
+      initializeInput();
+    };
+
+    webrtc.ondatachannelclose = () => {
+      if (webrtc && webrtc.input) webrtc.input.detach();
+    };
+
+    webrtc.onclipboardcontent = (content) => {
+      if (clipboardStatus === 'enabled') {
+        navigator.clipboard.writeText(content)
+          .catch(err => {
+            if (webrtc) webrtc._setStatus('Could not copy text to clipboard: ' + err);
+          });
+      }
+    };
+
+    webrtc.oncursorchange = (handle, curdata, hotspot, override) => {
+      if (parseInt(handle) === 0) {
+        overlayInput.style.cursor = "auto";
+        return;
+      }
+      if (override) {
+        overlayInput.style.cursor = override;
+        return;
+      }
+      if (webrtc && !webrtc.cursor_cache.has(handle)) {
+        const cursor_url = "url('data:image/png;base64," + curdata + "')";
+        webrtc.cursor_cache.set(handle, cursor_url);
+      }
+      if (webrtc) {
+        var cursor_url = webrtc.cursor_cache.get(handle);
+        if (hotspot) {
+          cursor_url += ` ${hotspot.x} ${hotspot.y}, auto`;
+        } else {
+          cursor_url += ", auto";
+        }
+        overlayInput.style.cursor = cursor_url;
+      }
+    };
+
+    webrtc.onsystemaction = (action) => {
+      if (webrtc) webrtc._setStatus("Executing system action: " + action);
+    };
+
+    webrtc.onlatencymeasurement = (latency_ms) => {
+      serverLatency = latency_ms * 2.0;
+    };
+
+
+    if (debug) {
+      webrtc.ondebug = (message) => {
+        appendDebugEntry(applyTimestamp("[webrtc] " + message))
+      };
+    }
+    if (webrtc) {
+      webrtc.ongpustats = async (data) => {
+        gpuStat.gpuLoad = Math.round(data.load * 100);
+        gpuStat.gpuMemoryTotal = data.memory_total;
+        gpuStat.gpuMemoryUsed = data.memory_used;
+      };
+    }
+  }
+
   audio_webrtc.onstatus = (message) => {
     appendLogEntry(applyTimestamp("[audio webrtc] " + message))
   };
   audio_webrtc.onerror = (message) => {
     appendLogError(applyTimestamp("[audio webrtc] [ERROR] " + message))
   };
-
+  audio_webrtc.onconnectionstatechange = (state) => {
+    audioConnected = state;
+    if (audioConnected === "connected") {
+      if (audio_webrtc && audio_webrtc.peerConnection) {
+        audio_webrtc.peerConnection.getReceivers().forEach((receiver) => {
+          let intervalLoop = setInterval(async () => {
+            if (receiver.track.readyState !== "live" ||
+              receiver.transport.state !== "connected") {
+              clearInterval(intervalLoop);
+              return;
+            } else {
+              receiver.jitterBufferTarget = receiver.jitterBufferDelayHint =
+                receiver.playoutDelayHint = 0;
+            }
+          }, 15);
+        });
+      }
+    }
+    if (audioConnected === "connected" && videoConnected === "connected") {
+      status = state;
+      updateStatusDisplay();
+    } else {
+      status = state === "connected" ? audioConnected : videoConnected;
+      updateStatusDisplay();
+    }
+  };
   if (debug) {
-    signalling.ondebug = (message) => {
-      appendDebugEntry("[signalling] " + message);
-    };
     audio_signalling.ondebug = (message) => {
       appendDebugEntry("[audio signalling] " + message);
-    };
-    webrtc.ondebug = (message) => {
-      appendDebugEntry(applyTimestamp("[webrtc] " + message))
     };
     audio_webrtc.ondebug = (message) => {
       appendDebugEntry(applyTimestamp("[audio webrtc] " + message))
     };
   }
 
-  webrtc.ongpustats = async (data) => {
-    gpuStat.gpuLoad = Math.round(data.load * 100);
-    gpuStat.gpuMemoryTotal = data.memory_total;
-    gpuStat.gpuMemoryUsed = data.memory_used;
-  };
 
-  var videoConnected = "";
-  var audioConnected = "";
-  var statWatchEnabled = false;
-  function enableStatWatch() {
-    var videoBytesReceivedStart = 0;
-    var audioBytesReceivedStart = 0;
-    var previousVideoJitterBufferDelay = 0.0;
-    var previousVideoJitterBufferEmittedCount = 0;
-    var previousAudioJitterBufferDelay = 0.0;
-    var previousAudioJitterBufferEmittedCount = 0;
-    var statsStart = new Date().getTime() / 1000;
-    var statsLoop = setInterval(async () => {
-      if (videoConnected !== "connected" || audioConnected !== "connected") {
-        clearInterval(statsLoop);
-        statWatchEnabled = false;
-        return;
-      }
-      webrtc.getConnectionStats().then((stats) => {
-        if (videoConnected !== "connected" || audioConnected !== "connected") {
-          clearInterval(statsLoop);
-          statWatchEnabled = false;
-          return;
-        }
-        audio_webrtc.getConnectionStats().then((audioStats) => {
-          if (videoConnected !== "connected" ||
-            audioConnected !== "connected") {
-            clearInterval(statsLoop);
-            statWatchEnabled = false;
-            return;
-          }
-          statWatchEnabled = true;
-
-          var now = new Date().getTime() / 1000;
-
-          connectionStat.connectionStatType =
-            stats.general.connectionType == audioStats.general.connectionType ?
-            stats.general.connectionType :
-            (stats.general.connectionType + " / " +
-              audioStats.general.connectionType);
-          connectionStat.connectionBytesReceived =
-            ((stats.general.bytesReceived + audioStats.general.bytesReceived) *
-              1e-6).toFixed(2) + " MBytes";
-          connectionStat.connectionBytesSent =
-            ((stats.general.bytesSent + audioStats.general.bytesSent) *
-              1e-6).toFixed(2) + " MBytes";
-          connectionStat.connectionAvailableBandwidth =
-            ((parseInt(stats.general.availableReceiveBandwidth) +
-              parseInt(audioStats.general.availableReceiveBandwidth)) /
-              1e+6).toFixed(2) + " mbps";
-
-          connectionStat.connectionPacketsReceived = stats.video.packetsReceived;
-          connectionStat.connectionPacketsLost = stats.video.packetsLost;
-          connectionStat.connectionCodec = stats.video.codecName;
-          connectionStat.connectionVideoDecoder = stats.video.decoder;
-          connectionStat.connectionResolution =
-            stats.video.frameWidth + "x" + stats.video.frameHeight;
-          connectionStat.connectionFrameRate = stats.video.framesPerSecond;
-          connectionStat.connectionVideoBitrate =
-            (((stats.video.bytesReceived - videoBytesReceivedStart) /
-              (now - statsStart)) * 8 / 1e+6).toFixed(2);
-          videoBytesReceivedStart = stats.video.bytesReceived;
-
-          connectionStat.connectionPacketsReceived +=
-            audioStats.audio.packetsReceived;
-          connectionStat.connectionPacketsLost += audioStats.audio.packetsLost;
-          connectionStat.connectionAudioCodecName = audioStats.audio.codecName;
-          connectionStat.connectionAudioBitrate =
-            (((audioStats.audio.bytesReceived - audioBytesReceivedStart) /
-              (now - statsStart)) * 8 / 1e+3).toFixed(2);
-          audioBytesReceivedStart = audioStats.audio.bytesReceived;
-
-          connectionStat.connectionVideoLatency = parseInt(Math.round(
-            connectionStat.connectionVideoLatency +
-            (1000.0 * (stats.video.jitterBufferDelay -
-              previousVideoJitterBufferDelay) /
-              (stats.video.jitterBufferEmittedCount -
-                previousVideoJitterBufferEmittedCount) || 0)));
-          previousVideoJitterBufferDelay = stats.video.jitterBufferDelay;
-          previousVideoJitterBufferEmittedCount =
-            stats.video.jitterBufferEmittedCount;
-          connectionStat.connectionAudioLatency = parseInt(Math.round(
-            connectionStat.connectionAudioLatency +
-            (1000.0 * (audioStats.audio.jitterBufferDelay -
-              previousAudioJitterBufferDelay) /
-              (audioStats.audio.jitterBufferEmittedCount -
-                previousAudioJitterBufferEmittedCount) || 0)));
-          previousAudioJitterBufferDelay = audioStats.audio.jitterBufferDelay;
-          previousAudioJitterBufferEmittedCount =
-            audioStats.audio.jitterBufferEmittedCount;
-
-          connectionStat.connectionLatency = parseInt(Math.round(Math.max(
-            connectionStat.connectionVideoLatency,
-            connectionStat.connectionAudioLatency)));
-
-          statsStart = now;
-
-
-          sendStatsMessage();
-
-          webrtc.sendDataChannelMessage("_stats_video," +
-            JSON.stringify(stats.allReports));
-          webrtc.sendDataChannelMessage("_stats_audio," +
-            JSON.stringify(audioStats.allReports));
-        });
-      });
-    }, 1000);
-  }
-
-  webrtc.onconnectionstatechange = (state) => {
-    videoConnected = state;
-    if (videoConnected === "connected") {
-      if (!videoElement.paused) {
-        playButtonElement.classList.add('hidden');
-        statusDisplayElement.classList.add('hidden');
-        spinnerElement.classList.add('hidden');
-      }
-      webrtc.peerConnection.getReceivers().forEach((receiver) => {
-        let intervalLoop = setInterval(async () => {
-          if (receiver.track.readyState !== "live" ||
-            receiver.transport.state !== "connected") {
-            clearInterval(intervalLoop);
-            return;
-          } else {
-            receiver.jitterBufferTarget = receiver.jitterBufferDelayHint =
-              receiver.playoutDelayHint = 0;
-          }
-        }, 15);
-      });
-    }
-    if (videoConnected === "connected" && audioConnected === "connected") {
-      status = state;
-      updateStatusDisplay();
-      if (!statWatchEnabled) {
-        enableStatWatch();
-      }
-    } else {
-      status = state === "connected" ? audioConnected : videoConnected;
-      updateStatusDisplay();
-    }
-  };
-  audio_webrtc.onconnectionstatechange = (state) => {
-    audioConnected = state;
-    if (audioConnected === "connected") {
-      audio_webrtc.peerConnection.getReceivers().forEach((receiver) => {
-        let intervalLoop = setInterval(async () => {
-          if (receiver.track.readyState !== "live" ||
-            receiver.transport.state !== "connected") {
-            clearInterval(intervalLoop);
-            return;
-          } else {
-            receiver.jitterBufferTarget = receiver.jitterBufferDelayHint =
-              receiver.playoutDelayHint = 0;
-          }
-        }, 15);
-      });
-    }
-    if (audioConnected === "connected" && videoConnected === "connected") {
-      status = state;
-      updateStatusDisplay();
-      if (!statWatchEnabled) {
-        enableStatWatch();
-      }
-    } else {
-      status = state === "connected" ? videoConnected : audioConnected;
-      updateStatusDisplay();
-    }
-  };
-
-  webrtc.ondatachannelopen = () => {
-    webrtc.input.ongamepadconnected = (gamepad_id) => {
-      webrtc._setStatus('Gamepad connected: ' + gamepad_id);
-      gamepad.gamepadState = "connected";
-      gamepad.gamepadName = gamepad_id;
-    }
-
-    webrtc.input.ongamepaddisconnected = () => {
-      webrtc._setStatus('Gamepad disconnected: ' + gamepad_id);
-      gamepad.gamepadState = "disconnected";
-      gamepad.gamepadName = "none";
-    }
-
-    webrtc.input.attach();
-
-    setInterval(async () => {
-      if (connectionStat.connectionFrameRate ===
-        parseInt(connectionStat.connectionFrameRate, 10))
-        webrtc.sendDataChannelMessage('_f,' +
-          connectionStat.connectionFrameRate);
-      if (connectionStat.connectionLatency ===
-        parseInt(connectionStat.connectionLatency, 10))
-        webrtc.sendDataChannelMessage('_l,' +
-          connectionStat.connectionLatency);
-    }, 5000);
-  };
-
-  webrtc.ondatachannelclose = () => {
-    webrtc.input.detach();
-  };
-
-  webrtc.input.onmenuhotkey = () => {
-    // toggleDrawer(); // Drawer toggle removed
-  };
-
-  webrtc.input.onresizeend = () => {
-    windowResolution = webrtc.input.getWindowResolution();
-    var newRes = parseInt(windowResolution[0]) + "x" +
-      parseInt(windowResolution[1]);
-    console.log(`Window size changed: ${windowResolution[0]}x${
-      windowResolution[1]}, scaled to: ${newRes}`);
-    webrtc.sendDataChannelMessage("r," + newRes);
-    webrtc.sendDataChannelMessage("s," + window.devicePixelRatio);
-  };
-
-  webrtc.onplaystreamrequired = () => {
-    statusDisplayElement.classList.add('hidden');
-    spinnerElement.classList.add('hidden');
-    if (showStart) {
-      playButtonElement.classList.remove('hidden');
-    }
-  };
-
-  audio_webrtc.onplaystreamrequired = () => {
-    statusDisplayElement.classList.add('hidden');
-    spinnerElement.classList.add('hidden');
-    if (showStart) {
-      playButtonElement.classList.remove('hidden');
-    }
-  };
 
   window.addEventListener('focus', () => {
-    webrtc.sendDataChannelMessage("kr");
+    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) webrtc.sendDataChannelMessage("kr");
+    if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) websocket.send("kr");
 
     navigator.clipboard.readText()
       .then(text => {
-        webrtc.sendDataChannelMessage("cw," + btoa(text));
+        if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) webrtc.sendDataChannelMessage("cw," + btoa(text));
+        if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) websocket.send("cw," + btoa(text));
       })
       .catch(err => {
-        webrtc._setStatus('Failed to read clipboard contents: ' + err);
+        if (clientMode === 'webrtc' && webrtc) {
+          webrtc._setStatus('Failed to read clipboard contents: ' + err);
+        } else if (clientMode === 'websockets') {
+          console.error('Failed to read clipboard contents: ' + err);
+        }
       });
   });
   window.addEventListener('blur', () => {
-    webrtc.sendDataChannelMessage("kr");
+     if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) webrtc.sendDataChannelMessage("kr");
+     if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) websocket.send("kr");
   });
 
-  webrtc.onclipboardcontent = (content) => {
-    if (clipboardStatus === 'enabled') {
-      navigator.clipboard.writeText(content)
-        .catch(err => {
-          webrtc._setStatus('Could not copy text to clipboard: ' + err);
-        });
-    }
-  };
 
-  webrtc.oncursorchange = (handle, curdata, hotspot, override) => {
-    if (parseInt(handle) === 0) {
-      overlayInput.style.cursor = "auto";
-      return;
-    }
-    if (override) {
-      overlayInput.style.cursor = override;
-      return;
-    }
-    if (!webrtc.cursor_cache.has(handle)) {
-      const cursor_url = "url('data:image/png;base64," + curdata + "')";
-      webrtc.cursor_cache.set(handle, cursor_url);
-    }
-    var cursor_url = webrtc.cursor_cache.get(handle);
-    if (hotspot) {
-      cursor_url += ` ${hotspot.x} ${hotspot.y}, auto`;
-    } else {
-      cursor_url += ", auto";
-    }
-    overlayInput.style.cursor = cursor_url;
-  };
 
-  webrtc.onsystemaction = (action) => {
-    webrtc._setStatus("Executing system action: " + action);
-    if (action === 'reload') {
-      setTimeout(() => {
-        signalling.disconnect();
-      }, 700);
-    } else if (action.startsWith('framerate')) {
-      const framerateSetting = getIntParam("videoFramerate", null);
-      if (framerateSetting !== null) {
-        videoFramerate = framerateSetting;
-      } else {
-        videoFramerate = parseInt(action.split(",")[1]);
-      }
-    } else if (action.startsWith('video_bitrate')) {
-      const videoBitrateSetting = getIntParam("videoBitRate", null);
-      if (videoBitrateSetting !== null) {
-        videoBitRate = videoBitrateSetting;
-      } else {
-        videoBitRate = parseInt(action.split(",")[1]);
-      }
-    } else if (action.startsWith('audio_bitrate')) {
-      const audioBitrateSetting = getIntParam("audioBitRate", null);
-      if (audioBitrateSetting !== null) {
-        audioBitRate = audioBitrateSetting;
-      } else {
-        audioBitRate = parseInt(action.split(",")[1]);
-      }
-    } else if (action.startsWith('resize')) {
-      const resizeSetting = getBoolParam("resize", null);
-      if (resizeSetting !== null) {
-        resizeRemote = resizeSetting;
-      } else {
-        resizeRemote = (action.split(",")[1].toLowerCase() === 'true');
-        if (resizeRemote === false && getBoolParam("scaleLocal", null) === null) {
-          scaleLocal = true;
-        }
-      }
-    } else if (action.startsWith("resolution")) {
-      var remote_res = action.split(",")[1];
-      console.log("received remote resolution of: " + remote_res);
-      if (resizeRemote === true) {
-        var toks = remote_res.split("x");
-        videoElement.style.width = toks[0] / window.devicePixelRatio + 'px';
-        videoElement.style.height = toks[1] / window.devicePixelRatio + 'px';
-
-        webrtc.input.getCursorScaleFactor({ remoteResolutionEnabled: true });
-      }
-    } else if (action.startsWith("local_scaling")) {
-      const scalingSetting = getBoolParam("scaleLocal", null);
-      if (scalingSetting !== null) {
-        scaleLocal = scalingSetting;
-      } else {
-        scaleLocal = (action.split(",")[1].toLowerCase() === 'true');
-      }
-      if (scaleLocal === true) {
-        videoElement.style.width = '';
-        videoElement.style.height = '';
-        videoElement.setAttribute("class", "video scale");
-      } else {
-        videoElement.setAttribute("class", "video");
-      }
-    } else if (action.startsWith("encoder")) {
-      if (action.split(",")[1].startsWith("nv") ||
-        action.split(",")[1].startsWith("va")) {
-        encoderName = "hardware" + " (" + action.split(",")[1] + ")";
-      } else {
-        encoderName = "software" + " (" + action.split(",")[1] + ")";
-      }
-    } else {
-      webrtc._setStatus('Unhandled system action: ' + action);
-    }
-  };
-
-  webrtc.onlatencymeasurement = (latency_ms) => {
-    serverLatency = latency_ms * 2.0;
-  };
-
-  webrtc.onsystemstats = async (stats) => {
-    if (stats.cpu_percent !== undefined || stats.mem_total !== undefined ||
-      stats.mem_used !== undefined) {
-      if (stats.cpu_percent !== undefined)
-        cpuStat.serverCPUUsage = stats.cpu_percent.toFixed(0);
-      if (stats.mem_total !== undefined)
-        cpuStat.serverMemoryTotal = stats.mem_total;
-      if (stats.mem_used !== undefined)
-        cpuStat.serverMemoryUsed = stats.mem_used;
-    }
-  };
-
-  if (navigator.permissions) {
-    navigator.permissions.query({
-      name: 'clipboard-read'
-    }).then(permissionStatus => {
-      if (permissionStatus.state === 'granted') {
-        clipboardStatus = 'enabled';
-      }
-
-      permissionStatus.onchange = () => {
-        if (permissionStatus.state === 'granted') {
-          clipboardStatus = 'enabled';
-        }
-      };
-    });
-  }
-
-  var checkPublishing = () => {
-    fetch("./publish/" + appName)
-      .then((response) => {
-        return response.json();
-      })
-      .then((response) => {
-        if (response.code < 400) {
-          publishingAllowed = true;
-          publishingIdle = true;
-        }
-        if (response.code === 201) {
-          publishingIdle = false;
-          setTimeout(() => {
-            checkPublishing();
-          }, 1000);
-        }
-      });
-  };
-
-  fetch("./turn")
-    .then(function (response) {
-      return response.json();
-    })
-    .then((config) => {
-      webrtc.forceTurn = turnSwitch;
-      audio_webrtc.forceTurn = turnSwitch;
-
-      windowResolution = webrtc.input.getWindowResolution();
-
-      if (scaleLocal === false) {
-        videoElement.style.width = windowResolution[0] / window.devicePixelRatio + 'px';
-        videoElement.style.height = windowResolution[1] / window.devicePixelRatio + 'px';
-      }
-
-      if (config.iceServers.length > 1) {
-        appendDebugEntry(applyTimestamp("[app] using TURN servers: " +
-          config.iceServers[1].urls.join(", ")));
-      } else {
-        appendDebugEntry(applyTimestamp("[app] no TURN servers found."));
-      }
-      webrtc.rtcPeerConfig = config;
-      audio_webrtc.rtcPeerConfig = config;
-      webrtc.connect();
-      audio_webrtc.connect();
-    });
-
-  // Video decode helpers
   function handleFrame(frame) {
-    console.log("Decoded VideoFrame:", frame);
-
-    // Check if canvas exists, create if not
     if (!canvas) {
         canvas = document.getElementById('videoCanvas');
         if (!canvas) {
             canvas = document.createElement('canvas');
             canvas.id = 'videoCanvas';
-            // Max z-index and fixed position for visibility
             canvas.style.zIndex = '9999';
             canvas.style.position = 'fixed';
             canvas.style.top = '0';
@@ -1088,18 +1248,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!canvasContext) {
             console.error("Failed to get 2D rendering context");
             frame.close();
-            return; // Exit if no context
+            return;
         }
     }
 
-    // Set canvas dimensions to frame dimensions
     canvas.width = frame.codedWidth;
     canvas.height = frame.codedHeight;
 
-    // Paint the frame
     canvasContext.drawImage(frame, 0, 0);
 
     frame.close();
+    if (!streamStarted) {
+        startStream();
+        initializeInput();
+    }
   }
   async function initializeDecoder() {
       decoder = new VideoDecoder({
@@ -1108,7 +1270,7 @@ document.addEventListener('DOMContentLoaded', () => {
               console.error("Decoder error:", e);
           }
       });
-      let windowResolution = webrtc.input.getWindowResolution();
+      windowResolution = [window.innerWidth, window.innerHeight];
 
       const decoderConfig = {
           codec: "avc1.42E01E",
@@ -1118,49 +1280,88 @@ document.addEventListener('DOMContentLoaded', () => {
 
       try {
           decoder.configure(decoderConfig);
-          console.log("VideoDecoder configured");
       } catch (e) {
           console.error("Error configuring VideoDecoder:", e);
           decoder = null;
       }
   }
-  // New WebSocket connection
   const ws_protocol = (location.protocol == "http:" ? "ws://" : "wss://");
   const websocketEndpointURL = new URL(ws_protocol + window.location.host + pathname + "websockets");
-  const websocket = new WebSocket(websocketEndpointURL);
+  websocket = new WebSocket(websocketEndpointURL);
   websocket.binaryType = "arraybuffer";
 
   websocket.onopen = () => {
     console.log('[websockets] Connection opened!');
-    initializeDecoder();
   };
 
   websocket.onmessage = (event) => {
-    const arrayBuffer = event.data;
-    const dataView = new DataView(arrayBuffer);
-    const frameTypeFlag = dataView.getUint8(0);
-    var isKey;
-    if (dataView.getUint8(0) === 1) {
-      isKey = true;
-    } else {
-      isKey = false;
-    }
-    const frameDataArrayBuffer = arrayBuffer.slice(1);
-    if (decoder && decoder.state === "configured") {
-      const chunk = new EncodedVideoChunk({
-        type: isKey ? "key" : "delta",
-        timestamp: 0,
-        duration: 0,
-        data: frameDataArrayBuffer
-      });
-      try {
-        decoder.decode(chunk);
-      } catch (e) {
-        console.error("Decoding error:", e);
-        decoder.reset();
+    if (event.data instanceof ArrayBuffer) {
+      if (clientMode === 'websockets') {
+        const arrayBuffer = event.data;
+        const dataView = new DataView(arrayBuffer);
+        const frameTypeFlag = dataView.getUint8(0);
+        var isKey;
+        if (dataView.getUint8(0) === 1) {
+          isKey = true;
+        } else {
+          isKey = false;
+        }
+        const frameDataArrayBuffer = arrayBuffer.slice(1);
+        if (decoder && decoder.state === "configured") {
+          const chunk = new EncodedVideoChunk({
+            type: isKey ? "key" : "delta",
+            timestamp: 0,
+            duration: 0,
+            data: frameDataArrayBuffer
+          });
+          try {
+            decoder.decode(chunk);
+          } catch (e) {
+            console.error("Decoding error:", e);
+            decoder.reset();
+          }
+        } else {
+          console.warn("Decoder not ready or not configured yet, frame dropped.");
+        }
       }
     } else {
-      console.warn("Decoder not ready or not configured yet, frame dropped.");
+      if (event.data === "MODE websockets") {
+        clientMode = 'websockets';
+        initializeDecoder();
+      } else if (event.data === "MODE webrtc") {
+        clientMode = 'webrtc';
+        setupWebRTCMode();
+        fetch("./turn")
+        .then(function (response) {
+          return response.json();
+        })
+        .then((config) => {
+          turnSwitch = getBoolParam("turnSwitch", turnSwitch);
+            audio_webrtc.forceTurn = turnSwitch;
+            audio_webrtc.rtcPeerConfig = config;
+
+
+          windowResolution = (clientMode === 'webrtc' && webrtc && webrtc.input) ? webrtc.input.getWindowResolution() : [window.innerWidth, window.innerHeight];
+
+          if (scaleLocal === false) {
+            videoElement.style.width = windowResolution[0] / window.devicePixelRatio + 'px';
+            videoElement.style.height = windowResolution[1] / window.devicePixelRatio + 'px';
+          }
+
+          if (config.iceServers.length > 1) {
+            appendDebugEntry(applyTimestamp("[app] using TURN servers: " +
+              config.iceServers[1].urls.join(", ")));
+          } else {
+            appendDebugEntry(applyTimestamp("[app] no TURN servers found."));
+          }
+
+
+          audio_webrtc.connect();
+          webrtc.forceTurn = turnSwitch;
+          webrtc.rtcPeerConfig = config;
+          webrtc.connect();
+        });
+      }
     }
   };
 
@@ -1174,31 +1375,30 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function cleanup() {
-  console.log("Cleaning up before unload");
-
-  if (signalling) {
+  if (clientMode === 'webrtc' && signalling) {
     signalling.disconnect();
-    console.log("Signalling disconnected");
   }
   if (audio_signalling) {
     audio_signalling.disconnect();
-    console.log("Audio Signalling disconnected");
   }
-  if (webrtc) {
+  if (clientMode === 'webrtc' && webrtc) {
     webrtc.reset();
-    console.log("WebRTC reset");
   }
   if (audio_webrtc) {
     audio_webrtc.reset();
-    console.log("Audio WebRTC reset");
+  }
+  if (websocket) {
+    websocket.close();
   }
 
   status = 'connecting';
   loadingText = '';
   showStart = true;
+  streamStarted = false;
+  inputInitialized = false;
   statusDisplayElement.textContent = 'Connecting...';
   statusDisplayElement.classList.remove('hidden');
-  playButtonElement.classList.add('hidden');
+  playButtonElement.classList.remove('hidden');
   spinnerElement.classList.remove('hidden');
 
   connectionStat.connectionStatType = "unknown";
@@ -1206,6 +1406,10 @@ function cleanup() {
   connectionStat.connectionVideoLatency = 0;
   connectionStat.connectionAudioLatency = 0;
   connectionStat.connectionAudioCodecName = "NA";
+  connectionStat.connectionAudioBitrate = 0;
+  connectionStat.connectionPacketsReceived = 0;
+  connectionStat.connectionPacketsLost = 0;
+  connectionStat.connectionBytesReceived = 0;
   connectionStat.connectionAudioBitrate = 0;
   connectionStat.connectionPacketsReceived = 0;
   connectionStat.connectionPacketsLost = 0;
@@ -1229,7 +1433,6 @@ function cleanup() {
   publishingValid = false;
   logEntries.length = 0;
   debugEntries.length = 0;
-  console.log("Cleanup complete");
 }
 
 window.addEventListener('beforeunload', cleanup);

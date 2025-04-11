@@ -336,6 +336,7 @@ export class WebRTCDemo {
      * @param {Event} event - Track event: https://developer.mozilla.org/en-US/docs/Web/API/RTCTrackEvent
      */
     _ontrack(event) {
+        this._setDebug(`[_ontrack] Track event received! kind: ${event.track.kind}, streams: ${event.streams.length}`);
         this._setStatus("Received incoming " + event.track.kind + " stream from peer");
         if (!this.streams) this.streams = [];
         this.streams.push([event.track.kind, event.streams]);

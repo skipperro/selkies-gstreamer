@@ -20,7 +20,6 @@ import msgpack
 logger_webrtc_input = logging.getLogger("webrtc_input")
 logger_selkies_gamepad = logging.getLogger("selkies_gamepad")
 
-# Constants
 EV_SYN = 0x00
 EV_KEY = 0x01
 EV_REL = 0x02
@@ -191,13 +190,11 @@ def get_btn_event(btn_num, btn_val):
     ts = int((time.time() * 1000) % 1000000000)
     struct_format = "IhBB"
     event = struct.pack(struct_format, ts, btn_val, JS_EVENT_BUTTON, btn_num)
-    logger_selkies_gamepad.debug(struct.unpack(struct_format, event))
     return event
 def get_axis_event(axis_num, axis_val):
     ts = int((time.time() * 1000) % 1000000000)
     struct_format = "IhBB"
     event = struct.pack(struct_format, ts, axis_val, JS_EVENT_AXIS, axis_num)
-    logger_selkies_gamepad.debug(struct.unpack(struct_format, event))
     return event
 def detect_gamepad_config(name):
     return STANDARD_XPAD_CONFIG
@@ -222,7 +219,7 @@ class SelkiesGamepad:
         self.server = None
         self.config = None
         self.clients = {}
-        self.events = asyncio.Queue() # Changed to asyncio.Queue
+        self.events = asyncio.Queue()
         self.running = False
     def set_config(self, name, num_btns, num_axes):
         self.name = name
@@ -253,12 +250,12 @@ class SelkiesGamepad:
     async def __send_events(self):
         while self.running:
             if self.events.empty():
-                await asyncio.sleep(0.01) # Increased sleep duration to 0.01 for less aggressive polling.
+                await asyncio.sleep(0.01)
                 continue
             while self.running and not self.events.empty():
-                event = await self.events.get() # Await directly from asyncio.Queue
+                event = await self.events.get()
                 await self.send_event(event)
-                self.events.task_done() # Indicate task completion for Queue
+                self.events.task_done()
     def send_btn(self, btn_num, btn_val):
         if not self.mapper:
             logger_selkies_gamepad.warning(
@@ -267,7 +264,7 @@ class SelkiesGamepad:
             return
         event = self.mapper.get_mapped_btn(btn_num, btn_val)
         if event is not None:
-            self.events.put_nowait(event) # Use put_nowait for non-blocking queue operation
+            self.events.put_nowait(event)
     def send_axis(self, axis_num, axis_val):
         if not self.mapper:
             logger_selkies_gamepad.warning(
@@ -276,7 +273,7 @@ class SelkiesGamepad:
             return
         event = self.mapper.get_mapped_axis(axis_num, axis_val)
         if event is not None:
-            self.events.put_nowait(event) # Use put_nowait for non-blocking queue operation
+            self.events.put_nowait(event)
     async def send_event(self, event):
         if len(self.clients) < 1:
             return
@@ -284,9 +281,7 @@ class SelkiesGamepad:
         for fd in self.clients:
             try:
                 client = self.clients[fd]
-                logger_selkies_gamepad.debug("Sending event to client with fd: %d" % fd)
-                # Directly await client.send instead of using asyncio.to_thread, assuming client is asyncio socket
-                await asyncio.get_running_loop().sock_sendall(client, event) # Use sock_sendall for asyncio socket
+                await asyncio.get_running_loop().sock_sendall(client, event)
             except BrokenPipeError:
                 logger_selkies_gamepad.info("Client %d disconnected" % fd)
                 closed_clients.append(fd)
@@ -301,8 +296,7 @@ class SelkiesGamepad:
             config_data = self.__make_config()
             if not config_data:
                 return
-            # Directly await client.send instead of using asyncio.to_thread, assuming client is asyncio socket
-            await asyncio.get_running_loop().sock_sendall(client, config_data) # Use sock_sendall for asyncio socket
+            await asyncio.get_running_loop().sock_sendall(client, config_data)
             await asyncio.sleep(0.5)
             for btn_num in range(len(self.config["btn_map"])):
                 self.send_btn(btn_num, 0)
@@ -329,7 +323,7 @@ class SelkiesGamepad:
         try:
             while self.running:
                 try:
-                    client, _ = await asyncio.get_running_loop().sock_accept(self.server) # Use sock_accept for asyncio socket
+                    client, _ = await asyncio.get_running_loop().sock_accept(self.server)
                 except asyncio.TimeoutError:
                     continue
                 fd = client.fileno()
@@ -389,7 +383,7 @@ class WebRTCInputError(Exception):
 class WebRTCInput:
     def __init__(
         self,
-        gst_webrtc_app, # Pass the gst_webrtc_app session here
+        gst_webrtc_app,
         uinput_mouse_socket_path="",
         js_socket_path="",
         enable_clipboard="",
@@ -398,7 +392,7 @@ class WebRTCInput:
         cursor_scale=1.0,
         cursor_debug=False,
     ):
-        self.gst_webrtc_app = gst_webrtc_app # Store the session
+        self.gst_webrtc_app = gst_webrtc_app
         self.clipboard_running = False
         self.uinput_mouse_socket_path = uinput_mouse_socket_path
         self.uinput_mouse_socket = None
@@ -511,9 +505,6 @@ class WebRTCInput:
                 "cannot send button because js%d is not connected" % js_num
             )
             return
-        logger_webrtc_input.debug(
-            "sending js%d button num %d with val %d" % (js_num, btn_num, btn_val)
-        )
         js.send_btn(btn_num, btn_val)
     def __js_emit_axis(self, js_num, axis_num, axis_val):
         js = self.js_map.get(js_num, None)
@@ -522,9 +513,6 @@ class WebRTCInput:
                 "cannot send axis because js%d is not connected" % js_num
             )
             return
-        logger_webrtc_input.debug(
-            "sending js%d axis num %d with val %d" % (js_num, axis_num, axis_val)
-        )
         js.send_axis(axis_num, axis_val)
     async def connect(self):
         self.xdisplay = display.Display()
@@ -735,29 +723,13 @@ class WebRTCInput:
             if (event.type, 0) == self.xdisplay.extension_event.DisplayCursorNotify:
                 cache_key = event.cursor_serial
                 if cache_key in self.cursor_cache:
-                    if self.cursor_debug:
-                        logger_webrtc_input.warning(
-                            "cursor changed to cached serial: {}".format(cache_key)
-                        )
+                    pass
                 else:
                     try:
                         cursor = self.xdisplay.xfixes_get_cursor_image(screen.root)
                         self.cursor_cache[cache_key] = self.cursor_to_msg(
                             cursor, self.cursor_scale, self.cursor_size
                         )
-                        if self.cursor_debug:
-                            logger_webrtc_input.warning(
-                                "New cursor: position={},{}, size={}x{}, length={}, xyhot={},{}, cursor_serial={}".format(
-                                    cursor.x,
-                                    cursor.y,
-                                    cursor.width,
-                                    cursor.height,
-                                    len(cursor.cursor_image),
-                                    cursor.xhot,
-                                    cursor.yhot,
-                                    cursor.cursor_serial,
-                                )
-                            )
                     except Exception as e:
                         logger_webrtc_input.warning(
                             "exception from fetching cursor image: %s" % e
@@ -801,9 +773,6 @@ class WebRTCInput:
                 im = im.resize((resize_width, resize_height))
             im.save(f, "PNG")
             data = f.getvalue()
-            if self.cursor_debug:
-                with open("/tmp/cursor_%d.png" % cursor.cursor_serial, "wb") as debugf:
-                    debugf.write(data)
             return data
     async def stop_js_server(self):
         await self.__js_disconnect()

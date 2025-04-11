@@ -1,30 +1,7 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- *
- * This file incorporates work covered by the following copyright and
- * permission notice:
- *
- *   Copyright 2019 Google LLC
- *
- *   Licensed under the Apache License, Version 2.0 (the "License");
- *   you may not use this file except in compliance with the License.
- *   You may obtain a copy of the License at
- *
- *        http://www.apache.org/licenses/LICENSE-2.0
- *
- *   Unless required by applicable law or agreed to in writing, software
- *   distributed under the License is distributed on an "AS IS" BASIS,
- *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *   See the License for the specific language governing permissions and
- *   limitations under the License.
- */
-
 /*eslint no-unused-vars: ["error", { "vars": "local" }]*/
 
 import { GamepadManager } from './gamepad.js';
 import { Queue } from './util.js';
-// import Guacamole from './guacamole.js'; // REMOVE GUACAMOLE IMPORT
 
 /**
  * Map of known JavaScript keycodes which do not map to typable characters
@@ -34,60 +11,60 @@ import { Queue } from './util.js';
  * @type {!Object.<number, number[]>}
  */
 const keycodeKeysyms = {
-    8:   [0xFF08], // backspace
-    9:   [0xFF09], // tab
-    12:  [0xFF0B, 0xFF0B, 0xFF0B, 0xFFB5], // clear       / KP 5
-    13:  [0xFF0D], // enter
-    16:  [0xFFE1, 0xFFE1, 0xFFE2], // shift
-    17:  [0xFFE3, 0xFFE3, 0xFFE4], // ctrl
-    18:  [0xFFE9, 0xFFE9, 0xFFEA], // alt
-    19:  [0xFF13], // pause/break
-    20:  [0xFFE5], // caps lock
-    27:  [0xFF1B], // escape
-    32:  [0x0020], // space
-    33:  [0xFF55, 0xFF55, 0xFF55, 0xFFB9], // page up     / KP 9
-    34:  [0xFF56, 0xFF56, 0xFF56, 0xFFB3], // page down   / KP 3
-    35:  [0xFF57, 0xFF57, 0xFF57, 0xFFB1], // end         / KP 1
-    36:  [0xFF50, 0xFF50, 0xFF50, 0xFFB7], // home        / KP 7
-    37:  [0xFF51, 0xFF51, 0xFF51, 0xFFB4], // left arrow  / KP 4
-    38:  [0xFF52, 0xFF52, 0xFF52, 0xFFB8], // up arrow    / KP 8
-    39:  [0xFF53, 0xFF53, 0xFF53, 0xFFB6], // right arrow / KP 6
-    40:  [0xFF54, 0xFF54, 0xFF54, 0xFFB2], // down arrow  / KP 2
-    45:  [0xFF63, 0xFF63, 0xFF63, 0xFFB0], // insert      / KP 0
-    46:  [0xFFFF, 0xFFFF, 0xFFFF, 0xFFAE], // delete      / KP decimal
-    91:  [0xFFE7], // left windows/command key (meta_l)
-    92:  [0xFFE8], // right window/command key (meta_r)
-    93:  [0xFF67], // menu key
-    96:  [0xFFB0], // KP 0
-    97:  [0xFFB1], // KP 1
-    98:  [0xFFB2], // KP 2
-    99:  [0xFFB3], // KP 3
-    100: [0xFFB4], // KP 4
-    101: [0xFFB5], // KP 5
-    102: [0xFFB6], // KP 6
-    103: [0xFFB7], // KP 7
-    104: [0xFFB8], // KP 8
-    105: [0xFFB9], // KP 9
-    106: [0xFFAA], // KP multiply
-    107: [0xFFAB], // KP add
-    109: [0xFFAD], // KP subtract
-    110: [0xFFAE], // KP decimal
-    111: [0xFFAF], // KP divide
-    112: [0xFFBE], // f1
-    113: [0xFFBF], // f2
-    114: [0xFFC0], // f3
-    115: [0xFFC1], // f4
-    116: [0xFFC2], // f5
-    117: [0xFFC3], // f6
-    118: [0xFFC4], // f7
-    119: [0xFFC5], // f8
-    120: [0xFFC6], // f9
-    121: [0xFFC7], // f10
-    122: [0xFFC8], // f11
-    123: [0xFFC9], // f12
-    144: [0xFF7F], // num lock
-    145: [0xFF14], // scroll lock
-    225: [0xFE03]  // altgraph (iso_level3_shift)
+    8:   [0xFF08],
+    9:   [0xFF09],
+    12:  [0xFF0B, 0xFF0B, 0xFF0B, 0xFFB5],
+    13:  [0xFF0D],
+    16:  [0xFFE1, 0xFFE1, 0xFFE2],
+    17:  [0xFFE3, 0xFFE3, 0xFFE4],
+    18:  [0xFFE9, 0xFFE9, 0xFFEA],
+    19:  [0xFF13],
+    20:  [0xFFE5],
+    27:  [0xFF1B],
+    32:  [0x0020],
+    33:  [0xFF55, 0xFF55, 0xFF55, 0xFFB9],
+    34:  [0xFF56, 0xFF56, 0xFF56, 0xFFB3],
+    35:  [0xFF57, 0xFF57, 0xFF57, 0xFFB1],
+    36:  [0xFF50, 0xFF50, 0xFF50, 0xFFB7],
+    37:  [0xFF51, 0xFF51, 0xFF51, 0xFFB4],
+    38:  [0xFF52, 0xFF52, 0xFF52, 0xFFB8],
+    39:  [0xFF53, 0xFF53, 0xFF53, 0xFFB6],
+    40:  [0xFF54, 0xFF54, 0xFF54, 0xFFB2],
+    45:  [0xFF63, 0xFF63, 0xFF63, 0xFFB0],
+    46:  [0xFFFF, 0xFFFF, 0xFFFF, 0xFFAE],
+    91:  [0xFFE7],
+    92:  [0xFFE8],
+    93:  [0xFF67],
+    96:  [0xFFB0],
+    97:  [0xFFB1],
+    98:  [0xFFB2],
+    99:  [0xFFB3],
+    100: [0xFFB4],
+    101: [0xFFB5],
+    102: [0xFFB6],
+    103: [0xFFB7],
+    104: [0xFFB8],
+    105: [0xFFB9],
+    106: [0xFFAA],
+    107: [0xFFAB],
+    109: [0xFFAD],
+    110: [0xFFAE],
+    111: [0xFFAF],
+    112: [0xFFBE],
+    113: [0xFFBF],
+    114: [0xFFC0],
+    115: [0xFFC1],
+    116: [0xFFC2],
+    117: [0xFFC3],
+    118: [0xFFC4],
+    119: [0xFFC5],
+    120: [0xFFC6],
+    121: [0xFFC7],
+    122: [0xFFC8],
+    123: [0xFFC9],
+    144: [0xFF7F],
+    145: [0xFF14],
+    225: [0xFE03]
 };
 
 /**
@@ -375,11 +352,6 @@ export class Input {
         this.buttonMask = 0;
 
         /**
-         * @type {Guacamole.Keyboard} // REMOVE Guacamole.Keyboard TYPE
-         */
-        this.keyboard = null; // REMOVE keyboard property
-
-        /**
          * @type {GamepadManager}
          */
         this.gamepadManager = null;
@@ -422,19 +394,9 @@ export class Input {
         this.listeners_context = [];
 
         /**
-         * @type {function}
-         */
-        this.onresizeend = null;
-
-        /**
          * @type {Object}
          */
-        this._queue = new Queue();
-
-        // internal variables used by resize start/end functions.
-        this._rtime = null;
-        this._rtimeout = false;
-        this._rdelta = 500;
+        this._queue = new Queue(); // This queue is related to mouse wheel threshold, not resize directly, so keep it.
 
         // mouse and trackpad variables to adjust the scrolling based on pointer device
         this._allowTrackpadScrolling = true;
@@ -488,7 +450,6 @@ export class Input {
         var serverWidth = this.element.offsetWidth;
 
         if (isNaN(serverWidth) || isNaN(serverHeight)) {
-            console.log("Invaid video height and width");
             return;
         }
 
@@ -513,13 +474,7 @@ export class Input {
         if (!document.pointerLockElement) {
             if (this.mouseRelative) {
                 event.target.requestPointerLock().then(
-                    () => {
-                        console.log("pointer lock success");
-                    }
                 ).catch(
-                    (e) => {
-                        console.log("pointer lock failed: ", e);
-                    }
                 );
             }
         }
@@ -527,13 +482,7 @@ export class Input {
         // Hotkey to enable pointer lock, Ctrl-Shift-LeftClick
         if (down && event.button === 0 && event.ctrlKey && event.shiftKey) {
             event.target.requestPointerLock().then(
-                () => {
-                    console.log("pointer lock success");
-                }
             ).catch(
-                (e) => {
-                    console.log("pointer lock failed: ", e);
-                }
             );
             return;
         }
@@ -819,10 +768,8 @@ export class Input {
     _pointerLock() {
         if (document.pointerLockElement !== null) {
             this.send("p,1");
-            console.log("remote pointer visibility to: True");
         } else {
             this.send("p,0");
-            console.log("remote pointer visibility to: False");
         }
     }
 
@@ -833,7 +780,6 @@ export class Input {
         document.exitPointerLock();
         // hide the pointer.
         this.send("p,0");
-        console.log("remote pointer visibility to: False");
     }
 
     /**
@@ -855,13 +801,8 @@ export class Input {
             mouseMultiY: frameH / vpHeight,
             mouseOffsetX: Math.max((windowW - vpWidth) / 2.0, 0),
             mouseOffsetY: Math.max((windowH - vpHeight) / 2.0, 0),
-
-            // TODO: determine root cause as to why this broke the offsets when window is maximized.
-            //centerOffsetX: (document.documentElement.clientWidth - this.element.offsetWidth) / 2.0,
-            //centerOffsetY: (document.documentElement.clientHeight - this.element.offsetHeight) / 2.0,
             centerOffsetX: 0,
             centerOffsetY: 0,
-
             scrollX: window.scrollX,
             scrollY: window.scrollY,
             frameW,
@@ -902,10 +843,6 @@ export class Input {
      * @param {GamepadEvent} event
      */
     _gamepadConnected(event) {
-        console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
-            event.gamepad.index, event.gamepad.id,
-            event.gamepad.buttons.length, event.gamepad.axes.length);
-
         if (this.ongamepadconnected !== null) {
             this.ongamepadconnected(event.gamepad.id);
         }
@@ -921,8 +858,6 @@ export class Input {
      * Sends joystick disconnect command to WebRTC app.
      */
     _gamepadDisconnect(event) {
-        console.log(`Gamepad %d disconnected`, event.gamepad.index);
-
         if (this.ongamepaddisconneceted !== null) {
             this.ongamepaddisconneceted();
         }
@@ -959,49 +894,15 @@ export class Input {
         if (document.fullscreenElement !== null) {
             if (document.pointerLockElement === null) {
                 this.element.requestPointerLock().then(
-                    () => {
-                        console.log("pointer lock success");
-                    }
                 ).catch(
-                    (e) => {
-                        console.log("pointer lock failed: ", e);
-                    }
                 );
             }
             this.requestKeyboardLock();
         }
         // Reset local keyboard. When holding to exit full-screen the escape key can get stuck.
-        if (this.keyboard !== null) { // REMOVE keyboard null check
-            this.keyboard.reset(); // REMOVE keyboard reset call
-        }
 
         // Reset stuck keys on server side.
         this.send("kr");
-    }
-
-    /**
-     * Called when window is being resized, used to detect when resize ends so new resolution can be sent.
-     */
-    _resizeStart() {
-        this._rtime = new Date();
-        if (this._rtimeout === false) {
-            this._rtimeout = true;
-            setTimeout(() => { this._resizeEnd() }, this._rdelta);
-        }
-    }
-
-    /**
-     * Called in setTimeout loop to detect if window is done being resized.
-     */
-    _resizeEnd() {
-        if (new Date() - this._rtime < this._rdelta) {
-            setTimeout(() => { this._resizeEnd() }, this._rdelta);
-        } else {
-            this._rtimeout = false;
-            if (this.onresizeend !== null) {
-                this.onresizeend();
-            }
-        }
     }
 
     /**
@@ -1012,7 +913,6 @@ export class Input {
         this.listeners.push(addListener(document, 'pointerlockchange', this._pointerLock, this));
         this.listeners.push(addListener(this.element.parentElement, 'fullscreenchange', this._onFullscreenChange, this));
         this.listeners.push(addListener(window, 'resize', this._windowMath, this));
-        this.listeners.push(addListener(window, 'resize', this._resizeStart, this));
 
         // Gamepad support
         this.listeners.push(addListener(window, 'gamepadconnected', this._gamepadConnected, this));
@@ -1044,9 +944,7 @@ export class Input {
             this.listeners_context.push(addListener(this.element, 'touchend', this._touch, this));
             this.listeners_context.push(addListener(this.element, 'touchmove', this._touch, this));
 
-            console.log("Enabling mouse pointer display for touch devices.");
             this.send("p,1");
-            console.log("remote pointer visibility to: True");
         } else {
             this.listeners_context.push(addListener(this.element, 'mousemove', this._mouseButtonMovement, this));
             this.listeners_context.push(addListener(this.element, 'mousedown', this._mouseButtonMovement, this));
@@ -1054,20 +952,13 @@ export class Input {
         }
 
         // Using guacamole keyboard because it has the keysym translations.
-        // this.keyboard = new Guacamole.Keyboard(window); // REMOVE Guacamole.Keyboard instantiation
-        this.listeners_context.push(addListener(window, 'keydown', this._keydown, this)); // ADD keydown listener
-        this.listeners_context.push(addListener(window, 'keyup', this._keyup, this));   // ADD keyup listener
+        this.listeners_context.push(addListener(window, 'keydown', this._keydown, this));
+        this.listeners_context.push(addListener(window, 'keyup', this._keyup, this));
 
 
         if (document.fullscreenElement !== null && document.pointerLockElement === null) {
             this.element.requestPointerLock().then(
-                () => {
-                    console.log("pointer lock success");
-                }
             ).catch(
-                (e) => {
-                    console.log("pointer lock failed: ", e);
-                }
             );
         }
 
@@ -1083,41 +974,19 @@ export class Input {
     detach_context() {
         removeListeners(this.listeners_context);
 
-        if (this.keyboard) { // REMOVE keyboard null check
-            this.keyboard.onkeydown = null; // REMOVE keyboard event unsetting
-            this.keyboard.onkeyup = null;  // REMOVE keyboard event unsetting
-            this.keyboard.reset();         // REMOVE keyboard reset call
-            delete this.keyboard;          // REMOVE keyboard property deletion
-            this.send("kr");
-        } else { // ADD manual reset in case keyboard was never initialized (after removal)
-            this.send("kr"); // Send keyboard reset even if no keyboard object
-        }
-
-
+        this.send("kr");
         this._exitPointerLock();
     }
 
     enterFullscreen() {
         if (document.pointerLockElement === null) {
             this.element.requestPointerLock().then(
-                () => {
-                    console.log("pointer lock success");
-                }
             ).catch(
-                (e) => {
-                    console.log("pointer lock failed: ", e);
-                }
             );
         }
         if (document.fullscreenElement === null) {
             this.element.parentElement.requestFullscreen().then(
-                () => {
-                    console.log("fullscreen success");
-                }
             ).catch(
-                (e) => {
-                    console.log("fullscreen failed: ", e);
-                }
             );
         }
     }
@@ -1137,15 +1006,8 @@ export class Input {
                 "MetaLeft",
                 "MetaRight"
             ];
-            console.log("requesting keyboard lock");
             navigator.keyboard.lock(keys).then(
-                () => {
-                    console.log("keyboard lock success");
-                }
             ).catch(
-                (e) => {
-                    console.log("keyboard lock failed: ", e);
-                }
             )
         }
     }

@@ -44,7 +44,7 @@ export class WebRTCDemoSignalling {
      *    Signalling implementation is here:
      *      https://github.com/GStreamer/gstreamer/tree/main/subprojects/gst-examples/webrtc/signalling
      */
-    constructor(server) {
+    constructor(server, peerId) {
         /**
          * @private
          * @type {URL}
@@ -55,7 +55,7 @@ export class WebRTCDemoSignalling {
          * @private
          * @type {number}
          */
-        this.peer_id = 1;
+        this.peer_id = peerId;
 
         /**
          * @private
@@ -287,14 +287,17 @@ export class WebRTCDemoSignalling {
     connect() {
         this.state = 'connecting';
         this._setStatus("Connecting to server.");
+        this._setDebug(`[Signalling peerId=${this.peer_id}] connect() called`);
 
         this._ws_conn = new WebSocket(this._server);
+        this._setDebug(`[Signalling peerId=${this.peer_id}] WebSocket created`);
 
         // Bind event handlers.
         this._ws_conn.addEventListener('open', this._onServerOpen.bind(this));
         this._ws_conn.addEventListener('error', this._onServerError.bind(this));
         this._ws_conn.addEventListener('message', this._onServerMessage.bind(this));
         this._ws_conn.addEventListener('close', this._onServerClose.bind(this));
+        this._setDebug(`[Signalling peerId=${this.peer_id}] Event listeners attached`);
     }
 
     /**
