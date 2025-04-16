@@ -422,9 +422,7 @@ class WebRTCInput:
         self.on_mouse_pointer_visible = lambda visible: logger_webrtc_input.warning(
             "unhandled on_mouse_pointer_visible"
         )
-        self.on_clipboard_read = lambda data: logger_webrtc_input.warning(
-            "unhandled on_clipboard_read"
-        )
+        self.on_clipboard_read = self._on_clipboard_read # Changed to use self._on_clipboard_read
         self.on_set_fps = lambda fps: logger_webrtc_input.warning(
             "unhandled on_set_fps"
         )
@@ -446,14 +444,32 @@ class WebRTCInput:
         self.on_ping_response = lambda latency: logger_webrtc_input.warning(
             "unhandled on_ping_response"
         )
-        self.on_cursor_change = lambda msg: logger_webrtc_input.warning(
-            "unhandled on_cursor_change"
-        )
+        self.on_cursor_change = self._on_cursor_change # Changed to use self._on_cursor_change
         self.on_client_webrtc_stats = (
             lambda webrtc_stat_type, webrtc_stats: logger_webrtc_input.warning(
                 "unhandled on_client_webrtc_stats"
             )
         )
+
+    def _on_clipboard_read(self, data):
+        self.send_clipboard_data(data)
+
+    def _on_cursor_change(self, data):
+        self.send_cursor_data(data)
+
+    def send_clipboard_data(self, data):
+        if self.gst_webrtc_app.mode == "websockets":
+            self.gst_webrtc_app.send_ws_clipboard_data(data)
+        else:
+            self.gst_webrtc_app.send_clipboard_data(data)
+
+    def send_cursor_data(self, data):
+        if self.gst_webrtc_app.mode == "websockets":
+            self.gst_webrtc_app.send_ws_cursor_data(data)
+        else:
+            self.gst_webrtc_app.send_cursor_data(data)
+
+
     def __keyboard_connect(self):
         self.keyboard = pynput.keyboard.Controller()
     def __mouse_connect(self):
@@ -776,7 +792,7 @@ class WebRTCInput:
             return data
     async def stop_js_server(self):
         await self.__js_disconnect()
-    async def on_message(self, msg):
+    async def on_message(self, msg): # No changes needed here as the message format is the same
         toks = msg.split(",")
         if toks[0] == "pong":
             if self.ping_start is None:

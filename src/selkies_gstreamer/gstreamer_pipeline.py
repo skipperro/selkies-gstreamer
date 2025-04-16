@@ -57,8 +57,10 @@ class GSTWebRTCApp:
         congestion_control=False,
         video_packetloss_percent=0.0,
         audio_packetloss_percent=0.0,
-        data_streaming_server=None
+        data_streaming_server=None,
+        mode='webrtc'
     ):
+        self.mode= mode
         self.pipeline_running = False
         self.async_event_loop = async_event_loop
         self.stun_servers = stun_servers
@@ -193,6 +195,15 @@ class GSTWebRTCApp:
         sink.connect("new-sample", on_new_sample)
         pipeline.set_state(Gst.State.PLAYING)
         print("Pipeline is PLAYING... (ws_pipeline function version - check console for byte and metadata output)")
+    def send_ws_clipboard_data(self, data):
+        if self.data_streaming_server and self.data_streaming_server.data_ws:
+            msg = f"clipboard,{base64.b64encode(data.encode()).decode()}" # Example format
+            asyncio.create_task(self.data_streaming_server.data_ws.send(msg))
+    def send_ws_cursor_data(self, data):
+        if self.data_streaming_server and self.data_streaming_server.data_ws:
+            msg_str = json.dumps(data) # Or format as needed
+            msg = f"cursor,{msg_str}" # Example format
+            asyncio.create_task(self.data_streaming_server.data_ws.send(msg))
     def stop_ximagesrc(self):
         self.pipeline_running = False
         if self.ximagesrc:
@@ -1598,6 +1609,7 @@ class GSTWebRTCApp:
             "pipeline", {"status": "Set pointer visibility to: %d" % visible}
         )
     def send_clipboard_data(self, data):
+        print(data)
         CLIPBOARD_RESTRICTION = 65400
         clipboard_message = base64.b64encode(data.encode()).decode("utf-8")
         clipboard_length = len(clipboard_message)

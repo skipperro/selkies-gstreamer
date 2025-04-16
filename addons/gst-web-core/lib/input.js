@@ -520,7 +520,7 @@ export class Input {
 
         this.send(toks.join(","));
 
-        //event.preventDefault();
+        event.preventDefault();
     }
 
     /**
@@ -702,7 +702,8 @@ export class Input {
         // disable problematic browser shortcuts
         if (event.code === 'F5' && event.ctrlKey ||
             event.code === 'KeyI' && event.ctrlKey && event.shiftKey ||
-            event.code === 'F11') {
+            event.code === 'F11' ||
+            event.code === 'KeyD' && event.ctrlKey) {
             event.preventDefault();
             return;
         }
@@ -1029,7 +1030,7 @@ export class Input {
  */
 function addListener(obj, name, func, ctx) {
     const newFunc = ctx ? func.bind(ctx) : func;
-    if (name === "mouseup" || name === "mousedown" || name === "mousemove" || name === "contextmenu") {
+    if (name === "mouseup" || name === "mousedown" || name === "mousemove" || name === "contextmenu" || name === "keydown" || name === "keyup") {
         obj.addEventListener(name, newFunc);
     } else {
         obj.addEventListener(name, newFunc, { passive: true});

@@ -354,13 +354,20 @@ def set_json_app_argument(config_path, key, value):
 
 
 class DataStreamingServer:
-    def __init__(self, port, mode, app):
+    def __init__(self, port, mode, app, uinput_mouse_socket, js_socket_path, enable_clipboard, enable_cursors, cursor_size, cursor_scale, cursor_debug):
         self.port = port
         self.mode = mode
         self.server = None
         self.stop_server = None
         self.data_ws = None
         self.app = app
+        self.uinput_mouse_socket = uinput_mouse_socket
+        self.js_socket_path = js_socket_path
+        self.enable_clipboard = enable_clipboard
+        self.enable_cursors = enable_cursors
+        self.cursor_size = cursor_size
+        self.cursor_scale = cursor_scale
+        self.cursor_debug = cursor_debug
 
     async def ws_handler(self, websocket):
         raddr = websocket.remote_address
@@ -373,7 +380,16 @@ class DataStreamingServer:
             if self.app.pipeline_running:
                 await self.app.stop_ws_pipeline()
             self.app.start_ws_pipeline()
-            self.webrtc_input = WebRTCInput(self.app)
+            self.webrtc_input = WebRTCInput(
+                self.app,
+                self.uinput_mouse_socket,
+                self.js_socket_path,
+                self.enable_clipboard,
+                self.enable_cursors,
+                self.cursor_size,
+                self.cursor_scale,
+                self.cursor_debug,
+            )
             await self.webrtc_input.connect()
 
         else:
@@ -1308,6 +1324,7 @@ async def main():
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
+    #args.mode = 'webrtc'
     if os.path.exists(args.json_config):
         try:
             with open(args.json_config, "r") as f:
@@ -1502,12 +1519,24 @@ async def main():
         congestion_control,
         video_packetloss_percent,
         audio_packetloss_percent,
-        data_streaming_server=None
+        data_streaming_server=None,
+        mode=args.mode # ADDED mode here
     )
     if not hasattr(GSTWebRTCApp, 'stop_ws_pipeline'):
         GSTWebRTCApp.stop_ws_pipeline = GSTWebRTCApp.stop_pipeline
     app.last_resize_success = True
-    data_websocket_server = DataStreamingServer(int(args.data_websocket_port), args.mode, app)
+    data_websocket_server = DataStreamingServer(
+        int(args.data_websocket_port),
+        args.mode,
+        app,
+        args.uinput_mouse_socket,
+        args.js_socket_path,
+        args.enable_clipboard.lower(),
+        enable_cursors,
+        cursor_size,
+        1.0, # cursor_scale is hardcoded to 1.0 as before
+        cursor_debug
+    )
     app.data_streaming_server = data_websocket_server
     audio_app = GSTWebRTCApp(
         event_loop,
@@ -1572,7 +1601,7 @@ async def main():
         cursor_scale,
         cursor_debug,
     )
-    webrtc_input.on_cursor_change = lambda data: app.send_cursor_data(data)
+    webrtc_input.on_cursor_change = webrtc_input.send_cursor_data # Changed to use send_cursor_data
     def data_channel_ready():
         logger.info("opened peer data channel for user input to X11")
         app.send_framerate(app.framerate)
@@ -1592,7 +1621,7 @@ async def main():
     webrtc_input.on_mouse_pointer_visible = lambda visible: app.set_pointer_visible(
         visible
     )
-    webrtc_input.on_clipboard_read = lambda data: app.send_clipboard_data(data)
+    webrtc_input.on_clipboard_read = webrtc_input.send_clipboard_data # Changed to use send_clipboard_data
     def set_fps_handler(fps):
         set_json_app_argument(args.json_config, "framerate", fps)
         app.set_framerate(fps)

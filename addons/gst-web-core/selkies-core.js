@@ -1110,12 +1110,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     webrtc.onclipboardcontent = (content) => {
-      if (clipboardStatus === 'enabled') {
-        navigator.clipboard.writeText(content)
-          .catch(err => {
-            if (webrtc) webrtc._setStatus('Could not copy text to clipboard: ' + err);
-          });
-      }
+      console.log(content);
+      navigator.clipboard.writeText(content)
+        .catch(err => {
+          if (webrtc) webrtc._setStatus('Could not copy text to clipboard: ' + err);
+        });
     };
 
     webrtc.oncursorchange = (handle, curdata, hotspot, override) => {
@@ -1325,42 +1324,76 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     } else {
-      if (event.data === "MODE websockets") {
-        clientMode = 'websockets';
-        initializeDecoder();
-      } else if (event.data === "MODE webrtc") {
-        clientMode = 'webrtc';
-        setupWebRTCMode();
-        fetch("./turn")
-        .then(function (response) {
-          return response.json();
-        })
-        .then((config) => {
-          turnSwitch = getBoolParam("turnSwitch", turnSwitch);
-            audio_webrtc.forceTurn = turnSwitch;
-            audio_webrtc.rtcPeerConfig = config;
-
-
-          windowResolution = (clientMode === 'webrtc' && webrtc && webrtc.input) ? webrtc.input.getWindowResolution() : [window.innerWidth, window.innerHeight];
-
-          if (scaleLocal === false) {
-            videoElement.style.width = windowResolution[0] / window.devicePixelRatio + 'px';
-            videoElement.style.height = windowResolution[1] / window.devicePixelRatio + 'px';
+      if (typeof event.data === 'string') {
+        if (clientMode === 'websockets') { // ONLY process cursor and clipboard for websockets mode
+          if (event.data.startsWith("cursor,")) {
+            try {
+              const cursorData = JSON.parse(event.data.substring(7));
+              if (parseInt(cursorData.handle) === 0) {
+                  overlayInput.style.cursor = "auto";
+                  return;
+              }
+              if (cursorData.override) {
+                  overlayInput.style.cursor = cursorData.override;
+                  return;
+              }
+              const cursor_url = "url('data:image/png;base64," + cursorData.curdata + "')";
+              let cursorStyle = cursor_url;
+              if (cursorData.hotspot) {
+                  cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
+              } else {
+                  cursorStyle += ", auto";
+              }
+              overlayInput.style.cursor = cursorStyle;
+            } catch (e) {
+              console.error("Error parsing cursor data:", e);
+            }
+          } else if (event.data.startsWith("clipboard,")) {
+            try {
+              const clipboardDataBase64 = event.data.substring(10);
+              const clipboardData = atob(clipboardDataBase64);
+              navigator.clipboard.writeText(clipboardData)
+                .catch(err => {
+                  console.error('Could not copy text to clipboard: ' + err);
+                });
+            } catch (e) {
+              console.error("Error processing clipboard data:", e);
+            }
           }
+        } else if (event.data === "MODE websockets") {
+          clientMode = 'websockets';
+          initializeDecoder();
+          initializeInput();
+        } else if (event.data === "MODE webrtc") {
+          clientMode = 'webrtc';
+          setupWebRTCMode();
+          fetch("./turn")
+            .then(response => response.json())
+            .then(config => {
+              turnSwitch = getBoolParam("turnSwitch", turnSwitch);
+                audio_webrtc.forceTurn = turnSwitch;
+                audio_webrtc.rtcPeerConfig = config;
 
-          if (config.iceServers.length > 1) {
-            appendDebugEntry(applyTimestamp("[app] using TURN servers: " +
-              config.iceServers[1].urls.join(", ")));
-          } else {
-            appendDebugEntry(applyTimestamp("[app] no TURN servers found."));
-          }
+              windowResolution = (clientMode === 'webrtc' && webrtc && webrtc.input) ? webrtc.input.getWindowResolution() : [window.innerWidth, window.innerHeight];
 
+              if (scaleLocal === false) {
+                videoElement.style.width = windowResolution[0] / window.devicePixelRatio + 'px';
+                videoElement.style.height = windowResolution[1] / window.devicePixelRatio + 'px';
+              }
 
-          audio_webrtc.connect();
-          webrtc.forceTurn = turnSwitch;
-          webrtc.rtcPeerConfig = config;
-          webrtc.connect();
-        });
+              if (config.iceServers.length > 1) {
+                appendDebugEntry(applyTimestamp("[app] using TURN servers: " +
+                  config.iceServers[1].urls.join(", ")));
+              } else {
+                appendDebugEntry(applyTimestamp("[app] no TURN servers found."));
+              }
+
+              audio_webrtc.connect();
+              webrtc.forceTurn = turnSwitch;
+              webrtc.rtcPeerConfig = config;
+              webrtc.connect();
+            });
+        }
       }
     }
   };
