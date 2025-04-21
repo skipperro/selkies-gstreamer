@@ -67,6 +67,7 @@ class GSTWebRTCApp:
         self.turn_servers = turn_servers
         self.audio_channels = audio_channels
         self.pipeline = None
+        self.audio_ws_pipeline = None
         self.webrtcbin = None
         self.data_channel = None
         self.rtpgccbwe = None
@@ -123,43 +124,44 @@ class GSTWebRTCApp:
         self.last_cursor_sent = None
         self.data_streaming_server = data_streaming_server
 
-    def ws_pipeline(self, keyframe_distance, keyframe_frame_distance, framerate, vbv_multiplier_sw, fec_video_bitrate):
-        pipeline_string = f"""
-            ximagesrc name=source ! queue name=queue1 ! videoconvert name=convert !
-            capsfilter name=videoconvert_capsfilter caps=video/x-raw,format=NV12 !
-            x264enc name=encoder
-                threads={min(4, max(1, len(os.sched_getaffinity(0)) - 1))}
-                aud=false b-adapt=false bframes=0 dct8x8=false insert-vui=true
-                key-int-max={2147483647 if keyframe_distance == -1.0 else keyframe_frame_distance}
-                mb-tree=false rc-lookahead=0 sync-lookahead=0
-                vbv-buf-capacity={int((1000 + framerate - 1) // framerate * vbv_multiplier_sw)}
-                sliced-threads=true byte-stream=true pass=cbr speed-preset=ultrafast tune=zerolatency
-                bitrate={fec_video_bitrate} !
+    def build_audio_ws_pipeline(self):
+        logger_gstwebrtc_app.info("starting websocket audio pipeline using Gst.parse_launch()") # Added log at start
+
+        audio_pipeline_string = f"""
+            pulsesrc name=source ! queue name=queue1 ! audioconvert name=convert !
+            capsfilter name=audioconvert_capsfilter caps=audio/x-raw,channels={self.audio_channels} !
+            opusenc name=encoder
+                audio-type=restricted-lowdelay bandwidth=fullband bitrate-type=cbr frame-size=10
+                perfect-timestamp=true max-payload-size=4000 inband-fec={'true' if self.audio_packetloss_percent > 0 else 'false'}
+                packet-loss-percentage={int(self.audio_packetloss_percent)} bitrate={self.fec_audio_bitrate} !
             queue name=queue2 ! appsink name=sink emit-signals=true sync=false
         """
 
         try:
-            pipeline = Gst.parse_launch(pipeline_string)
+            self.audio_ws_pipeline = Gst.parse_launch(audio_pipeline_string)
         except Gst.ParseError as e:
-            print(f"Error parsing pipeline string: {e}")
-            return
+            error_message = f"Error parsing audio pipeline string: {e}"
+            logger_gstwebrtc_app.error(error_message)
+            raise GSTWebRTCAppError(error_message) from e
 
-        if not pipeline:
-            print("Error: Could not create pipeline from string")
-            return
+        if not self.audio_ws_pipeline:
+            error_message = "Error: Could not create audio pipeline from string"
+            logger_gstwebrtc_app.error(error_message)
+            raise GSTWebRTCAppError(error_message)
 
-        source = pipeline.get_by_name("source")
-        if not source:
-            print("Error: Could not get source element")
-            return
-        source.set_property("show-pointer", 0)
-        source.set_property("remote", 1)
+        audio_source = self.audio_ws_pipeline.get_by_name("source")
+        if not audio_source:
+            error_message = "Error: Could not get audio source element"
+            logger_gstwebrtc_app.error(error_message)
+            raise GSTWebRTCAppError(error_message)
 
-        sink = pipeline.get_by_name("sink")
-        if not sink:
-            print("Error: Could not get sink element")
-            return
-        def on_new_sample(sink):
+        audio_sink = self.audio_ws_pipeline.get_by_name("sink")
+        if not audio_sink:
+            error_message = "Error: Could not get audio sink element"
+            logger_gstwebrtc_app.error(error_message)
+            raise GSTWebRTCAppError(error_message)
+
+        def on_new_audio_sample(sink):
             sample = sink.emit("pull-sample")
             if sample:
                 buffer = sample.get_buffer()
@@ -170,39 +172,50 @@ class GSTWebRTCApp:
                         codec_name = structure.get_name()
                     else:
                         codec_name = "Unknown Codec"
-                    is_delta_frame = bool(buffer.get_flags() & Gst.BufferFlags.DELTA_UNIT)
-                    frame_type = "Deltaframe" if is_delta_frame else "Keyframe"
+                    is_delta_frame = True
+                    frame_type = "Deltaframe"
                     success, map_info = buffer.map(Gst.MapFlags.READ)
                     if success:
                         data = map_info.data
                         data_copy = bytes(data)
-                        frame_type_byte = b'\x00' if is_delta_frame else b'\x01'
-                        prefixed_data = frame_type_byte + data_copy
-                        if self.data_streaming_server.data_ws:
+                        frame_type_byte = b'\x00'
+                        data_type_byte = b'\x01'
+                        prefixed_data = data_type_byte + frame_type_byte + data_copy
+                        if self.data_streaming_server and self.data_streaming_server.data_ws:
                             try:
                                 import asyncio
                                 asyncio.run_coroutine_threadsafe(self.data_streaming_server.data_ws.send(prefixed_data), self.async_event_loop)
-                                data_logger = logging.getLogger("data_websocket")
-                                data_logger.debug(f"Sent {len(prefixed_data)} bytes (including flag) to data websocket")
                             except Exception as e:
                                 data_logger = logging.getLogger("data_websocket")
-                                data_logger.error(f"Error sending data over websocket: {e}")
+                                data_logger.error(f"Error sending audio data over websocket: {e}")
                         buffer.unmap(map_info)
                     else:
-                        print("Error mapping buffer")
+                        print("Error mapping audio buffer")
                 return Gst.FlowReturn.OK
             return Gst.FlowReturn.ERROR
-        sink.connect("new-sample", on_new_sample)
-        pipeline.set_state(Gst.State.PLAYING)
-        print("Pipeline is PLAYING... (ws_pipeline function version - check console for byte and metadata output)")
+        audio_sink.connect("new-sample", on_new_audio_sample)
+
+        res = self.audio_ws_pipeline.set_state(Gst.State.PLAYING)
+        if res == Gst.StateChangeReturn.SUCCESS:
+            logger_gstwebrtc_app.info("Audio pipeline state change to PLAYING was successful (synchronous)")
+        elif res == Gst.StateChangeReturn.ASYNC:
+            logger_gstwebrtc_app.info("Audio pipeline state change to PLAYING is ASYNCHRONOUS, waiting for completion...")
+        else:
+            error_message = f"Failed to transition audio pipeline to PLAYING: {res}"
+            logger_gstwebrtc_app.error(error_message)
+            raise GSTWebRTCAppError(error_message)
+
+        logger_gstwebrtc_app.info("websocket audio pipeline started using Gst.parse_launch()") # Added log at end
+        return self.audio_ws_pipeline
+
     def send_ws_clipboard_data(self, data):
         if self.data_streaming_server and self.data_streaming_server.data_ws:
-            msg = f"clipboard,{base64.b64encode(data.encode()).decode()}" # Example format
+            msg = f"clipboard,{base64.b64encode(data.encode()).decode()}"
             asyncio.create_task(self.data_streaming_server.data_ws.send(msg))
     def send_ws_cursor_data(self, data):
         if self.data_streaming_server and self.data_streaming_server.data_ws:
-            msg_str = json.dumps(data) # Or format as needed
-            msg = f"cursor,{msg_str}" # Example format
+            msg_str = json.dumps(data)
+            msg = f"cursor,{msg_str}"
             asyncio.create_task(self.data_streaming_server.data_ws.send(msg))
     def stop_ximagesrc(self):
         self.pipeline_running = False
@@ -1102,6 +1115,8 @@ class GSTWebRTCApp:
                 rtpav1pay,
                 rtpav1pay_capsfilter,
             ]
+        elif self.encoder in ["opusenc"]:
+            required.append("opus")
         for pipeline_element in pipeline_elements:
             self.pipeline.add(pipeline_element)
         pipeline_elements += [self.webrtcbin]
@@ -1182,14 +1197,13 @@ class GSTWebRTCApp:
                     if success:
                         data = map_info.data
                         data_copy = bytes(data)
-                        frame_type_byte = b'\x00' if is_delta_frame else b'\x01'
-                        prefixed_data = frame_type_byte + data_copy
+                        data_type_byte = b'\x00'
+                        video_frame_type_byte = b'\x00' if is_delta_frame else b'\x01'
+                        prefixed_data = data_type_byte + video_frame_type_byte + data_copy
                         if self.data_streaming_server and self.data_streaming_server.data_ws:
                             try:
                                 import asyncio
                                 asyncio.run_coroutine_threadsafe(self.data_streaming_server.data_ws.send(prefixed_data), self.async_event_loop)
-                                data_logger = logging.getLogger("data_websocket")
-                                data_logger.debug(f"Sent {len(prefixed_data)} bytes (including flag) to data websocket")
                             except Exception as e:
                                 data_logger = logging.getLogger("data_websocket")
                                 data_logger.error(f"Error sending data over websocket: {e}")
@@ -1199,7 +1213,6 @@ class GSTWebRTCApp:
                 return Gst.FlowReturn.OK
             return Gst.FlowReturn.ERROR
         sink.connect("new-sample", on_new_sample)
-
 
         res = self.pipeline.set_state(Gst.State.PLAYING)
         if res == Gst.StateChangeReturn.SUCCESS:
@@ -1212,6 +1225,7 @@ class GSTWebRTCApp:
             raise GSTWebRTCAppError(error_message)
 
         logger_gstwebrtc_app.info("websocket pipeline started using Gst.parse_launch()")
+        return self.pipeline
 
     async def stop_pipeline(self):
         logger_gstwebrtc_app.info("stopping pipeline")
@@ -1326,6 +1340,7 @@ class GSTWebRTCApp:
             "svtav1enc",
             "av1enc",
             "rav1enc",
+            "opusenc"
         ]
         if self.encoder not in supported:
             raise GSTWebRTCAppError(
@@ -1929,17 +1944,26 @@ class GSTWebRTCApp:
 
     async def handle_bus_calls(self):
         bus = None
+        audio_bus = None
         if self.pipeline is not None:
             bus = self.pipeline.get_bus()
+        if self.audio_ws_pipeline is not None:
+            audio_bus = self.audio_ws_pipeline.get_bus()
         while True:
             if bus is not None:
                 message = bus.timed_pop(0.1)
                 if message:
                     if not self.bus_call(message):
                         break
+            if audio_bus is not None:
+                audio_message = audio_bus.timed_pop(0.1)
+                if audio_message:
+                    if not self.bus_call(audio_message):
+                        break
             else:
                 import asyncio
                 await asyncio.sleep(0.1)
+
     async def stop_pipeline(self):
         logger_gstwebrtc_app.info("stopping pipeline")
         if self.data_channel:
@@ -1949,17 +1973,24 @@ class GSTWebRTCApp:
             self.data_channel = None
             logger_gstwebrtc_app.info("data channel closed")
         if self.pipeline:
-            logger_gstwebrtc_app.info("setting pipeline state to NULL")
+            logger_gstwebrtc_app.info("setting video pipeline state to NULL")
             import asyncio
             await asyncio.to_thread(self.pipeline.set_state, Gst.State.NULL)
             self.pipeline = None
-            logger_gstwebrtc_app.info("pipeline set to state NULL")
+            logger_gstwebrtc_app.info("video pipeline set to state NULL")
+        if self.audio_ws_pipeline:
+            logger_gstwebrtc_app.info("setting audio pipeline state to NULL")
+            import asyncio
+            await asyncio.to_thread(self.audio_ws_pipeline.set_state, Gst.State.NULL)
+            self.audio_ws_pipeline = None
+            logger_gstwebrtc_app.info("audio pipeline set to state NULL")
         if self.webrtcbin:
             import asyncio
             await asyncio.to_thread(self.webrtcbin.set_state, Gst.State.NULL)
             self.webrtcbin = None
             logger_gstwebrtc_app.info("webrtcbin set to state NULL")
         logger_gstwebrtc_app.info("pipeline stopped")
+    stop_ws_pipeline = stop_pipeline
     class PlayoutDelayExtension(GstRtp.RTPHeaderExtension):
         def __init__(self):
             super().__init__()

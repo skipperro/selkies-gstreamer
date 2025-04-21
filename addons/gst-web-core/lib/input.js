@@ -698,12 +698,12 @@ export class Input {
      * @param {KeyboardEvent} event
      */
     _key(event) {
-
         // disable problematic browser shortcuts
         if (event.code === 'F5' && event.ctrlKey ||
             event.code === 'KeyI' && event.ctrlKey && event.shiftKey ||
             event.code === 'F11' ||
-            event.code === 'KeyD' && event.ctrlKey) {
+            event.code === 'KeyD' && event.ctrlKey ||
+            event.code === 'Tab') {
             event.preventDefault();
             return;
         }

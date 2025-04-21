@@ -377,9 +377,17 @@ class DataStreamingServer:
         self.data_ws = websocket
 
         if self.mode == "websockets":
-            if self.app.pipeline_running:
-                await self.app.stop_ws_pipeline()
-            self.app.start_ws_pipeline()
+            if self.app.pipeline_running: # Check if video pipeline is running and stop if needed
+                await self.app.stop_ws_pipeline() # This stops both video and audio pipelines
+
+            logger.info("Starting websocket video pipeline")
+            self.app.start_ws_pipeline() # Start video pipeline
+
+            logger.info("Building and starting websocket audio pipeline") # Log before building audio pipeline
+            self.app.build_audio_ws_pipeline() # Build the audio pipeline
+            logger.info("Websocket audio pipeline built") # Log after building audio pipeline
+
+
             self.webrtc_input = WebRTCInput(
                 self.app,
                 self.uinput_mouse_socket,
@@ -414,7 +422,7 @@ class DataStreamingServer:
             data_logger.info(f"Data WebSocket disconnected from {raddr}")
         finally:
             if self.mode == "websockets":
-                await self.app.stop_ws_pipeline()
+                await self.app.stop_ws_pipeline() # Stop both pipelines
             if self.webrtc_input:
                 await self.webrtc_input.disconnect()
                 self.webrtc_input = None
@@ -1538,20 +1546,22 @@ async def main():
         cursor_debug
     )
     app.data_streaming_server = data_websocket_server
-    audio_app = GSTWebRTCApp(
+    audio_app = GSTWebRTCApp( # Create a separate GSTWebRTCApp instance for audio
         event_loop,
         stun_servers,
         turn_servers,
         audio_channels,
         curr_fps,
-        args.encoder,
-        gpu_id,
-        curr_video_bitrate,
+        "opusenc", # force audio encoder to opusenc, or parameterize if needed
+        -1, # gpu_id is irrelevant for audio encoding in this pipeline.
+        curr_video_bitrate, # video bitrate not used here, just pass a dummy value.
         curr_audio_bitrate,
-        keyframe_distance,
-        congestion_control,
-        video_packetloss_percent,
+        keyframe_distance, # keyframe_distance not used here, just pass a dummy value.
+        congestion_control, # congestion_control not used here, just pass a dummy value.
+        video_packetloss_percent, # video_packetloss_percent not used here, just pass a dummy value.
         audio_packetloss_percent,
+        data_streaming_server=data_websocket_server, # Pass the same data_streaming_server so audio can use the same websocket
+        mode=args.mode # ADDED mode here, though it should always be 'websockets' when audio_app is used in this context
     )
     app.on_sdp = signalling.send_sdp
     audio_app.on_sdp = audio_signalling.send_sdp
@@ -1561,33 +1571,34 @@ async def main():
     audio_signalling.on_sdp = audio_app.set_sdp
     signalling.on_ice = app.set_ice
     audio_signalling.on_ice = audio_app.set_ice
-    def on_session_handler(session_peer_id, meta=None):
-        logger.info(
-            "starting session for peer id {} with meta: {}".format(
-                session_peer_id, meta
+    def on_session_handler(session_peer_id, meta=None): # Modified on_session_handler - now only for WebRTC mode
+        if args.mode == 'webrtc': # Conditionally execute only in webrtc mode
+            logger.info(
+                "starting session for peer id {} with meta: {}".format(
+                    session_peer_id, meta
+                )
             )
-        )
-        if str(session_peer_id) == str(peer_id):
-            if meta:
-                if enable_resize:
-                    if meta["res"]:
-                        on_resize_handler(meta["res"], app)
-                    if meta["scale"]:
-                        on_scaling_ratio_handler(meta["scale"], app)
-                else:
-                    logger.info("setting cursor to default size")
-                    set_cursor_size(16)
-
-            current_mode = args.mode
-            if current_mode == "websockets":
-                app.start_ws_pipeline()
+            if str(session_peer_id) == str(peer_id):
+                if meta:
+                    if enable_resize:
+                        if meta["res"]:
+                            on_resize_handler(meta["res"], app)
+                        if meta["scale"]:
+                            on_scaling_ratio_handler(meta["scale"], app)
+                    else:
+                        logger.info("setting cursor to default size")
+                        set_cursor_size(16)
+                app.start_pipeline() # Start WebRTC pipeline
+            elif str(session_peer_id) == str(audio_peer_id):
+                logger.info("starting audio pipeline (webrtc mode)") # Log for clarity in WebRTC mode
+                audio_app.start_pipeline(audio_only=True) # Start WebRTC audio pipeline
+                logger.info("WebRTC audio pipeline started (webrtc mode)") # Log for clarity in WebRTC mode
             else:
-                app.start_pipeline()
-        elif str(session_peer_id) == str(audio_peer_id):
-            logger.info("starting audio pipeline")
-            audio_app.start_pipeline(audio_only=True)
+                logger.error("failed to start pipeline for peer_id: %s" % peer_id)
         else:
-            logger.error("failed to start pipeline for peer_id: %s" % peer_id)
+            logger.debug("on_session_handler called in websockets mode - doing nothing") # Debug log for websockets mode
+
+
     signalling.on_session = on_session_handler
     audio_signalling.on_session = on_session_handler
     cursor_scale = 1.0
@@ -1601,12 +1612,12 @@ async def main():
         cursor_scale,
         cursor_debug,
     )
-    webrtc_input.on_cursor_change = webrtc_input.send_cursor_data # Changed to use send_cursor_data
+    webrtc_input.on_cursor_change = webrtc_input.send_cursor_data
     def data_channel_ready():
         logger.info("opened peer data channel for user input to X11")
         app.send_framerate(app.framerate)
         app.send_video_bitrate(app.video_bitrate)
-        app.send_audio_bitrate(audio_app.audio_bitrate)
+        app.send_audio_bitrate(audio_app.audio_bitrate) # Use audio_app.audio_bitrate as it manages audio bitrate
         app.send_resize_enabled(enable_resize)
         app.send_encoder(app.encoder)
         app.send_cursor_data(app.last_cursor_sent)
@@ -1617,11 +1628,11 @@ async def main():
     ) and (app.set_video_bitrate(int(bitrate)))
     webrtc_input.on_audio_encoder_bit_rate = lambda bitrate: set_json_app_argument(
         args.json_config, "audio_bitrate", bitrate
-    ) and audio_app.set_audio_bitrate(int(bitrate))
+    ) and audio_app.set_audio_bitrate(int(bitrate)) # Control audio bitrate via audio_app instance
     webrtc_input.on_mouse_pointer_visible = lambda visible: app.set_pointer_visible(
         visible
     )
-    webrtc_input.on_clipboard_read = webrtc_input.send_clipboard_data # Changed to use send_clipboard_data
+    webrtc_input.on_clipboard_read = webrtc_input.send_clipboard_data
     def set_fps_handler(fps):
         set_json_app_argument(args.json_config, "framerate", fps)
         app.set_framerate(fps)
@@ -1771,7 +1782,7 @@ async def main():
         sys.exit(1)
     finally:
         await app.stop_pipeline()
-        await audio_app.stop_pipeline()
+        await audio_app.stop_pipeline() # Stop audio pipeline on exit too
         webrtc_input.stop_clipboard()
         webrtc_input.stop_cursor_monitor()
         await webrtc_input.stop_js_server()
