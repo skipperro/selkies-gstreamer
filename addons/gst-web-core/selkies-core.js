@@ -783,6 +783,11 @@ const initializeUI = () => {
   updatePublishingErrorDisplay();
 
   playButtonElement.addEventListener('click', playStream);
+  if (clientMode === 'websockets') {
+    playButtonElement.classList.add('hidden');
+    statusDisplayElement.classList.remove('hidden');
+    spinnerElement.classList.remove('hidden');
+  }
 };
 
 const startStream = () => {
@@ -1385,7 +1390,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (!audioContext || !audioWorkletProcessorPort) {
-      console.error('Audio context or AudioWorkletProcessor not available!');
+      console.log('Audio context or AudioWorkletProcessor not available, waiting for user interaction!');
       frame.close();
       return;
     }
@@ -1393,6 +1398,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (audioContext.state !== 'running') {
       console.warn('AudioContext state is:', audioContext.state, '. Resuming...');
       await audioContext.resume();
+      frame.close();
+      return;
     }
 
     try {
