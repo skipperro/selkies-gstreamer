@@ -1333,6 +1333,7 @@ async def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
     #args.mode = 'webrtc'
+    #args.encoder = 'vah264enc'
     if os.path.exists(args.json_config):
         try:
             with open(args.json_config, "r") as f:

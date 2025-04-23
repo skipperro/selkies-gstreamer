@@ -1488,7 +1488,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const dataTypeByte = dataView.getUint8(0);
         const frameTypeFlag = dataView.getUint8(1);
-
         const isKey = frameTypeFlag === 1;
         const frameDataArrayBuffer = arrayBuffer.slice(2);
         if (dataTypeByte === 0) {
