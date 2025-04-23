@@ -792,7 +792,7 @@ class WebRTCInput:
             return data
     async def stop_js_server(self):
         await self.__js_disconnect()
-    async def on_message(self, msg): # No changes needed here as the message format is the same
+    async def on_message(self, msg):
         toks = msg.split(",")
         if toks[0] == "pong":
             if self.ping_start is None:

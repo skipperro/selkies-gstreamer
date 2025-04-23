@@ -132,11 +132,10 @@ class GSTWebRTCApp:
             capsfilter name=audioconvert_capsfilter caps=audio/x-raw,channels={self.audio_channels} !
             opusenc name=encoder
                 audio-type=restricted-lowdelay bandwidth=fullband bitrate-type=cbr frame-size=10
-                perfect-timestamp=true max-payload-size=4000 inband-fec={'true' if self.audio_packetloss_percent > 0 else 'false'}
-                packet-loss-percentage={int(self.audio_packetloss_percent)} bitrate={self.fec_audio_bitrate} !
+                perfect-timestamp=true max-payload-size=4000
+                bitrate={self.audio_bitrate} !
             queue name=queue2 ! appsink name=sink emit-signals=true sync=false
         """
-
         try:
             self.audio_ws_pipeline = Gst.parse_launch(audio_pipeline_string)
         except Gst.ParseError as e:
@@ -788,7 +787,7 @@ class GSTWebRTCApp:
                 raise GSTWebRTCAppError(error_message)
         self.ximagesrc.set_property("show-pointer", 0)
         self.ximagesrc.set_property("remote", 1)
-        videoconvert.set_property("n-threads", min(4, max(1, len(os.sched_getaffinity(0)) - 1)))
+        videoconvert.set_property("n-threads", os.cpu_count())
         videoconvert.set_property("qos", True)
         encoder_chain_elements = []
         encoder = None
@@ -798,7 +797,7 @@ class GSTWebRTCApp:
             encoder = Gst.ElementFactory.make("x264enc", "encoder")
             if not encoder:
                 raise GSTWebRTCAppError("Error: Could not create x264enc element")
-            encoder.set_property("threads", min(4, max(1, len(os.sched_getaffinity(0)) - 1)))
+            encoder.set_property("threads", os.cpu_count())
             encoder.set_property("aud", False)
             encoder.set_property("b-adapt", False)
             encoder.set_property("bframes", 0)
@@ -814,7 +813,7 @@ class GSTWebRTCApp:
             encoder.set_property("pass", "cbr")
             encoder.set_property("speed-preset", "ultrafast")
             encoder.set_property("tune", "zerolatency")
-            encoder.set_property("bitrate", self.fec_video_bitrate)
+            encoder.set_property("bitrate", self.video_bitrate)
             encoder_chain_elements = [encoder]
         elif self.encoder == "nvh264enc":
             videoconvert_output_format = "NV12"
@@ -835,7 +834,7 @@ class GSTWebRTCApp:
                     encoder = Gst.ElementFactory.make("nvh264enc", "encoder")
             if not encoder:
                  raise GSTWebRTCAppError(f"Error: Could not create {self.encoder} element")
-            encoder.set_property("bitrate", self.fec_video_bitrate)
+            encoder.set_property("bitrate", self.video_bitrate)
             encoder_properties = [prop.name for prop in encoder.list_properties()]
             if "rate-control" in encoder_properties:
                 encoder.set_property("rate-control", "cbr")
@@ -853,7 +852,7 @@ class GSTWebRTCApp:
                  if "bframes" in encoder_properties:
                      encoder.set_property("bframes", 0)
             encoder.set_property("rc-lookahead", 0)
-            encoder.set_property("vbv-buffer-size", int((self.fec_video_bitrate + self.framerate - 1) // self.framerate * self.vbv_multiplier_nv))
+            encoder.set_property("vbv-buffer-size", int((self.video_bitrate + self.framerate - 1) // self.framerate * self.vbv_multiplier_nv))
             if Gst.version().major == 1 and 20 < Gst.version().minor <= 24:
                 if "zero-reorder-delay" in encoder_properties:
                     encoder.set_property("zero-reorder-delay", True)
@@ -905,7 +904,7 @@ class GSTWebRTCApp:
                  raise GSTWebRTCAppError(f"Error: Could not create {self.encoder} element")
             encoder.set_property("aud", False)
             encoder.set_property("b-frames", 0)
-            encoder.set_property("cpb-size", int((self.fec_video_bitrate + self.framerate - 1) // self.framerate * self.vbv_multiplier_va))
+            encoder.set_property("cpb-size", int((self.video_bitrate + self.framerate - 1) // self.framerate * self.vbv_multiplier_va))
             encoder.set_property("dct8x8", False)
             encoder.set_property("key-int-max", 1024 if self.keyframe_distance == -1.0 else self.keyframe_frame_distance)
             encoder.set_property("mbbrc", "disabled")
@@ -914,7 +913,7 @@ class GSTWebRTCApp:
             if not Gst.util_set_object_arg(encoder, "rate-control", "cbr"):
                  logger_gstwebrtc_app.warning(f"Failed to set 'rate-control' property to 'cbr' on {encoder.get_name()}")
             encoder.set_property("target-usage", 6)
-            encoder.set_property("bitrate", self.fec_video_bitrate)
+            encoder.set_property("bitrate", self.video_bitrate)
             h264enc_caps = Gst.caps_from_string("video/x-h264")
             h264enc_caps.set_value("profile", "main")
             h264enc_caps.set_value("stream-format", "byte-stream")
@@ -939,7 +938,7 @@ class GSTWebRTCApp:
             encoder.set_property("slice-mode", "n-slices")
             encoder.set_property("num-slices", min(4, max(1, len(os.sched_getaffinity(0)) - 1)))
             encoder.set_property("rate-control", "bitrate")
-            encoder.set_property("bitrate", self.fec_video_bitrate * 1000)
+            encoder.set_property("bitrate", self.video_bitrate * 1000)
             h264enc_caps = Gst.caps_from_string("video/x-h264")
             h264enc_caps.set_value("stream-format", "byte-stream")
             h264enc_capsfilter = Gst.ElementFactory.make("capsfilter", "h264enc_capsfilter")
