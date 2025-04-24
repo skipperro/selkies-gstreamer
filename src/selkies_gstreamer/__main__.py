@@ -45,16 +45,30 @@ from signal import SIGINT, signal
 from watchdog.events import FileClosedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-# Keep original imports for WebRTC/Prometheus path
 from system_metrics import Metrics, GPUMonitor, SystemMonitor, FPS_HIST_BUCKETS
-from input_handler import WebRTCInput, SelkiesGamepad, GamepadMapper, get_btn_event, get_axis_event, detect_gamepad_config, get_num_btns_for_mapping, get_num_axes_for_mapping, normalize_axis_val, normalize_trigger_val, ABS_MIN, ABS_MAX, STANDARD_XPAD_CONFIG, XPAD_CONFIG_MAP, logger_selkies_gamepad
-from gstreamer_pipeline import GSTWebRTCApp, GSTWebRTCAppError, fit_res, get_new_res, resize_display, generate_xrandr_gtf_modeline, set_dpi, set_cursor_size
+from input_handler import (WebRTCInput, SelkiesGamepad, GamepadMapper,
+                           get_btn_event, get_axis_event, detect_gamepad_config,
+                           get_num_btns_for_mapping, get_num_axes_for_mapping,
+                           normalize_axis_val, normalize_trigger_val, ABS_MIN,
+                           ABS_MAX, STANDARD_XPAD_CONFIG, XPAD_CONFIG_MAP,
+                           logger_selkies_gamepad)
+from gstreamer_pipeline import (GSTWebRTCApp, GSTWebRTCAppError, fit_res,
+                                get_new_res, resize_display,
+                                generate_xrandr_gtf_modeline, set_dpi,
+                                set_cursor_size)
 
-# Import psutil and GPUtil directly in main.py as requested
 import psutil
 import GPUtil
-import traceback # Import traceback for error logging
+import traceback
 
+TARGET_FRAMERATE = 60
+TARGET_VIDEO_BITRATE_KBPS = 16000
+
+FPS_ADJUST_THRESHOLD = 3
+FPS_ADJUST_STEP = 10
+MIN_FRAMERATE = 8
+BITRATE_ADJUST_STEP_KBPS = 8000
+MIN_VIDEO_BITRATE_KBPS = 500
 
 DEFAULT_RTC_CONFIG = """{
   "lifetimeDuration": "86400s",
@@ -77,7 +91,9 @@ MIME_TYPES = {
 
 
 class HMACRTCMonitor:
-    def __init__(self, turn_host, turn_port, turn_shared_secret, turn_username, turn_protocol='udp', turn_tls=False, stun_host=None, stun_port=None, period=60, enabled=True):
+    def __init__(self, turn_host, turn_port, turn_shared_secret, turn_username,
+                 turn_protocol='udp', turn_tls=False, stun_host=None,
+                 stun_port=None, period=60, enabled=True):
         self.turn_host = turn_host
         self.turn_port = turn_port
         self.turn_username = turn_username
@@ -91,7 +107,8 @@ class HMACRTCMonitor:
 
         self.running = False
 
-        self.on_rtc_config = lambda stun_servers, turn_servers, rtc_config: logger.warning("unhandled on_rtc_config")
+        self.on_rtc_config = lambda stun_servers, turn_servers, rtc_config: \
+            logger.warning("unhandled on_rtc_config")
 
     async def start(self):
         if self.enabled:
@@ -99,18 +116,35 @@ class HMACRTCMonitor:
             while self.running:
                 if self.enabled and int(time.time()) % self.period == 0:
                     try:
-                        hmac_data = await asyncio.to_thread(generate_rtc_config, self.turn_host, self.turn_port, self.turn_shared_secret, self.turn_username, self.turn_protocol, self.turn_tls, self.stun_host, self.stun_port)
-                        stun_servers, turn_servers, rtc_config = await asyncio.to_thread(parse_rtc_config, hmac_data)
-                        await asyncio.to_thread(self.on_rtc_config, stun_servers, turn_servers, rtc_config)
+                        hmac_data = await asyncio.to_thread(
+                            generate_rtc_config, self.turn_host, self.turn_port,
+                            self.turn_shared_secret, self.turn_username,
+                            self.turn_protocol, self.turn_tls, self.stun_host,
+                            self.stun_port
+                        )
+                        stun_servers, turn_servers, rtc_config = \
+                            await asyncio.to_thread(parse_rtc_config, hmac_data)
+                        await asyncio.to_thread(
+                            self.on_rtc_config, stun_servers, turn_servers,
+                            rtc_config
+                        )
                     except Exception as e:
-                        logger.warning("could not fetch TURN HMAC config in periodic monitor: {}".format(e))
+                        logger.warning(
+                            "could not fetch TURN HMAC config in periodic monitor: "
+                            f"{e}"
+                        )
                 await asyncio.sleep(0.5)
             logger.info("HMAC RTC monitor stopped")
 
     async def stop(self):
         self.running = False
+
+
 class RESTRTCMonitor:
-    def __init__(self, turn_rest_uri, turn_rest_username, turn_rest_username_auth_header, turn_protocol='udp', turn_rest_protocol_header='x-turn-protocol', turn_tls=False, turn_rest_tls_header='x-turn-tls', period=60, enabled=True):
+    def __init__(self, turn_rest_uri, turn_rest_username,
+                 turn_rest_username_auth_header, turn_protocol='udp',
+                 turn_rest_protocol_header='x-turn-protocol', turn_tls=False,
+                 turn_rest_tls_header='x-turn-tls', period=60, enabled=True):
         self.period = period
         self.enabled = enabled
         self.running = False
@@ -123,7 +157,8 @@ class RESTRTCMonitor:
         self.turn_tls = turn_tls
         self.turn_rest_tls_header = turn_rest_tls_header
 
-        self.on_rtc_config = lambda stun_servers, turn_servers, rtc_config: logger.warning("unhandled on_rtc_config")
+        self.on_rtc_config = lambda stun_servers, turn_servers, rtc_config: \
+            logger.warning("unhandled on_rtc_config")
 
     async def start(self):
         if self.enabled:
@@ -131,27 +166,45 @@ class RESTRTCMonitor:
             while self.running:
                 if self.enabled and int(time.time()) % self.period == 0:
                     try:
-                        stun_servers, turn_servers, rtc_config = await asyncio.to_thread(fetch_turn_rest, self.turn_rest_uri, self.turn_rest_username, self.turn_rest_username_auth_header, self.turn_protocol, self.turn_rest_protocol_header, self.turn_tls, self.turn_rest_tls_header)
-                        await asyncio.to_thread(self.on_rtc_config, stun_servers, turn_servers, rtc_config)
+                        stun_servers, turn_servers, rtc_config = \
+                            await asyncio.to_thread(
+                                fetch_turn_rest, self.turn_rest_uri,
+                                self.turn_rest_username,
+                                self.turn_rest_username_auth_header,
+                                self.turn_protocol,
+                                self.turn_rest_protocol_header,
+                                self.turn_tls, self.turn_rest_tls_header
+                            )
+                        await asyncio.to_thread(
+                            self.on_rtc_config, stun_servers, turn_servers,
+                            rtc_config
+                        )
                     except Exception as e:
-                        logger.warning("could not fetch TURN REST config in periodic monitor: {}".format(e))
+                        logger.warning(
+                            "could not fetch TURN REST config in periodic monitor: "
+                            f"{e}"
+                        )
                 await asyncio.sleep(0.5)
             logger.info("TURN REST RTC monitor stopped")
 
     async def stop(self):
         self.running = False
+
+
 class RTCConfigFileMonitor:
     def __init__(self, rtc_file, enabled=True):
         self.enabled = enabled
         self.running = False
         self.rtc_file = rtc_file
 
-        self.on_rtc_config = lambda stun_servers, turn_servers, rtc_config: logger.warning("unhandled on_rtc_config")
+        self.on_rtc_config = lambda stun_servers, turn_servers, rtc_config: \
+            logger.warning("unhandled on_rtc_config")
 
         self.observer = Observer()
         self.file_event_handler = FileSystemEventHandler()
         self.file_event_handler.on_closed = self.event_handler
-        self.observer.schedule(self.file_event_handler, self.rtc_file, recursive=False)
+        self.observer.schedule(self.file_event_handler, self.rtc_file,
+                               recursive=False)
 
     def event_handler(self, event):
         if type(event) is FileClosedEvent:
@@ -159,10 +212,14 @@ class RTCConfigFileMonitor:
             try:
                 with open(self.rtc_file, 'rb') as f:
                     data = f.read()
-                    stun_servers, turn_servers, rtc_config = parse_rtc_config(data)
+                    stun_servers, turn_servers, rtc_config = parse_rtc_config(
+                        data
+                    )
                     self.on_rtc_config(stun_servers, turn_servers, rtc_config)
             except Exception as e:
-                logger.warning("could not read RTC JSON file: {}: {}".format(self.rtc_file, e))
+                logger.warning(
+                    f"could not read RTC JSON file: {self.rtc_file}: {e}"
+                )
 
     async def start(self):
         if self.enabled:
@@ -173,6 +230,8 @@ class RTCConfigFileMonitor:
         await asyncio.to_thread(self.observer.stop)
         logger.info("RTC config file monitor stopped")
         self.running = False
+
+
 def generate_rtc_config(
     turn_host,
     turn_port,
@@ -218,6 +277,8 @@ def generate_rtc_config(
         }
     )
     return json.dumps(rtc_config, indent=2)
+
+
 def make_turn_rtc_config_json_legacy(
     turn_host,
     turn_port,
@@ -255,6 +316,8 @@ def make_turn_rtc_config_json_legacy(
         }
     )
     return json.dumps(rtc_config, indent=2)
+
+
 def parse_rtc_config(data):
     ice_servers = json.loads(data)["iceServers"]
     stun_uris = []
@@ -291,6 +354,8 @@ def parse_rtc_config(data):
                 )
                 turn_uris.append(turn_uri)
     return stun_uris, turn_uris, data
+
+
 def fetch_turn_rest(
     uri,
     user,
@@ -324,6 +389,8 @@ def fetch_turn_rest(
     if not data:
         raise Exception("data from REST API service was empty")
     return parse_rtc_config(data)
+
+
 def fetch_cloudflare_turn(turn_token_id, api_token, ttl=86400):
     auth_headers = {
         "authorization": f"Bearer {api_token}",
@@ -343,11 +410,15 @@ def fetch_cloudflare_turn(turn_token_id, api_token, ttl=86400):
             f"could not obtain Cloudflare TURN credentials, status was: {resp.status}"
         )
     return json.load(data)
+
+
 async def wait_for_app_ready(ready_file, app_wait_ready=False):
     logger.info("Waiting for streaming app ready")
     logging.debug("app_wait_ready=%s, ready_file=%s" % (app_wait_ready, ready_file))
     while app_wait_ready and not os.path.exists(ready_file):
         await asyncio.sleep(0.2)
+
+
 def set_json_app_argument(config_path, key, value):
     if not os.path.exists(config_path):
         with open(config_path, "w") as f:
@@ -359,75 +430,78 @@ def set_json_app_argument(config_path, key, value):
         json.dump(json_data, f)
     return True
 
-# --- Helper Monitoring Functions for Websocket Mode (Added to main.py) ---
-# These functions will be started as asyncio tasks within the ws_handler
 
 async def _collect_system_stats_ws(shared_data, interval_seconds=1):
-    """Collects system stats and updates shared_data['system'] periodically."""
-    data_logger.debug(f"System monitor loop (WS mode) started, collection interval: {interval_seconds}s")
+    data_logger.debug(
+        f"System monitor loop (WS mode) started, collection interval: "
+        f"{interval_seconds}s"
+    )
     try:
         while True:
-            # Get system stats
             cpu_percent = psutil.cpu_percent()
             mem = psutil.virtual_memory()
             mem_total = mem.total
             mem_used = mem.used
 
-            # Update shared dictionary (simple assignment is thread-safe for dict items)
             shared_data["system"] = {
                 "type": "system_stats",
                 "timestamp": datetime.now().isoformat(),
-                "cpu_percent": cpu_percent, # Percentage (float)
-                "mem_total": mem_total, # bytes (int)
-                "mem_used": mem_used # bytes (int)
+                "cpu_percent": cpu_percent,
+                "mem_total": mem_total,
+                "mem_used": mem_used
             }
-            # data_logger.debug("Collected system stats.")
 
-            # Sleep for the collection interval
             await asyncio.sleep(interval_seconds)
     except asyncio.CancelledError:
         data_logger.info("System monitor loop (WS mode) cancelled.")
     except Exception as e:
-        data_logger.error(f"System monitor loop (WS mode) error: {e}", exc_info=True)
+        data_logger.error(
+            f"System monitor loop (WS mode) error: {e}", exc_info=True
+        )
 
 
 async def _collect_gpu_stats_ws(shared_data, gpu_id=0, interval_seconds=1):
-    """Collects GPU stats and updates shared_data['gpu'] periodically."""
-    data_logger.debug(f"GPU monitor loop (WS mode) started for GPU {gpu_id}, collection interval: {interval_seconds}s")
+    data_logger.debug(
+        f"GPU monitor loop (WS mode) started for GPU {gpu_id}, collection interval: "
+        f"{interval_seconds}s"
+    )
     try:
         gpus = GPUtil.getGPUs()
         if not gpus:
-            data_logger.warning("No GPUs detected for GPU monitor (WS mode). Loop will not run.")
-            return # Exit if no GPUs are available
+            data_logger.warning(
+                "No GPUs detected for GPU monitor (WS mode). Loop will not run."
+            )
+            return
 
         if gpu_id < 0 or gpu_id >= len(gpus):
-             data_logger.error(f"Invalid GPU ID {gpu_id} for GPU monitor (WS mode). Only {len(gpus)} GPUs found (0 to {len(gpus)-1}).")
-             return # Exit if gpu_id is out of range
+             data_logger.error(
+                 f"Invalid GPU ID {gpu_id} for GPU monitor (WS mode). Only "
+                 f"{len(gpus)} GPUs found (0 to {len(gpus)-1})."
+             )
+             return
 
         while True:
             try:
-                # Get GPU stats for the specified ID
                 gpu = gpus[gpu_id]
-                load = gpu.load # Utilization (0 to 1)
-                memory_total = gpu.memoryTotal * 1024 * 1024 # Convert MiB to bytes
-                memory_used = gpu.memoryUsed * 1024 * 1024 # Convert MiB to bytes
+                load = gpu.load
+                memory_total = gpu.memoryTotal * 1024 * 1024
+                memory_used = gpu.memoryUsed * 1024 * 1024
 
-                # Update shared dictionary
                 shared_data["gpu"] = {
                     "type": "gpu_stats",
                     "timestamp": datetime.now().isoformat(),
                     "gpu_id": gpu_id,
-                    "load": load, # 0.0 to 1.0 (float)
-                    "memory_total": memory_total, # bytes (int)
-                    "memory_used": memory_used # bytes (int)
+                    "load": load,
+                    "memory_total": memory_total,
+                    "memory_used": memory_used
                 }
-                data_logger.debug("Collected GPU stats.")
 
             except Exception as e:
-                 # Log the error but continue the loop, maybe the issue is temporary
-                 data_logger.error(f"GPU monitor (WS mode): Error getting GPU stats for ID {gpu_id}: {e}")
+                 data_logger.error(
+                     f"GPU monitor (WS mode): Error getting GPU stats for ID "
+                     f"{gpu_id}: {e}"
+                 )
 
-            # Sleep for the collection interval
             await asyncio.sleep(interval_seconds)
     except asyncio.CancelledError:
         data_logger.info("GPU monitor loop (WS mode) cancelled.")
@@ -438,60 +512,44 @@ async def _collect_gpu_stats_ws(shared_data, gpu_id=0, interval_seconds=1):
 async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5):
     try:
         while True:
-            # Wait for the send interval
             await asyncio.sleep(interval_seconds)
 
-            # Get latest stats from the shared dictionary
-            # Use .pop() to get the data and clear it from the shared dict
-            # This ensures each collected stat is sent at most once per send interval.
-            # If data wasn't updated since the last send, pop will return None.
             system_stats = shared_data.pop("system", None)
             gpu_stats = shared_data.pop("gpu", None)
 
-            # Send stats if available
             try:
-                # Send system stats if available
-                if system_stats:
-                    json_data = json.dumps(system_stats)
-                    # Check if websocket is still open before sending
-                    if websocket:
-                         await websocket.send(json_data)
-                         data_logger.debug("Sent system stats over WS.")
-                    else:
-                         data_logger.info("Stats sender: WebSocket closed, cannot send system stats.")
-                         break # Exit loop if connection is closed
+                if websocket:
+                    if system_stats:
+                        json_data = json.dumps(system_stats)
+                        await websocket.send(json_data)
+                        data_logger.debug("Sent system stats over WS.")
 
-
-                # Send GPU stats if available
-                if gpu_stats:
-                    json_data = json.dumps(gpu_stats)
-                     # Check if websocket is still open before sending
-                    if websocket:
-                         await websocket.send(json_data)
-                         data_logger.debug("Sent GPU stats over WS.")
-                    else:
-                         data_logger.info("Stats sender: WebSocket closed, cannot send GPU stats.")
-                         break # Exit loop if connection is closed
-
+                    if gpu_stats:
+                        json_data = json.dumps(gpu_stats)
+                        await websocket.send(json_data)
+                        data_logger.debug("Sent GPU stats over WS.")
 
             except websockets.exceptions.ConnectionClosed:
                 data_logger.info("Stats sender: WebSocket connection closed.")
-                break # Exit loop if connection is closed
+                break
             except Exception as e:
-                # Log the error but continue the loop, maybe connection will recover or close later
-                data_logger.error(f"Stats sender: Error sending data over websocket: {e}")
-
+                data_logger.error(
+                    f"Stats sender: Error sending data over websocket: {e}"
+                )
 
     except asyncio.CancelledError:
         data_logger.info("Stats sender loop (WS mode) cancelled.")
     except Exception as e:
         data_logger.error(f"Stats sender loop (WS mode) error: {e}", exc_info=True)
 
-# --- End Helper Monitoring Functions ---
-
 
 class DataStreamingServer:
-    def __init__(self, port, mode, app, uinput_mouse_socket, js_socket_path, enable_clipboard, enable_cursors, cursor_size, cursor_scale, cursor_debug):
+    ADJUSTMENT_COOL_DOWN_SECONDS = 8.0
+    DEBOUNCE_DURATION_SECONDS = 2.0
+
+    def __init__(self, port, mode, app, uinput_mouse_socket, js_socket_path,
+                 enable_clipboard, enable_cursors, cursor_size, cursor_scale,
+                 cursor_debug):
         self.port = port
         self.mode = mode
         self.server = None
@@ -499,14 +557,11 @@ class DataStreamingServer:
         self.data_ws = None
         self.app = app
 
-        # Store tasks for websockets mode monitoring/sending (initialized to None)
         self._system_monitor_task_ws = None
         self._gpu_monitor_task_ws = None
         self._stats_sender_task_ws = None
-        # Shared data structure for WS mode monitors (initialized here, reset per connection)
         self._shared_stats_ws = {}
 
-        # Input handling related attributes (kept as original)
         self.uinput_mouse_socket = uinput_mouse_socket
         self.js_socket_path = js_socket_path
         self.enable_clipboard = enable_clipboard
@@ -514,28 +569,31 @@ class DataStreamingServer:
         self.cursor_size = cursor_size
         self.cursor_scale = cursor_scale
         self.cursor_debug = cursor_debug
-        self.webrtc_input = None # Will be created in ws_handler if mode is websockets
+        self.webrtc_input = None
 
+        self._last_adjustment_timestamp = 0.0
+        self._low_fps_condition_start_timestamp = None
 
     async def ws_handler(self, websocket):
+        global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
+
         raddr = websocket.remote_address
         data_logger.info(f"Data WebSocket connected from {raddr}")
         mode_message = f"MODE {self.mode}"
         try:
             await websocket.send(mode_message)
         except websockets.exceptions.ConnectionClosed:
-             data_logger.warning(f"Connection closed immediately after connecting from {raddr}")
-             return # Exit handler if cannot send initial message
+             data_logger.warning(
+                 "Connection closed immediately after connecting from "
+                 f"{raddr}"
+             )
+             return
 
+        self.data_ws = websocket
 
-        self.data_ws = websocket # Store websocket reference
-
-        # --- Websockets Mode Specific Logic (Triggered by connection and mode) ---
         if self.mode == "websockets":
             data_logger.info("Operating in websockets mode.")
 
-            # Ensure pipelines are stopped before starting new ones
-            # Assuming app instance has pipeline_running attribute and stop_ws_pipeline method
             if hasattr(self.app, 'pipeline_running') and self.app.pipeline_running:
                 data_logger.info("Stopping existing pipeline before starting WS pipeline.")
                 if hasattr(self.app, 'stop_ws_pipeline'):
@@ -543,47 +601,40 @@ class DataStreamingServer:
                 else:
                      data_logger.warning("app instance has no stop_ws_pipeline method.")
 
-
             data_logger.info("Starting websocket video pipeline.")
-            # Assuming start_ws_pipeline method exists on app instance
             if hasattr(self.app, 'start_ws_pipeline'):
-                 self.app.start_ws_pipeline() # Start video pipeline
+                 self.app.start_ws_pipeline()
             else:
                  data_logger.error("app instance has no start_ws_pipeline method.")
 
-
             data_logger.info("Building and starting websocket audio pipeline.")
-            # Assuming build_audio_ws_pipeline method exists on app instance
             if hasattr(self.app, 'build_audio_ws_pipeline'):
-                 self.app.build_audio_ws_pipeline() # Build and start the audio pipeline
+                 self.app.build_audio_ws_pipeline()
             else:
                  data_logger.error("app instance has no build_audio_ws_pipeline method.")
 
-
-            # Initialize shared data structure for monitors (reset per connection)
             self._shared_stats_ws = {}
 
-            # Create and start background monitor tasks (collection interval 1s)
-            # Pass the shared dictionary and websocket to the tasks
-            # Assuming app instance has gpu_id attribute
-            gpu_id_for_monitor = getattr(self.app, 'gpu_id', 0) # Default to 0 if not found
-            self._system_monitor_task_ws = asyncio.create_task(_collect_system_stats_ws(self._shared_stats_ws, interval_seconds=1))
-            self._gpu_monitor_task_ws = asyncio.create_task(_collect_gpu_stats_ws(self._shared_stats_ws, gpu_id=gpu_id_for_monitor, interval_seconds=1))
-            # Create and start the sender task that reads shared_stats and sends data (send interval 5s)
-            self._stats_sender_task_ws = asyncio.create_task(_send_stats_periodically_ws(websocket, self._shared_stats_ws, interval_seconds=5))
+            gpu_id_for_monitor = getattr(self.app, 'gpu_id', 0)
+            self._system_monitor_task_ws = asyncio.create_task(
+                _collect_system_stats_ws(self._shared_stats_ws, interval_seconds=1)
+            )
+            self._gpu_monitor_task_ws = asyncio.create_task(
+                _collect_gpu_stats_ws(self._shared_stats_ws,
+                                      gpu_id=gpu_id_for_monitor,
+                                      interval_seconds=1)
+            )
+            self._stats_sender_task_ws = asyncio.create_task(
+                _send_stats_periodically_ws(websocket, self._shared_stats_ws,
+                                            interval_seconds=5)
+            )
 
-            data_logger.info("System/GPU monitor and sender tasks started for websockets mode.")
+            data_logger.info(
+                "System/GPU monitor and sender tasks started for websockets mode."
+            )
 
-            # Setup WebRTCInput for processing incoming messages from this websocket
-            # Assuming WebRTCInput can be instantiated and its methods like on_message
-            # can be called with incoming messages from this websocket.
-            # Note: WebRTCInput's send methods (like send_cursor_data) are likely designed
-            # for the WebRTC data channel. Without modifying input_handler.py, these
-            # outgoing messages from webrtc_input triggered by client input will NOT
-            # be sent over this raw websocket. This is a limitation based on the strict
-            # requirement not to touch other files.
             self.webrtc_input = WebRTCInput(
-                self.app, # Pass the main app instance for command execution
+                self.app,
                 self.uinput_mouse_socket,
                 self.js_socket_path,
                 self.enable_clipboard,
@@ -592,173 +643,397 @@ class DataStreamingServer:
                 self.cursor_scale,
                 self.cursor_debug,
             )
-            # Call connect() - this likely sets up local uinput/joystick interfaces, not the websocket connection itself.
-            # We don't call a special websocket connect method here, relying on webrtc_input's existing connect logic.
             try:
-                 # This connect might block or raise errors if the underlying implementation
-                 # expects a WebRTC data channel to become available, which won't happen here.
-                 # This is a potential point of failure if input_handler.py is not adapted.
                  await self.webrtc_input.connect()
                  data_logger.info("WebRTCInput local connections established.")
             except Exception as e:
-                 data_logger.error(f"Failed to establish WebRTCInput local connections: {e}", exc_info=True)
-                 # Decide if this is a fatal error or if the handler should continue without input handling
-                 # For now, log and continue, assuming input messages will just be ignored if webrtc_input is None
-
+                 data_logger.error(
+                     f"Failed to establish WebRTCInput local connections: {e}",
+                     exc_info=True
+                 )
 
         else:
-            # In WebRTC mode, input handling and monitoring are done via data channels and separate monitors
-            # This handler is primarily for the initial MODE message or other potential future uses
-            data_logger.info("Operating in webrtc mode. Data websocket handler is minimal.")
-            self.webrtc_input = None # No WebRTCInput instance needed in this handler for webrtc mode
+            data_logger.info(
+                "Operating in webrtc mode. Data websocket handler is minimal."
+            )
+            self.webrtc_input = None
 
-
-        # --- Main message processing loop ---
-        # This loop runs for the duration of the websocket connection
         try:
             async for message in websocket:
-                # Process incoming messages regardless of mode, but input handling only if webrtc_input is set
-                if self.mode == "websockets" and self.webrtc_input:
-                    # Handle specific control messages first
+                if self.mode == "websockets":
                     if message.startswith("r,"):
                         res = message[2:]
-                        on_resize_handler(res, self.app) # Use main app instance
+                        on_resize_handler(res, self.app)
                     elif message.startswith("s,"):
                         scale = message[2:]
                         try:
                             scale = float(scale)
-                            on_scaling_ratio_handler(scale, self.app) # Use main app instance
+                            on_scaling_ratio_handler(scale, self.app)
                         except ValueError:
                             logger.error(f"Invalid scale value received: {scale}")
-                            # Optionally send error back to client
-                            # await websocket.send("ERROR Invalid scale value")
+                    elif message.startswith("cfps,"):
+                      try:
+                          parts = message.split(",")
+                          if len(parts) != 2:
+                              print(f"Invalid cfps message format: {message}")
+                              continue
+                          current_cfps_str = parts[1]
+                          current_cfps = int(float(current_cfps_str))
+                          print('Current client Frame Rate: ' + str(current_cfps))
 
-                    # Add other control messages like SET_VIDEO_BITRATE, SET_AUDIO_BITRATE, SET_ENCODER, SET_FRAMERATE here
-                    # These messages also need to interact with the main app instance (self.app)
-                    # Example for SET_VIDEO_BITRATE (assuming app has stop_ws_pipeline, start_ws_pipeline, video_bitrate)
+                          now = time.monotonic()
+
+                          if now - self._last_adjustment_timestamp < \
+                             self.ADJUSTMENT_COOL_DOWN_SECONDS:
+                              self._low_fps_condition_start_timestamp = None
+                              continue
+
+                          is_low_fps_condition_met = (
+                              current_cfps != 0 and
+                              current_cfps < TARGET_FRAMERATE - FPS_ADJUST_THRESHOLD
+                          )
+
+                          if is_low_fps_condition_met:
+                              if self._low_fps_condition_start_timestamp is None:
+                                  self._low_fps_condition_start_timestamp = now
+
+                              elif now - self._low_fps_condition_start_timestamp >= \
+                                   self.DEBOUNCE_DURATION_SECONDS:
+                                  new_framerate = max(
+                                      MIN_FRAMERATE, TARGET_FRAMERATE - FPS_ADJUST_STEP
+                                  )
+                                  new_bitrate_kbps = max(
+                                      MIN_VIDEO_BITRATE_KBPS,
+                                      TARGET_VIDEO_BITRATE_KBPS - BITRATE_ADJUST_STEP_KBPS
+                                  )
+
+                                  if new_framerate < TARGET_FRAMERATE or \
+                                     new_bitrate_kbps < TARGET_VIDEO_BITRATE_KBPS:
+                                      print(
+                                          f"Client FPS ({current_cfps}) persistently low "
+                                          f"(>{FPS_ADJUST_THRESHOLD} below target "
+                                          f"{TARGET_FRAMERATE}) for "
+                                          f"{self.DEBOUNCE_DURATION_SECONDS}s. "
+                                          f"Adjusting server FPS to {new_framerate} "
+                                          f"and bitrate to {new_bitrate_kbps}kbps."
+                                      )
+
+                                      if hasattr(self.app, 'pipeline_running') and \
+                                         self.app.pipeline_running:
+                                          if hasattr(self.app, 'stop_ws_pipeline'):
+                                              await self.app.stop_ws_pipeline()
+                                          else:
+                                              print(
+                                                  "Warning: app instance has no "
+                                                  "stop_ws_pipeline method."
+                                              )
+
+                                      TARGET_FRAMERATE = new_framerate
+                                      TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps
+
+                                      if hasattr(self.app, 'framerate'):
+                                           self.app.framerate = TARGET_FRAMERATE
+                                      if hasattr(self.app, 'video_bitrate'):
+                                           self.app.video_bitrate = TARGET_VIDEO_BITRATE_KBPS
+
+                                      self._last_adjustment_timestamp = time.monotonic()
+
+                                      if hasattr(self.app, 'start_ws_pipeline'):
+                                          self.app.start_ws_pipeline()
+                                          print(
+                                              "Pipeline stopped and restarted with "
+                                              "adjusted FPS and bitrate. Starting "
+                                              "cool-down."
+                                          )
+                                      else:
+                                          print(
+                                              "Error: app instance has no "
+                                              "start_ws_pipeline method after stop."
+                                          )
+                                      if hasattr(self.app, 'build_audio_ws_pipeline'):
+                                           self.app.build_audio_ws_pipeline()
+                                      else:
+                                           print(
+                                               "Warning: app instance has no "
+                                               "build_audio_ws_pipeline method."
+                                           )
+
+                                      self._low_fps_condition_start_timestamp = None
+
+                                  pass
+
+                          else:
+                              self._low_fps_condition_start_timestamp = None
+
+                      except ValueError:
+                          print(
+                              "Error: Invalid cfps value received (not a number): "
+                              f"{message}"
+                          )
+                      except Exception as e:
+                          print(f"Error processing cfps message: {e}")
+                          traceback.print_exc()
+
                     elif message.startswith("SET_VIDEO_BITRATE,"):
                         try:
                             parts = message.split(",")
                             if len(parts) != 2:
-                                logger.error(f"Invalid SET_VIDEO_BITRATE message format: {message}")
-                                continue # Use continue instead of return to keep the loop alive
+                                logger.error(
+                                    "Invalid SET_VIDEO_BITRATE message format: "
+                                    f"{message}"
+                                )
+                                await websocket.send(
+                                    "ERROR Invalid SET_VIDEO_BITRATE format"
+                                )
+                                continue
                             new_bitrate_kbps = int(parts[1])
-                            # In websockets mode, stop/restart pipeline to apply bitrate change
-                            if hasattr(self.app, 'pipeline_running') and self.app.pipeline_running:
+                            logger.info(
+                                f"Received SET_VIDEO_BITRATE: {new_bitrate_kbps}kbps"
+                            )
+
+                            TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps
+
+                            if hasattr(self.app, 'pipeline_running') and \
+                               self.app.pipeline_running:
                                 if hasattr(self.app, 'stop_ws_pipeline'):
                                      await self.app.stop_ws_pipeline()
                                 else:
-                                     logger.warning("app instance has no stop_ws_pipeline method.")
+                                     logger.warning(
+                                         "app instance has no stop_ws_pipeline method."
+                                     )
 
                             self.app.video_bitrate = new_bitrate_kbps
+
                             if hasattr(self.app, 'start_ws_pipeline'):
                                  self.app.start_ws_pipeline()
+                                 logger.info(
+                                     "Pipeline stopped and restarted with new "
+                                     "video bitrate."
+                                 )
                             else:
-                                 logger.error("app instance has no start_ws_pipeline method.")
-
-                             # If audio is also stopped by stop_ws_pipeline, rebuild/start audio too
+                                 logger.error(
+                                     "app instance has no start_ws_pipeline "
+                                     "method after stop."
+                                 )
+                                 await websocket.send(
+                                     "ERROR Failed to restart pipeline after "
+                                     "setting bitrate"
+                                 )
                             if hasattr(self.app, 'build_audio_ws_pipeline'):
                                  self.app.build_audio_ws_pipeline()
                             else:
-                                 logger.warning("app instance has no build_audio_ws_pipeline method.")
-
+                                 logger.warning(
+                                     "app instance has no build_audio_ws_pipeline "
+                                     "method."
+                                 )
                         except ValueError:
-                            logger.error(f"Invalid SET_VIDEO_BITRATE value (not an integer): {message}")
-                            await websocket.send("ERROR Invalid SET_VIDEO_BITRATE value")
+                            logger.error(
+                                "Invalid SET_VIDEO_BITRATE value (not an integer): "
+                                f"{message}"
+                            )
+                            await websocket.send(
+                                "ERROR Invalid SET_VIDEO_BITRATE value"
+                            )
                         except Exception as e:
-                            logger.error(f"Error setting video bitrate and restarting pipeline: {e}", exc_info=True)
+                            logger.error(
+                                "Error setting video bitrate and restarting pipeline: "
+                                f"{e}", exc_info=True
+                            )
                             await websocket.send("ERROR Failed to set video bitrate")
                     elif message.startswith("SET_AUDIO_BITRATE,"):
                         try:
                             parts = message.split(",")
                             if len(parts) != 2:
-                                logger.error(f"Invalid SET_AUDIO_BITRATE message format: {message}")
+                                logger.error(
+                                    "Invalid SET_AUDIO_BITRATE message format: "
+                                    f"{message}"
+                                )
+                                await websocket.send(
+                                    "ERROR Invalid SET_AUDIO_BITRATE format"
+                                )
                                 continue
                             new_bitrate_bps = int(parts[1])
-                            if hasattr(self.app, 'pipeline_running') and self.app.pipeline_running:
+                            logger.info(f"Received SET_AUDIO_BITRATE: {new_bitrate_bps}bps")
+
+                            self.app.audio_bitrate = new_bitrate_bps
+
+                            if hasattr(self.app, 'pipeline_running') and \
+                               self.app.pipeline_running:
                                 if hasattr(self.app, 'stop_ws_pipeline'):
                                      await self.app.stop_ws_pipeline()
                                 else:
-                                     logger.warning("app instance has no stop_ws_pipeline method.")
+                                     logger.warning(
+                                         "app instance has no stop_ws_pipeline method."
+                                     )
 
-                            self.app.audio_bitrate = new_bitrate_bps
                             if hasattr(self.app, 'start_ws_pipeline'):
                                  self.app.start_ws_pipeline()
+                                 logger.info(
+                                     "Pipeline stopped and restarted after "
+                                     "setting audio bitrate."
+                                 )
+                                 if hasattr(self.app, 'build_audio_ws_pipeline'):
+                                      self.app.build_audio_ws_pipeline()
+                                 else:
+                                      logger.warning(
+                                          "app instance has no build_audio_ws_pipeline "
+                                          "method."
+                                      )
                             else:
-                                 logger.error("app instance has no start_ws_pipeline method.")
-                            if hasattr(self.app, 'build_audio_ws_pipeline'):
-                                 self.app.build_audio_ws_pipeline()
-                            else:
-                                 logger.warning("app instance has no build_audio_ws_pipeline method.")
+                                 logger.error(
+                                     "app instance has no start_ws_pipeline "
+                                     "method after stop."
+                                 )
+                                 await websocket.send(
+                                     "ERROR Failed to restart pipeline after "
+                                     "setting audio bitrate"
+                                 )
                         except ValueError:
-                            logger.error(f"Invalid SET_AUDIO_BITRATE value (not an integer): {message}")
-                            await websocket.send("ERROR Invalid SET_AUDIO_BITRATE value")
+                            logger.error(
+                                "Invalid SET_AUDIO_BITRATE value (not an integer): "
+                                f"{message}"
+                            )
+                            await websocket.send(
+                                "ERROR Invalid SET_AUDIO_BITRATE value"
+                            )
                         except Exception as e:
-                            logger.error(f"Error setting audio bitrate and restarting pipeline: {e}", exc_info=True)
+                            logger.error(
+                                "Error setting audio bitrate and restarting pipeline: "
+                                f"{e}", exc_info=True
+                            )
                             await websocket.send("ERROR Failed to set audio bitrate")
                     elif message.startswith("SET_ENCODER,"):
                         try:
                             parts = message.split(",")
                             if len(parts) != 2:
-                                logger.error(f"Invalid SET_ENCODER message format: {message}")
+                                logger.error(
+                                    f"Invalid SET_ENCODER message format: {message}"
+                                )
+                                await websocket.send("ERROR Invalid SET_ENCODER format")
                                 continue
                             new_encoder_str = parts[1]
-                            if hasattr(self.app, 'pipeline_running') and self.app.pipeline_running:
+                            logger.info(f"Received SET_ENCODER: {new_encoder_str}")
+                            if hasattr(self.app, 'pipeline_running') and \
+                               self.app.pipeline_running:
                                 if hasattr(self.app, 'stop_ws_pipeline'):
                                      await self.app.stop_ws_pipeline()
                                 else:
-                                     logger.warning("app instance has no stop_ws_pipeline method.")
+                                     logger.warning(
+                                         "app instance has no stop_ws_pipeline method."
+                                     )
 
                             self.app.encoder = new_encoder_str
                             if hasattr(self.app, 'start_ws_pipeline'):
                                  self.app.start_ws_pipeline()
+                                 logger.info(
+                                     "Pipeline stopped and restarted with new encoder."
+                                 )
                             else:
-                                 logger.error("app instance has no start_ws_pipeline method.")
-                            self.app.build_audio_ws_pipeline() # Rebuild audio if needed
-                        except Exception as e: # Catch generic exception for encoder issues
-                            logger.error(f"Error setting encoder and restarting pipeline: {e}", exc_info=True)
+                                 logger.error(
+                                     "app instance has no start_ws_pipeline "
+                                     "method after stop."
+                                 )
+                                 await websocket.send(
+                                     "ERROR Failed to restart pipeline after "
+                                     "setting encoder"
+                                 )
+                            if hasattr(self.app, 'build_audio_ws_pipeline'):
+                                 self.app.build_audio_ws_pipeline()
+                            else:
+                                 logger.warning(
+                                     "app instance has no build_audio_ws_pipeline "
+                                     "method."
+                                 )
+                        except Exception as e:
+                            logger.error(
+                                "Error setting encoder and restarting pipeline: "
+                                f"{e}", exc_info=True
+                            )
                             await websocket.send("ERROR Failed to set encoder")
                     elif message.startswith("SET_FRAMERATE,"):
                         try:
                             parts = message.split(",")
                             if len(parts) != 2:
-                                logger.error(f"Invalid SET_FRAMERATE message format: {message}")
+                                logger.error(
+                                    f"Invalid SET_FRAMERATE message format: {message}"
+                                )
+                                await websocket.send("ERROR Invalid SET_FRAMERATE format")
                                 continue
                             new_framerate_int = int(parts[1])
-                            if hasattr(self.app, 'pipeline_running') and self.app.pipeline_running:
+                            logger.info(f"Received SET_FRAMERATE: {new_framerate_int}fps")
+
+                            TARGET_FRAMERATE = new_framerate_int
+
+                            if hasattr(self.app, 'pipeline_running') and \
+                               self.app.pipeline_running:
                                 if hasattr(self.app, 'stop_ws_pipeline'):
                                      await self.app.stop_ws_pipeline()
                                 else:
-                                     logger.warning("app instance has no stop_ws_pipeline method.")
+                                     logger.warning(
+                                         "app instance has no stop_ws_pipeline method."
+                                     )
 
                             self.app.framerate = new_framerate_int
+
                             if hasattr(self.app, 'start_ws_pipeline'):
                                  self.app.start_ws_pipeline()
+                                 logger.info(
+                                     "Pipeline stopped and restarted with new framerate."
+                                 )
                             else:
-                                 logger.error("app instance has no start_ws_pipeline method.")
-                            self.app.build_audio_ws_pipeline() # Rebuild audio if needed
+                                 logger.error(
+                                     "app instance has no start_ws_pipeline "
+                                     "method after stop."
+                                 )
+                                 await websocket.send(
+                                     "ERROR Failed to restart pipeline after "
+                                     "setting framerate"
+                                 )
+                            if hasattr(self.app, 'build_audio_ws_pipeline'):
+                                 self.app.build_audio_ws_pipeline()
+                            else:
+                                 logger.warning(
+                                     "app instance has no build_audio_ws_pipeline "
+                                     "method."
+                                 )
                         except ValueError:
-                            logger.error(f"Invalid SET_FRAMERATE value (not an integer): {message}")
+                            logger.error(
+                                "Invalid SET_FRAMERATE value (not an integer): "
+                                f"{message}"
+                            )
                             await websocket.send("ERROR Invalid SET_FRAMERATE value")
                         except Exception as e:
-                            logger.error(f"Error setting framerate and restarting pipeline: {e}", exc_info=True)
+                            logger.error(
+                                "Error setting framerate and restarting pipeline: "
+                                f"{e}", exc_info=True
+                            )
                             await websocket.send("ERROR Failed to set framerate")
 
                     else:
-                        await self.webrtc_input.on_message(message)
+                         if self.webrtc_input:
+                              await self.webrtc_input.on_message(message)
+                         else:
+                              data_logger.warning(
+                                  "Received message but webrtc_input is not "
+                                  f"initialized: {message}"
+                              )
 
                 elif self.mode == "webrtc":
-                    data_logger.warning(f"Received unexpected message in webrtc mode on data websocket: {message}")
-
+                    data_logger.warning(
+                        "Received unexpected message in webrtc mode on data "
+                        f"websocket: {message}"
+                    )
 
         except websockets.exceptions.ConnectionClosed:
             data_logger.info(f"Data WebSocket disconnected from {raddr}")
         except Exception as e:
-            data_logger.error(f"Error in Data WebSocket handler for {raddr}: {e}", exc_info=True)
+            data_logger.error(
+                f"Error in Data WebSocket handler for {raddr}: {e}",
+                exc_info=True
+            )
 
         finally:
             data_logger.info(f"Cleaning up Data WebSocket handler for {raddr}...")
-            # --- Stop Websockets Mode Specific Tasks ---
             if self.mode == "websockets":
                 data_logger.info("Stopping websockets mode tasks...")
                 tasks_to_cancel = []
@@ -772,82 +1047,76 @@ class DataStreamingServer:
                     self._stats_sender_task_ws.cancel()
                     tasks_to_cancel.append(self._stats_sender_task_ws)
 
-                # Wait for monitor tasks to finish cancelling
                 if tasks_to_cancel:
                      data_logger.info("Waiting for websockets mode tasks to cancel...")
-                     # Use return_exceptions=True so one task failing to cancel doesn't stop others
                      await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
                      data_logger.info("Websockets mode tasks cancelled.")
 
-                # Stop pipelines started in websockets mode
                 data_logger.info("Stopping websockets mode pipelines.")
-                # Assuming app instance has stop_ws_pipeline method
-                if hasattr(self.app, 'stop_ws_pipeline'):
-                    await self.app.stop_ws_pipeline()
-                else:
-                    data_logger.warning("app instance has no stop_ws_pipeline method.")
+                if hasattr(self.app, 'pipeline_running') and self.app.pipeline_running:
+                    if hasattr(self.app, 'stop_ws_pipeline'):
+                        await self.app.stop_ws_pipeline()
+                    else:
+                        data_logger.warning("app instance has no stop_ws_pipeline method.")
 
-
-                # Disconnect input handler if it was created and connected
                 if self.webrtc_input:
                     data_logger.info("Disconnecting WebRTCInput.")
-                    # Assuming disconnect method exists and cleans up local resources
-                    # Note: webrtc_input.disconnect() likely doesn't know about this raw websocket
-                    # without changes to input_handler.py. It will still try to clean up data channel.
                     if hasattr(self.webrtc_input, 'disconnect'):
                          await self.webrtc_input.disconnect()
                     else:
-                         data_logger.warning("webrtc_input instance has no disconnect method.")
+                         data_logger.warning(
+                             "webrtc_input instance has no disconnect method."
+                         )
                     self.webrtc_input = None
-            # --- End Stop Websockets Mode Specific Tasks ---
 
-            self.data_ws = None # Clear websocket reference
+                self._last_adjustment_timestamp = 0.0
+                self._low_fps_condition_start_timestamp = None
+
+            self.data_ws = None
             data_logger.info(f"Data WebSocket handler finished for {raddr}")
-
 
     async def run_server(self):
         self.stop_server = asyncio.Future()
-        # Use functools.partial to pass self to ws_handler if not already handled by websockets library
-        # websockets.serve automatically binds the instance for methods, so partial isn't strictly needed for self
         try:
             async with websockets.asyncio.server.serve(
-                self.ws_handler, '0.0.0.0', self.port, compression=None # Disable compression if client doesn't support it well
+                self.ws_handler,
+                '0.0.0.0',
+                self.port,
+                compression=None
             ) as self.server:
-                data_logger.info(f"Data WebSocket Server listening on port {self.port}")
+                data_logger.info(
+                    f"Data WebSocket Server listening on port {self.port}"
+                )
                 await self.stop_server
         except Exception as e:
-             data_logger.error(f"Exception starting Data WebSocket Server: {e}", exc_info=True)
-             # Re-raise the exception so main's error handling can catch it and perform cleanup
+             data_logger.error(
+                 f"Exception starting Data WebSocket Server: {e}",
+                 exc_info=True
+             )
              raise
-
 
     async def stop(self):
         logger_signaling.info("Stopping Data WebSocket Server...")
-        # Signal the server to stop accepting new connections
         if self.stop_server is not None and not self.stop_server.done():
             self.stop_server.set_result(True)
-        # Close existing connections and wait for the server to shut down
-        # --- FIX for AttributeError: 'NoneType' object has no attribute 'close' ---
-        # Check if self.server was successfully assigned before calling close()
         if self.server:
             try:
-                self.server.close() # Initiate server shutdown
-                # Note: wait_closed waits for all connections handled by this server instance to close.
-                # The ws_handler's finally block should run for each closing connection,
-                # ensuring its specific tasks (_system_monitor_task_ws etc.) are cancelled.
+                self.server.close()
                 await self.server.wait_closed()
             except Exception as e:
-                 data_logger.warning(f"Error waiting for Data WebSocket server to close: {e}")
-        # --- End FIX ---
+                 data_logger.warning(
+                     f"Error waiting for Data WebSocket server to close: {e}"
+                 )
 
         data_logger.info("Data WebSocket Server Stopped.")
+
 
 class WebRTCSimpleServer(object):
     def __init__(self, options):
         self.peers = dict()
         self.sessions = dict()
         self.rooms = dict()
-        self.server = None # Initialize self.server to None
+        self.server = None
         self.stop_server = None
         self.addr = options.addr
         self.port = options.port
@@ -890,11 +1159,14 @@ class WebRTCSimpleServer(object):
                 raise Exception(
                     "missing basic_auth_password when using enable_basic_auth option."
                 )
+
     def set_rtc_config(self, rtc_config):
         self.rtc_config = rtc_config
+
     def read_file(self, path):
         with open(path, "rb") as f:
             return f.read()
+
     async def cache_file(self, full_path):
         data, cached_at = self.http_cache.get(full_path, (None, None))
         now = time.time()
@@ -902,6 +1174,7 @@ class WebRTCSimpleServer(object):
             data = await asyncio.to_thread(self.read_file, full_path)
             self.http_cache[full_path] = (data, now)
         return data
+
     def http_response(self, status, response_headers, body):
         if isinstance(body, str):
             body = body.encode()
@@ -918,6 +1191,7 @@ class WebRTCSimpleServer(object):
                 del headers[key]
             headers[key] = value
         return websockets.http11.Response(status.value, status.phrase, headers, body)
+
     async def process_request(self, server_root, connection, request):
         path = request.path
         request_headers = request.headers
@@ -1025,6 +1299,7 @@ class WebRTCSimpleServer(object):
         response_headers["Content-Length"] = str(len(body))
         web_logger.info("HTTP GET {} 200 OK".format(path))
         return self.http_response(http.HTTPStatus.OK, response_headers, body)
+
     async def recv_msg_ping(self, ws, raddr):
         msg = None
         while msg is None:
@@ -1034,6 +1309,7 @@ class WebRTCSimpleServer(object):
                 web_logger.info("Sending keepalive ping to {!r} in recv".format(raddr))
                 await ws.ping()
         return msg
+
     async def cleanup_session(self, uid):
         if uid in self.sessions:
             other_id = self.sessions[uid]
@@ -1047,6 +1323,7 @@ class WebRTCSimpleServer(object):
                     wso, oaddr, _, _ = self.peers[other_id]
                     del self.peers[other_id]
                     await wso.close()
+
     async def cleanup_room(self, uid, room_id):
         room_peers = self.rooms[room_id]
         if uid not in room_peers:
@@ -1059,6 +1336,7 @@ class WebRTCSimpleServer(object):
                 "room {}: {} -> {}: {}".format(room_id, uid, pid, msg)
             )
             await wsp.send(msg)
+
     async def remove_peer(self, uid):
         await self.cleanup_session(uid)
         if uid in self.peers:
@@ -1070,6 +1348,7 @@ class WebRTCSimpleServer(object):
             logger_signaling.info(
                 "Disconnected from peer {!r} at {!r}".format(uid, raddr)
             )
+
     async def connection_handler(self, ws, uid, meta=None):
         raddr = ws.remote_address
         peer_status = None
@@ -1167,6 +1446,7 @@ class WebRTCSimpleServer(object):
                 logger_signaling.info(
                     "Ignoring unknown message {!r} from {!r}".format(msg, uid)
                 )
+
     async def hello_peer(self, ws):
         raddr = ws.remote_address
         hello = await ws.recv()
@@ -1187,6 +1467,7 @@ class WebRTCSimpleServer(object):
             meta = json.loads(base64.b64decode(metab64str))
         await ws.send("HELLO")
         return uid, meta
+
     def get_https_certs(self):
         cert_pem = (
             os.path.abspath(self.https_cert)
@@ -1197,6 +1478,7 @@ class WebRTCSimpleServer(object):
             os.path.abspath(self.https_key) if os.path.isfile(self.https_key) else None
         )
         return cert_pem, key_pem
+
     def get_ssl_ctx(self, https_server=True):
         if not self.enable_https:
             return None
@@ -1218,6 +1500,7 @@ class WebRTCSimpleServer(object):
             )
             sys.exit(1)
         return sslctx
+
     async def run(self):
         async def handler(ws):
             raddr = ws.remote_address
@@ -1246,7 +1529,7 @@ class WebRTCSimpleServer(object):
         )
         http_handler = functools.partial(self.process_request, self.web_root)
         self.stop_server = asyncio.Future()
-        try: # Add try block around serve to handle potential startup errors
+        try:
             async with websockets.asyncio.server.serve(
                 handler,
                 self.addr,
@@ -1254,33 +1537,28 @@ class WebRTCSimpleServer(object):
                 ssl=sslctx,
                 process_request=http_handler,
                 max_queue=16,
-            ) as self.server: # self.server is assigned here
+            ) as self.server:
                 await self.stop_server
             if self.enable_https:
                 asyncio.create_task(self.check_server_needs_restart())
         except Exception as e:
             logger_signaling.error(f"Exception starting WebRTCSimpleServer: {e}", exc_info=True)
-            self.server = None # Ensure server is None if startup fails
-            raise # Re-raise to be caught by main's error handling
-
+            self.server = None
+            raise
 
     async def stop(self):
         logger_signaling.info("Stopping server... ")
-        if self.stop_server is not None and not self.stop_server.done(): # Check if stop_server exists and is not already done
+        if self.stop_server is not None and not self.stop_server.done():
             self.stop_server.set_result(True)
-        # --- FIX for AttributeError: 'NoneType' object has no attribute 'close' ---
-        # Check if self.server was successfully assigned before calling close()
         if self.server:
             try:
                 self.server.close()
                 await self.server.wait_closed()
             except Exception as e:
                 logger_signaling.warning(f"Error waiting for WebRTCSimpleServer to close: {e}")
-        # --- End FIX ---
-        else:
-             logger_signaling.info("WebRTCSimpleServer was not started or failed to initialize.")
 
         logger_signaling.info("Stopped.")
+
     def check_cert_changed(self):
         cert_pem, key_pem = self.get_https_certs()
         mtime = max(os.stat(key_pem).st_mtime, os.stat(cert_pem).st_mtime)
@@ -1291,6 +1569,7 @@ class WebRTCSimpleServer(object):
             self.cert_mtime = mtime
             return True
         return False
+
     async def check_server_needs_restart(self):
         while self.cert_restart:
             await asyncio.sleep(1.0)
@@ -1299,10 +1578,15 @@ class WebRTCSimpleServer(object):
                 await self.stop()
                 return
 
+
 class WebRTCSignallingError(Exception):
     pass
+
+
 class WebRTCSignallingErrorNoPeer(Exception):
     pass
+
+
 class WebRTCSignalling:
     def __init__(
         self,
@@ -1322,27 +1606,24 @@ class WebRTCSignalling:
         self.basic_auth_user = basic_auth_user
         self.basic_auth_password = basic_auth_password
         self.conn = None
-        self.on_ice = lambda mlineindex, candidate: logger_webrtc_signalling.warning(
-            "unhandled ice event"
-        )
-        self.on_sdp = lambda sdp_type, sdp: logger_webrtc_signalling.warning(
-            "unhandled sdp event"
-        )
-        self.on_connect = lambda: logger_webrtc_signalling.warning(
-            "unhandled on_connect callback"
-        )
-        self.on_disconnect = lambda: logger_webrtc_signalling.warning(
-            "unhandled on_disconnect callback"
-        )
-        self.on_session = lambda peer_id, meta: logger_webrtc_signalling.warning(
-            "unhandled on_session callback"
-        )
+        self.on_ice = lambda mlineindex, candidate: \
+            logger_webrtc_signalling.warning("unhandled ice event")
+        self.on_sdp = lambda sdp_type, sdp: \
+            logger_webrtc_signalling.warning("unhandled sdp event")
+        self.on_connect = lambda: \
+            logger_webrtc_signalling.warning("unhandled on_connect callback")
+        self.on_disconnect = lambda: \
+            logger_webrtc_signalling.warning("unhandled on_disconnect callback")
+        self.on_session = lambda peer_id, meta: \
+            logger_webrtc_signalling.warning("unhandled on_session callback")
         self.on_error = lambda v: logger_webrtc_signalling.warning(
             "unhandled on_error callback: %s", v
         )
+
     async def setup_call(self):
         logger_webrtc_signalling.debug("setting up call")
         await self.conn.send("SESSION %d" % self.peer_id)
+
     async def connect(self):
         try:
             sslctx = None
@@ -1371,26 +1652,28 @@ class WebRTCSignalling:
             await self.conn.send("HELLO %d" % self.id)
         except websockets.exceptions.ConnectionClosed:
             await self.on_disconnect()
+
     async def send_ice(self, mlineindex, candidate):
         msg = json.dumps({"ice": {"candidate": candidate, "sdpMLineIndex": mlineindex}})
         await self.conn.send(msg)
+
     async def send_sdp(self, sdp_type, sdp):
         logger_webrtc_signalling.info("sending sdp type: %s" % sdp_type)
         logger_webrtc_signalling.debug("SDP:\n%s" % sdp)
         msg = json.dumps({"sdp": {"type": sdp_type, "sdp": sdp}})
         await self.conn.send(msg)
+
     async def stop(self):
         logger_webrtc_signalling.warning("stopping")
-        if self.conn and not self.conn.closed: # Check if conn is not None and not closed
+        if self.conn:
             await self.conn.close()
-        self.conn = None # Ensure connection object is cleared
-
+        self.conn = None
 
     async def start(self):
         if not self.conn:
-             logger_webrtc_signalling.error("Cannot start signaling loop, connection is not established.")
-             # Decide how to handle - maybe re-attempt connect or raise error?
-             # For now, return, letting the outer loop handle retries if it exists.
+             logger_webrtc_signalling.error(
+                 "Cannot start signaling loop, connection is not established."
+             )
              return
 
         try:
@@ -1458,7 +1741,9 @@ class WebRTCSignalling:
              logger_webrtc_signalling.info("Signaling connection closed.")
              await self.on_disconnect()
         except Exception as e:
-             logger_webrtc_signalling.error(f"Unexpected error in signaling loop: {e}", exc_info=True)
+             logger_webrtc_signalling.error(
+                 f"Unexpected error in signaling loop: {e}", exc_info=True
+             )
              await self.on_disconnect()
 
 
@@ -1472,6 +1757,7 @@ def on_resize_handler(res, current_app):
         if resize_display(res):
             current_app.send_remote_resolution(res)
 
+
 def on_scaling_ratio_handler(scale, current_app):
     if scale < 0.75 or scale > 2.5:
         logger.error("requested scale ratio out of bounds: {}".format(scale))
@@ -1484,6 +1770,8 @@ def on_scaling_ratio_handler(scale, current_app):
     logger.info("Setting cursor size to: {}".format(cursor_size))
     if not set_cursor_size(cursor_size):
         logger.error("failed to set cursor size to {}".format(cursor_size))
+
+
 async def main():
     if "DEV_MODE" in os.environ:
         with open("../../addons/gst-web-core/selkies-version.txt", "a"):
@@ -1765,16 +2053,22 @@ async def main():
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
-    #args.mode = 'webrtc'
+
+    global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
+    TARGET_FRAMERATE = int(args.framerate)
+    TARGET_VIDEO_BITRATE_KBPS = int(args.video_bitrate)
+
     if os.path.exists(args.json_config):
         try:
             with open(args.json_config, "r") as f:
                 json_args = json.load(f)
             for k, v in json_args.items():
                 if k == "framerate":
-                    args.framerate = str(int(v))
+                    TARGET_FRAMERATE = int(v)
+                    args.framerate = str(TARGET_FRAMERATE)
                 if k == "video_bitrate":
-                    args.video_bitrate = str(int(v))
+                    TARGET_VIDEO_BITRATE_KBPS = int(v)
+                    args.video_bitrate = str(TARGET_VIDEO_BITRATE_KBPS)
                 if k == "audio_bitrate":
                     args.audio_bitrate = str(int(v))
                 if k == "enable_resize":
@@ -1827,18 +2121,18 @@ async def main():
             await signalling.setup_call()
         else:
             logger.error("signalling error: %s", str(e))
-            await app.stop_pipeline()
+            if app: await app.stop_pipeline()
     async def on_audio_signalling_error(e):
         if isinstance(e, WebRTCSignallingErrorNoPeer):
             await asyncio.sleep(1.0)
             await audio_signalling.setup_call()
         else:
             logger.error("signalling error: %s", str(e))
-            await audio_app.stop_pipeline()
+            if audio_app: await audio_app.stop_pipeline()
     signalling.on_error = on_signalling_error
     audio_signalling.on_error = on_audio_signalling_error
-    signalling.on_disconnect = lambda: app.stop_pipeline()
-    audio_signalling.on_disconnect = lambda: audio_app.stop_pipeline()
+    signalling.on_disconnect = lambda: app.stop_pipeline() if app else None
+    audio_signalling.on_disconnect = lambda: audio_app.stop_pipeline() if audio_app else None
     signalling.on_connect = signalling.setup_call
     audio_signalling.on_connect = audio_signalling.setup_call
     turn_rest_username = args.turn_rest_username.replace(":", "-")
@@ -1934,10 +2228,10 @@ async def main():
     logger.info("initial server RTC configuration fetched")
     enable_resize = args.enable_resize.lower() == "true"
     audio_channels = int(args.audio_channels)
-    curr_fps = int(args.framerate)
+    initial_fps = TARGET_FRAMERATE
     gpu_id = int(args.gpu_id)
-    curr_video_bitrate = int(args.video_bitrate)
-    curr_audio_bitrate = int(args.audio_bitrate)
+    initial_video_bitrate = TARGET_VIDEO_BITRATE_KBPS
+    initial_audio_bitrate = int(args.audio_bitrate)
     enable_cursors = args.enable_cursors.lower() == "true"
     cursor_debug = args.debug_cursors.lower() == "true"
     cursor_size = int(args.cursor_size)
@@ -1951,20 +2245,23 @@ async def main():
         stun_servers,
         turn_servers,
         audio_channels,
-        curr_fps,
+        initial_fps,
         args.encoder,
         gpu_id,
-        curr_video_bitrate,
-        curr_audio_bitrate,
+        initial_video_bitrate,
+        initial_audio_bitrate,
         keyframe_distance,
         congestion_control,
         video_packetloss_percent,
         audio_packetloss_percent,
         data_streaming_server=None,
-        mode=args.mode # ADDED mode here
+        mode=args.mode
     )
     if not hasattr(GSTWebRTCApp, 'stop_ws_pipeline'):
         GSTWebRTCApp.stop_ws_pipeline = GSTWebRTCApp.stop_pipeline
+    if not hasattr(GSTWebRTCApp, 'build_audio_ws_pipeline'):
+        GSTWebRTCApp.build_audio_ws_pipeline = \
+            lambda self: logger.warning("build_audio_ws_pipeline not implemented.")
     app.last_resize_success = True
     data_websocket_server = DataStreamingServer(
         int(args.data_websocket_port),
@@ -1975,40 +2272,42 @@ async def main():
         args.enable_clipboard.lower(),
         enable_cursors,
         cursor_size,
-        1.0, # cursor_scale is hardcoded to 1.0 as before
+        1.0,
         cursor_debug
     )
     app.data_streaming_server = data_websocket_server
-    audio_app = GSTWebRTCApp( # Create a separate GSTWebRTCApp instance for audio
-        event_loop,
-        stun_servers,
-        turn_servers,
-        audio_channels,
-        curr_fps,
-        "opusenc", # force audio encoder to opusenc, or parameterize if needed
-        -1, # gpu_id is irrelevant for audio encoding in this pipeline.
-        curr_video_bitrate, # video bitrate not used here, just pass a dummy value.
-        curr_audio_bitrate,
-        keyframe_distance, # keyframe_distance not used here, just pass a dummy value.
-        congestion_control, # congestion_control not used here, just pass a dummy value.
-        video_packetloss_percent, # video_packetloss_percent not used here, just pass a dummy value.
-        audio_packetloss_percent,
-        data_streaming_server=data_websocket_server, # Pass the same data_streaming_server so audio can use the same websocket
-        mode=args.mode # ADDED mode here, though it should always be 'websockets' when audio_app is used in this context
-    )
-    # Link signalling callbacks (only relevant in WebRTC mode)
+    audio_app = None
+    if args.mode == 'webrtc':
+        audio_app = GSTWebRTCApp(
+            event_loop,
+            stun_servers,
+            turn_servers,
+            audio_channels,
+            initial_fps,
+            "opusenc",
+            -1,
+            initial_video_bitrate,
+            initial_audio_bitrate,
+            keyframe_distance,
+            congestion_control,
+            video_packetloss_percent,
+            audio_packetloss_percent,
+            data_streaming_server=data_websocket_server,
+            mode=args.mode
+        )
+
     if args.mode == 'webrtc':
         app.on_sdp = signalling.send_sdp
-        audio_app.on_sdp = audio_signalling.send_sdp
+        if audio_app: audio_app.on_sdp = audio_signalling.send_sdp
         app.on_ice = signalling.send_ice
-        audio_app.on_ice = audio_signalling.send_ice
+        if audio_app: audio_app.on_ice = audio_signalling.send_ice
         signalling.on_sdp = app.set_sdp
-        audio_signalling.on_sdp = audio_app.set_sdp
+        if audio_signalling: audio_signalling.on_sdp = audio_app.set_sdp if audio_app else None
         signalling.on_ice = app.set_ice
-        audio_signalling.on_ice = audio_app.set_ice
-    # on_session_handler only for WebRTC mode
-    def on_session_handler(session_peer_id, meta=None): # Modified on_session_handler - now only for WebRTC mode
-        if args.mode == 'webrtc': # Conditionally execute only in webrtc mode
+        if audio_signalling: audio_signalling.on_ice = audio_app.set_ice if audio_app else None
+
+    def on_session_handler(session_peer_id, meta=None):
+        if args.mode == 'webrtc':
             logger.info(
                 "starting session for peer id {} with meta: {}".format(
                     session_peer_id, meta
@@ -2017,26 +2316,25 @@ async def main():
             if str(session_peer_id) == str(peer_id):
                 if meta:
                     if enable_resize:
-                        if meta["res"]:
+                        if meta.get("res"):
                             on_resize_handler(meta["res"], app)
-                        if meta["scale"]:
+                        if meta.get("scale"):
                             on_scaling_ratio_handler(meta["scale"], app)
                     else:
                         logger.info("setting cursor to default size")
                         set_cursor_size(16)
-                app.start_pipeline() # Start WebRTC pipeline
-            elif str(session_peer_id) == str(audio_peer_id):
-                logger.info("starting audio pipeline (webrtc mode)") # Log for clarity in WebRTC mode
-                audio_app.start_pipeline(audio_only=True) # Start WebRTC audio pipeline
-                logger.info("WebRTC audio pipeline started (webrtc mode)") # Log for clarity in WebRTC mode
+                app.start_pipeline()
+            elif str(session_peer_id) == str(audio_peer_id) and audio_app:
+                logger.info("starting audio pipeline (webrtc mode)")
+                audio_app.start_pipeline(audio_only=True)
+                logger.info("WebRTC audio pipeline started (webrtc mode)")
             else:
                 logger.error("failed to start pipeline for peer_id: %s" % peer_id)
         else:
-            logger.debug("on_session_handler called in websockets mode - doing nothing") # Debug log for websockets mode
-
+            logger.debug("on_session_handler called in websockets mode - doing nothing")
 
     signalling.on_session = on_session_handler
-    audio_signalling.on_session = on_session_handler
+    if audio_signalling: audio_signalling.on_session = on_session_handler
     cursor_scale = 1.0
     webrtc_input = WebRTCInput(
         app,
@@ -2049,45 +2347,43 @@ async def main():
         cursor_debug,
     )
     webrtc_input.on_cursor_change = webrtc_input.send_cursor_data
+
     def data_channel_ready():
         logger.info("opened peer data channel for user input to X11")
         app.send_framerate(app.framerate)
         app.send_video_bitrate(app.video_bitrate)
-        app.send_audio_bitrate(audio_app.audio_bitrate) # Use audio_app.audio_bitrate as it manages audio bitrate
+        audio_bitrate_to_send = audio_app.audio_bitrate if audio_app else app.audio_bitrate
+        app.send_audio_bitrate(audio_bitrate_to_send)
         app.send_resize_enabled(enable_resize)
         app.send_encoder(app.encoder)
         app.send_cursor_data(app.last_cursor_sent)
-    # This callback is only for the WebRTC data channel
+
     if args.mode == 'webrtc':
         app.on_data_open = lambda: data_channel_ready()
-        app.on_data_message = webrtc_input.on_message # Incoming messages from WebRTC data channel
+        app.on_data_message = webrtc_input.on_message
 
     webrtc_input.on_video_encoder_bit_rate = lambda bitrate: set_json_app_argument(
         args.json_config, "video_bitrate", bitrate
     ) and (app.set_video_bitrate(int(bitrate)))
-    # Use audio_app in WebRTC mode, main app in Websockets mode
     webrtc_input.on_audio_encoder_bit_rate = lambda bitrate: set_json_app_argument(
         args.json_config, "audio_bitrate", bitrate
-    ) and (audio_app.set_audio_bitrate(int(bitrate)) if args.mode == 'webrtc' and audio_app else app.set_audio_bitrate(int(bitrate))) # Control audio bitrate
+    ) and (audio_app.set_audio_bitrate(int(bitrate)) if args.mode == 'webrtc' and audio_app else app.set_audio_bitrate(int(bitrate)))
 
     webrtc_input.on_mouse_pointer_visible = lambda visible: app.set_pointer_visible(
         visible
     )
-    # This callback needs to trigger sending clipboard data over the active connection
-    webrtc_input.on_clipboard_read = webrtc_input.send_clipboard_data # This will use the connection stored in webrtc_input
+    webrtc_input.on_clipboard_read = webrtc_input.send_clipboard_data
 
     def set_fps_handler(fps):
         set_json_app_argument(args.json_config, "framerate", fps)
         app.set_framerate(fps)
     webrtc_input.on_set_fps = lambda fps: set_fps_handler(fps)
 
-    # Setup resize/scaling handlers based on args
     if enable_resize:
         webrtc_input.on_resize = lambda res: on_resize_handler(res, app)
         webrtc_input.on_scaling_ratio = lambda scale: on_scaling_ratio_handler(scale, app)
     else:
         logger.info("remote resize is disabled, removing handler for on_resize/on_scaling_ratio")
-        # Replace handlers with no-op warnings
         webrtc_input.on_resize = lambda res: logger.warning(
             "remote resize is disabled, skipping resize to %s" % res
         )
@@ -2096,6 +2392,7 @@ async def main():
             % str(scale)
         )
     webrtc_input.on_ping_response = lambda latency: app.send_latency_time(latency)
+
     def enable_resize_handler(enabled, enable_res):
         set_json_app_argument(args.json_config, "enable_resize", enabled)
         if enabled:
@@ -2120,11 +2417,14 @@ async def main():
         )
     )
     gpu_mon = GPUMonitor(enabled=args.encoder.startswith("nv"))
+
     def on_gpu_stats(load, memory_total, memory_used):
         app.send_gpu_stats(load, memory_total, memory_used)
         metrics.set_gpu_utilization(load * 100)
     gpu_mon.on_stats = on_gpu_stats
+
     system_mon = SystemMonitor()
+
     def on_sysmon_timer(t):
         webrtc_input.ping_start = t
         app.send_system_stats(
@@ -2132,6 +2432,7 @@ async def main():
         )
         app.send_ping(t)
     system_mon.on_timer = on_sysmon_timer
+
     options = argparse.Namespace()
     options.addr = args.addr
     options.port = args.port
@@ -2156,6 +2457,7 @@ async def main():
     options.stun_host = args.stun_host
     options.stun_port = args.stun_port
     server = WebRTCSimpleServer(options)
+
     def mon_rtc_config(stun_servers, turn_servers, rtc_config):
         if app.webrtcbin:
             logger.info("updating STUN server")
@@ -2167,6 +2469,7 @@ async def main():
                 else:
                     app.webrtcbin.emit("add-turn-server", turn_server)
         server.set_rtc_config(rtc_config)
+
     hmac_turn_mon = HMACRTCMonitor(
         args.turn_host,
         args.turn_port,
@@ -2196,34 +2499,27 @@ async def main():
         rtc_file=args.rtc_config_json, enabled=using_rtc_config_json
     )
     rtc_file_mon.on_rtc_config = mon_rtc_config
-    try:
-        # Start the signaling server and data websocket server tasks
-        server_task = asyncio.create_task(server.run())
-        data_websocket_server_task = asyncio.create_task(data_websocket_server.run_server())
 
-        # Start Prometheus HTTP server task if enabled (only in WebRTC mode)
+    try:
+        server_task = asyncio.create_task(server.run())
+        data_websocket_server_task = asyncio.create_task(
+            data_websocket_server.run_server()
+        )
+
         metrics_http_task = None
         if args.mode == 'webrtc' and metrics:
-             if metrics.port > 0: # Only start if port is valid
+             if metrics.port > 0:
                  metrics_http_task = asyncio.create_task(metrics.start_http())
              else:
-                 logger.warning("metrics_http_port is invalid ({}), Prometheus server will not start.".format(metrics.port))
+                 logger.warning(
+                     "metrics_http_port is invalid ({}), Prometheus server "
+                     "will not start.".format(metrics.port)
+                 )
 
-
-        # Start background input monitors (Joystick, Clipboard, Cursor monitor)
-        # These run regardless of mode, they interact with local devices/sockets.
-        # Their ability to send data back to the client depends on how WebRTCInput
-        # manages its connection (data channel in WebRTC, raw websocket in WS).
-        # Assuming webrtc_input.connect() sets up local sockets (uinput, joystick).
-        webrtc_input_connect_task = asyncio.create_task(webrtc_input.connect()) # Connects local sockets
-
-        # Start Clipboard and Cursor monitors
+        webrtc_input_connect_task = asyncio.create_task(webrtc_input.connect())
         clipboard_monitor_task = asyncio.create_task(webrtc_input.start_clipboard())
         cursor_monitor_task = asyncio.create_task(webrtc_input.start_cursor_monitor())
 
-
-        # Start periodic RTC config monitors if enabled (only in WebRTC mode)
-        # These update the RTC config used by the signaling server and GStreamer app.
         rtc_monitors_tasks = []
         if args.mode == 'webrtc':
              if hmac_turn_mon and hmac_turn_mon.enabled:
@@ -2233,169 +2529,139 @@ async def main():
              if rtc_file_mon and rtc_file_mon.enabled:
                  rtc_monitors_tasks.append(asyncio.create_task(rtc_file_mon.start()))
 
-
-        # Start WebRTC/Prometheus monitors if enabled (only in WebRTC mode)
-        # These run periodically and call callbacks linked to Metrics or app.send_ methods.
         webrtc_monitors_tasks = []
         if args.mode == 'webrtc':
-            # GPU monitor for Prometheus/WebRTC data channel
             if gpu_mon and gpu_mon.enabled:
-                # Pass the gpu_id from args to the monitor start method
-                webrtc_monitors_tasks.append(asyncio.create_task(gpu_mon.start(int(args.gpu_id))))
-            # System monitor for WebRTC data channel
+                webrtc_monitors_tasks.append(
+                    asyncio.create_task(gpu_mon.start(int(args.gpu_id)))
+                )
             if system_mon and system_mon.enabled:
                  webrtc_monitors_tasks.append(asyncio.create_task(system_mon.start()))
 
-
-        # Handle GStreamer bus messages (runs continuously for both modes once pipelines are built)
-        # These tasks process messages from the GStreamer pipelines.
         gst_bus_tasks = []
         if app: gst_bus_tasks.append(asyncio.create_task(app.handle_bus_calls()))
         if audio_app: gst_bus_tasks.append(asyncio.create_task(audio_app.handle_bus_calls()))
 
-
-        # WebRTC Signaling loop (only in WebRTC mode)
-        # This section manages the WebRTC signaling client connections which trigger pipelines.
-        # This loop will run continuously in WebRTC mode, attempting to connect and start sessions.
         if args.mode == 'webrtc':
              logger.info("Starting WebRTC signaling loop.")
              while True:
                 try:
-                    # Connect signaling clients
                     await signalling.connect()
-                    await audio_signalling.connect()
+                    if audio_signalling: await audio_signalling.connect()
 
-                    # Start signaling loops (these block until connections close)
-                    # Start audio signaling loop as a task
-                    audio_signaling_start_task = asyncio.create_task(audio_signalling.start())
-                    # Start video signaling loop (this will block until connection closes)
+                    audio_signaling_start_task = None
+                    if audio_signalling:
+                         audio_signaling_start_task = asyncio.create_task(
+                             audio_signalling.start()
+                         )
                     await signalling.start()
 
-                    logger.info("WebRTC signaling loop: Signaling connection closed. Attempting to restart.")
+                    logger.info(
+                        "WebRTC signaling loop: Signaling connection closed. "
+                        "Attempting to restart."
+                    )
 
                 except (WebRTCSignallingError, websockets.exceptions.ConnectionClosed) as e:
-                    logger.error(f"WebRTC signaling loop caught signaling error or connection closed: {e}. Retrying connection in 5s.", exc_info=True)
-                    # Ensure connections are stopped before retrying
-                    if signalling: await signalling.stop()
-                    if audio_signalling: await audio_signalling.stop()
-                    # Stop pipelines if they are running
-                    if app: await app.stop_pipeline()
-                    if audio_app: await audio_app.stop_pipeline()
-                    await asyncio.sleep(5.0) # Wait before retrying
+                    logger.error(
+                        f"WebRTC signaling loop caught signaling error or connection closed: {e}. "
+                        "Retrying connection in 5s.", exc_info=True
+                    )
                 except Exception as e:
-                    logger.error(f"WebRTC signaling loop caught unexpected error: {e}. Retrying connection in 5s.", exc_info=True)
-                     # Ensure connections are stopped before retrying
+                    logger.error(
+                        f"WebRTC signaling loop caught unexpected error: {e}. "
+                        "Retrying connection in 5s.", exc_info=True
+                    )
+                finally:
                     if signalling: await signalling.stop()
                     if audio_signalling: await audio_signalling.stop()
-                    # Stop pipelines if they are running
                     if app: await app.stop_pipeline()
                     if audio_app: await audio_app.stop_pipeline()
-                    await asyncio.sleep(5.0) # Wait before retrying
+                    if audio_signaling_start_task and not audio_signaling_start_task.done():
+                        audio_signaling_start_task.cancel()
+                        try:
+                            await audio_signaling_start_task
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception as ce:
+                            logger.warning(
+                                f"Error waiting for audio signaling task cancellation: {ce}"
+                            )
+                    await asyncio.sleep(5.0)
 
-        # If in websockets mode, the main loop doesn't need to do anything after starting servers.
-        # The ws_handler handles connections and pipeline/monitor lifecycle.
-        # The server tasks created earlier keep the event loop running.
-        # We just need to wait for the server tasks to finish if the loop isn't explicitly stopped (e.g., by signal).
         elif args.mode == 'websockets':
-             logger.info("Running in websockets mode. Main loop waiting on server tasks.")
-             # Wait for the server tasks to complete (they won't unless stop is called by a signal handler or exception)
-             # Gather all top-level tasks that should keep the application running
-             running_tasks = [server_task, data_websocket_server_task, webrtc_input_connect_task, clipboard_monitor_task, cursor_monitor_task]
-             # Add metrics server task if it was started
+             logger.info(
+                 "Running in websockets mode. Main loop waiting on server tasks."
+             )
+             running_tasks = [
+                 server_task, data_websocket_server_task,
+                 webrtc_input_connect_task, clipboard_monitor_task,
+                 cursor_monitor_task
+             ]
              if metrics_http_task: running_tasks.append(metrics_http_task)
 
-             # Wait for any of these tasks to complete or be cancelled.
-             # If one exits unexpectedly, the application might need to handle it.
-             # For simplicity, we'll just wait for them. If one fails, the gather will raise an exception.
              await asyncio.gather(*running_tasks)
-
 
     except asyncio.CancelledError:
         logger.info("Main loop cancelled.")
     except Exception as e:
         logger.error("Caught unhandled exception in main: %s", e, exc_info=True)
-        sys.exit(1) # Exit with error code
+        sys.exit(1)
     finally:
         logger.info("Main loop exiting, performing cleanup.")
 
-        # Cancel all created tasks gracefully
         tasks_to_cancel = []
 
-        # Add server tasks if they are still running
         if server_task and not server_task.done(): tasks_to_cancel.append(server_task)
         if data_websocket_server_task and not data_websocket_server_task.done(): tasks_to_cancel.append(data_websocket_server_task)
         if metrics_http_task and not metrics_http_task.done(): tasks_to_cancel.append(metrics_http_task)
 
-        # Add input handler tasks
         if webrtc_input_connect_task and not webrtc_input_connect_task.done(): tasks_to_cancel.append(webrtc_input_connect_task)
         if clipboard_monitor_task and not clipboard_monitor_task.done(): tasks_to_cancel.append(clipboard_monitor_task)
         if cursor_monitor_task and not cursor_monitor_task.done(): tasks_to_cancel.append(cursor_monitor_task)
 
-        # Add GStreamer bus tasks
         if gst_bus_tasks:
              for task in gst_bus_tasks:
                  if task and not task.done(): tasks_to_cancel.append(task)
 
-
-        # In websockets mode, the monitor/sender tasks are managed within the ws_handler.
-        # When the websocket closes (either client disconnect or server stop), the handler's
-        # finally block cancels those specific tasks. So, they don't need explicit cancellation here
-        # unless the server tasks are cancelled *before* any connection is made, which is less likely
-        # for the data websocket server if the main loop waits on it.
-
-        # In WebRTC mode, cancel the specific monitors started in main
         if args.mode == 'webrtc':
-             if gpu_mon: gpu_mon.stop() # Signal stop, add task if start returns one
-             if system_mon: system_mon.stop() # Signal stop, add task if start returns one
-             # Add monitor tasks to cancel if their start methods return tasks (SystemMonitor/GPUMonitor)
-             # Based on the class definitions, they manage their own loops, so just calling stop() signals them.
-             # Need to wait for their loops to actually exit. This might require storing their tasks.
-             # Let's assume for now calling stop() is sufficient for them to exit their loops eventually.
+             if gpu_mon: gpu_mon.stop()
+             if system_mon: system_mon.stop()
 
-             # RTC monitors have awaitable stop methods
              if hmac_turn_mon: await hmac_turn_mon.stop()
              if turn_rest_mon: await turn_rest_mon.stop()
              if rtc_file_mon: await rtc_file_mon.stop()
 
-             # Signaling clients have awaitable stop methods
              if signalling: await signalling.stop()
              if audio_signalling: await audio_signalling.stop()
 
-
-        # Cancel tasks and wait for them
         if tasks_to_cancel:
             logger.info(f"Cancelling {len(tasks_to_cancel)} remaining tasks...")
             for task in tasks_to_cancel:
-                if not task.done(): # Double check it's not already done/cancelled
+                if not task.done():
                     task.cancel()
-            # Wait for all cancellable tasks to complete their shutdown
             await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
             logger.info("Remaining tasks cancelled.")
 
-
-        # Stop pipelines (redundant if signalling stop works in WebRTC, or ws_handler cleanup in WS, but good safety)
         if app:
             logger.info("Stopping main app pipeline...")
-            # Check if stop_ws_pipeline exists if mode is websockets, otherwise use stop_pipeline
             if args.mode == 'websockets' and hasattr(app, 'stop_ws_pipeline'):
                  await app.stop_ws_pipeline()
             elif hasattr(app, 'stop_pipeline'):
                  await app.stop_pipeline()
             else:
-                 logger.warning("app instance has no stop_pipeline or stop_ws_pipeline method.")
+                 logger.warning(
+                     "app instance has no stop_pipeline or stop_ws_pipeline method."
+                 )
 
-        if audio_app: # Only stop if it exists (WebRTC mode)
+        if audio_app:
             logger.info("Stopping audio app pipeline...")
             if hasattr(audio_app, 'stop_pipeline'):
                 await audio_app.stop_pipeline()
             else:
                  logger.warning("audio_app instance has no stop_pipeline method.")
 
-
-        # Stop input handler local resources (sockets)
         if webrtc_input:
             logger.info("Stopping WebRTCInput local resources...")
-            # These stop methods should be synchronous or awaitable based on implementation
             webrtc_input.stop_clipboard()
             webrtc_input.stop_cursor_monitor()
             if hasattr(webrtc_input, 'stop_js_server'):
@@ -2403,57 +2669,32 @@ async def main():
             else:
                  logger.warning("webrtc_input instance has no stop_js_server method.")
 
-            # webrtc_input.disconnect() cleans up the data channel/websocket reference.
-            # In websockets mode, the websocket is closed by the handler's finally block.
-            # In WebRTC mode, the data channel closes with the peer connection.
-            # Let's call disconnect here to ensure internal state is cleaned up.
             if hasattr(webrtc_input, 'disconnect'):
                  await webrtc_input.disconnect()
             else:
                  logger.warning("webrtc_input instance has no disconnect method.")
             logger.info("WebRTCInput local resources stopped.")
 
-
-        # Stop servers explicitly (these were started as tasks, but explicit stop ensures cleanup)
         logger.info("Stopping servers...")
-        # server.stop() and data_websocket_server.stop() already have the None checks inside them now.
         await server.stop()
         await data_websocket_server.stop()
         logger.info("Servers stopped.")
 
         logger.info("Cleanup complete. Exiting.")
-        # sys.exit(0) # Exit cleanly is implicit if no exception was raised
+
 
 def entrypoint():
-    # Set up signal handlers for graceful shutdown (SIGINT, SIGTERM)
-    def handle_sigint(sig, frame):
-        logger.info(f"Received signal {sig}, initiating graceful shutdown.")
-        # Get the running loop and create a task to stop it
-        loop = asyncio.get_event_loop()
-        # Schedule the loop.stop() call
-        loop.call_soon_threadsafe(loop.stop)
-        # Note: loop.stop() doesn't immediately stop the loop, it schedules a stop
-        # after the current task finishes. The main() function's gather/await
-        # should allow tasks to be cancelled and the loop to stop.
-
-    signal(SIGINT, handle_sigint)
-    # signal(signal.SIGTERM, handle_sigint) # Add SIGTERM if needed
-
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        # This exception is caught if Ctrl+C is pressed and handle_sigint isn't fully effective,
-        # or if running without signal handlers in some environments.
         logger.info("Asyncio event loop stopped by KeyboardInterrupt.")
-        # The main loop's finally block handles cleanup
     except SystemExit as e:
-        # Catch explicit sys.exit calls to ensure final cleanup runs
         logger.info(f"Caught SystemExit({e.code}).")
-        # The cleanup in main's finally should have run.
-        sys.exit(e.code) # Re-exit with the original code
+        sys.exit(e.code)
     except Exception as e:
         logger.error("Entrypoint caught unhandled exception: %s", e, exc_info=True)
-        sys.exit(1) # Exit with error code
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     entrypoint()

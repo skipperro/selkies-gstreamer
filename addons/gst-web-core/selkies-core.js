@@ -23,7 +23,7 @@
 /* eslint no-unused-vars: ["error", { "vars": "local" }] */
 
 // Set this to true to enable the dev dashboard layout
-var dev_mode = false;
+var dev_mode = true; // Enabled dev mode as requested
 
 /**
  * @typedef {Object} WebRTCDemoSignalling
@@ -381,6 +381,11 @@ let audioContext;
 let audioWorkletNode;
 let audioWorkletProcessorPort;
 const audioBufferQueue = [];
+let currentAudioBufferSize = 0;
+
+// Interval ID for sending client metrics
+let metricsIntervalId = null;
+const METRICS_INTERVAL_MS = 100;
 
 window.onload = () => {
   'use strict';
@@ -395,8 +400,8 @@ const appName =
   window.location.pathname.endsWith('/') &&
   window.location.pathname.split('/')[1] || 'webrtc';
 let videoBitRate = 8000;
-let videoFramerate = 60; // This variable exists and will be used for the dropdown value
-let audioBitRate = 128; // Default audio bitrate in kbps
+let videoFramerate = 60;
+let audioBitRate = 128;
 let showStart = true;
 const logEntries = [];
 const debugEntries = [];
@@ -467,6 +472,7 @@ let framerateSelectElement;
 let systemStatsDivElement;
 let gpuStatsDivElement;
 let fpsCounterDivElement;
+let audioBufferDivElement;
 
 
 const getIntParam = (key, default_value) => {
@@ -1108,6 +1114,16 @@ const initializeUI = () => {
     fpsCounterDivElement.textContent = `FPS: ${window.fps}`;
     sidebarDiv.appendChild(fpsCounterDivElement);
 
+    const audioBufferLabel = document.createElement('label');
+    audioBufferLabel.textContent = 'Audio Buffer Size (buffers):';
+    sidebarDiv.appendChild(audioBufferLabel);
+
+    audioBufferDivElement = document.createElement('div');
+    audioBufferDivElement.id = 'audio-buffer-div';
+    audioBufferDivElement.className = 'dev-stats-item';
+    audioBufferDivElement.textContent = `Audio Buffer: ${currentAudioBufferSize}`;
+    sidebarDiv.appendChild(audioBufferDivElement);
+
   }
 
   appDiv.appendChild(videoContainer);
@@ -1158,6 +1174,7 @@ function debounce(func, delay) {
   };
 }
 
+// The original initializeInput function is kept as is
 const initializeInput = () => {
   if (inputInitialized) {
     return;
@@ -1245,7 +1262,12 @@ const initializeInput = () => {
       webrtc.input = inputInstance;
     }
   }
+
+  // Expose the created inputInstance globally as window.webrtcInput
+  // This is done here directly within the function after the instance is created
+  window.webrtcInput = inputInstance;
 };
+
 
 window.addEventListener('message', receiveMessage, false);
 
@@ -1272,6 +1294,14 @@ function handleSettingsMessage(settings) {
        console.log(`Video bitrate set to ${videoBitRate} kbit/s via settings message`);
     } else if (clientMode === 'websockets') {
        console.log(`Video bitrate set to ${videoBitRate} kbit/s via settings message (websockets mode)`);
+       // Send settings via main websocket in websockets mode
+       if (websocket && websocket.readyState === WebSocket.OPEN) {
+            const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
+            console.log(`Sending websocket message: ${message}`);
+            websocket.send(message);
+       } else {
+           console.warn("Websocket connection not open, cannot send video bitrate setting.");
+       }
     }
     setIntParam('videoBitRate', videoBitRate);
     if (dev_mode && videoBitrateSelectElement) {
@@ -1300,6 +1330,14 @@ function handleSettingsMessage(settings) {
       console.log(`Video framerate set to ${videoFramerate} FPS via settings message (_arg_fps)`);
     } else if (clientMode === 'websockets') {
        console.log(`Video framerate set to ${videoFramerate} FPS via settings message (websockets mode)`);
+       // Send settings via main websocket in websockets mode
+       if (websocket && websocket.readyState === WebSocket.OPEN) {
+           const message = `SET_FRAMERATE,${videoFramerate}`;
+           console.log(`Sending websocket message: ${message}`);
+           websocket.send(message);
+       } else {
+           console.warn("Websocket connection not open, cannot send framerate setting.");
+       }
     }
     setIntParam('videoFramerate', videoFramerate);
     if (dev_mode && framerateSelectElement) {
@@ -1341,6 +1379,7 @@ function handleSettingsMessage(settings) {
     if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
       webrtc.sendDataChannelMessage(`_arg_resize,${resizeRemote},${res}`);
     } else if (clientMode === 'websockets') {
+        // No websocket send for resize, server handles based on input messages
     }
     setBoolParam('resizeRemote', resizeRemote);
   }
@@ -1356,6 +1395,14 @@ function handleSettingsMessage(settings) {
        console.log(`Audio bitrate set to ${audioBitRate} kbit/s via settings message`);
     } else if (clientMode === 'websockets') {
        console.log(`Audio bitrate set to ${audioBitRate} kbit/s via settings message (websockets mode)`);
+        // Send settings via main websocket in websockets mode
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            const message = `SET_AUDIO_BITRATE,${audioBitRate}`;
+            console.log(`Sending websocket message: ${message}`);
+            websocket.send(message);
+        } else {
+            console.warn("Websocket connection not open, cannot send audio bitrate setting.");
+        }
     }
     setIntParam('audioBitRate', audioBitRate);
     if (dev_mode && audioBitrateSelectElement) {
@@ -1373,7 +1420,7 @@ function handleSettingsMessage(settings) {
              option.value = audioBitRate.toString();
              option.textContent = `${audioBitRate} kbit/s (custom)`;
              audioBitrateSelectElement.insertBefore(option, audioBitrateSelectElement.firstChild);
-             audioBitrateSelectElement.value = audioBitRate.toString();
+             audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitRate.toString();
          }
     }
   }
@@ -1384,6 +1431,14 @@ function handleSettingsMessage(settings) {
            console.log(`Encoder set to ${encoder} via settings message`);
       } else if (clientMode === 'websockets') {
           console.log(`Encoder set to ${encoder} via settings message (websockets mode)`);
+           // Send settings via main websocket in websockets mode
+           if (websocket && websocket.readyState === WebSocket.OPEN) {
+               const message = `SET_ENCODER,${encoder}`;
+               console.log(`Sending websocket message: ${message}`);
+               websocket.send(message);
+           } else {
+               console.warn("Websocket connection not open, cannot send encoder setting.");
+           }
       }
        setStringParam('encoder', encoder);
        if (dev_mode && encoderSelectElement) {
@@ -1456,7 +1511,7 @@ document.addEventListener('DOMContentLoaded', () => {
            option.value = videoBitRate.toString();
            option.textContent = `${videoBitRate} kbit/s (custom)`;
            videoBitrateSelectElement.insertBefore(option, videoBitrateSelectElement.firstChild);
-           videoBitrateSelectElement.value = videoBitRate.toString();
+           videoBitrateSelectElement.value = videoBitrateSelectElement.value = videoBitRate.toString();
        }
   }
 
@@ -1475,7 +1530,7 @@ document.addEventListener('DOMContentLoaded', () => {
            option.value = audioBitRate.toString();
            option.textContent = `${audioBitRate} kbit/s (custom)`;
            audioBitrateSelectElement.insertBefore(option, audioBitrateSelectElement.firstChild);
-           audioBitrateSelectElement.value = audioBitRate.toString();
+           audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitRate.toString();
        }
   }
 
@@ -1495,7 +1550,7 @@ document.addEventListener('DOMContentLoaded', () => {
            option.value = savedEncoder;
            option.textContent = `${savedEncoder} (custom)`;
            encoderSelectElement.insertBefore(option, encoderSelectElement.firstChild);
-           encoderSelectElement.value = savedEncoder;
+           encoderSelectElement.value = encoder;
        }
   }
 
@@ -1514,7 +1569,7 @@ document.addEventListener('DOMContentLoaded', () => {
            option.value = videoFramerate.toString();
            option.textContent = `${videoFramerate} FPS (custom)`;
            framerateSelectElement.insertBefore(option, framerateSelectElement.firstChild);
-           framerateSelectElement.value = videoFramerate.toString();
+           framerateSelectElement.value = framerateSelectElement.value = videoFramerate.toString();
        }
   }
 
@@ -1564,6 +1619,12 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const setupWebRTCMode = () => {
+    // Clear websocket-specific interval if active
+    if (metricsIntervalId) {
+        clearInterval(metricsIntervalId);
+        metricsIntervalId = null;
+    }
+
     signalling = new WebRTCDemoSignalling(
       new URL(
         `${protocol}${window.location.host}${pathname}${appName}/signalling/`
@@ -1814,9 +1875,10 @@ document.addEventListener('DOMContentLoaded', () => {
         frameCount = 0;
         lastFpsUpdateTime = now;
 
-        if (dev_mode && fpsCounterDivElement) {
-            fpsCounterDivElement.textContent = `FPS: ${window.fps}`;
-        }
+        // FPS display is now handled in the sendClientMetrics interval
+        // if (dev_mode && fpsCounterDivElement) {
+        //     fpsCounterDivElement.textContent = `FPS: ${window.fps}`;
+        // }
     }
 
 
@@ -1847,6 +1909,8 @@ document.addEventListener('DOMContentLoaded', () => {
             this.port.onmessage = (event) => {
               if (event.data.audioData) {
                 this.audioBufferQueue.push(event.data.audioData);
+              } else if (event.data.type === 'getBufferSize') { // Add message handler for buffer size request
+                this.port.postMessage({ type: 'audioBufferSize', size: this.audioBufferQueue.length });
               }
             };
           }
@@ -1916,6 +1980,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       );
       audioWorkletProcessorPort = audioWorkletNode.port;
+
+      // Add listener to receive buffer size from AudioWorklet
+      audioWorkletProcessorPort.onmessage = (event) => {
+          if (event.data.type === 'audioBufferSize') {
+              currentAudioBufferSize = event.data.size;
+          }
+      };
+
+
       audioWorkletNode.connect(audioContext.destination);
       console.log('AudioWorkletProcessor initialized and connected.');
     } catch (error) {
@@ -1933,14 +2006,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!audioContext || !audioWorkletProcessorPort) {
       console.log('Audio context or AudioWorkletProcessor not available, waiting for user interaction!');
-      frame.close();
+      frame.close(); // Drop frame if audio context is not ready
       return;
     }
 
     if (audioContext.state !== 'running') {
       console.warn('AudioContext state is:', audioContext.state, '. Resuming...');
       await audioContext.resume();
-      frame.close();
+      frame.close(); // Drop frame if audio context is not running yet
       return;
     }
 
@@ -2018,8 +2091,42 @@ document.addEventListener('DOMContentLoaded', () => {
   websocket = new WebSocket(websocketEndpointURL.href);
   websocket.binaryType = 'arraybuffer';
 
+  // Function to send client metrics over WebSocket
+  const sendClientMetrics = () => {
+      // Only send metrics if in websockets mode and the connection is open
+      if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+          // Request audio buffer size from AudioWorklet just before sending
+          // The response updates currentAudioBufferSize, which will be used in this send.
+          if (audioWorkletProcessorPort) {
+               audioWorkletProcessorPort.postMessage({ type: 'getBufferSize' });
+          }
+
+          try {
+              websocket.send('cfps,' + window.fps);
+          } catch (error) {
+              console.error('[websockets] Error sending client metrics:', error);
+          }
+      }
+      // Update display in dev mode regardless of sending
+      if (dev_mode) {
+          if (fpsCounterDivElement) {
+              fpsCounterDivElement.textContent = `Client FPS: ${window.fps}`;
+          }
+          if (audioBufferDivElement) { // Use the global variable
+               audioBufferDivElement.textContent = `Audio Buffer: ${currentAudioBufferSize} buffers`; // Changed to buffers
+          }
+      }
+  };
+
+
   websocket.onopen = () => {
     console.log('[websockets] Connection opened!');
+    // Start sending metrics periodically once the websocket is open
+    // Ensure interval is only started once
+    if (metricsIntervalId === null) {
+        metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
+        console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
+    }
   };
 
   websocket.onmessage = (event) => {
@@ -2028,14 +2135,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const arrayBuffer = event.data;
         const dataView = new DataView(arrayBuffer);
 
-        const dataTypeByte = dataView.getUint8(0);
-        const frameTypeFlag = dataView.getUint8(1);
-        const isKey = frameTypeFlag === 1;
-        const frameDataArrayBuffer = arrayBuffer.slice(2);
-        if (dataTypeByte === 0) {
+        // Read the first two bytes for type and flags
+        const dataTypeByte = dataView.getUint8(0); // 0 for video, 1 for audio
+        const frameTypeFlag = dataView.getUint8(1); // Frame flags (e.g., keyframe for video)
+        const isKey = frameTypeFlag === 1; // Assuming flag 1 indicates a keyframe/key chunk
+        const frameDataArrayBuffer = arrayBuffer.slice(2); // The rest is the frame data
+
+        if (dataTypeByte === 0) { // Video frame
           if (decoder && decoder.state === 'configured') {
             const chunk = new EncodedVideoChunk({
               type: isKey ? 'key' : 'delta',
+              // Timestamps and durations should ideally come from the server
+              // and be included in the metadata prefix of the frame.
+              // Using 0 for now, which works for simple sequential decoding,
+              // but can lead to sync issues without proper timing.
               timestamp: 0,
               duration: 0,
               data: frameDataArrayBuffer,
@@ -2043,18 +2156,43 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
               decoder.decode(chunk);
             } catch (e) {
-              console.error('Decoding error:', e);
-              decoder.reset();
+              console.error('Video Decoding error:', e);
+              // Consider resetting the decoder or requesting a keyframe from the server
+              // decoder.reset(); // Resetting might interrupt playback briefly
             }
           } else {
             console.warn(
-              'Decoder not ready or not configured yet, video frame dropped.'
+              'Video Decoder not ready or not configured yet, video frame dropped.'
             );
           }
-        } else if (dataTypeByte === 1) {
+        } else if (dataTypeByte === 1) { // Audio frame
+          // --- START MODIFICATION: Add audio buffer check ---
+          // Define the buffer threshold
+          const AUDIO_BUFFER_THRESHOLD = 10; // Maximum number of audio buffers allowed
+
+          // Check the current audio buffer size before processing the frame
+          // currentAudioBufferSize is updated asynchronously by the AudioWorklet,
+          // but this gives us a reasonable proxy on the main thread.
+          if (currentAudioBufferSize >= AUDIO_BUFFER_THRESHOLD) {
+              console.warn(
+                  `Audio buffer (${currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`
+              );
+              // Do not decode or queue this frame. Simply discard the data and return.
+              // The frameDataArrayBuffer will be garbage collected.
+              return;
+          }
+          // --- END MODIFICATION ---
+
+          // If buffer is below threshold, proceed with decoding and queuing
           if (decoderAudio && decoderAudio.state === 'configured') {
             const chunk = new EncodedAudioChunk({
+              // Opus frames are not strictly 'key' or 'delta' in the video sense,
+              // but 'key' is a safe default type for EncodedAudioChunk.
               type: 'key',
+               // Timestamps and durations should ideally come from the server
+              // and be included in the metadata prefix of the frame.
+              // Using 0 for now, which works for simple sequential decoding,
+              // but can lead to sync issues without proper timing.
               timestamp: 0,
               duration: 0,
               data: frameDataArrayBuffer,
@@ -2062,8 +2200,9 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
               decoderAudio.decode(chunk);
             } catch (e) {
-              console.error('Audio decoding error:', e);
-              decoderAudio.reset();
+              console.error('Audio Decoding error:', e);
+               // Consider resetting the audio decoder
+               // decoderAudio.reset();
             }
           } else {
              console.warn('Audio Decoder not ready or not configured yet, audio frame dropped.');
@@ -2074,60 +2213,101 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else if (typeof event.data === 'string') {
       if (clientMode === 'websockets') {
-        if (event.data.startsWith('{')) {
-          let obj = JSON.parse(event.data);
-          if (obj.type === 'system_stats') {
-            window.system_stats = obj;
-          } else if (obj.type === 'gpu_stats') {
-            window.gpu_stats = obj;
-          }
-          if (dev_mode) {
-            if (obj.type === 'system_stats') {
-              if (systemStatsDivElement) {
-                systemStatsDivElement.textContent = JSON.stringify(obj, null, 2);
-              }
-            } else if (obj.type === 'gpu_stats') {
-              if (gpuStatsDivElement) {
-                gpuStatsDivElement.textContent = JSON.stringify(obj, null, 2);
-              }
-            }
-          }
-        } else if (event.data.startsWith('cursor,')) {
-          try {
-            const cursorData = JSON.parse(event.data.substring(7));
-            if (parseInt(cursorData.handle, 10) === 0) {
-              overlayInput.style.cursor = 'auto';
-              return;
-            }
-            const cursor_url = `url('data:image/png;base64,${cursorData.curdata}')`;
-            let cursorStyle = cursor_url;
-            if (cursorData.hotspot) {
-              cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
+         // Handle incoming string messages from the server
+         if (event.data.startsWith('{')) {
+           let obj;
+           try {
+              obj = JSON.parse(event.data);
+           } catch (e) {
+              console.error('Error parsing JSON message from server:', e, 'Message:', event.data);
+              return; // Stop processing this message if JSON is invalid
+           }
+
+           if (obj.type === 'system_stats') {
+             window.system_stats = obj; // Store the whole object
+             if (dev_mode && systemStatsDivElement) {
+               systemStatsDivElement.textContent = JSON.stringify(obj, null, 2); // Display the whole object
+             }
+           } else if (obj.type === 'gpu_stats') {
+             window.gpu_stats = obj; // Store the whole object
+             if (dev_mode && gpuStatsDivElement) {
+               gpuStatsDivElement.textContent = JSON.stringify(obj, null, 2); // Display the whole object
+             }
+           }
+           // Handle other server-sent JSON types here if needed
+           // else if (obj.type === 'some_other_server_type') { ... }
+           else {
+             // Log unexpected JSON types from the server
+             console.warn(`Received unexpected JSON message type from server: ${obj.type}`, obj);
+           }
+
+         } else if (event.data.startsWith('cursor,')) {
+           try {
+             const cursorData = JSON.parse(event.data.substring(7));
+             if (parseInt(cursorData.handle, 10) === 0) {
+               overlayInput.style.cursor = 'auto';
+               return;
+             }
+             const cursor_url = `url('data:image/png;base64,${cursorData.curdata}')`;
+             let cursorStyle = cursor_url;
+             if (cursorData.hotspot) {
+               cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
+             } else {
+               cursorStyle += ', auto';
+             }
+             overlayInput.style.cursor = cursorStyle;
+           } catch (e) {
+             console.error('Error parsing cursor data:', e);
+           }
+         } else if (event.data.startsWith('clipboard,')) {
+           try {
+             const clipboardDataBase64 = event.data.substring(10);
+             const clipboardData = atob(clipboardDataBase64);
+             navigator.clipboard.writeText(clipboardData).catch((err) => {
+               console.error('Could not copy text to clipboard: ' + err);
+             });
+           } catch (e) {
+             console.error('Error processing clipboard data:', e);
+           }
+         } else if (event.data.startsWith('system,')) {
+             try {
+                 const systemMsg = JSON.parse(event.data.substring(7));
+                 if (systemMsg.action === 'reload') {
+                     console.log('Received system reload action, reloading window.');
+                     window.location.reload();
+                 }
+             } catch (e) {
+                 console.error('Error parsing system data:', e);
+             }
+         }
+         else {
+            if (window.webrtcInput) { 
+               window.webrtcInput.on_message(event.data);
             } else {
-              cursorStyle += ', auto';
+               console.warn('Received string message before input handler initialized:', event.data);
             }
-            overlayInput.style.cursor = cursorStyle;
-          } catch (e) {
-            console.error('Error parsing cursor data:', e);
-          }
-        } else if (event.data.startsWith('clipboard,')) {
-          try {
-            const clipboardDataBase64 = event.data.substring(10);
-            const clipboardData = atob(clipboardDataBase64);
-            navigator.clipboard.writeText(clipboardData).catch((err) => {
-              console.error('Could not copy text to clipboard: ' + err);
-            });
-          } catch (e) {
-            console.error('Error processing clipboard data:', e);
-          }
-        }
+         }
+
       } else if (event.data === 'MODE websockets') {
         clientMode = 'websockets';
+        console.log('[websockets] Switched to websockets mode.');
         initializeDecoder();
         initializeDecoderAudio();
         initializeInput();
+        // Ensure UI reflects that stream is starting immediately in this mode
+        if (playButtonElement) playButtonElement.classList.add('hidden');
+        if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
+        if (spinnerElement) spinnerElement.classList.remove('hidden');
+        // The metrics interval should already be running from websocket.onopen
       } else if (event.data === 'MODE webrtc') {
         clientMode = 'webrtc';
+        console.log('[websockets] Switched to webrtc mode.');
+        // Stop websocket-specific metrics interval if switching away from websockets mode
+        if (metricsIntervalId) {
+            clearInterval(metricsIntervalId);
+            metricsIntervalId = null;
+            console.log('[websockets] Stopped client metrics interval for webrtc mode.');
+        }
         setupWebRTCMode();
         fetch('./turn')
           .then((response) => response.json())
@@ -2169,14 +2349,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
   websocket.onerror = (event) => {
     console.error('[websockets] Error:', event);
+    // Clear the metrics interval on error
+    if (metricsIntervalId) {
+        clearInterval(metricsIntervalId);
+        metricsIntervalId = null;
+        console.log('[websockets] Stopped client metrics interval due to error.');
+    }
   };
 
   websocket.onclose = (event) => {
     console.log('[websockets] Connection closed', event);
+    // Clear the metrics interval on close
+    if (metricsIntervalId) {
+        clearInterval(metricsIntervalId);
+        metricsIntervalId = null;
+        console.log('[websockets] Stopped client metrics interval due to close.');
+    }
   };
 });
 
 function cleanup() {
+  // Clear the metrics interval first
+  if (metricsIntervalId) {
+      clearInterval(metricsIntervalId);
+      metricsIntervalId = null;
+      console.log('Cleanup: Stopped client metrics interval.');
+  }
+
   if (clientMode === 'webrtc' && signalling) {
     signalling.disconnect();
   }
@@ -2190,14 +2389,31 @@ function cleanup() {
     audio_webrtc.reset();
   }
   if (websocket) {
+    // Remove event listeners to prevent reconnect attempts during cleanup
+    websocket.onopen = null;
+    websocket.onmessage = null;
+    websocket.onerror = null;
+    websocket.onclose = null;
     websocket.close();
+    websocket = null;
   }
   if (audioContext) {
-      audioContext.close().then(() => console.log('AudioContext closed')).catch(e => console.error('Error closing AudioContext:', e));
+      // Check if audioContext is running or suspended before trying to close/resume
+      if (audioContext.state !== 'closed') {
+          // Resume might be needed if it's suspended, otherwise close might hang
+          if (audioContext.state === 'suspended') {
+              audioContext.resume().then(() => {
+                  audioContext.close().then(() => console.log('AudioContext closed')).catch(e => console.error('Error closing AudioContext:', e));
+              }).catch(e => console.error('Error resuming AudioContext before close:', e));
+          } else {
+               audioContext.close().then(() => console.log('AudioContext closed')).catch(e => console.error('Error closing AudioContext:', e));
+          }
+      }
       audioContext = null;
       audioWorkletNode = null;
       audioWorkletProcessorPort = null;
       audioBufferQueue.length = 0;
+      currentAudioBufferSize = 0;
   }
   if (decoder) {
       decoder.close();
@@ -2254,8 +2470,13 @@ function cleanup() {
   frameCount = 0;
   lastFpsUpdateTime = performance.now();
   if (dev_mode && fpsCounterDivElement) {
-      fpsCounterDivElement.textContent = `FPS: ${window.fps}`;
+      fpsCounterDivElement.textContent = `Client FPS: ${window.fps}`;
   }
+   if (dev_mode && audioBufferDivElement) {
+        audioBufferDivElement.textContent = `Audio Buffer: ${currentAudioBufferSize} buffers`;
+   }
 }
 
 window.addEventListener('beforeunload', cleanup);
+
+window.webrtcInput = null;
