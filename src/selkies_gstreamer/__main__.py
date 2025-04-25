@@ -679,8 +679,6 @@ class DataStreamingServer:
                               continue
                           current_cfps_str = parts[1]
                           current_cfps = int(float(current_cfps_str))
-                          print('Current client Frame Rate: ' + str(current_cfps))
-
                           now = time.monotonic()
 
                           if now - self._last_adjustment_timestamp < \

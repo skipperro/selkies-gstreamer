@@ -20,10 +20,8 @@
  *   limitations under the License.
  */
 
-/* eslint no-unused-vars: ["error", { "vars": "local" }] */
-
 // Set this to true to enable the dev dashboard layout
-var dev_mode = true; // Enabled dev mode as requested
+var dev_mode = true;
 
 /**
  * @typedef {Object} WebRTCDemoSignalling
@@ -183,10 +181,9 @@ export class WebRTCDemoSignalling {
    * @event
    */
   _onServerOpen() {
-    // Use the getWindowResolution from the input object, which now handles rounding
-    const currRes = this.webrtcInput ? this.webrtcInput.getWindowResolution() : [window.innerWidth, window.innerHeight]; // Fallback if input not set yet
+    const currRes = this.webrtcInput ? this.webrtcInput.getWindowResolution() : [window.innerWidth, window.innerHeight];
     const meta = {
-      res: `${currRes[0]}x${currRes[1]}`, // Use the rounded resolution
+      res: `${currRes[0]}x${currRes[1]}`,
       scale: window.devicePixelRatio,
     };
     this.state = 'connected';
@@ -291,7 +288,7 @@ export class WebRTCDemoSignalling {
     this.state = 'connecting';
     this._setStatus('Connecting to server.');
 
-    this._ws_conn = new WebSocket(this._server.href); // Use href for string URL
+    this._ws_conn = new WebSocket(this._server.href);
 
     this._ws_conn.addEventListener('open', this._onServerOpen.bind(this));
     this._ws_conn.addEventListener('error', this._onServerError.bind(this));
@@ -304,7 +301,7 @@ export class WebRTCDemoSignalling {
    * Triggers onServerClose event.
    */
   disconnect() {
-    if (this._ws_conn) { // Check if connection exists
+    if (this._ws_conn) {
       this._ws_conn.close();
     }
   }
@@ -315,11 +312,11 @@ export class WebRTCDemoSignalling {
    * @param {RTCIceCandidate} ice
    */
   sendICE(ice) {
-    if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) { // Add check
+    if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
       this._setDebug(`sending ice candidate: ${JSON.stringify(ice)}`);
       this._ws_conn.send(JSON.stringify({ ice }));
     } else {
-       console.warn("Websocket not open, cannot send ICE candidate."); // Add warning
+       console.warn("Websocket not open, cannot send ICE candidate.");
     }
   }
 
@@ -329,11 +326,11 @@ export class WebRTCDemoSignalling {
    * @param {RTCSessionDescription} sdp
    */
   sendSDP(sdp) {
-     if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) { // Add check
+     if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
         this._setDebug(`sending local sdp: ${JSON.stringify(sdp)}`);
         this._ws_conn.send(JSON.stringify({ sdp }));
      } else {
-        console.warn("Websocket not open, cannot send SDP."); // Add warning
+        console.warn("Websocket not open, cannot send SDP.");
      }
   }
 
@@ -342,13 +339,13 @@ export class WebRTCDemoSignalling {
    * @private
    */
   sendSessionRequest() {
-     if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) { // Add check
+     if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
         this._setDebug(
           `Sending SESSION request to server, peer ID: ${this.peer_id}`
         );
         this._ws_conn.send(`SESSION ${this.peer_id}`);
      } else {
-        console.warn("Websocket not open, cannot send SESSION request."); // Add warning
+        console.warn("Websocket not open, cannot send SESSION request.");
      }
   }
 
@@ -382,6 +379,13 @@ let audioWorkletNode;
 let audioWorkletProcessorPort;
 const audioBufferQueue = [];
 let currentAudioBufferSize = 0;
+
+/** @type {VideoFrame[]} */
+let videoFrameBuffer = [];
+let videoBufferSize = 0;
+let videoBufferSelectElement;
+let videoBufferDivElement;
+
 
 // Interval ID for sending client metrics
 let metricsIntervalId = null;
@@ -633,64 +637,63 @@ body {
 }
 #app {
   display: flex;
-  flex-direction: column; /* Default: stack elements vertically */
+  flex-direction: column;
   height: 100vh;
-  width: 100%; /* Ensure app takes full width */
+  width: 100%;
 }
 
 /* DEV MODE LAYOUT */
 #app.dev-mode {
-  flex-direction: row; /* In dev mode, arrange children horizontally */
+  flex-direction: row;
 }
 
 /* Container for video, canvas, input, etc. */
 .video-container {
-  flex-grow: 1; /* Takes up remaining space in flex row (dev mode) */
-  flex-shrink: 1; /* Allows shrinking */
+  flex-grow: 1;
+  flex-shrink: 1;
   display: flex;
-  flex-direction: column; /* Stack children vertically if needed */
+  flex-direction: column;
   justify-content: center;
   align-items: center;
-  height: 100%; /* Takes full height of parent flex container */
-  width: 100%; /* Takes full width in default column mode */
-  position: relative; /* Keep position relative for children */
-  overflow: hidden; /* Hide anything outside the bounds */
+  height: 100%;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
 }
 
 /* Ensure video, canvas, input take 100% of their container */
 .video-container video,
 .video-container canvas,
 .video-container #overlayInput {
-    position: absolute; /* Position absolutely within the container */
+    position: absolute;
     top: 0;
     left: 0;
-    width: 100%;  /* Take full width of video-container */
-    height: 100%; /* Take full height of video-container */
+    width: 100%;
+    height: 100%;
 }
 
 /* Specific video rules */
 .video-container video {
   max-width: 100%;
   max-height: 100%;
-  object-fit: contain; /* Maintain aspect ratio */
-  /* Removed width: 100vw; height: 100vh; from original as container handles sizing */
+  object-fit: contain;
 }
 
 /* Canvas is typically drawn over the video */
 .video-container #videoCanvas {
-    z-index: 2; /* Below input, above video */
-    pointer-events: none; /* Don't capture mouse events */
+    z-index: 2;
+    pointer-events: none;
     display: block;
 }
 
 /* Overlay input for capturing events */
 .video-container #overlayInput {
-    opacity: 0; /* Invisible */
-    z-index: 3; /* On top */
+    opacity: 0;
+    z-index: 3;
     caret-color: transparent;
     background-color: transparent;
     color: transparent;
-    pointer-events: auto; /* Capture mouse/keyboard events */
+    pointer-events: auto;
     -webkit-user-select: none;
     border: none;
     outline: none;
@@ -705,7 +708,7 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  z-index: 10; /* On top */
+  z-index: 10;
 }
 
 .spinner-container {
@@ -716,7 +719,7 @@ body {
   border-radius: 50%;
   -webkit-animation: spin 1s linear infinite;
   animation: spin 1s linear infinite;
-  background-color: #000; /* Ensure it's visible over video */
+  background-color: #000;
 }
 .spinner--hidden {
   display: none;
@@ -740,15 +743,15 @@ body {
 
 /* Status bar positioning */
 .video-container .status-bar {
-  position: absolute; /* Position absolute within the video-container */
+  position: absolute;
   bottom: 0;
   left: 0;
-  width: 100%; /* Span the width of the video-container */
+  width: 100%;
   padding: 5px;
-  background-color: rgba(0, 0, 0, 0.7); /* Semi-transparent background */
+  background-color: rgba(0, 0, 0, 0.7);
   color: #fff;
   text-align: center;
-  z-index: 5; /* Below spinner/play button */
+  z-index: 5;
 }
 
 #playButton {
@@ -769,39 +772,38 @@ body {
 }
 
 #app.dev-mode #dev-sidebar {
-  display: flex; /* Show in dev mode */
-  flex-direction: column; /* Stack controls vertically */
-  flex-shrink: 0; /* Prevent shrinking */
-  width: 300px; /* Fixed width */
-  height: 100vh; /* Take full height of parent */
-  background-color: #2e2e2e; /* Dark background */
-  color: #eee; /* Light text */
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 300px;
+  height: 100vh;
+  background-color: #2e2e2e;
+  color: #eee;
   padding: 10px;
-  box-sizing: border-box; /* Include padding in width */
-  overflow-y: auto; /* Add scroll if content overflows */
-  gap: 10px; /* Added for spacing controls */
+  box-sizing: border-box;
+  overflow-y: auto;
+  gap: 10px;
 }
 
 #dev-sidebar button {
-    margin-bottom: 10px; /* Space out buttons */
+    margin-bottom: 10px;
     padding: 8px;
     cursor: pointer;
     background-color: #444;
     color: white;
     border: 1px solid #555;
     border-radius: 3px;
-    width: 100%; /* Added for better layout */
-    box-sizing: border-box; /* Added for better layout */
+    width: 100%;
+    box-sizing: border-box;
 }
 #dev-sidebar button:hover {
     background-color: #555;
 }
 
-/* Added: Style for the new dropdown and its container */
 .dev-setting-item {
     display: flex;
     flex-direction: column;
-    margin-bottom: 10px; /* Space below each setting group */
+    margin-bottom: 10px;
 }
 
 .dev-setting-item label {
@@ -817,11 +819,10 @@ body {
     border: 1px solid #555;
     border-radius: 3px;
     font-size: 1em;
-    width: 100%; /* Make dropdown fill sidebar width */
+    width: 100%;
     box-sizing: border-box;
 }
 
-/* Styles for the new stats divs */
 .dev-stats-item {
     display: flex;
     flex-direction: column;
@@ -831,15 +832,15 @@ body {
     background-color: #333;
     font-family: monospace;
     font-size: 0.8em;
-    white-space: pre-wrap; /* Preserve whitespace and wrap */
-    word-break: break-all; /* Break long words */
+    white-space: pre-wrap;
+    word-break: break-all;
 }
 
 .dev-stats-item label {
     margin-bottom: 5px;
     font-size: 0.9em;
     color: #bbb;
-    font-family: sans-serif; /* Use sans-serif for labels */
+    font-family: sans-serif;
 }
   `;
   document.head.appendChild(style);
@@ -1084,6 +1085,37 @@ const initializeUI = () => {
         }
     });
 
+    const videoBufferContainer = document.createElement('div');
+    videoBufferContainer.className = 'dev-setting-item';
+
+    const videoBufferLabel = document.createElement('label');
+    videoBufferLabel.textContent = 'Video Buffer Size (frames):';
+    videoBufferLabel.htmlFor = 'videoBufferSelect';
+    videoBufferContainer.appendChild(videoBufferLabel);
+
+    videoBufferSelectElement = document.createElement('select');
+    videoBufferSelectElement.id = 'videoBufferSelect';
+
+    for (let i = 0; i <= 15; i++) {
+        const option = document.createElement('option');
+        option.value = i.toString();
+        option.textContent = i === 0 ? '0 (Immediate)' : `${i} frames`;
+        videoBufferSelectElement.appendChild(option);
+    }
+
+    videoBufferContainer.appendChild(videoBufferSelectElement);
+    sidebarDiv.appendChild(videoBufferContainer);
+
+    videoBufferSelectElement.addEventListener('change', (event) => {
+        const selectedSize = parseInt(event.target.value, 10);
+        if (!isNaN(selectedSize)) {
+            videoBufferSize = selectedSize;
+            setIntParam('videoBufferSize', videoBufferSize);
+            console.log(`Video buffer size set to ${videoBufferSize} frames via UI`);
+        }
+    });
+
+
     const systemStatsLabel = document.createElement('label');
     systemStatsLabel.textContent = 'System Stats:';
     sidebarDiv.appendChild(systemStatsLabel);
@@ -1124,6 +1156,16 @@ const initializeUI = () => {
     audioBufferDivElement.textContent = `Audio Buffer: ${currentAudioBufferSize}`;
     sidebarDiv.appendChild(audioBufferDivElement);
 
+    const videoBufferDisplayLabel = document.createElement('label');
+    videoBufferDisplayLabel.textContent = 'Video Buffer Size (current):';
+    sidebarDiv.appendChild(videoBufferDisplayLabel);
+
+    videoBufferDivElement = document.createElement('div');
+    videoBufferDivElement.id = 'video-buffer-div';
+    videoBufferDivElement.className = 'dev-stats-item';
+    videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
+    sidebarDiv.appendChild(videoBufferDivElement);
+
   }
 
   appDiv.appendChild(videoContainer);
@@ -1139,6 +1181,9 @@ const initializeUI = () => {
   scaleLocal = getBoolParam('scaleLocal', scaleLocal);
   debug = getBoolParam('debug', debug);
   turnSwitch = getBoolParam('turnSwitch', turnSwitch);
+
+  videoBufferSize = getIntParam('videoBufferSize', 0);
+
 
   videoElement.classList.toggle('scale', scaleLocal);
 
@@ -1174,7 +1219,6 @@ function debounce(func, delay) {
   };
 }
 
-// The original initializeInput function is kept as is
 const initializeInput = () => {
   if (inputInitialized) {
     return;
@@ -1239,8 +1283,6 @@ const initializeInput = () => {
     const newRes = `${windowResolution[0]}x${windowResolution[1]}`;
 
     if (canvas) {
-      canvas.width = windowResolution[0];
-      canvas.height = windowResolution[1];
     }
 
     if (clientMode === 'webrtc') {
@@ -1263,8 +1305,6 @@ const initializeInput = () => {
     }
   }
 
-  // Expose the created inputInstance globally as window.webrtcInput
-  // This is done here directly within the function after the instance is created
   window.webrtcInput = inputInstance;
 };
 
@@ -1294,7 +1334,6 @@ function handleSettingsMessage(settings) {
        console.log(`Video bitrate set to ${videoBitRate} kbit/s via settings message`);
     } else if (clientMode === 'websockets') {
        console.log(`Video bitrate set to ${videoBitRate} kbit/s via settings message (websockets mode)`);
-       // Send settings via main websocket in websockets mode
        if (websocket && websocket.readyState === WebSocket.OPEN) {
             const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
             console.log(`Sending websocket message: ${message}`);
@@ -1330,7 +1369,6 @@ function handleSettingsMessage(settings) {
       console.log(`Video framerate set to ${videoFramerate} FPS via settings message (_arg_fps)`);
     } else if (clientMode === 'websockets') {
        console.log(`Video framerate set to ${videoFramerate} FPS via settings message (websockets mode)`);
-       // Send settings via main websocket in websockets mode
        if (websocket && websocket.readyState === WebSocket.OPEN) {
            const message = `SET_FRAMERATE,${videoFramerate}`;
            console.log(`Sending websocket message: ${message}`);
@@ -1379,7 +1417,6 @@ function handleSettingsMessage(settings) {
     if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
       webrtc.sendDataChannelMessage(`_arg_resize,${resizeRemote},${res}`);
     } else if (clientMode === 'websockets') {
-        // No websocket send for resize, server handles based on input messages
     }
     setBoolParam('resizeRemote', resizeRemote);
   }
@@ -1395,7 +1432,6 @@ function handleSettingsMessage(settings) {
        console.log(`Audio bitrate set to ${audioBitRate} kbit/s via settings message`);
     } else if (clientMode === 'websockets') {
        console.log(`Audio bitrate set to ${audioBitRate} kbit/s via settings message (websockets mode)`);
-        // Send settings via main websocket in websockets mode
         if (websocket && websocket.readyState === WebSocket.OPEN) {
             const message = `SET_AUDIO_BITRATE,${audioBitRate}`;
             console.log(`Sending websocket message: ${message}`);
@@ -1420,7 +1456,7 @@ function handleSettingsMessage(settings) {
              option.value = audioBitRate.toString();
              option.textContent = `${audioBitRate} kbit/s (custom)`;
              audioBitrateSelectElement.insertBefore(option, audioBitrateSelectElement.firstChild);
-             audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitRate.toString();
+             audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitrate.toString();
          }
     }
   }
@@ -1431,7 +1467,6 @@ function handleSettingsMessage(settings) {
            console.log(`Encoder set to ${encoder} via settings message`);
       } else if (clientMode === 'websockets') {
           console.log(`Encoder set to ${encoder} via settings message (websockets mode)`);
-           // Send settings via main websocket in websockets mode
            if (websocket && websocket.readyState === WebSocket.OPEN) {
                const message = `SET_ENCODER,${encoder}`;
                console.log(`Sending websocket message: ${message}`);
@@ -1460,6 +1495,30 @@ function handleSettingsMessage(settings) {
             }
        }
   }
+  if (settings.videoBufferSize !== undefined) {
+    videoBufferSize = parseInt(settings.videoBufferSize);
+    setIntParam('videoBufferSize', videoBufferSize);
+    console.log(`Video buffer size set to ${videoBufferSize} frames via settings message`);
+     if (dev_mode && videoBufferSelectElement) {
+         videoBufferSelectElement.value = videoBufferSize.toString();
+          let optionExists = false;
+          for (let i = 0; i < videoBufferSelectElement.options.length; i++) {
+              if (videoBufferSelectElement.options[i].value === videoBufferSize.toString()) {
+                  optionExists = true;
+                  break;
+              }
+          }
+          if (!optionExists) {
+              console.warn(`Received video buffer size ${videoBufferSize} from settings is not in dropdown options. Adding it.`);
+              const option = document.createElement('option');
+              option.value = videoBufferSize.toString();
+              option.textContent = `${videoBufferSize} frames (custom)`;
+              videoBufferSelectElement.insertBefore(option, videoBufferSelectElement.firstChild);
+              videoBufferSelectElement.value = videoBufferSize.toString();
+          }
+     }
+  }
+
 
   if (settings.turnSwitch !== undefined) {
     debug = settings.debug;
@@ -1486,6 +1545,9 @@ function sendStatsMessage() {
     connection: connectionStat,
     gpu: gpuStat,
     cpu: cpuStat,
+    clientFps: window.fps,
+    audioBuffer: currentAudioBufferSize,
+    videoBuffer: videoFrameBuffer.length,
   };
    if (typeof encoderName !== 'undefined') {
        stats.encoderName = encoderName;
@@ -1530,7 +1592,7 @@ document.addEventListener('DOMContentLoaded', () => {
            option.value = audioBitRate.toString();
            option.textContent = `${audioBitRate} kbit/s (custom)`;
            audioBitrateSelectElement.insertBefore(option, audioBitrateSelectElement.firstChild);
-           audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitRate.toString();
+           audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitrate.toString();
        }
   }
 
@@ -1570,6 +1632,25 @@ document.addEventListener('DOMContentLoaded', () => {
            option.textContent = `${videoFramerate} FPS (custom)`;
            framerateSelectElement.insertBefore(option, framerateSelectElement.firstChild);
            framerateSelectElement.value = framerateSelectElement.value = videoFramerate.toString();
+       }
+  }
+
+  if (dev_mode && videoBufferSelectElement) {
+      videoBufferSelectElement.value = videoBufferSize.toString();
+       let optionExists = false;
+       for (let i = 0; i < videoBufferSelectElement.options.length; i++) {
+           if (videoBufferSelectElement.options[i].value === videoBufferSize.toString()) {
+               optionExists = true;
+               break;
+           }
+       }
+       if (!optionExists) {
+           console.warn(`Loaded video buffer size ${videoBufferSize} is not in dropdown options. Adding it.`);
+           const option = document.createElement('option');
+           option.value = videoBufferSize.toString();
+           option.textContent = `${videoBufferSize} frames (custom)`;
+           videoBufferSelectElement.insertBefore(option, videoBufferSelectElement.firstChild);
+           videoBufferSelectElement.value = videoBufferSize.toString();
        }
   }
 
@@ -1619,7 +1700,6 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const setupWebRTCMode = () => {
-    // Clear websocket-specific interval if active
     if (metricsIntervalId) {
         clearInterval(metricsIntervalId);
         metricsIntervalId = null;
@@ -1838,55 +1918,68 @@ document.addEventListener('DOMContentLoaded', () => {
       websocket.send('kr');
   });
 
-  function handleFrame(frame) {
-    if (!canvas) {
-      canvas = document.getElementById('videoCanvas');
-      if (!canvas) {
-        canvas = document.createElement('canvas');
-        canvas.id = 'videoCanvas';
-        canvas.style.zIndex = '9999';
-        canvas.style.position = 'fixed';
-        canvas.style.top = '0';
-        canvas.style.left = '0';
-        document.body.appendChild(canvas);
-      }
-      canvasContext = canvas.getContext('2d');
-      if (!canvasContext) {
-        console.error('Failed to get 2D rendering context');
+  /**
+   * Handles a decoded video frame from the decoder.
+   * Adds the frame to the videoFrameBuffer.
+   * @param {VideoFrame} frame
+   */
+  function handleDecodedFrame(frame) {
+      if (document.hidden) {
+        console.log('Tab is hidden, dropping video frame.');
         frame.close();
+        if (dev_mode && videoBufferDivElement) {
+            videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames (Tab Hidden)`;
+        }
         return;
       }
-    }
-
-    canvas.width = frame.codedWidth;
-    canvas.height = frame.codedHeight;
-
-    canvasContext.drawImage(frame, 0, 0);
-
-    frame.close();
-
-    frameCount++;
-    const now = performance.now();
-    const elapsed = now - lastFpsUpdateTime;
-
-    if (elapsed >= 1000) {
-        const currentFps = (frameCount * 1000) / elapsed;
-        window.fps = Math.round(currentFps);
-        frameCount = 0;
-        lastFpsUpdateTime = now;
-
-        // FPS display is now handled in the sendClientMetrics interval
-        // if (dev_mode && fpsCounterDivElement) {
-        //     fpsCounterDivElement.textContent = `FPS: ${window.fps}`;
-        // }
-    }
-
-
-    if (!streamStarted) {
-      startStream();
-      initializeInput();
-    }
+      videoFrameBuffer.push(frame);
+      if (dev_mode && videoBufferDivElement) {
+          videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
+      }
   }
+
+  /**
+   * Paints the oldest frame from the buffer onto the canvas if the buffer is full enough.
+   * Runs on a requestAnimationFrame loop.
+   */
+  function paintVideoFrame() {
+      if (canvasContext && videoFrameBuffer.length > videoBufferSize) {
+          const frameToPaint = videoFrameBuffer.shift();
+
+          if (frameToPaint) {
+              canvas.width = frameToPaint.codedWidth;
+              canvas.height = frameToPaint.codedHeight;
+
+              canvasContext.drawImage(frameToPaint, 0, 0);
+
+              frameToPaint.close();
+
+              frameCount++;
+              const now = performance.now();
+              const elapsed = now - lastFpsUpdateTime;
+
+              if (elapsed >= 1000) {
+                  const currentFps = (frameCount * 1000) / elapsed;
+                  window.fps = Math.round(currentFps);
+                  frameCount = 0;
+                  lastFpsUpdateTime = now;
+              }
+
+              if (!streamStarted) {
+                  startStream();
+                  initializeInput();
+              }
+          }
+      } else {
+           if (dev_mode && videoBufferDivElement) {
+              videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
+           }
+      }
+
+      requestAnimationFrame(paintVideoFrame);
+  }
+
+
   async function initializeAudio() {
     if (!audioContext) {
       audioContext = new (window.AudioContext || window.webkitAudioContext)({
@@ -1909,7 +2002,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.port.onmessage = (event) => {
               if (event.data.audioData) {
                 this.audioBufferQueue.push(event.data.audioData);
-              } else if (event.data.type === 'getBufferSize') { // Add message handler for buffer size request
+              } else if (event.data.type === 'getBufferSize') {
                 this.port.postMessage({ type: 'audioBufferSize', size: this.audioBufferQueue.length });
               }
             };
@@ -1981,7 +2074,6 @@ document.addEventListener('DOMContentLoaded', () => {
       );
       audioWorkletProcessorPort = audioWorkletNode.port;
 
-      // Add listener to receive buffer size from AudioWorklet
       audioWorkletProcessorPort.onmessage = (event) => {
           if (event.data.type === 'audioBufferSize') {
               currentAudioBufferSize = event.data.size;
@@ -2006,14 +2098,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!audioContext || !audioWorkletProcessorPort) {
       console.log('Audio context or AudioWorkletProcessor not available, waiting for user interaction!');
-      frame.close(); // Drop frame if audio context is not ready
+      frame.close();
       return;
     }
 
     if (audioContext.state !== 'running') {
       console.warn('AudioContext state is:', audioContext.state, '. Resuming...');
       await audioContext.resume();
-      frame.close(); // Drop frame if audio context is not running yet
+      frame.close();
       return;
     }
 
@@ -2041,7 +2133,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   async function initializeDecoder() {
     decoder = new VideoDecoder({
-      output: handleFrame,
+      output: handleDecodedFrame,
       error: (e) => {
         console.error('Decoder error:', e);
       },
@@ -2055,7 +2147,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     try {
-      decoder.configure(decoderConfig);
+      const support = await VideoDecoder.isConfigSupported(decoderConfig);
+      if (support.supported) {
+          decoder.configure(decoderConfig);
+          console.log('VideoDecoder configured successfully.');
+      } else {
+          console.error('VideoDecoder configuration not supported:', support);
+          decoder = null;
+      }
     } catch (e) {
       console.error('Error configuring VideoDecoder:', e);
       decoder = null;
@@ -2077,7 +2176,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     try {
-      decoderAudio.configure(decoderConfig);
+       const support = await AudioDecoder.isConfigSupported(decoderConfig);
+       if (support.supported) {
+           decoderAudio.configure(decoderConfig);
+           console.log('AudioDecoder configured successfully.');
+       } else {
+           console.error('AudioDecoder configuration not supported:', support);
+           decoderAudio = null;
+       }
     } catch (e) {
       console.error('Error configuring AudioDecoder:', e);
       decoderAudio = null;
@@ -2091,12 +2197,8 @@ document.addEventListener('DOMContentLoaded', () => {
   websocket = new WebSocket(websocketEndpointURL.href);
   websocket.binaryType = 'arraybuffer';
 
-  // Function to send client metrics over WebSocket
   const sendClientMetrics = () => {
-      // Only send metrics if in websockets mode and the connection is open
       if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-          // Request audio buffer size from AudioWorklet just before sending
-          // The response updates currentAudioBufferSize, which will be used in this send.
           if (audioWorkletProcessorPort) {
                audioWorkletProcessorPort.postMessage({ type: 'getBufferSize' });
           }
@@ -2107,22 +2209,18 @@ document.addEventListener('DOMContentLoaded', () => {
               console.error('[websockets] Error sending client metrics:', error);
           }
       }
-      // Update display in dev mode regardless of sending
       if (dev_mode) {
           if (fpsCounterDivElement) {
               fpsCounterDivElement.textContent = `Client FPS: ${window.fps}`;
           }
-          if (audioBufferDivElement) { // Use the global variable
-               audioBufferDivElement.textContent = `Audio Buffer: ${currentAudioBufferSize} buffers`; // Changed to buffers
+          if (audioBufferDivElement) {
+               audioBufferDivElement.textContent = `Audio Buffer: ${currentAudioBufferSize} buffers`;
           }
       }
   };
 
-
   websocket.onopen = () => {
     console.log('[websockets] Connection opened!');
-    // Start sending metrics periodically once the websocket is open
-    // Ensure interval is only started once
     if (metricsIntervalId === null) {
         metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
         console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
@@ -2135,20 +2233,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const arrayBuffer = event.data;
         const dataView = new DataView(arrayBuffer);
 
-        // Read the first two bytes for type and flags
-        const dataTypeByte = dataView.getUint8(0); // 0 for video, 1 for audio
-        const frameTypeFlag = dataView.getUint8(1); // Frame flags (e.g., keyframe for video)
-        const isKey = frameTypeFlag === 1; // Assuming flag 1 indicates a keyframe/key chunk
-        const frameDataArrayBuffer = arrayBuffer.slice(2); // The rest is the frame data
+        const dataTypeByte = dataView.getUint8(0);
+        const frameTypeFlag = dataView.getUint8(1);
+        const isKey = frameTypeFlag === 1;
+        const frameDataArrayBuffer = arrayBuffer.slice(2);
 
-        if (dataTypeByte === 0) { // Video frame
+        if (dataTypeByte === 0) {
           if (decoder && decoder.state === 'configured') {
             const chunk = new EncodedVideoChunk({
               type: isKey ? 'key' : 'delta',
-              // Timestamps and durations should ideally come from the server
-              // and be included in the metadata prefix of the frame.
-              // Using 0 for now, which works for simple sequential decoding,
-              // but can lead to sync issues without proper timing.
               timestamp: 0,
               duration: 0,
               data: frameDataArrayBuffer,
@@ -2157,42 +2250,25 @@ document.addEventListener('DOMContentLoaded', () => {
               decoder.decode(chunk);
             } catch (e) {
               console.error('Video Decoding error:', e);
-              // Consider resetting the decoder or requesting a keyframe from the server
-              // decoder.reset(); // Resetting might interrupt playback briefly
             }
           } else {
             console.warn(
               'Video Decoder not ready or not configured yet, video frame dropped.'
             );
           }
-        } else if (dataTypeByte === 1) { // Audio frame
-          // --- START MODIFICATION: Add audio buffer check ---
-          // Define the buffer threshold
-          const AUDIO_BUFFER_THRESHOLD = 10; // Maximum number of audio buffers allowed
+        } else if (dataTypeByte === 1) {
+          const AUDIO_BUFFER_THRESHOLD = 10;
 
-          // Check the current audio buffer size before processing the frame
-          // currentAudioBufferSize is updated asynchronously by the AudioWorklet,
-          // but this gives us a reasonable proxy on the main thread.
           if (currentAudioBufferSize >= AUDIO_BUFFER_THRESHOLD) {
               console.warn(
                   `Audio buffer (${currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`
               );
-              // Do not decode or queue this frame. Simply discard the data and return.
-              // The frameDataArrayBuffer will be garbage collected.
               return;
           }
-          // --- END MODIFICATION ---
 
-          // If buffer is below threshold, proceed with decoding and queuing
           if (decoderAudio && decoderAudio.state === 'configured') {
             const chunk = new EncodedAudioChunk({
-              // Opus frames are not strictly 'key' or 'delta' in the video sense,
-              // but 'key' is a safe default type for EncodedAudioChunk.
               type: 'key',
-               // Timestamps and durations should ideally come from the server
-              // and be included in the metadata prefix of the frame.
-              // Using 0 for now, which works for simple sequential decoding,
-              // but can lead to sync issues without proper timing.
               timestamp: 0,
               duration: 0,
               data: frameDataArrayBuffer,
@@ -2201,8 +2277,6 @@ document.addEventListener('DOMContentLoaded', () => {
               decoderAudio.decode(chunk);
             } catch (e) {
               console.error('Audio Decoding error:', e);
-               // Consider resetting the audio decoder
-               // decoderAudio.reset();
             }
           } else {
              console.warn('Audio Decoder not ready or not configured yet, audio frame dropped.');
@@ -2213,31 +2287,27 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else if (typeof event.data === 'string') {
       if (clientMode === 'websockets') {
-         // Handle incoming string messages from the server
          if (event.data.startsWith('{')) {
            let obj;
            try {
               obj = JSON.parse(event.data);
            } catch (e) {
               console.error('Error parsing JSON message from server:', e, 'Message:', event.data);
-              return; // Stop processing this message if JSON is invalid
+              return;
            }
 
            if (obj.type === 'system_stats') {
-             window.system_stats = obj; // Store the whole object
+             window.system_stats = obj;
              if (dev_mode && systemStatsDivElement) {
-               systemStatsDivElement.textContent = JSON.stringify(obj, null, 2); // Display the whole object
+               systemStatsDivElement.textContent = JSON.stringify(obj, null, 2);
              }
            } else if (obj.type === 'gpu_stats') {
-             window.gpu_stats = obj; // Store the whole object
+             window.gpu_stats = obj;
              if (dev_mode && gpuStatsDivElement) {
-               gpuStatsDivElement.textContent = JSON.stringify(obj, null, 2); // Display the whole object
+               gpuStatsDivElement.textContent = JSON.stringify(obj, null, 2);
              }
            }
-           // Handle other server-sent JSON types here if needed
-           // else if (obj.type === 'some_other_server_type') { ... }
            else {
-             // Log unexpected JSON types from the server
              console.warn(`Received unexpected JSON message type from server: ${obj.type}`, obj);
            }
 
@@ -2281,28 +2351,28 @@ document.addEventListener('DOMContentLoaded', () => {
              }
          }
          else {
-            if (window.webrtcInput) { 
+            if (window.webrtcInput) {
                window.webrtcInput.on_message(event.data);
             } else {
                console.warn('Received string message before input handler initialized:', event.data);
             }
          }
-
       } else if (event.data === 'MODE websockets') {
         clientMode = 'websockets';
         console.log('[websockets] Switched to websockets mode.');
         initializeDecoder();
         initializeDecoderAudio();
         initializeInput();
-        // Ensure UI reflects that stream is starting immediately in this mode
         if (playButtonElement) playButtonElement.classList.add('hidden');
         if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
         if (spinnerElement) spinnerElement.classList.remove('hidden');
-        // The metrics interval should already be running from websocket.onopen
+
+        console.log('Starting video painting loop (requestAnimationFrame).');
+        requestAnimationFrame(paintVideoFrame);
+
       } else if (event.data === 'MODE webrtc') {
         clientMode = 'webrtc';
         console.log('[websockets] Switched to webrtc mode.');
-        // Stop websocket-specific metrics interval if switching away from websockets mode
         if (metricsIntervalId) {
             clearInterval(metricsIntervalId);
             metricsIntervalId = null;
@@ -2349,7 +2419,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   websocket.onerror = (event) => {
     console.error('[websockets] Error:', event);
-    // Clear the metrics interval on error
     if (metricsIntervalId) {
         clearInterval(metricsIntervalId);
         metricsIntervalId = null;
@@ -2359,17 +2428,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
   websocket.onclose = (event) => {
     console.log('[websockets] Connection closed', event);
-    // Clear the metrics interval on close
     if (metricsIntervalId) {
         clearInterval(metricsIntervalId);
         metricsIntervalId = null;
         console.log('[websockets] Stopped client metrics interval due to close.');
     }
+    cleanupVideoBuffer();
   };
 });
 
+function cleanupVideoBuffer() {
+    console.log(`Cleanup: Closing ${videoFrameBuffer.length} video frames in buffer.`);
+    videoFrameBuffer.forEach(frame => {
+        try {
+            frame.close();
+        } catch (e) {
+            console.warn('Error closing video frame during cleanup:', e);
+        }
+    });
+    videoFrameBuffer.length = 0;
+     if (dev_mode && videoBufferDivElement) {
+        videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
+     }
+}
+
+
 function cleanup() {
-  // Clear the metrics interval first
   if (metricsIntervalId) {
       clearInterval(metricsIntervalId);
       metricsIntervalId = null;
@@ -2389,7 +2473,6 @@ function cleanup() {
     audio_webrtc.reset();
   }
   if (websocket) {
-    // Remove event listeners to prevent reconnect attempts during cleanup
     websocket.onopen = null;
     websocket.onmessage = null;
     websocket.onerror = null;
@@ -2398,9 +2481,7 @@ function cleanup() {
     websocket = null;
   }
   if (audioContext) {
-      // Check if audioContext is running or suspended before trying to close/resume
       if (audioContext.state !== 'closed') {
-          // Resume might be needed if it's suspended, otherwise close might hang
           if (audioContext.state === 'suspended') {
               audioContext.resume().then(() => {
                   audioContext.close().then(() => console.log('AudioContext closed')).catch(e => console.error('Error closing AudioContext:', e));
@@ -2423,6 +2504,8 @@ function cleanup() {
       decoderAudio.close();
       decoderAudio = null;
   }
+
+  cleanupVideoBuffer();
 
 
   status = 'connecting';
