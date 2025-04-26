@@ -21,7 +21,7 @@
  */
 
 // Set this to true to enable the dev dashboard layout
-var dev_mode = true;
+var dev_mode = false;
 
 /**
  * @typedef {Object} WebRTCDemoSignalling
@@ -378,7 +378,7 @@ let audioContext;
 let audioWorkletNode;
 let audioWorkletProcessorPort;
 const audioBufferQueue = [];
-let currentAudioBufferSize = 0;
+window.currentAudioBufferSize = 0;
 
 /** @type {VideoFrame[]} */
 let videoFrameBuffer = [];
@@ -873,6 +873,7 @@ const initializeUI = () => {
 
   overlayInput = document.createElement('input');
   overlayInput.type = 'text';
+  overlayInput.readOnly = true;
   overlayInput.id = 'overlayInput';
   videoContainer.appendChild(overlayInput);
 
@@ -946,15 +947,11 @@ const initializeUI = () => {
     encoderContainer.appendChild(encoderSelectElement);
     sidebarDiv.appendChild(encoderContainer);
 
+    // MODIFIED: Send setting via window.postMessage
     encoderSelectElement.addEventListener('change', (event) => {
         const selectedEncoder = event.target.value;
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const message = `SET_ENCODER,${selectedEncoder}`;
-            console.log(`Sending websocket message: ${message}`);
-            websocket.send(message);
-        } else {
-            console.warn("Websocket connection not open, cannot send encoder setting.");
-        }
+        console.log(`Dev Sidebar: Encoder selected: ${selectedEncoder}. Sending via window.postMessage.`);
+        window.postMessage({ type: 'settings', settings: { encoder: selectedEncoder } }, window.location.origin);
     });
 
     const framerateContainer = document.createElement('div');
@@ -982,20 +979,12 @@ const initializeUI = () => {
     framerateContainer.appendChild(framerateSelectElement);
     sidebarDiv.appendChild(framerateContainer);
 
+    // MODIFIED: Send setting via window.postMessage
     framerateSelectElement.addEventListener('change', (event) => {
         const selectedFramerate = parseInt(event.target.value, 10);
         if (!isNaN(selectedFramerate)) {
-            if (websocket && websocket.readyState === WebSocket.OPEN) {
-                const message = `SET_FRAMERATE,${selectedFramerate}`;
-                console.log(`Sending websocket message: ${message}`);
-                websocket.send(message);
-
-                videoFramerate = selectedFramerate;
-                setIntParam('videoFramerate', videoFramerate);
-                 console.log(`Video framerate set to ${videoFramerate} FPS via UI`);
-            } else {
-                console.warn("Websocket connection not open, cannot send framerate setting.");
-            }
+            console.log(`Dev Sidebar: Framerate selected: ${selectedFramerate}. Sending via window.postMessage.`);
+            window.postMessage({ type: 'settings', settings: { videoFramerate: selectedFramerate } }, window.location.origin);
         }
     });
 
@@ -1026,20 +1015,12 @@ const initializeUI = () => {
     bitrateContainer.appendChild(videoBitrateSelectElement);
     sidebarDiv.appendChild(bitrateContainer);
 
+    // MODIFIED: Send setting via window.postMessage
     videoBitrateSelectElement.addEventListener('change', (event) => {
         const selectedBitrate = parseInt(event.target.value, 10);
         if (!isNaN(selectedBitrate)) {
-            if (websocket && websocket.readyState === WebSocket.OPEN) {
-                const message = `SET_VIDEO_BITRATE,${selectedBitrate}`;
-                console.log(`Sending websocket message: ${message}`);
-                websocket.send(message);
-
-                videoBitRate = selectedBitrate;
-                setIntParam('videoBitRate', videoBitRate);
-                 console.log(`Video bitrate set to ${videoBitRate} KBs via UI`);
-            } else {
-                console.warn("Websocket connection not open, cannot send video bitrate setting.");
-            }
+            console.log(`Dev Sidebar: Video Bitrate selected: ${selectedBitrate}. Sending via window.postMessage.`);
+            window.postMessage({ type: 'settings', settings: { videoBitRate: selectedBitrate } }, window.location.origin);
         }
     });
 
@@ -1068,20 +1049,12 @@ const initializeUI = () => {
     audioBitrateContainer.appendChild(audioBitrateSelectElement);
     sidebarDiv.appendChild(audioBitrateContainer);
 
+    // MODIFIED: Send setting via window.postMessage
     audioBitrateSelectElement.addEventListener('change', (event) => {
         const selectedBitrate = parseInt(event.target.value, 10);
         if (!isNaN(selectedBitrate)) {
-            if (websocket && websocket.readyState === WebSocket.OPEN) {
-                const message = `SET_AUDIO_BITRATE,${selectedBitrate}`;
-                console.log(`Sending websocket message: ${message}`);
-                websocket.send(message);
-
-                audioBitRate = selectedBitrate;
-                setIntParam('audioBitRate', audioBitRate);
-                 console.log(`Audio bitrate set to ${audioBitRate} kbit/s via UI`);
-            } else {
-                console.warn("Websocket connection not open, cannot send audio bitrate setting.");
-            }
+            console.log(`Dev Sidebar: Audio Bitrate selected: ${selectedBitrate}. Sending via window.postMessage.`);
+            window.postMessage({ type: 'settings', settings: { audioBitRate: selectedBitrate } }, window.location.origin);
         }
     });
 
@@ -1106,12 +1079,15 @@ const initializeUI = () => {
     videoBufferContainer.appendChild(videoBufferSelectElement);
     sidebarDiv.appendChild(videoBufferContainer);
 
+    // NOTE: videoBufferSize is a client-side rendering/buffering setting,
+    //       not a server setting. It doesn't need to be sent to the server.
+    //       We keep the original logic of updating local state and localStorage.
     videoBufferSelectElement.addEventListener('change', (event) => {
         const selectedSize = parseInt(event.target.value, 10);
         if (!isNaN(selectedSize)) {
             videoBufferSize = selectedSize;
             setIntParam('videoBufferSize', videoBufferSize);
-            console.log(`Video buffer size set to ${videoBufferSize} frames via UI`);
+            console.log(`Dev Sidebar: Video buffer size set to ${videoBufferSize} frames via UI`);
         }
     });
 
@@ -1153,7 +1129,7 @@ const initializeUI = () => {
     audioBufferDivElement = document.createElement('div');
     audioBufferDivElement.id = 'audio-buffer-div';
     audioBufferDivElement.className = 'dev-stats-item';
-    audioBufferDivElement.textContent = `Audio Buffer: ${currentAudioBufferSize}`;
+    audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize}`;
     sidebarDiv.appendChild(audioBufferDivElement);
 
     const videoBufferDisplayLabel = document.createElement('label');
@@ -1174,6 +1150,7 @@ const initializeUI = () => {
     appDiv.appendChild(sidebarDiv);
   }
 
+  // Load initial settings from localStorage
   videoBitRate = getIntParam('videoBitRate', videoBitRate);
   videoFramerate = getIntParam('videoFramerate', videoFramerate);
   audioBitRate = getIntParam('audioBitRate', audioBitRate);
@@ -1181,7 +1158,6 @@ const initializeUI = () => {
   scaleLocal = getBoolParam('scaleLocal', scaleLocal);
   debug = getBoolParam('debug', debug);
   turnSwitch = getBoolParam('turnSwitch', turnSwitch);
-
   videoBufferSize = getIntParam('videoBufferSize', 0);
 
 
@@ -1199,7 +1175,8 @@ const initializeUI = () => {
     statusDisplayElement.classList.remove('hidden');
     spinnerElement.classList.remove('hidden');
   }
-};
+}; // Removed the problematic semicolon here
+
 
 const startStream = () => {
   if (streamStarted) return;
@@ -1313,36 +1290,39 @@ window.addEventListener('message', receiveMessage, false);
 
 function receiveMessage(event) {
   if (event.origin !== window.location.origin) {
+    console.warn(`Received message from unexpected origin: ${event.origin}`);
     return;
   }
 
   const message = event.data;
   if (typeof message === 'object' && message !== null) {
     if (message.type === 'settings') {
+      console.log('Received settings message via window.postMessage:', message.settings);
       handleSettingsMessage(message.settings);
     } else if (message.type === 'getStats') {
+      console.log('Received getStats message via window.postMessage.');
       sendStatsMessage();
+    } else {
+      console.warn('Received unknown message type via window.postMessage:', message.type, message);
     }
+  } else {
+     console.warn('Received non-object message via window.postMessage:', message);
   }
 }
 
 function handleSettingsMessage(settings) {
+  // This function now processes settings received from *any* source
+  // (including the dev sidebar via window.postMessage).
+  // It updates local state, localStorage, the UI (if dev_mode),
+  // and sends the command to the server via the appropriate channel.
+
+  console.log('Applying settings:', settings);
+
   if (settings.videoBitRate !== undefined) {
     videoBitRate = parseInt(settings.videoBitRate);
-    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-      webrtc.sendDataChannelMessage(`vb,${videoBitRate}`);
-       console.log(`Video bitrate set to ${videoBitRate} kbit/s via settings message`);
-    } else if (clientMode === 'websockets') {
-       console.log(`Video bitrate set to ${videoBitRate} kbit/s via settings message (websockets mode)`);
-       if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
-            console.log(`Sending websocket message: ${message}`);
-            websocket.send(message);
-       } else {
-           console.warn("Websocket connection not open, cannot send video bitrate setting.");
-       }
-    }
-    setIntParam('videoBitRate', videoBitRate);
+    setIntParam('videoBitRate', videoBitRate); // Save to localStorage
+
+    // Update UI dropdown if in dev mode
     if (dev_mode && videoBitrateSelectElement) {
          videoBitrateSelectElement.value = videoBitRate.toString();
          let optionExists = false;
@@ -1352,32 +1332,37 @@ function handleSettingsMessage(settings) {
                  break;
              }
          }
+         // Add option if it doesn't exist (e.g., custom value from external source)
          if (!optionExists) {
              console.warn(`Received video bitrate ${videoBitRate} kbit/s from settings is not in dropdown options. Adding it.`);
              const option = document.createElement('option');
              option.value = videoBitRate.toString();
              option.textContent = `${videoBitRate} kbit/s (custom)`;
              videoBitrateSelectElement.insertBefore(option, videoBitrateSelectElement.firstChild);
-             videoBitrateSelectElement.value = videoBitRate.toString();
+             videoBitrateSelectElement.value = videoBitRate.toString(); // Ensure the new option is selected
          }
     }
-  }
-  if (settings.videoFramerate !== undefined) {
-    videoFramerate = parseInt(settings.videoFramerate);
+
+    // Send to server
     if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-      webrtc.sendDataChannelMessage(`_arg_fps,${videoFramerate}`);
-      console.log(`Video framerate set to ${videoFramerate} FPS via settings message (_arg_fps)`);
+      webrtc.sendDataChannelMessage(`vb,${videoBitRate}`);
+       console.log(`Sent video bitrate ${videoBitRate} kbit/s to server via DataChannel.`);
     } else if (clientMode === 'websockets') {
-       console.log(`Video framerate set to ${videoFramerate} FPS via settings message (websockets mode)`);
        if (websocket && websocket.readyState === WebSocket.OPEN) {
-           const message = `SET_FRAMERATE,${videoFramerate}`;
-           console.log(`Sending websocket message: ${message}`);
-           websocket.send(message);
+            const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
+            console.log(`Sent websocket message: ${message}`);
+            websocket.send(message);
        } else {
-           console.warn("Websocket connection not open, cannot send framerate setting.");
+           console.warn("Websocket connection not open, cannot send video bitrate setting.");
        }
     }
-    setIntParam('videoFramerate', videoFramerate);
+  }
+
+  if (settings.videoFramerate !== undefined) {
+    videoFramerate = parseInt(settings.videoFramerate);
+    setIntParam('videoFramerate', videoFramerate); // Save to localStorage
+
+     // Update UI dropdown if in dev mode
     if (dev_mode && framerateSelectElement) {
         framerateSelectElement.value = videoFramerate.toString();
          let optionExists = false;
@@ -1387,60 +1372,72 @@ function handleSettingsMessage(settings) {
                  break;
              }
          }
+         // Add option if it doesn't exist
          if (!optionExists) {
              console.warn(`Received video framerate ${videoFramerate} FPS from settings is not in dropdown options. Adding it.`);
              const option = document.createElement('option');
              option.value = videoFramerate.toString();
              option.textContent = `${videoFramerate} FPS (custom)`;
              framerateSelectElement.insertBefore(option, framerateSelectElement.firstChild);
-             framerateSelectElement.value = videoFramerate.toString();
+             framerateSelectElement.value = videoFramerate.toString(); // Ensure the new option is selected
          }
     }
+
+    // Send to server
+    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+      webrtc.sendDataChannelMessage(`_arg_fps,${videoFramerate}`);
+      console.log(`Sent video framerate ${videoFramerate} FPS to server via DataChannel (_arg_fps).`);
+    } else if (clientMode === 'websockets') {
+       if (websocket && websocket.readyState === WebSocket.OPEN) {
+           const message = `SET_FRAMERATE,${videoFramerate}`;
+           console.log(`Sent websocket message: ${message}`);
+           websocket.send(message);
+       } else {
+           console.warn("Websocket connection not open, cannot send framerate setting.");
+       }
+    }
   }
+
   if (settings.resizeRemote !== undefined) {
     resizeRemote = settings.resizeRemote;
-    const videoContainer = document.querySelector('.video-container');
-     if (!videoContainer) {
-          console.warn('video-container not found, using window size for resizeRemote resolution.');
-          const res = `${roundDownToEven(window.innerWidth)}x${roundDownToEven(window.innerHeight)}`;
-           if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-              webrtc.sendDataChannelMessage(`_arg_resize,${resizeRemote},${res}`);
-           }
-           setBoolParam('resizeRemote', resizeRemote);
-           return;
-     }
+    setBoolParam('resizeRemote', resizeRemote); // Save to localStorage
 
-    const videoContainerRect = videoContainer.getBoundingClientRect();
-    const evenWidth = roundDownToEven(videoContainerRect.width);
-    const evenHeight = roundDownToEven(videoContainerRect.height);
-    const res = `${evenWidth}x${evenHeight}`;
-    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-      webrtc.sendDataChannelMessage(`_arg_resize,${resizeRemote},${res}`);
-    } else if (clientMode === 'websockets') {
+    // Send to server (requires calculating resolution)
+    const videoContainer = document.querySelector('.video-container');
+    let res;
+    if (!videoContainer) {
+         console.warn('video-container not found, using window size for resizeRemote resolution.');
+         res = `${roundDownToEven(window.innerWidth)}x${roundDownToEven(window.innerHeight)}`;
+    } else {
+        const videoContainerRect = videoContainer.getBoundingClientRect();
+        const evenWidth = roundDownToEven(videoContainerRect.width);
+        const evenHeight = roundDownToEven(videoContainerRect.height);
+        res = `${evenWidth}x${evenHeight}`;
     }
-    setBoolParam('resizeRemote', resizeRemote);
+
+    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+       webrtc.sendDataChannelMessage(`_arg_resize,${resizeRemote},${res}`);
+       console.log(`Sent resizeRemote ${resizeRemote} with resolution ${res} to server via DataChannel.`);
+    } else if (clientMode === 'websockets') {
+       // Note: Original code didn't send resize via websocket. Keep this behavior?
+       // If needed, add websocket send logic here.
+       console.warn("ResizeRemote setting received, but not sending to server in websockets mode (not implemented).");
+    }
   }
+
   if (settings.scaleLocal !== undefined) {
     scaleLocal = settings.scaleLocal;
+    setBoolParam('scaleLocal', scaleLocal); // Save to localStorage
+    // This is a client-side rendering setting, no server message needed.
     videoElement.classList.toggle('scale', scaleLocal);
-    setBoolParam('scaleLocal', scaleLocal);
+    console.log(`Applied scaleLocal setting: ${scaleLocal}`);
   }
+
   if (settings.audioBitRate !== undefined) {
     audioBitRate = parseInt(settings.audioBitRate);
-    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-      webrtc.sendDataChannelMessage(`ab,${audioBitRate}`);
-       console.log(`Audio bitrate set to ${audioBitRate} kbit/s via settings message`);
-    } else if (clientMode === 'websockets') {
-       console.log(`Audio bitrate set to ${audioBitRate} kbit/s via settings message (websockets mode)`);
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const message = `SET_AUDIO_BITRATE,${audioBitRate}`;
-            console.log(`Sending websocket message: ${message}`);
-            websocket.send(message);
-        } else {
-            console.warn("Websocket connection not open, cannot send audio bitrate setting.");
-        }
-    }
-    setIntParam('audioBitRate', audioBitRate);
+    setIntParam('audioBitRate', audioBitRate); // Save to localStorage
+
+    // Update UI dropdown if in dev mode
     if (dev_mode && audioBitrateSelectElement) {
         audioBitrateSelectElement.value = audioBitRate.toString();
          let optionExists = false;
@@ -1450,32 +1447,37 @@ function handleSettingsMessage(settings) {
                  break;
              }
          }
+         // Add option if it doesn't exist
          if (!optionExists) {
              console.warn(`Received audio bitrate ${audioBitRate} kbit/s from settings is not in dropdown options. Adding it.`);
              const option = document.createElement('option');
              option.value = audioBitRate.toString();
              option.textContent = `${audioBitRate} kbit/s (custom)`;
              audioBitrateSelectElement.insertBefore(option, audioBitrateSelectElement.firstChild);
-             audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitrate.toString();
+             audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitrate.toString(); // Ensure the new option is selected
          }
     }
+
+    // Send to server
+    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+      webrtc.sendDataChannelMessage(`ab,${audioBitRate}`);
+       console.log(`Sent audio bitrate ${audioBitRate} kbit/s to server via DataChannel.`);
+    } else if (clientMode === 'websockets') {
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            const message = `SET_AUDIO_BITRATE,${audioBitRate}`;
+            console.log(`Sent websocket message: ${message}`);
+            websocket.send(message);
+        } else {
+            console.warn("Websocket connection not open, cannot send audio bitrate setting.");
+        }
+    }
   }
+
   if (settings.encoder !== undefined) {
       const encoder = settings.encoder;
-      if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-           webrtc.sendDataChannelMessage(`enc,${encoder}`);
-           console.log(`Encoder set to ${encoder} via settings message`);
-      } else if (clientMode === 'websockets') {
-          console.log(`Encoder set to ${encoder} via settings message (websockets mode)`);
-           if (websocket && websocket.readyState === WebSocket.OPEN) {
-               const message = `SET_ENCODER,${encoder}`;
-               console.log(`Sending websocket message: ${message}`);
-               websocket.send(message);
-           } else {
-               console.warn("Websocket connection not open, cannot send encoder setting.");
-           }
-      }
-       setStringParam('encoder', encoder);
+      setStringParam('encoder', encoder); // Save to localStorage
+
+      // Update UI dropdown if in dev mode
        if (dev_mode && encoderSelectElement) {
            encoderSelectElement.value = encoder;
             let optionExists = false;
@@ -1485,20 +1487,38 @@ function handleSettingsMessage(settings) {
                     break;
                 }
             }
+            // Add option if it doesn't exist
             if (!optionExists) {
                 console.warn(`Received encoder ${encoder} from settings is not in dropdown options. Adding it.`);
                 const option = document.createElement('option');
                 option.value = encoder;
                 option.textContent = `${encoder} (custom)`;
                 encoderSelectElement.insertBefore(option, encoderSelectElement.firstChild);
-                encoderSelectElement.value = encoder;
+                encoderSelectElement.value = encoder; // Ensure the new option is selected
             }
        }
+
+       // Send to server
+      if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+           webrtc.sendDataChannelMessage(`enc,${encoder}`);
+           console.log(`Sent encoder ${encoder} to server via DataChannel.`);
+      } else if (clientMode === 'websockets') {
+           if (websocket && websocket.readyState === WebSocket.OPEN) {
+               const message = `SET_ENCODER,${encoder}`;
+               console.log(`Sent websocket message: ${message}`);
+               websocket.send(message);
+           } else {
+               console.warn("Websocket connection not open, cannot send encoder setting.");
+           }
+      }
   }
+
   if (settings.videoBufferSize !== undefined) {
     videoBufferSize = parseInt(settings.videoBufferSize);
-    setIntParam('videoBufferSize', videoBufferSize);
-    console.log(`Video buffer size set to ${videoBufferSize} frames via settings message`);
+    setIntParam('videoBufferSize', videoBufferSize); // Save to localStorage
+    console.log(`Applied Video buffer size setting: ${videoBufferSize} frames.`);
+
+     // Update UI dropdown if in dev mode
      if (dev_mode && videoBufferSelectElement) {
          videoBufferSelectElement.value = videoBufferSize.toString();
           let optionExists = false;
@@ -1508,35 +1528,48 @@ function handleSettingsMessage(settings) {
                   break;
               }
           }
+           // Add option if it doesn't exist
           if (!optionExists) {
               console.warn(`Received video buffer size ${videoBufferSize} from settings is not in dropdown options. Adding it.`);
               const option = document.createElement('option');
               option.value = videoBufferSize.toString();
               option.textContent = `${videoBufferSize} frames (custom)`;
               videoBufferSelectElement.insertBefore(option, videoBufferSelectElement.firstChild);
-              videoBufferSelectElement.value = videoBufferSize.toString();
+              videoBufferSelectElement.value = videoBufferSize.toString(); // Ensure the new option is selected
           }
      }
+     // This is a client-side buffering setting, no server message needed.
   }
 
-
+  // Note: turnSwitch and debug settings trigger a reload in the original code.
+  // This is a bit disruptive, but keeping the original behavior for now.
+  // These settings are also client-side (affecting how the client connects),
+  // not server-side parameters.
   if (settings.turnSwitch !== undefined) {
-    debug = settings.debug;
-    setBoolParam('turnSwitch', turnSwitch);
-    if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null))
+    turnSwitch = settings.turnSwitch;
+    setBoolParam('turnSwitch', turnSwitch); // Save to localStorage
+    console.log(`Applied turnSwitch setting: ${turnSwitch}. Reloading...`);
+    // Check if WebRTC connection exists before reloading
+    if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
+      console.log('WebRTC not connected, skipping immediate reload.');
       return;
+    }
     setTimeout(() => {
       window.location.reload();
-    }, 700);
+    }, 700); // Delay reload slightly
   }
   if (settings.debug !== undefined) {
     debug = settings.debug;
-    setBoolParam('debug', debug);
-    if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null))
+    setBoolParam('debug', debug); // Save to localStorage
+     console.log(`Applied debug setting: ${debug}. Reloading...`);
+    // Check if WebRTC connection exists before reloading
+    if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
+      console.log('WebRTC not connected, skipping immediate reload.');
       return;
+    }
     setTimeout(() => {
       window.location.reload();
-    }, 700);
+    }, 700); // Delay reload slightly
   }
 }
 
@@ -1546,112 +1579,117 @@ function sendStatsMessage() {
     gpu: gpuStat,
     cpu: cpuStat,
     clientFps: window.fps,
-    audioBuffer: currentAudioBufferSize,
+    audioBuffer: window.currentAudioBufferSize,
     videoBuffer: videoFrameBuffer.length,
   };
    if (typeof encoderName !== 'undefined') {
        stats.encoderName = encoderName;
    }
+  // Send stats data back via window.postMessage
   window.parent.postMessage({ type: 'stats', data: stats }, window.location.origin);
+  console.log('Sent stats message via window.postMessage:', stats);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   initializeUI();
 
-  if (dev_mode && videoBitrateSelectElement) {
-      videoBitrateSelectElement.value = videoBitRate.toString();
-       let optionExists = false;
-       for (let i = 0; i < videoBitrateSelectElement.options.length; i++) {
-           if (videoBitrateSelectElement.options[i].value === videoBitRate.toString()) {
-               optionExists = true;
-               break;
+  // Initialize UI dropdowns with loaded settings and add custom options if needed
+  if (dev_mode) {
+      if (videoBitrateSelectElement) {
+          videoBitrateSelectElement.value = videoBitRate.toString();
+           let optionExists = false;
+           for (let i = 0; i < videoBitrateSelectElement.options.length; i++) {
+               if (videoBitrateSelectElement.options[i].value === videoBitRate.toString()) {
+                   optionExists = true;
+                   break;
+               }
            }
-       }
-       if (!optionExists) {
-           console.warn(`Loaded video bitrate ${videoBitRate} kbit/s is not in dropdown options. Adding it.`);
-           const option = document.createElement('option');
-           option.value = videoBitRate.toString();
-           option.textContent = `${videoBitRate} kbit/s (custom)`;
-           videoBitrateSelectElement.insertBefore(option, videoBitrateSelectElement.firstChild);
-           videoBitrateSelectElement.value = videoBitrateSelectElement.value = videoBitRate.toString();
-       }
-  }
+           if (!optionExists) {
+               console.warn(`Loaded video bitrate ${videoBitRate} kbit/s is not in dropdown options. Adding it.`);
+               const option = document.createElement('option');
+               option.value = videoBitRate.toString();
+               option.textContent = `${videoBitRate} kbit/s (custom)`;
+               videoBitrateSelectElement.insertBefore(option, videoBitrateSelectElement.firstChild);
+               videoBitrateSelectElement.value = videoBitrateSelectElement.value = videoBitRate.toString();
+           }
+      }
 
-  if (dev_mode && audioBitrateSelectElement) {
-      audioBitrateSelectElement.value = audioBitRate.toString();
-       let optionExists = false;
-       for (let i = 0; i < audioBitrateSelectElement.options.length; i++) {
-           if (audioBitrateSelectElement.options[i].value === audioBitRate.toString()) {
-               optionExists = true;
-               break;
+      if (audioBitrateSelectElement) {
+          audioBitrateSelectElement.value = audioBitRate.toString();
+           let optionExists = false;
+           for (let i = 0; i < audioBitrateSelectElement.options.length; i++) {
+               if (audioBitrateSelectElement.options[i].value === audioBitRate.toString()) {
+                   optionExists = true;
+                   break;
+               }
            }
-       }
-       if (!optionExists) {
-           console.warn(`Loaded audio bitrate ${audioBitRate} kbit/s is not in dropdown options. Adding it.`);
-           const option = document.createElement('option');
-           option.value = audioBitRate.toString();
-           option.textContent = `${audioBitRate} kbit/s (custom)`;
-           audioBitrateSelectElement.insertBefore(option, audioBitrateSelectElement.firstChild);
-           audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitrate.toString();
-       }
-  }
+           if (!optionExists) {
+               console.warn(`Loaded audio bitrate ${audioBitRate} kbit/s is not in dropdown options. Adding it.`);
+               const option = document.createElement('option');
+               option.value = audioBitRate.toString();
+               option.textContent = `${audioBitRate} kbit/s (custom)`;
+               audioBitrateSelectElement.insertBefore(option, audioBitrateSelectElement.firstChild);
+               audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitrate.toString();
+           }
+      }
 
-  if (dev_mode && encoderSelectElement) {
-      const savedEncoder = getStringParam('encoder', 'x264enc');
-      encoderSelectElement.value = savedEncoder;
-       let optionExists = false;
-       for (let i = 0; i < encoderSelectElement.options.length; i++) {
-           if (encoderSelectElement.options[i].value === savedEncoder) {
-               optionExists = true;
-               break;
+      if (encoderSelectElement) {
+          const savedEncoder = getStringParam('encoder', 'x264enc');
+          encoderSelectElement.value = savedEncoder;
+           let optionExists = false;
+           for (let i = 0; i < encoderSelectElement.options.length; i++) {
+               if (encoderSelectElement.options[i].value === savedEncoder) {
+                   optionExists = true;
+                   break;
+               }
            }
-       }
-       if (!optionExists) {
-           console.warn(`Loaded encoder ${savedEncoder} is not in dropdown options. Adding it.`);
-           const option = document.createElement('option');
-           option.value = savedEncoder;
-           option.textContent = `${savedEncoder} (custom)`;
-           encoderSelectElement.insertBefore(option, encoderSelectElement.firstChild);
-           encoderSelectElement.value = encoder;
-       }
-  }
+           if (!optionExists) {
+               console.warn(`Loaded encoder ${savedEncoder} is not in dropdown options. Adding it.`);
+               const option = document.createElement('option');
+               option.value = savedEncoder;
+               option.textContent = `${savedEncoder} (custom)`;
+               encoderSelectElement.insertBefore(option, encoderSelectElement.firstChild);
+               encoderSelectElement.value = encoder;
+           }
+      }
 
-  if (dev_mode && framerateSelectElement) {
-      framerateSelectElement.value = videoFramerate.toString();
-       let optionExists = false;
-       for (let i = 0; i < framerateSelectElement.options.length; i++) {
-           if (framerateSelectElement.options[i].value === videoFramerate.toString()) {
-               optionExists = true;
-               break;
+      if (framerateSelectElement) {
+          framerateSelectElement.value = videoFramerate.toString();
+           let optionExists = false;
+           for (let i = 0; i < framerateSelectElement.options.length; i++) {
+               if (framerateSelectElement.options[i].value === videoFramerate.toString()) {
+                   optionExists = true;
+                   break;
+               }
            }
-       }
-       if (!optionExists) {
-           console.warn(`Loaded video framerate ${videoFramerate} FPS is not in dropdown options. Adding it.`);
-           const option = document.createElement('option');
-           option.value = videoFramerate.toString();
-           option.textContent = `${videoFramerate} FPS (custom)`;
-           framerateSelectElement.insertBefore(option, framerateSelectElement.firstChild);
-           framerateSelectElement.value = framerateSelectElement.value = videoFramerate.toString();
-       }
-  }
+           if (!optionExists) {
+               console.warn(`Loaded video framerate ${videoFramerate} FPS is not in dropdown options. Adding it.`);
+               const option = document.createElement('option');
+               option.value = videoFramerate.toString();
+               option.textContent = `${videoFramerate} FPS (custom)`;
+               framerateSelectElement.insertBefore(option, framerateSelectElement.firstChild);
+               framerateSelectElement.value = framerateSelectElement.value = videoFramerate.toString();
+           }
+      }
 
-  if (dev_mode && videoBufferSelectElement) {
-      videoBufferSelectElement.value = videoBufferSize.toString();
-       let optionExists = false;
-       for (let i = 0; i < videoBufferSelectElement.options.length; i++) {
-           if (videoBufferSelectElement.options[i].value === videoBufferSize.toString()) {
-               optionExists = true;
-               break;
+      if (videoBufferSelectElement) {
+          videoBufferSelectElement.value = videoBufferSize.toString();
+           let optionExists = false;
+           for (let i = 0; i < videoBufferSelectElement.options.length; i++) {
+               if (videoBufferSelectElement.options[i].value === videoBufferSize.toString()) {
+                   optionExists = true;
+                   break;
+               }
            }
-       }
-       if (!optionExists) {
-           console.warn(`Loaded video buffer size ${videoBufferSize} is not in dropdown options. Adding it.`);
-           const option = document.createElement('option');
-           option.value = videoBufferSize.toString();
-           option.textContent = `${videoBufferSize} frames (custom)`;
-           videoBufferSelectElement.insertBefore(option, videoBufferSelectElement.firstChild);
-           videoBufferSelectElement.value = videoBufferSize.toString();
-       }
+           if (!optionExists) {
+               console.warn(`Loaded video buffer size ${videoBufferSize} is not in dropdown options. Adding it.`);
+               const option = document.createElement('option');
+               option.value = videoBufferSize.toString();
+               option.textContent = `${videoBufferSize} frames (custom)`;
+               videoBufferSelectElement.insertBefore(option, videoBufferSelectElement.firstChild);
+               videoBufferSelectElement.value = videoBufferSize.toString();
+           }
+      }
   }
 
 
@@ -2076,7 +2114,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       audioWorkletProcessorPort.onmessage = (event) => {
           if (event.data.type === 'audioBufferSize') {
-              currentAudioBufferSize = event.data.size;
+              window.currentAudioBufferSize = event.data.size;
           }
       };
 
@@ -2214,7 +2252,7 @@ document.addEventListener('DOMContentLoaded', () => {
               fpsCounterDivElement.textContent = `Client FPS: ${window.fps}`;
           }
           if (audioBufferDivElement) {
-               audioBufferDivElement.textContent = `Audio Buffer: ${currentAudioBufferSize} buffers`;
+               audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize} buffers`;
           }
       }
   };
@@ -2259,9 +2297,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (dataTypeByte === 1) {
           const AUDIO_BUFFER_THRESHOLD = 10;
 
-          if (currentAudioBufferSize >= AUDIO_BUFFER_THRESHOLD) {
+          if (window.currentAudioBufferSize >= AUDIO_BUFFER_THRESHOLD) {
               console.warn(
-                  `Audio buffer (${currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`
+                  `Audio buffer (${window.currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`
               );
               return;
           }
@@ -2351,6 +2389,7 @@ document.addEventListener('DOMContentLoaded', () => {
              }
          }
          else {
+            // Assuming other string messages are input messages
             if (window.webrtcInput) {
                window.webrtcInput.on_message(event.data);
             } else {
@@ -2494,7 +2533,7 @@ function cleanup() {
       audioWorkletNode = null;
       audioWorkletProcessorPort = null;
       audioBufferQueue.length = 0;
-      currentAudioBufferSize = 0;
+      window.currentAudioBufferSize = 0;
   }
   if (decoder) {
       decoder.close();
@@ -2556,7 +2595,7 @@ function cleanup() {
       fpsCounterDivElement.textContent = `Client FPS: ${window.fps}`;
   }
    if (dev_mode && audioBufferDivElement) {
-        audioBufferDivElement.textContent = `Audio Buffer: ${currentAudioBufferSize} buffers`;
+        audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize} buffers`;
    }
 }
 

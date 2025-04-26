@@ -1,0 +1,406 @@
+/* src/styles/Overlay.css */
+
+.dashboard-overlay-container {
+  /* This div exists within the #dashboard-root portal element. */
+}
+
+/* --- Theme Variables --- */
+/* Default (Dark Theme) */
+:root,
+.theme-dark {
+    --sidebar-bg: #282c34;
+    --sidebar-text: #abb2bf;
+    --sidebar-header-color: #61dafb;
+    --sidebar-border: #3a3f47;
+    --sidebar-shadow: rgba(0, 0, 0, 0.5);
+    --section-bg: #3a3f47;
+    --item-border: #5a606b;
+    --input-bg: #454b54;
+    --input-text: #abb2bf;
+    --input-border: #5a606b;
+    --button-bg: #61dafb;
+    --button-text: #282c34;
+    --button-hover-bg: #a4d9f5;
+    --pre-bg: #3a3f47;
+    --pre-text: #abb2bf;
+
+    /* Tooltip variables */
+    --tooltip-bg: #5a606b;
+    --tooltip-text: #abb2bf;
+    --tooltip-border: #7a808b;
+
+    /* Theme Toggle Icon Colors */
+    --icon-sun-color: #f39c12;
+    --icon-moon-color: #f1c40f;
+
+    /* Slider specific variables */
+    --slider-track-color: var(--input-bg);
+    --slider-thumb-color: var(--sidebar-header-color);
+}
+
+/* Light Theme */
+.theme-light {
+    --sidebar-bg: #ffffff;
+    --sidebar-text: #333;
+    --sidebar-header-color: #0056b3;
+    --sidebar-border: #e9e9e9;
+    --sidebar-shadow: rgba(0, 0, 0, 0.2);
+    --section-bg: #f4f4f4;
+    --item-border: #ddd;
+    --input-bg: #ffffff;
+    --input-text: #333;
+    --input-border: #ccc;
+    --button-bg: #007bff;
+    --button-text: #ffffff;
+    --button-hover-bg: #0056b3;
+    --pre-bg: #e9e9e9;
+    --pre-text: #333;
+
+    /* Tooltip variables */
+    --tooltip-bg: #333;
+    --tooltip-text: #ffffff;
+    --tooltip-border: #555;
+
+     /* Slider specific variables */
+    --slider-track-color: var(--item-border);
+    --slider-thumb-color: var(--sidebar-header-color);
+}
+
+
+/* Styles for the Sidebar */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 280px;
+  height: 100vh;
+  background-color: var(--sidebar-bg);
+  box-shadow: 2px 0 5px var(--sidebar-shadow);
+  transform: translateX(-100%);
+  transition: transform 0.3s ease-in-out, background-color 0.3s ease, color 0.3s ease;
+  z-index: 1010;
+  padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  color: var(--sidebar-text);
+  font-family: sans-serif;
+  font-size: 14px;
+}
+
+/* State when the sidebar is open */
+.sidebar.is-open {
+  transform: translateX(0);
+}
+
+/* Sidebar Header */
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--sidebar-border);
+}
+
+.sidebar h2 {
+    margin: 0;
+    font-size: 1.5em;
+    color: var(--sidebar-header-color);
+}
+
+.sidebar h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.2em;
+    color: var(--sidebar-header-color);
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+    width: 40px;
+    height: 20px;
+    border-radius: 10px;
+    background-color: var(--item-border);
+    position: relative;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    display: flex;
+    align-items: center;
+    padding: 0 2px;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* Style for the icons inside the toggle */
+.theme-toggle .icon {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* Initial position for moon (visible in dark mode) */
+.theme-toggle .moon-icon {
+    left: 2px;
+    opacity: 1;
+    transform: translateX(0);
+    color: var(--icon-moon-color);
+}
+
+/* Initial position for sun (hidden in dark mode) */
+.theme-toggle .sun-icon {
+    left: 2px;
+    opacity: 0;
+    transform: translateX(100%);
+    color: var(--icon-sun-color);
+}
+
+/* State when the toggle is in light mode */
+.theme-toggle.light .moon-icon {
+    opacity: 0;
+    transform: translateX(100%);
+}
+
+.theme-toggle.light .sun-icon {
+    opacity: 1;
+    left: auto;
+    right: 2px;
+    transform: translateX(0);
+}
+
+
+/* Section Styling */
+.sidebar-section {
+    margin-bottom: 20px;
+    padding: 15px;
+    border-radius: 8px;
+    background-color: var(--section-bg);
+    border: 1px solid var(--item-border);
+}
+
+/* Setting Item Styling */
+.dev-setting-item {
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    background-color: var(--section-bg);
+}
+
+/* Styles for labels */
+.dev-setting-item label,
+.gauge-label {
+    font-weight: bold;
+    font-size: 0.9em;
+    color: var(--sidebar-text);
+}
+
+
+/* Style for the specific Encoder select element */
+.dev-setting-item #encoderSelect {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    font-size: 1em;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    /* Custom arrow SVG for dark theme */
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23abb2bf%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
+    background-repeat: no-repeat;
+    background-position: right 8px top 50%;
+    background-size: 12px auto;
+    transition: border-color 0.2s ease;
+}
+
+/* Custom arrow color and explicit colors for light theme select */
+.theme-light .dev-setting-item #encoderSelect {
+     /* Custom arrow SVG for light theme */
+     background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%22292.4%22%3E%3Cpath%20fill%3D%22%23333%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
+     background-color: var(--input-bg);
+     color: var(--input-text);
+}
+
+/* Hover state for select */
+.dev-setting-item #encoderSelect:hover {
+    border-color: var(--sidebar-header-color);
+}
+
+/* Focus state for select */
+.dev-setting-item #encoderSelect:focus {
+   outline: none;
+   border-color: var(--sidebar-header-color);
+   box-shadow: none;
+}
+
+
+/* --- Slider Specific Styles --- */
+
+/* Style for the range input element */
+.dev-setting-item input[type="range"] {
+    flex-grow: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+    width: 100%;
+    height: 20px;
+}
+
+/* Remove focus outline in some browsers */
+.dev-setting-item input[type="range"]:focus {
+    outline: none;
+}
+
+/* Style the slider track (Webkit - Chrome, Safari) */
+.dev-setting-item input[type="range"]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 8px;
+    background: var(--slider-track-color);
+    border-radius: 4px;
+    transition: background 0.3s ease;
+}
+
+/* Style the slider thumb (Webkit - Chrome, Safari) */
+.dev-setting-item input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    margin-top: -4px;
+    width: 16px;
+    height: 16px;
+    background: var(--slider-thumb-color);
+    border: 1px solid var(--item-border);
+    border-radius: 50%;
+    transition: background 0.3s ease, box-shadow 0.1s ease;
+}
+
+.dev-setting-item input[type="range"]::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 4px rgba(var(--sidebar-header-color), 0.5);
+}
+
+
+/* Style the slider track (Mozilla - Firefox) */
+.dev-setting-item input[type="range"]::-moz-range-track {
+    width: 100%;
+    height: 8px;
+    background: var(--slider-track-color);
+    border-radius: 4px;
+    transition: background 0.3s ease;
+}
+
+/* Style the slider thumb (Mozilla - Firefox) */
+.dev-setting-item input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--slider-thumb-color);
+    border: 1px solid var(--item-border);
+    border-radius: 50%;
+    transition: background 0.3s ease, box-shadow 0.1s ease;
+}
+
+.dev-setting-item input[type="range"]::-moz-range-thumb:hover {
+     box-shadow: 0 0 4px rgba(var(--sidebar-header-color), 0.5);
+}
+
+
+/* --- Gauge Specific Styles --- */
+/* Container for grouping gauges */
+.stats-gauges {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 0px;
+    flex-wrap: wrap;
+    color: var(--sidebar-text);
+    padding: 5px 0;
+    background-color: var(--section-bg);
+}
+
+/* Individual gauge container (SVG + Label) */
+.gauge-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 5px 5px;
+    min-width: 80px;
+    text-align: center;
+    cursor: help;
+}
+
+/* Style for the SVG text inside the gauge */
+.gauge-container svg text {
+   fill: var(--sidebar-text);
+   pointer-events: none;
+}
+
+/* Style for the label below the gauge */
+.gauge-label {
+    margin-top: 5px;
+    font-weight: bold;
+    color: var(--sidebar-text);
+    text-align: center;
+    font-size: 0.9em;
+    pointer-events: none;
+}
+
+
+/* --- Tooltip Styles --- */
+.gauge-tooltip {
+    position: fixed;
+    padding: 8px 12px;
+    background-color: var(--tooltip-bg);
+    color: var(--tooltip-text);
+    border: 1px solid var(--tooltip-border);
+    border-radius: 4px;
+    font-size: 0.9em;
+    z-index: 1030;
+    pointer-events: none;
+    white-space: nowrap;
+    transform: translate(-50%, -100%);
+}
+
+/* Styles for the Toggle Handle */
+.toggle-handle {
+  position: fixed;
+  top: 50%;
+  left: 0;
+  width: 15px;
+  height: 60px;
+  transform: translateY(-50%);
+  cursor: pointer;
+  z-index: 1020;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Visual indicator for the toggle handle */
+.toggle-indicator {
+    width: 5px;
+    height: 40px;
+    background-color: var(--sidebar-header-color);
+    border-radius: 3px;
+}
+
+/* Basic body styling to prevent horizontal scrollbar caused by off-screen fixed elements */
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  background-color: var(--sidebar-bg);
+  color: var(--sidebar-text);
+}
+
+/* Apply theme variables to the body as well for general page styles if needed */
+#dashboard-root.theme-dark {
+}
+#dashboard-root.theme-light {
+}
+
+/* Ensure the #dashboard-root element created in main.jsx has a high z-index */
+#dashboard-root {
+    z-index: 1000;
+}
