@@ -594,24 +594,20 @@ class DataStreamingServer:
         if self.mode == "websockets":
             data_logger.info("Operating in websockets mode.")
 
-            if hasattr(self.app, 'pipeline_running') and self.app.pipeline_running:
-                data_logger.info("Stopping existing pipeline before starting WS pipeline.")
-                if hasattr(self.app, 'stop_ws_pipeline'):
-                    await self.app.stop_ws_pipeline()
+            data_logger.info("Attempting to start WS pipelines automatically on connection.")
+            try:
+                if hasattr(self.app, 'start_websocket_video_pipeline'):
+                    await self.app.start_websocket_video_pipeline()
                 else:
-                     data_logger.warning("app instance has no stop_ws_pipeline method.")
+                    data_logger.error("app instance has no start_websocket_video_pipeline method.")
 
-            data_logger.info("Starting websocket video pipeline.")
-            if hasattr(self.app, 'start_ws_pipeline'):
-                 self.app.start_ws_pipeline()
-            else:
-                 data_logger.error("app instance has no start_ws_pipeline method.")
-
-            data_logger.info("Building and starting websocket audio pipeline.")
-            if hasattr(self.app, 'build_audio_ws_pipeline'):
-                 self.app.build_audio_ws_pipeline()
-            else:
-                 data_logger.error("app instance has no build_audio_ws_pipeline method.")
+                if hasattr(self.app, 'start_websocket_audio_pipeline'):
+                    await self.app.start_websocket_audio_pipeline()
+                else:
+                    data_logger.error("app instance has no start_websocket_audio_pipeline method.")
+                data_logger.info("Automatic WS pipeline start initiated.")
+            except Exception as e:
+                 data_logger.error(f"Error during automatic pipeline start: {e}", exc_info=True)
 
             self._shared_stats_ws = {}
 
@@ -661,7 +657,44 @@ class DataStreamingServer:
         try:
             async for message in websocket:
                 if self.mode == "websockets":
-                    if message.startswith("r,"):
+                    if message == "START_VIDEO":
+                        data_logger.info("Received START_VIDEO command.")
+                        if hasattr(self.app, 'start_websocket_video_pipeline'):
+                            try:
+                                await self.app.start_websocket_video_pipeline()
+                            except Exception as e:
+                                data_logger.error(f"Error starting WS video pipeline via helper: {e}", exc_info=True)
+                        else:
+                            data_logger.error("app instance has no start_websocket_video_pipeline method.")
+                            await websocket.send("ERROR START_VIDEO Method not found")
+                    elif message == "STOP_VIDEO":
+                        data_logger.info("Received STOP_VIDEO command.")
+                        if hasattr(self.app, 'stop_websocket_video_pipeline'):
+                            try:
+                                await self.app.stop_websocket_video_pipeline()
+                            except Exception as e:
+                                data_logger.error(f"Error stopping WS video pipeline via helper: {e}", exc_info=True)
+                        else:
+                            data_logger.error("app instance has no stop_websocket_video_pipeline method.")
+                    elif message == "START_AUDIO":
+                        data_logger.info("Received START_AUDIO command.")
+                        if hasattr(self.app, 'start_websocket_audio_pipeline'):
+                             try:
+                                await self.app.start_websocket_audio_pipeline()
+                             except Exception as e:
+                                data_logger.error(f"Error starting WS audio pipeline via helper: {e}", exc_info=True)
+                        else:
+                            data_logger.error("app instance has no start_websocket_audio_pipeline method.")
+                    elif message == "STOP_AUDIO":
+                        data_logger.info("Received STOP_AUDIO command.")
+                        if hasattr(self.app, 'stop_websocket_audio_pipeline'):
+                             try:
+                                await self.app.stop_websocket_audio_pipeline()
+                             except Exception as e:
+                                data_logger.error(f"Error stopping WS audio pipeline via helper: {e}", exc_info=True)
+                        else:
+                            data_logger.error("app instance has no stop_websocket_audio_pipeline method.")
+                    elif message.startswith("r,"):
                         res = message[2:]
                         on_resize_handler(res, self.app)
                     elif message.startswith("s,"):
@@ -716,15 +749,22 @@ class DataStreamingServer:
                                           f"and bitrate to {new_bitrate_kbps}kbps."
                                       )
 
-                                      if hasattr(self.app, 'pipeline_running') and \
-                                         self.app.pipeline_running:
-                                          if hasattr(self.app, 'stop_ws_pipeline'):
-                                              await self.app.stop_ws_pipeline()
-                                          else:
-                                              print(
-                                                  "Warning: app instance has no "
-                                                  "stop_ws_pipeline method."
-                                              )
+                                      # Use helper functions if available
+                                      if hasattr(self.app, 'stop_websocket_video_pipeline'):
+                                          await self.app.stop_websocket_video_pipeline()
+                                      else:
+                                          print(
+                                              "Warning: app instance has no "
+                                              "stop_websocket_video_pipeline method."
+                                          )
+                                      if hasattr(self.app, 'stop_websocket_audio_pipeline'):
+                                          await self.app.stop_websocket_audio_pipeline()
+                                      else:
+                                           print(
+                                               "Warning: app instance has no "
+                                               "stop_websocket_audio_pipeline method."
+                                           )
+
 
                                       TARGET_FRAMERATE = new_framerate
                                       TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps
@@ -736,24 +776,27 @@ class DataStreamingServer:
 
                                       self._last_adjustment_timestamp = time.monotonic()
 
-                                      if hasattr(self.app, 'start_ws_pipeline'):
-                                          self.app.start_ws_pipeline()
+                                      if hasattr(self.app, 'start_websocket_video_pipeline'):
+                                          await self.app.start_websocket_video_pipeline()
                                           print(
-                                              "Pipeline stopped and restarted with "
+                                              "Video pipeline stopped and restarted with "
                                               "adjusted FPS and bitrate. Starting "
                                               "cool-down."
                                           )
                                       else:
                                           print(
                                               "Error: app instance has no "
-                                              "start_ws_pipeline method after stop."
+                                              "start_websocket_video_pipeline method after stop."
                                           )
-                                      if hasattr(self.app, 'build_audio_ws_pipeline'):
-                                           self.app.build_audio_ws_pipeline()
+                                      if hasattr(self.app, 'start_websocket_audio_pipeline'):
+                                           await self.app.start_websocket_audio_pipeline()
+                                           print(
+                                               "Audio pipeline stopped and restarted."
+                                           )
                                       else:
                                            print(
                                                "Warning: app instance has no "
-                                               "build_audio_ws_pipeline method."
+                                               "start_websocket_audio_pipeline method."
                                            )
 
                                       self._low_fps_condition_start_timestamp = None
@@ -791,38 +834,30 @@ class DataStreamingServer:
 
                             TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps
 
-                            if hasattr(self.app, 'pipeline_running') and \
-                               self.app.pipeline_running:
-                                if hasattr(self.app, 'stop_ws_pipeline'):
-                                     await self.app.stop_ws_pipeline()
-                                else:
-                                     logger.warning(
-                                         "app instance has no stop_ws_pipeline method."
-                                     )
+                            # Use helper functions if available
+                            if hasattr(self.app, 'stop_websocket_video_pipeline'):
+                                 await self.app.stop_websocket_video_pipeline()
+                            else:
+                                 logger.warning(
+                                     "app instance has no stop_websocket_video_pipeline method."
+                                 )
 
                             self.app.video_bitrate = new_bitrate_kbps
 
-                            if hasattr(self.app, 'start_ws_pipeline'):
-                                 self.app.start_ws_pipeline()
+                            if hasattr(self.app, 'start_websocket_video_pipeline'):
+                                 await self.app.start_websocket_video_pipeline()
                                  logger.info(
-                                     "Pipeline stopped and restarted with new "
+                                     "Video pipeline stopped and restarted with new "
                                      "video bitrate."
                                  )
                             else:
                                  logger.error(
-                                     "app instance has no start_ws_pipeline "
+                                     "app instance has no start_websocket_video_pipeline "
                                      "method after stop."
                                  )
                                  await websocket.send(
-                                     "ERROR Failed to restart pipeline after "
+                                     "ERROR Failed to restart video pipeline after "
                                      "setting bitrate"
-                                 )
-                            if hasattr(self.app, 'build_audio_ws_pipeline'):
-                                 self.app.build_audio_ws_pipeline()
-                            else:
-                                 logger.warning(
-                                     "app instance has no build_audio_ws_pipeline "
-                                     "method."
                                  )
                         except ValueError:
                             logger.error(
@@ -855,35 +890,27 @@ class DataStreamingServer:
 
                             self.app.audio_bitrate = new_bitrate_bps
 
-                            if hasattr(self.app, 'pipeline_running') and \
-                               self.app.pipeline_running:
-                                if hasattr(self.app, 'stop_ws_pipeline'):
-                                     await self.app.stop_ws_pipeline()
-                                else:
-                                     logger.warning(
-                                         "app instance has no stop_ws_pipeline method."
-                                     )
+                            # Use helper functions if available
+                            if hasattr(self.app, 'stop_websocket_audio_pipeline'):
+                                 await self.app.stop_websocket_audio_pipeline()
+                            else:
+                                 logger.warning(
+                                     "app instance has no stop_websocket_audio_pipeline method."
+                                 )
 
-                            if hasattr(self.app, 'start_ws_pipeline'):
-                                 self.app.start_ws_pipeline()
+                            if hasattr(self.app, 'start_websocket_audio_pipeline'):
+                                 await self.app.start_websocket_audio_pipeline()
                                  logger.info(
-                                     "Pipeline stopped and restarted after "
+                                     "Audio pipeline stopped and restarted after "
                                      "setting audio bitrate."
                                  )
-                                 if hasattr(self.app, 'build_audio_ws_pipeline'):
-                                      self.app.build_audio_ws_pipeline()
-                                 else:
-                                      logger.warning(
-                                          "app instance has no build_audio_ws_pipeline "
-                                          "method."
-                                      )
                             else:
                                  logger.error(
-                                     "app instance has no start_ws_pipeline "
+                                     "app instance has no start_websocket_audio_pipeline "
                                      "method after stop."
                                  )
                                  await websocket.send(
-                                     "ERROR Failed to restart pipeline after "
+                                     "ERROR Failed to restart audio pipeline after "
                                      "setting audio bitrate"
                                  )
                         except ValueError:
@@ -911,36 +938,29 @@ class DataStreamingServer:
                                 continue
                             new_encoder_str = parts[1]
                             logger.info(f"Received SET_ENCODER: {new_encoder_str}")
-                            if hasattr(self.app, 'pipeline_running') and \
-                               self.app.pipeline_running:
-                                if hasattr(self.app, 'stop_ws_pipeline'):
-                                     await self.app.stop_ws_pipeline()
-                                else:
-                                     logger.warning(
-                                         "app instance has no stop_ws_pipeline method."
-                                     )
+
+                            # Use helper functions if available
+                            if hasattr(self.app, 'stop_websocket_video_pipeline'):
+                                 await self.app.stop_websocket_video_pipeline()
+                            else:
+                                 logger.warning(
+                                     "app instance has no stop_websocket_video_pipeline method."
+                                 )
 
                             self.app.encoder = new_encoder_str
-                            if hasattr(self.app, 'start_ws_pipeline'):
-                                 self.app.start_ws_pipeline()
+                            if hasattr(self.app, 'start_websocket_video_pipeline'):
+                                 await self.app.start_websocket_video_pipeline()
                                  logger.info(
-                                     "Pipeline stopped and restarted with new encoder."
+                                     "Video pipeline stopped and restarted with new encoder."
                                  )
                             else:
                                  logger.error(
-                                     "app instance has no start_ws_pipeline "
+                                     "app instance has no start_websocket_video_pipeline "
                                      "method after stop."
                                  )
                                  await websocket.send(
-                                     "ERROR Failed to restart pipeline after "
+                                     "ERROR Failed to restart video pipeline after "
                                      "setting encoder"
-                                 )
-                            if hasattr(self.app, 'build_audio_ws_pipeline'):
-                                 self.app.build_audio_ws_pipeline()
-                            else:
-                                 logger.warning(
-                                     "app instance has no build_audio_ws_pipeline "
-                                     "method."
                                  )
                         except Exception as e:
                             logger.error(
@@ -962,37 +982,29 @@ class DataStreamingServer:
 
                             TARGET_FRAMERATE = new_framerate_int
 
-                            if hasattr(self.app, 'pipeline_running') and \
-                               self.app.pipeline_running:
-                                if hasattr(self.app, 'stop_ws_pipeline'):
-                                     await self.app.stop_ws_pipeline()
-                                else:
-                                     logger.warning(
-                                         "app instance has no stop_ws_pipeline method."
-                                     )
+                            # Use helper functions if available
+                            if hasattr(self.app, 'stop_websocket_video_pipeline'):
+                                 await self.app.stop_websocket_video_pipeline()
+                            else:
+                                 logger.warning(
+                                     "app instance has no stop_websocket_video_pipeline method."
+                                 )
 
                             self.app.framerate = new_framerate_int
 
-                            if hasattr(self.app, 'start_ws_pipeline'):
-                                 self.app.start_ws_pipeline()
+                            if hasattr(self.app, 'start_websocket_video_pipeline'):
+                                 await self.app.start_websocket_video_pipeline()
                                  logger.info(
-                                     "Pipeline stopped and restarted with new framerate."
+                                     "Video pipeline stopped and restarted with new framerate."
                                  )
                             else:
                                  logger.error(
-                                     "app instance has no start_ws_pipeline "
+                                     "app instance has no start_websocket_video_pipeline "
                                      "method after stop."
                                  )
                                  await websocket.send(
-                                     "ERROR Failed to restart pipeline after "
+                                     "ERROR Failed to restart video pipeline after "
                                      "setting framerate"
-                                 )
-                            if hasattr(self.app, 'build_audio_ws_pipeline'):
-                                 self.app.build_audio_ws_pipeline()
-                            else:
-                                 logger.warning(
-                                     "app instance has no build_audio_ws_pipeline "
-                                     "method."
                                  )
                         except ValueError:
                             logger.error(
@@ -1051,11 +1063,16 @@ class DataStreamingServer:
                      data_logger.info("Websockets mode tasks cancelled.")
 
                 data_logger.info("Stopping websockets mode pipelines.")
-                if hasattr(self.app, 'pipeline_running') and self.app.pipeline_running:
-                    if hasattr(self.app, 'stop_ws_pipeline'):
-                        await self.app.stop_ws_pipeline()
-                    else:
-                        data_logger.warning("app instance has no stop_ws_pipeline method.")
+                # Use helper functions if available for cleanup
+                if hasattr(self.app, 'stop_websocket_video_pipeline'):
+                    await self.app.stop_websocket_video_pipeline()
+                else:
+                    data_logger.warning("app instance has no stop_websocket_video_pipeline method.")
+                if hasattr(self.app, 'stop_websocket_audio_pipeline'):
+                    await self.app.stop_websocket_audio_pipeline()
+                else:
+                    data_logger.warning("app instance has no stop_websocket_audio_pipeline method.")
+
 
                 if self.webrtc_input:
                     data_logger.info("Disconnecting WebRTCInput.")
@@ -2255,11 +2272,27 @@ async def main():
         data_streaming_server=None,
         mode=args.mode
     )
+    # Ensure helper methods exist even if not fully implemented in base class, prevent attribute errors
+    if not hasattr(GSTWebRTCApp, 'start_websocket_video_pipeline'):
+        GSTWebRTCApp.start_websocket_video_pipeline = \
+            lambda self: logger.warning("start_websocket_video_pipeline not implemented.")
+    if not hasattr(GSTWebRTCApp, 'stop_websocket_video_pipeline'):
+        GSTWebRTCApp.stop_websocket_video_pipeline = \
+            lambda self: logger.warning("stop_websocket_video_pipeline not implemented.")
+    if not hasattr(GSTWebRTCApp, 'start_websocket_audio_pipeline'):
+        GSTWebRTCApp.start_websocket_audio_pipeline = \
+            lambda self: logger.warning("start_websocket_audio_pipeline not implemented.")
+    if not hasattr(GSTWebRTCApp, 'stop_websocket_audio_pipeline'):
+        GSTWebRTCApp.stop_websocket_audio_pipeline = \
+            lambda self: logger.warning("stop_websocket_audio_pipeline not implemented.")
+
+    # Keep existing conditional definitions
     if not hasattr(GSTWebRTCApp, 'stop_ws_pipeline'):
         GSTWebRTCApp.stop_ws_pipeline = GSTWebRTCApp.stop_pipeline
     if not hasattr(GSTWebRTCApp, 'build_audio_ws_pipeline'):
         GSTWebRTCApp.build_audio_ws_pipeline = \
             lambda self: logger.warning("build_audio_ws_pipeline not implemented.")
+
     app.last_resize_success = True
     data_websocket_server = DataStreamingServer(
         int(args.data_websocket_port),
@@ -2537,7 +2570,9 @@ async def main():
                  webrtc_monitors_tasks.append(asyncio.create_task(system_mon.start()))
 
         gst_bus_tasks = []
+        # Make sure bus tasks are created regardless of mode if app exists
         if app: gst_bus_tasks.append(asyncio.create_task(app.handle_bus_calls()))
+        # Note: audio_app only exists in webrtc mode based on current logic
         if audio_app: gst_bus_tasks.append(asyncio.create_task(audio_app.handle_bus_calls()))
 
         if args.mode == 'webrtc':
@@ -2597,6 +2632,9 @@ async def main():
              ]
              if metrics_http_task: running_tasks.append(metrics_http_task)
 
+             # Add the gst bus task for websockets mode as well
+             running_tasks.extend(gst_bus_tasks)
+
              await asyncio.gather(*running_tasks)
 
     except asyncio.CancelledError:
@@ -2642,8 +2680,16 @@ async def main():
 
         if app:
             logger.info("Stopping main app pipeline...")
-            if args.mode == 'websockets' and hasattr(app, 'stop_ws_pipeline'):
-                 await app.stop_ws_pipeline()
+            # Use helper functions for cleanup in websockets mode too
+            if args.mode == 'websockets':
+                 if hasattr(app, 'stop_websocket_video_pipeline'):
+                     await app.stop_websocket_video_pipeline()
+                 else:
+                      logger.warning("app instance has no stop_websocket_video_pipeline method.")
+                 if hasattr(app, 'stop_websocket_audio_pipeline'):
+                     await app.stop_websocket_audio_pipeline()
+                 else:
+                      logger.warning("app instance has no stop_websocket_audio_pipeline method.")
             elif hasattr(app, 'stop_pipeline'):
                  await app.stop_pipeline()
             else:

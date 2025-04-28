@@ -21,7 +21,7 @@
  */
 
 // Set this to true to enable the dev dashboard layout
-var dev_mode = false;
+var dev_mode = true;
 
 /**
  * @typedef {Object} WebRTCDemoSignalling
@@ -385,7 +385,13 @@ let videoFrameBuffer = [];
 let videoBufferSize = 0;
 let videoBufferSelectElement;
 let videoBufferDivElement;
+let serverClipboardTextareaElement;
+let serverClipboardContent = '';
 
+// --- NEW --- State variables for pipeline status (used by UI and logic)
+let isVideoPipelineActive = true; // Assume active on start
+let isAudioPipelineActive = true; // Assume active on start
+// --- END NEW ---
 
 // Interval ID for sending client metrics
 let metricsIntervalId = null;
@@ -477,6 +483,10 @@ let systemStatsDivElement;
 let gpuStatsDivElement;
 let fpsCounterDivElement;
 let audioBufferDivElement;
+// --- NEW --- References to the new toggle buttons
+let videoToggleButtonElement;
+let audioToggleButtonElement;
+// --- END NEW ---
 
 
 const getIntParam = (key, default_value) => {
@@ -546,14 +556,8 @@ const enableClipboard = () => {
   navigator.clipboard
     .readText()
     .then((text) => {
-      if (clientMode === 'webrtc') {
-        webrtc._setStatus('clipboard enabled');
-        webrtc.sendDataChannelMessage('cr');
-      } else if (clientMode === 'websockets') {
-        console.log(
-          'Clipboard not supported in websockets mode yet (or implement websocket send)'
-        );
-      }
+      webrtc._setStatus('clipboard enabled');
+      webrtc.sendDataChannelMessage('cr');
     })
     .catch((err) => {
       if (clientMode === 'webrtc') {
@@ -782,7 +786,7 @@ body {
   padding: 10px;
   box-sizing: border-box;
   overflow-y: auto;
-  gap: 10px;
+  gap: 10px; /* Add gap between items */
 }
 
 #dev-sidebar button {
@@ -795,10 +799,27 @@ body {
     border-radius: 3px;
     width: 100%;
     box-sizing: border-box;
+    transition: background-color 0.2s ease; /* Smooth transition */
 }
 #dev-sidebar button:hover {
     background-color: #555;
 }
+/* --- NEW --- Styles for active/inactive toggle buttons */
+#dev-sidebar button.toggle-button.active {
+    background-color: #3a8d3a; /* Green for active */
+    border-color: #5cb85c;
+}
+#dev-sidebar button.toggle-button.active:hover {
+    background-color: #4cae4c;
+}
+#dev-sidebar button.toggle-button.inactive {
+    background-color: #c9302c; /* Red for inactive */
+    border-color: #d43f3a;
+}
+#dev-sidebar button.toggle-button.inactive:hover {
+    background-color: #d9534f;
+}
+/* --- END NEW --- */
 
 .dev-setting-item {
     display: flex;
@@ -842,10 +863,53 @@ body {
     color: #bbb;
     font-family: sans-serif;
 }
+
+/* --- New Dev Sidebar Clipboard Styles --- */
+.dev-clipboard-item {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 10px;
+}
+
+.dev-clipboard-item label {
+    margin-bottom: 5px;
+    font-size: 0.9em;
+    color: #bbb;
+}
+
+.dev-clipboard-item textarea {
+    padding: 5px;
+    background-color: #333;
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 3px;
+    font-size: 0.9em;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 80px; /* Give it some initial height */
+    resize: vertical; /* Allow vertical resize */
+    font-family: monospace; /* Use monospace for text content */
+}
+/* ----------------------------------------- */
   `;
   document.head.appendChild(style);
 
 };
+
+// --- NEW --- Helper function to update toggle button appearance
+function updateToggleButtonAppearance(buttonElement, isActive) {
+    if (!buttonElement) return;
+    if (isActive) {
+        buttonElement.textContent = buttonElement.id === 'videoToggleBtn' ? 'Video: ON' : 'Audio: ON';
+        buttonElement.classList.remove('inactive');
+        buttonElement.classList.add('active');
+    } else {
+        buttonElement.textContent = buttonElement.id === 'videoToggleBtn' ? 'Video: OFF' : 'Audio: OFF';
+        buttonElement.classList.remove('active');
+        buttonElement.classList.add('inactive');
+    }
+}
+// --- END NEW ---
 
 const initializeUI = () => {
   injectCSS();
@@ -919,6 +983,55 @@ const initializeUI = () => {
   sidebarDiv.id = 'dev-sidebar';
 
   if (dev_mode) {
+    // --- NEW: Add Video/Audio Toggle Buttons ---
+    videoToggleButtonElement = document.createElement('button');
+    videoToggleButtonElement.id = 'videoToggleBtn';
+    videoToggleButtonElement.className = 'toggle-button'; // Add class for styling
+    updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive); // Set initial state
+    sidebarDiv.appendChild(videoToggleButtonElement);
+
+    videoToggleButtonElement.addEventListener('click', () => {
+        if (clientMode !== 'websockets') return; // Only work in websockets mode
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            const newState = !isVideoPipelineActive; // Toggle the desired state
+            const message = newState ? 'START_VIDEO' : 'STOP_VIDEO';
+            console.log(`Dev Sidebar: Sending ${message} via websocket.`);
+            websocket.send(message);
+            // Optimistically update state and UI, will be corrected by postMessage if needed
+            isVideoPipelineActive = newState;
+            updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
+            // Send message to self to potentially update other parts if needed (or rely on server confirmation)
+            window.postMessage({ type: 'pipelineStatusUpdate', video: isVideoPipelineActive, audio: isAudioPipelineActive }, window.location.origin);
+        } else {
+            console.warn('Websocket not open, cannot send video toggle command.');
+        }
+    });
+
+    audioToggleButtonElement = document.createElement('button');
+    audioToggleButtonElement.id = 'audioToggleBtn';
+    audioToggleButtonElement.className = 'toggle-button'; // Add class for styling
+    updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive); // Set initial state
+    sidebarDiv.appendChild(audioToggleButtonElement);
+
+    audioToggleButtonElement.addEventListener('click', () => {
+        if (clientMode !== 'websockets') return; // Only work in websockets mode
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            const newState = !isAudioPipelineActive; // Toggle the desired state
+            const message = newState ? 'START_AUDIO' : 'STOP_AUDIO';
+            console.log(`Dev Sidebar: Sending ${message} via websocket.`);
+            websocket.send(message);
+            // Optimistically update state and UI
+            isAudioPipelineActive = newState;
+            updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
+             // Send message to self
+            window.postMessage({ type: 'pipelineStatusUpdate', video: isVideoPipelineActive, audio: isAudioPipelineActive }, window.location.origin);
+        } else {
+            console.warn('Websocket not open, cannot send audio toggle command.');
+        }
+    });
+    // --- END NEW ---
+
+
     const encoderContainer = document.createElement('div');
     encoderContainer.className = 'dev-setting-item';
 
@@ -1091,6 +1204,34 @@ const initializeUI = () => {
         }
     });
 
+    // --- New Clipboard Text Area in Dev Sidebar ---
+    const clipboardContainer = document.createElement('div');
+    clipboardContainer.className = 'dev-clipboard-item';
+
+    const clipboardLabel = document.createElement('label');
+    clipboardLabel.textContent = 'Server Clipboard:';
+    clipboardLabel.htmlFor = 'serverClipboardTextarea';
+    clipboardContainer.appendChild(clipboardLabel);
+
+    serverClipboardTextareaElement = document.createElement('textarea');
+    serverClipboardTextareaElement.id = 'serverClipboardTextarea';
+    serverClipboardTextareaElement.value = serverClipboardContent; // Set initial value
+
+    // Add event listener to detect changes and post message back
+    serverClipboardTextareaElement.addEventListener('blur', (event) => {
+        const newClipboardText = event.target.value;
+        console.log(`Dev Sidebar: Clipboard text changed (blur). Sending via window.postMessage.`);
+        // Send the updated text back to the main script's message handler
+        window.postMessage({ type: 'clipboardUpdateFromUI', text: newClipboardText }, window.location.origin);
+    });
+    // Consider using 'input' with debounce for more reactive updates if needed
+    // serverClipboardTextareaElement.addEventListener('input', debounce((event) => { ... }, 500));
+
+
+    clipboardContainer.appendChild(serverClipboardTextareaElement);
+    sidebarDiv.appendChild(clipboardContainer);
+    // --------------------------------------------------
+
 
     const systemStatsLabel = document.createElement('label');
     systemStatsLabel.textContent = 'System Stats:';
@@ -1260,6 +1401,7 @@ const initializeInput = () => {
     const newRes = `${windowResolution[0]}x${windowResolution[1]}`;
 
     if (canvas) {
+      // Existing canvas resize logic would go here if needed, but it's handled in paintVideoFrame
     }
 
     if (clientMode === 'webrtc') {
@@ -1302,7 +1444,44 @@ function receiveMessage(event) {
     } else if (message.type === 'getStats') {
       console.log('Received getStats message via window.postMessage.');
       sendStatsMessage();
-    } else {
+    } else if (message.type === 'clipboardUpdateFromUI') {
+      // --- Handle clipboard update from the UI text area ---
+      console.log('Received clipboardUpdateFromUI message via window.postMessage.');
+      const newClipboardText = message.text;
+
+      if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+          try {
+              const encodedText = btoa(newClipboardText);
+               // Use the same message format as the seamless clipboard logic
+              const clipboardMessage = `cw,${encodedText}`;
+              websocket.send(clipboardMessage);
+              console.log(`Sent clipboard update from UI to server via websocket: ${clipboardMessage}`);
+          } catch (e) {
+              console.error('Failed to encode or send clipboard text from UI:', e);
+          }
+      } else {
+          console.warn('Cannot send clipboard update from UI: Not in websockets mode or websocket not open.');
+      }
+      // --- End clipboard update handling ---
+    }
+    // --- NEW --- Handle pipeline status updates
+    else if (message.type === 'pipelineStatusUpdate') {
+        console.log('Received pipelineStatusUpdate message via window.postMessage:', message);
+        if (message.video !== undefined) {
+            isVideoPipelineActive = message.video;
+            if (dev_mode) {
+                updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
+            }
+        }
+        if (message.audio !== undefined) {
+            isAudioPipelineActive = message.audio;
+             if (dev_mode) {
+                updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
+            }
+        }
+    }
+    // --- END NEW ---
+    else {
       console.warn('Received unknown message type via window.postMessage:', message.type, message);
     }
   } else {
@@ -1581,6 +1760,10 @@ function sendStatsMessage() {
     clientFps: window.fps,
     audioBuffer: window.currentAudioBufferSize,
     videoBuffer: videoFrameBuffer.length,
+    // --- NEW --- Include pipeline status in stats
+    isVideoPipelineActive: isVideoPipelineActive,
+    isAudioPipelineActive: isAudioPipelineActive,
+    // --- END NEW ---
   };
    if (typeof encoderName !== 'undefined') {
        stats.encoderName = encoderName;
@@ -1690,6 +1873,16 @@ document.addEventListener('DOMContentLoaded', () => {
                videoBufferSelectElement.value = videoBufferSize.toString();
            }
       }
+
+      // Initialize clipboard text area if it exists
+      if (serverClipboardTextareaElement) {
+          serverClipboardTextareaElement.value = serverClipboardContent;
+      }
+
+      // --- NEW --- Initialize toggle button appearance based on initial state
+      updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
+      updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
+      // --- END NEW ---
   }
 
 
@@ -1818,12 +2011,18 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     webrtc.onclipboardcontent = (content) => {
+      // Seamless clipboard update from server to local clipboard (WebRTC mode)
       navigator.clipboard
         .writeText(content)
         .catch((err) => {
           if (webrtc)
             webrtc._setStatus(`Could not copy text to clipboard: ${err}`);
         });
+       // Also update the dev sidebar textarea if it exists and in dev mode
+       if (dev_mode && serverClipboardTextareaElement) {
+           serverClipboardContent = content;
+           serverClipboardTextareaElement.value = content;
+       }
     };
 
     webrtc.oncursorchange = (handle, curdata, hotspot, override) => {
@@ -1924,6 +2123,7 @@ document.addEventListener('DOMContentLoaded', () => {
     )
       websocket.send('kr');
 
+    // Existing seamless clipboard read on focus (only sends if permission is granted)
     navigator.clipboard
       .readText()
       .then((text) => {
@@ -1956,12 +2156,56 @@ document.addEventListener('DOMContentLoaded', () => {
       websocket.send('kr');
   });
 
+  // --- NEW --- Handle page visibility changes for websockets mode
+  document.addEventListener('visibilitychange', () => {
+    if (clientMode !== 'websockets') return; // Only handle in websockets mode
+
+    if (document.hidden) {
+        console.log('Tab is hidden, stopping video pipeline.');
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            // Only send STOP if we believe it's currently active
+            if (isVideoPipelineActive) {
+                websocket.send('STOP_VIDEO');
+                // Update state immediately (optimistic)
+                isVideoPipelineActive = false;
+                // Notify UI via postMessage
+                window.postMessage({ type: 'pipelineStatusUpdate', video: false }, window.location.origin);
+            } else {
+                 console.log('Video pipeline already stopped, not sending STOP_VIDEO.');
+            }
+        } else {
+            console.warn('Websocket not open, cannot send STOP_VIDEO.');
+        }
+        // Clear the buffer when hidden to prevent stale frames on resume
+        cleanupVideoBuffer();
+
+    } else {
+        console.log('Tab is visible, starting video pipeline.');
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            // Only send START if we believe it's currently stopped
+            if (!isVideoPipelineActive) {
+                websocket.send('START_VIDEO');
+                 // Update state immediately (optimistic)
+                isVideoPipelineActive = true;
+                // Notify UI via postMessage
+                window.postMessage({ type: 'pipelineStatusUpdate', video: true }, window.location.origin);
+            } else {
+                console.log('Video pipeline already started, not sending START_VIDEO.');
+            }
+        } else {
+            console.warn('Websocket not open, cannot send START_VIDEO.');
+        }
+    }
+  });
+  // --- END NEW ---
+
   /**
    * Handles a decoded video frame from the decoder.
    * Adds the frame to the videoFrameBuffer.
    * @param {VideoFrame} frame
    */
   function handleDecodedFrame(frame) {
+      // --- MODIFIED --- Keep the frame dropping logic, but visibility control is now in the event listener
       if (document.hidden) {
         console.log('Tab is hidden, dropping video frame.');
         frame.close();
@@ -1970,6 +2214,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return;
       }
+      // --- END MODIFIED ---
+
+      // Only buffer if the video pipeline is supposed to be active
+      if (!isVideoPipelineActive && clientMode === 'websockets') {
+           console.log('Video pipeline inactive, dropping video frame.');
+           frame.close();
+           if (dev_mode && videoBufferDivElement) {
+               videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames (Pipeline Inactive)`;
+           }
+           return;
+      }
+
       videoFrameBuffer.push(frame);
       if (dev_mode && videoBufferDivElement) {
           videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
@@ -1981,12 +2237,17 @@ document.addEventListener('DOMContentLoaded', () => {
    * Runs on a requestAnimationFrame loop.
    */
   function paintVideoFrame() {
-      if (canvasContext && videoFrameBuffer.length > videoBufferSize) {
+      // Only paint if the video pipeline is supposed to be active and tab is visible
+      if (canvasContext && !document.hidden && isVideoPipelineActive && videoFrameBuffer.length > videoBufferSize) {
           const frameToPaint = videoFrameBuffer.shift();
 
           if (frameToPaint) {
-              canvas.width = frameToPaint.codedWidth;
-              canvas.height = frameToPaint.codedHeight;
+              // Ensure canvas dimensions match the frame before drawing
+              if (canvas.width !== frameToPaint.codedWidth || canvas.height !== frameToPaint.codedHeight) {
+                   canvas.width = frameToPaint.codedWidth;
+                   canvas.height = frameToPaint.codedHeight;
+                   console.log(`Canvas resized to ${canvas.width}x${canvas.height}`);
+              }
 
               canvasContext.drawImage(frameToPaint, 0, 0);
 
@@ -2009,8 +2270,18 @@ document.addEventListener('DOMContentLoaded', () => {
               }
           }
       } else {
+           // Update buffer display even if not painting
            if (dev_mode && videoBufferDivElement) {
-              videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
+               let reason = '';
+               if (document.hidden) reason = '(Tab Hidden)';
+               else if (!isVideoPipelineActive) reason = '(Pipeline Inactive)';
+               else if (videoFrameBuffer.length <= videoBufferSize) reason = '(Buffering)';
+               videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames ${reason}`;
+           }
+           // If hidden or inactive, clear the canvas to avoid showing a stale frame
+           if (canvasContext && (document.hidden || !isVideoPipelineActive)) {
+               // Optional: Clear canvas or leave the last frame visible
+               // canvasContext.clearRect(0, 0, canvas.width, canvas.height);
            }
       }
 
@@ -2052,8 +2323,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const rightChannel = output ? output[1] : undefined;
 
             if (!leftChannel || !rightChannel) {
-              console.error("Error: leftChannel or rightChannel is undefined! Output:", output, "Outputs:", outputs);
-              return false;
+              // console.error("Error: leftChannel or rightChannel is undefined! Output:", output, "Outputs:", outputs);
+              // Return true to keep processor alive, but output silence
+              if (leftChannel) leftChannel.fill(0);
+              if (rightChannel) rightChannel.fill(0);
+              return true; // Keep processor running even if output is initially undefined
             }
 
             const samplesPerBuffer = leftChannel.length;
@@ -2073,9 +2347,12 @@ document.addEventListener('DOMContentLoaded', () => {
                   data = this.currentAudioData = this.audioBufferQueue.shift();
                   offset = this.currentDataOffset = 0;
                 } else {
-                  leftChannel[sampleIndex] = 0;
-                  rightChannel[sampleIndex] = 0;
-                  continue;
+                  // Buffer underrun, output silence for the rest of this block
+                  this.currentAudioData = null; // Ensure we fetch new data next time
+                  this.currentDataOffset = 0;
+                  leftChannel.fill(0, sampleIndex);
+                  rightChannel.fill(0, sampleIndex);
+                  return true; // Finished processing this block
                 }
               }
 
@@ -2083,12 +2360,21 @@ document.addEventListener('DOMContentLoaded', () => {
               if (offset < data.length) {
                 rightChannel[sampleIndex] = data[offset++];
               } else {
-                rightChannel[sampleIndex] = 0;
+                 // Handle mono case or end of stereo data cleanly
+                 rightChannel[sampleIndex] = leftChannel[sampleIndex]; // Output mono to both if stereo source ends
+                 offset++; // Increment offset even if data wasn't used for right channel
               }
             }
 
             this.currentDataOffset = offset;
-            this.currentAudioData = data;
+            // If we finished the current data chunk exactly at the end of the buffer, clear it
+            if (offset >= data.length) {
+                 this.currentAudioData = null;
+                 this.currentDataOffset = 0;
+            } else {
+                 this.currentAudioData = data; // Otherwise, keep the remaining data
+            }
+
 
             return true;
           }
@@ -2130,6 +2416,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function handleAudio(frame) {
+    // --- NEW --- Check if audio pipeline is active before processing
+    if (!isAudioPipelineActive && clientMode === 'websockets') {
+        // console.log('Audio pipeline inactive, dropping audio frame.'); // Can be noisy
+        frame.close();
+        return;
+    }
+    // --- END NEW ---
+
     if (!audioContext) {
       await initializeAudio();
     }
@@ -2140,11 +2434,17 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Autoplay policy might require interaction to start/resume audio
     if (audioContext.state !== 'running') {
-      console.warn('AudioContext state is:', audioContext.state, '. Resuming...');
-      await audioContext.resume();
-      frame.close();
-      return;
+      console.warn('AudioContext state is:', audioContext.state, '. Attempting resume...');
+      try {
+          await audioContext.resume();
+          console.log('AudioContext resumed successfully.');
+      } catch (resumeError) {
+           console.error('Failed to resume AudioContext:', resumeError, ' Dropping audio frame.');
+           frame.close();
+           return;
+      }
     }
 
     try {
@@ -2152,10 +2452,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const sampleCount = frame.numberOfFrames;
 
       const pcmData = new Float32Array(sampleCount * numberOfChannels);
-      const copyOptions = { format: 'f32', planeIndex: 0 };
+      const copyOptions = { format: 'f32-planar', planeIndex: 0 }; // Use f32-planar if available and needed
+
+      // Adjust copyOptions based on frame format if necessary. Assuming interleaved 'f32' for simplicity now.
+      copyOptions.format = 'f32'; // Sticking to interleaved f32 based on previous code
 
       await frame.copyTo(pcmData, copyOptions);
 
+      // Post the entire Float32Array containing interleaved data
       audioWorkletProcessorPort.postMessage({ audioData: pcmData });
 
       frame.close();
@@ -2170,47 +2474,71 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   async function initializeDecoder() {
+    if (decoder && decoder.state !== 'closed') {
+        console.warn("VideoDecoder already exists, closing before re-initializing.");
+        decoder.close();
+    }
     decoder = new VideoDecoder({
       output: handleDecodedFrame,
       error: (e) => {
-        console.error('Decoder error:', e);
+        console.error('VideoDecoder error:', e.message);
+        // Attempt to reset decoder on fatal errors
+        if (e.message.includes('fatal')) {
+            console.warn('Attempting to reset VideoDecoder due to fatal error.');
+            initializeDecoder(); // Re-initialize
+        }
       },
     });
-    const windowResolution = [window.innerWidth, window.innerHeight];
+    // Use a default reasonable resolution initially, it will be updated on first frame or resize
+    const initialWidth = 1280;
+    const initialHeight = 720;
 
+    // Common codecs, avc1.42E01E (H.264 Baseline) is widely supported
+    // We might receive different codecs, configure should handle it if possible.
     const decoderConfig = {
-      codec: 'avc1.42E01E',
-      codedWidth: windowResolution[0],
-      codedHeight: windowResolution[1],
+      codec: 'avc1.42E01E', // A common H.264 profile
+      codedWidth: initialWidth,
+      codedHeight: initialHeight,
+      // optimizeForLatency: true, // Enable if supported and desired
     };
 
     try {
       const support = await VideoDecoder.isConfigSupported(decoderConfig);
       if (support.supported) {
           decoder.configure(decoderConfig);
-          console.log('VideoDecoder configured successfully.');
+          console.log('VideoDecoder configured successfully with initial config:', decoderConfig);
       } else {
-          console.error('VideoDecoder configuration not supported:', support);
+          console.error('Initial VideoDecoder configuration not supported:', support);
+          // Maybe try a different default codec?
           decoder = null;
       }
     } catch (e) {
-      console.error('Error configuring VideoDecoder:', e);
+      console.error('Error configuring VideoDecoder with initial config:', e);
       decoder = null;
     }
   }
 
   async function initializeDecoderAudio() {
+     if (decoderAudio && decoderAudio.state !== 'closed') {
+        console.warn("AudioDecoder already exists, closing before re-initializing.");
+        decoderAudio.close();
+    }
     decoderAudio = new AudioDecoder({
       output: handleAudio,
       error: (e) => {
-        console.error('Decoder error:', e);
+        console.error('AudioDecoder error:', e.message);
+         if (e.message.includes('fatal')) {
+            console.warn('Attempting to reset AudioDecoder due to fatal error.');
+            initializeDecoderAudio(); // Re-initialize
+        }
       },
     });
 
     const decoderConfig = {
-      codec: 'opus',
+      codec: 'opus', // Standard Opus codec string
       numberOfChannels: 2,
       sampleRate: 48000,
+      // bitDepth: 16 // This is not a standard config property for Opus in AudioDecoder
     };
 
     try {
@@ -2242,7 +2570,11 @@ document.addEventListener('DOMContentLoaded', () => {
           }
 
           try {
+              // Only send metrics if pipelines are active? Or always? Sending always for now.
               websocket.send('cfps,' + window.fps);
+              // Optionally send buffer sizes too
+              // websocket.send('abuf,' + window.currentAudioBufferSize);
+              // websocket.send('vbuf,' + videoFrameBuffer.length);
           } catch (error) {
               console.error('[websockets] Error sending client metrics:', error);
           }
@@ -2254,15 +2586,28 @@ document.addEventListener('DOMContentLoaded', () => {
           if (audioBufferDivElement) {
                audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize} buffers`;
           }
+          // videoBufferDivElement updated in paint loop
       }
   };
 
   websocket.onopen = () => {
     console.log('[websockets] Connection opened!');
+    // Reset pipeline states on new connection
+    isVideoPipelineActive = true;
+    isAudioPipelineActive = true;
+    window.postMessage({ type: 'pipelineStatusUpdate', video: true, audio: true }, window.location.origin);
+
     if (metricsIntervalId === null) {
         metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
         console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
     }
+     // Send initial resize/scale info
+     if (window.webrtcInput) {
+         const windowResolution = window.webrtcInput.getWindowResolution();
+         const newRes = `${windowResolution[0]}x${windowResolution[1]}`;
+         websocketSendInput(`r,${newRes}`);
+         websocketSendInput(`s,${window.devicePixelRatio}`);
+     }
   };
 
   websocket.onmessage = (event) => {
@@ -2271,56 +2616,95 @@ document.addEventListener('DOMContentLoaded', () => {
         const arrayBuffer = event.data;
         const dataView = new DataView(arrayBuffer);
 
-        const dataTypeByte = dataView.getUint8(0);
-        const frameTypeFlag = dataView.getUint8(1);
-        const isKey = frameTypeFlag === 1;
-        const frameDataArrayBuffer = arrayBuffer.slice(2);
+        const dataTypeByte = dataView.getUint8(0); // 0 for video, 1 for audio
+        const frameTypeFlag = dataView.getUint8(1); // 1 for key frame, 0 for delta/inter
+        const frameDataArrayBuffer = arrayBuffer.slice(2); // Rest is frame data
 
-        if (dataTypeByte === 0) {
+        if (dataTypeByte === 0) { // Video data
+          // --- MODIFIED --- Check if video pipeline is active before decoding
+          if (!isVideoPipelineActive) {
+              // console.log("Video pipeline inactive, skipping decode."); // Can be noisy
+              return;
+          }
+          // --- END MODIFIED ---
+
           if (decoder && decoder.state === 'configured') {
             const chunk = new EncodedVideoChunk({
-              type: isKey ? 'key' : 'delta',
-              timestamp: 0,
-              duration: 0,
+              type: frameTypeFlag === 1 ? 'key' : 'delta',
+              timestamp: performance.now() * 1000, // Use performance.now() for timestamp
+              // duration: 0, // Duration is often unknown for encoded chunks
               data: frameDataArrayBuffer,
             });
             try {
-              decoder.decode(chunk);
+              // Check queue size before decoding to prevent excessive memory use?
+              // const MAX_DECODE_QUEUE_SIZE = 30; // Example limit
+              // if (decoder.decodeQueueSize < MAX_DECODE_QUEUE_SIZE) {
+                   decoder.decode(chunk);
+              // } else {
+              //     console.warn(`Video decode queue full (${decoder.decodeQueueSize}), dropping frame.`);
+              // }
             } catch (e) {
               console.error('Video Decoding error:', e);
+              // Attempt to recover by resetting decoder?
+              if (decoder.state === 'closed' || decoder.state === 'unconfigured') {
+                   console.warn("Video Decoder is closed or unconfigured, reinitializing...");
+                   initializeDecoder();
+              }
             }
           } else {
             console.warn(
               'Video Decoder not ready or not configured yet, video frame dropped.'
             );
+             // Attempt to initialize if null
+             if (!decoder) initializeDecoder();
           }
-        } else if (dataTypeByte === 1) {
-          const AUDIO_BUFFER_THRESHOLD = 10;
+        } else if (dataTypeByte === 1) { // Audio data
+            // --- MODIFIED --- Check if audio pipeline is active before decoding
+            if (!isAudioPipelineActive) {
+                // console.log("Audio pipeline inactive, skipping decode."); // Can be noisy
+                return;
+            }
+            // --- END MODIFIED ---
+
+          const AUDIO_BUFFER_THRESHOLD = 15; // Increased threshold slightly
 
           if (window.currentAudioBufferSize >= AUDIO_BUFFER_THRESHOLD) {
               console.warn(
                   `Audio buffer (${window.currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`
               );
+              // Maybe clear some buffer here? Or just drop.
               return;
           }
 
           if (decoderAudio && decoderAudio.state === 'configured') {
             const chunk = new EncodedAudioChunk({
-              type: 'key',
-              timestamp: 0,
-              duration: 0,
+              type: 'key', // Opus frames are typically independent 'key' frames
+              timestamp: performance.now() * 1000, // Use performance.now() for timestamp
+              // duration: 20000, // Common Opus frame duration (e.g., 20ms = 20000 us) - server should provide if possible
               data: frameDataArrayBuffer,
             });
             try {
-              decoderAudio.decode(chunk);
+               // Check queue size?
+               // const MAX_AUDIO_DECODE_QUEUE_SIZE = 50;
+               // if(decoderAudio.decodeQueueSize < MAX_AUDIO_DECODE_QUEUE_SIZE) {
+                    decoderAudio.decode(chunk);
+               // } else {
+               //      console.warn(`Audio decode queue full (${decoderAudio.decodeQueueSize}), dropping frame.`);
+               // }
             } catch (e) {
               console.error('Audio Decoding error:', e);
+               if (decoderAudio.state === 'closed' || decoderAudio.state === 'unconfigured') {
+                   console.warn("Audio Decoder is closed or unconfigured, reinitializing...");
+                   initializeDecoderAudio();
+              }
             }
           } else {
              console.warn('Audio Decoder not ready or not configured yet, audio frame dropped.');
+              // Attempt to initialize if null
+             if (!decoderAudio) initializeDecoderAudio();
           }
         } else {
-          console.warn('Unknown data payload type:', dataTypeByte);
+          console.warn('Unknown binary data payload type received:', dataTypeByte);
         }
       }
     } else if (typeof event.data === 'string') {
@@ -2345,6 +2729,25 @@ document.addEventListener('DOMContentLoaded', () => {
                gpuStatsDivElement.textContent = JSON.stringify(obj, null, 2);
              }
            }
+           // --- NEW --- Handle potential pipeline status confirmation from server (optional)
+           // Example: Server might send {"type": "pipeline_status", "video": true, "audio": false}
+           else if (obj.type === 'pipeline_status') {
+                console.log('Received pipeline status confirmation from server:', obj);
+                let statusChanged = false;
+                if (obj.video !== undefined && obj.video !== isVideoPipelineActive) {
+                    isVideoPipelineActive = obj.video;
+                    statusChanged = true;
+                }
+                 if (obj.audio !== undefined && obj.audio !== isAudioPipelineActive) {
+                    isAudioPipelineActive = obj.audio;
+                    statusChanged = true;
+                }
+                // Update UI if status changed based on server message
+                if (statusChanged) {
+                     window.postMessage({ type: 'pipelineStatusUpdate', video: isVideoPipelineActive, audio: isAudioPipelineActive }, window.location.origin);
+                }
+           }
+           // --- END NEW ---
            else {
              console.warn(`Received unexpected JSON message type from server: ${obj.type}`, obj);
            }
@@ -2374,6 +2777,11 @@ document.addEventListener('DOMContentLoaded', () => {
              navigator.clipboard.writeText(clipboardData).catch((err) => {
                console.error('Could not copy text to clipboard: ' + err);
              });
+             if (dev_mode && serverClipboardTextareaElement) {
+                 serverClipboardContent = clipboardData;
+                 serverClipboardTextareaElement.value = clipboardData;
+                 console.log('Updated dev sidebar clipboard textarea from server.');
+             }
            } catch (e) {
              console.error('Error processing clipboard data:', e);
            }
@@ -2388,26 +2796,58 @@ document.addEventListener('DOMContentLoaded', () => {
                  console.error('Error parsing system data:', e);
              }
          }
+         // --- NEW --- Handle non-JSON string messages if needed (e.g., simple confirmations)
+         else if (event.data === 'VIDEO_STARTED' && !isVideoPipelineActive) {
+             console.log('Received VIDEO_STARTED confirmation.');
+             isVideoPipelineActive = true;
+             window.postMessage({ type: 'pipelineStatusUpdate', video: true }, window.location.origin);
+         } else if (event.data === 'VIDEO_STOPPED' && isVideoPipelineActive) {
+             console.log('Received VIDEO_STOPPED confirmation.');
+             isVideoPipelineActive = false;
+             window.postMessage({ type: 'pipelineStatusUpdate', video: false }, window.location.origin);
+             cleanupVideoBuffer(); // Clear buffer when stopped
+         } else if (event.data === 'AUDIO_STARTED' && !isAudioPipelineActive) {
+             console.log('Received AUDIO_STARTED confirmation.');
+             isAudioPipelineActive = true;
+             window.postMessage({ type: 'pipelineStatusUpdate', audio: true }, window.location.origin);
+         } else if (event.data === 'AUDIO_STOPPED' && isAudioPipelineActive) {
+             console.log('Received AUDIO_STOPPED confirmation.');
+             isAudioPipelineActive = false;
+             window.postMessage({ type: 'pipelineStatusUpdate', audio: false }, window.location.origin);
+         }
+         // --- END NEW ---
          else {
-            // Assuming other string messages are input messages
-            if (window.webrtcInput) {
+            // Assuming other string messages might be input related if input handler exists
+            if (window.webrtcInput && window.webrtcInput.on_message) {
                window.webrtcInput.on_message(event.data);
             } else {
-               console.warn('Received string message before input handler initialized:', event.data);
+               console.warn('Received unhandled string message:', event.data);
             }
          }
       } else if (event.data === 'MODE websockets') {
         clientMode = 'websockets';
         console.log('[websockets] Switched to websockets mode.');
+        // Ensure decoders are ready
         initializeDecoder();
         initializeDecoderAudio();
-        initializeInput();
+        initializeInput(); // Ensure input is initialized *after* mode is set
+
         if (playButtonElement) playButtonElement.classList.add('hidden');
         if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
         if (spinnerElement) spinnerElement.classList.remove('hidden');
 
         console.log('Starting video painting loop (requestAnimationFrame).');
-        requestAnimationFrame(paintVideoFrame);
+        requestAnimationFrame(paintVideoFrame); // Start the paint loop
+
+        // Request current clipboard content from server when mode is set
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            websocket.send('cr');
+            console.log('[websockets] Sent clipboard request (cr) to server.');
+            // Ensure pipelines are started if connecting fresh in this mode
+             if (!document.hidden && !isVideoPipelineActive) websocket.send('START_VIDEO');
+             if (!isAudioPipelineActive) websocket.send('START_AUDIO');
+        }
+
 
       } else if (event.data === 'MODE webrtc') {
         clientMode = 'webrtc';
@@ -2417,6 +2857,11 @@ document.addEventListener('DOMContentLoaded', () => {
             metricsIntervalId = null;
             console.log('[websockets] Stopped client metrics interval for webrtc mode.');
         }
+        // Close websocket-specific resources
+        if (decoder) decoder.close();
+        if (decoderAudio) decoderAudio.close();
+        cleanupVideoBuffer(); // Clear buffer when switching mode
+
         setupWebRTCMode();
         fetch('./turn')
           .then((response) => response.json())
@@ -2473,19 +2918,32 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('[websockets] Stopped client metrics interval due to close.');
     }
     cleanupVideoBuffer();
+    // Optionally reset decoder states
+    if(decoder) decoder.close();
+    if(decoderAudio) decoderAudio.close();
+    decoder = null;
+    decoderAudio = null;
+    // Reset pipeline state flags on close
+    isVideoPipelineActive = false; // Assume stopped on disconnect
+    isAudioPipelineActive = false;
+    window.postMessage({ type: 'pipelineStatusUpdate', video: false, audio: false }, window.location.origin);
   };
 });
 
 function cleanupVideoBuffer() {
-    console.log(`Cleanup: Closing ${videoFrameBuffer.length} video frames in buffer.`);
-    videoFrameBuffer.forEach(frame => {
+    // console.log(`Cleanup: Closing ${videoFrameBuffer.length} video frames in buffer.`); // Can be noisy
+    let closedCount = 0;
+    while(videoFrameBuffer.length > 0) {
+        const frame = videoFrameBuffer.shift();
         try {
             frame.close();
+            closedCount++;
         } catch (e) {
-            console.warn('Error closing video frame during cleanup:', e);
+            // Ignore errors closing already closed frames
         }
-    });
-    videoFrameBuffer.length = 0;
+    }
+     if (closedCount > 0) console.log(`Cleanup: Closed ${closedCount} video frames.`);
+
      if (dev_mode && videoBufferDivElement) {
         videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
      }
@@ -2499,35 +2957,43 @@ function cleanup() {
       console.log('Cleanup: Stopped client metrics interval.');
   }
 
+  // --- MODIFIED --- Use a flag to prevent recursive cleanup calls if possible
+  if (window.isCleaningUp) return;
+  window.isCleaningUp = true;
+  console.log("Cleanup: Starting cleanup process...");
+  // --- END MODIFIED ---
+
   if (clientMode === 'webrtc' && signalling) {
     signalling.disconnect();
+    signalling = null; // Clear reference
   }
   if (audio_signalling) {
     audio_signalling.disconnect();
+    audio_signalling = null; // Clear reference
   }
   if (clientMode === 'webrtc' && webrtc) {
     webrtc.reset();
+    webrtc = null; // Clear reference
   }
   if (audio_webrtc) {
     audio_webrtc.reset();
+    audio_webrtc = null; // Clear reference
   }
   if (websocket) {
     websocket.onopen = null;
     websocket.onmessage = null;
     websocket.onerror = null;
-    websocket.onclose = null;
-    websocket.close();
+    websocket.onclose = null; // Important to prevent close handler running again during cleanup
+    if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) {
+        websocket.close();
+        console.log("Cleanup: Closed websocket connection.");
+    }
     websocket = null;
   }
   if (audioContext) {
       if (audioContext.state !== 'closed') {
-          if (audioContext.state === 'suspended') {
-              audioContext.resume().then(() => {
-                  audioContext.close().then(() => console.log('AudioContext closed')).catch(e => console.error('Error closing AudioContext:', e));
-              }).catch(e => console.error('Error resuming AudioContext before close:', e));
-          } else {
-               audioContext.close().then(() => console.log('AudioContext closed')).catch(e => console.error('Error closing AudioContext:', e));
-          }
+           console.log(`Cleanup: Closing AudioContext (state: ${audioContext.state})`);
+           audioContext.close().then(() => console.log('Cleanup: AudioContext closed.')).catch(e => console.error('Cleanup: Error closing AudioContext:', e));
       }
       audioContext = null;
       audioWorkletNode = null;
@@ -2536,11 +3002,17 @@ function cleanup() {
       window.currentAudioBufferSize = 0;
   }
   if (decoder) {
-      decoder.close();
+       if (decoder.state !== 'closed') {
+          decoder.close();
+          console.log("Cleanup: Closed VideoDecoder.");
+       }
       decoder = null;
   }
   if (decoderAudio) {
-      decoderAudio.close();
+      if (decoderAudio.state !== 'closed') {
+          decoderAudio.close();
+          console.log("Cleanup: Closed AudioDecoder.");
+      }
       decoderAudio = null;
   }
 
@@ -2557,7 +3029,13 @@ function cleanup() {
   if (playButtonElement) playButtonElement.classList.remove('hidden');
   if (spinnerElement) spinnerElement.classList.remove('hidden');
   if (overlayInput) overlayInput.style.cursor = 'auto';
-
+  serverClipboardContent = '';
+  if (dev_mode && serverClipboardTextareaElement) {
+      serverClipboardTextareaElement.value = serverClipboardContent;
+  }
+  // Reset states
+  isVideoPipelineActive = true; // Reset to default for next connection attempt
+  isAudioPipelineActive = true;
 
   connectionStat.connectionStatType = 'unknown';
   connectionStat.connectionLatency = 0;
@@ -2597,6 +3075,10 @@ function cleanup() {
    if (dev_mode && audioBufferDivElement) {
         audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize} buffers`;
    }
+   // --- MODIFIED --- Reset cleanup flag
+   console.log("Cleanup: Finished cleanup process.");
+   window.isCleaningUp = false;
+   // --- END MODIFIED ---
 }
 
 window.addEventListener('beforeunload', cleanup);

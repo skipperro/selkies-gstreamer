@@ -1070,6 +1070,81 @@ class GSTWebRTCApp:
 
     stop_ws_pipeline = stop_pipeline
 
+    # --- START: New helper functions ---
+    async def start_websocket_video_pipeline(self):
+        if self.mode == 'websockets':
+            logger_gstwebrtc_app.info("Helper: Starting WebSocket video pipeline.")
+            try:
+                # Ensure any previous video pipeline is stopped
+                if self.pipeline and self.pipeline.get_current_state(0)[1] != Gst.State.NULL:
+                     logger_gstwebrtc_app.info("Helper: Stopping existing video pipeline before starting new one.")
+                     await asyncio.to_thread(self.pipeline.set_state, Gst.State.NULL)
+                     self.pipeline = None
+                self.start_ws_pipeline()
+                logger_gstwebrtc_app.info("Helper: WebSocket video pipeline started successfully.")
+            except Exception as e:
+                logger_gstwebrtc_app.error(f"Helper: Error starting WebSocket video pipeline: {e}", exc_info=True)
+                # Attempt cleanup if start failed partially
+                if self.pipeline:
+                    await asyncio.to_thread(self.pipeline.set_state, Gst.State.NULL)
+                    self.pipeline = None
+                raise
+        else:
+            logger_gstwebrtc_app.warning("Helper: start_websocket_video_pipeline called but mode is not 'websockets'.")
+
+    async def stop_websocket_video_pipeline(self):
+        if self.mode == 'websockets':
+            logger_gstwebrtc_app.info("Helper: Stopping WebSocket video pipeline.")
+            if self.pipeline:
+                try:
+                    await asyncio.to_thread(self.pipeline.set_state, Gst.State.NULL)
+                    self.pipeline = None
+                    self.pipeline_running = False # Ensure state reflects stop
+                    logger_gstwebrtc_app.info("Helper: WebSocket video pipeline stopped successfully.")
+                except Exception as e:
+                    logger_gstwebrtc_app.error(f"Helper: Error stopping WebSocket video pipeline: {e}", exc_info=True)
+            else:
+                logger_gstwebrtc_app.info("Helper: No WebSocket video pipeline instance found to stop.")
+        else:
+            logger_gstwebrtc_app.warning("Helper: stop_websocket_video_pipeline called but mode is not 'websockets'.")
+
+    async def start_websocket_audio_pipeline(self):
+        if self.mode == 'websockets':
+            logger_gstwebrtc_app.info("Helper: Starting WebSocket audio pipeline.")
+            try:
+                # Ensure any previous audio pipeline is stopped
+                if self.audio_ws_pipeline and self.audio_ws_pipeline.get_current_state(0)[1] != Gst.State.NULL:
+                     logger_gstwebrtc_app.info("Helper: Stopping existing audio pipeline before starting new one.")
+                     await asyncio.to_thread(self.audio_ws_pipeline.set_state, Gst.State.NULL)
+                     self.audio_ws_pipeline = None
+                self.build_audio_ws_pipeline()
+                logger_gstwebrtc_app.info("Helper: WebSocket audio pipeline started successfully.")
+            except Exception as e:
+                logger_gstwebrtc_app.error(f"Helper: Error starting WebSocket audio pipeline: {e}", exc_info=True)
+                # Attempt cleanup if start failed partially
+                if self.audio_ws_pipeline:
+                    await asyncio.to_thread(self.audio_ws_pipeline.set_state, Gst.State.NULL)
+                    self.audio_ws_pipeline = None
+                raise
+        else:
+            logger_gstwebrtc_app.warning("Helper: start_websocket_audio_pipeline called but mode is not 'websockets'.")
+
+    async def stop_websocket_audio_pipeline(self):
+        if self.mode == 'websockets':
+            logger_gstwebrtc_app.info("Helper: Stopping WebSocket audio pipeline.")
+            if self.audio_ws_pipeline:
+                try:
+                    await asyncio.to_thread(self.audio_ws_pipeline.set_state, Gst.State.NULL)
+                    self.audio_ws_pipeline = None
+                    logger_gstwebrtc_app.info("Helper: WebSocket audio pipeline stopped successfully.")
+                except Exception as e:
+                    logger_gstwebrtc_app.error(f"Helper: Error stopping WebSocket audio pipeline: {e}", exc_info=True)
+            else:
+                logger_gstwebrtc_app.info("Helper: No WebSocket audio pipeline instance found to stop.")
+        else:
+            logger_gstwebrtc_app.warning("Helper: stop_websocket_audio_pipeline called but mode is not 'websockets'.")
+    # --- END: New helper functions ---
+
     def build_audio_pipeline(self):
         pulsesrc = Gst.ElementFactory.make("pulsesrc", "pulsesrc")
         pulsesrc.set_property("provide-clock", True)
@@ -1785,7 +1860,7 @@ class GSTWebRTCApp:
                 import asyncio
                 await asyncio.sleep(0.1)
 
-    stop_ws_pipeline = stop_pipeline
+    # stop_ws_pipeline = stop_pipeline # Keep original alias if needed elsewhere
     class PlayoutDelayExtension(GstRtp.RTPHeaderExtension):
         def __init__(self):
             super().__init__()
