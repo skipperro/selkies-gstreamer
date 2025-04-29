@@ -1076,7 +1076,7 @@ class GSTWebRTCApp:
             logger_gstwebrtc_app.info("Helper: Starting WebSocket video pipeline.")
             try:
                 # Ensure any previous video pipeline is stopped
-                if self.pipeline and self.pipeline.get_current_state(0)[1] != Gst.State.NULL:
+                if self.pipeline:
                      logger_gstwebrtc_app.info("Helper: Stopping existing video pipeline before starting new one.")
                      await asyncio.to_thread(self.pipeline.set_state, Gst.State.NULL)
                      self.pipeline = None
@@ -1113,7 +1113,7 @@ class GSTWebRTCApp:
             logger_gstwebrtc_app.info("Helper: Starting WebSocket audio pipeline.")
             try:
                 # Ensure any previous audio pipeline is stopped
-                if self.audio_ws_pipeline and self.audio_ws_pipeline.get_current_state(0)[1] != Gst.State.NULL:
+                if self.audio_ws_pipeline:
                      logger_gstwebrtc_app.info("Helper: Stopping existing audio pipeline before starting new one.")
                      await asyncio.to_thread(self.audio_ws_pipeline.set_state, Gst.State.NULL)
                      self.audio_ws_pipeline = None

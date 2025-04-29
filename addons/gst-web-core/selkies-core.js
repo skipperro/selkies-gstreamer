@@ -388,14 +388,18 @@ let videoBufferDivElement;
 let serverClipboardTextareaElement;
 let serverClipboardContent = '';
 
-// --- NEW --- State variables for pipeline status (used by UI and logic)
-let isVideoPipelineActive = true; // Assume active on start
-let isAudioPipelineActive = true; // Assume active on start
-// --- END NEW ---
+let isVideoPipelineActive = true;
+let isAudioPipelineActive = true;
 
-// Interval ID for sending client metrics
 let metricsIntervalId = null;
 const METRICS_INTERVAL_MS = 100;
+
+// Define the chunk size for file uploads
+const UPLOAD_CHUNK_SIZE = 1024 * 1024; // 1 MB
+
+const MAX_SIDEBAR_UPLOADS = 3; // Max uploads to show in sidebar
+let uploadProgressContainerElement;
+let activeUploads = {};
 
 window.onload = () => {
   'use strict';
@@ -483,10 +487,8 @@ let systemStatsDivElement;
 let gpuStatsDivElement;
 let fpsCounterDivElement;
 let audioBufferDivElement;
-// --- NEW --- References to the new toggle buttons
 let videoToggleButtonElement;
 let audioToggleButtonElement;
-// --- END NEW ---
 
 
 const getIntParam = (key, default_value) => {
@@ -804,7 +806,6 @@ body {
 #dev-sidebar button:hover {
     background-color: #555;
 }
-/* --- NEW --- Styles for active/inactive toggle buttons */
 #dev-sidebar button.toggle-button.active {
     background-color: #3a8d3a; /* Green for active */
     border-color: #5cb85c;
@@ -819,7 +820,6 @@ body {
 #dev-sidebar button.toggle-button.inactive:hover {
     background-color: #d9534f;
 }
-/* --- END NEW --- */
 
 .dev-setting-item {
     display: flex;
@@ -864,7 +864,6 @@ body {
     font-family: sans-serif;
 }
 
-/* --- New Dev Sidebar Clipboard Styles --- */
 .dev-clipboard-item {
     display: flex;
     flex-direction: column;
@@ -890,13 +889,64 @@ body {
     resize: vertical; /* Allow vertical resize */
     font-family: monospace; /* Use monospace for text content */
 }
-/* ----------------------------------------- */
+
+#upload-progress-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    border-top: 1px solid #555;
+    padding-top: 10px;
+}
+.upload-progress-item {
+    background-color: #333;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 6px;
+    font-size: 0.8em;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: opacity 0.5s ease-out;
+}
+.upload-progress-item.fade-out {
+    opacity: 0;
+}
+.upload-progress-item .file-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #ccc;
+}
+.upload-progress-bar-outer {
+    width: 100%;
+    height: 8px;
+    background-color: #555;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.upload-progress-bar-inner {
+    height: 100%;
+    width: 0%; /* Start at 0% */
+    background-color: #ffc000; /* Progress color */
+    border-radius: 4px;
+    transition: width 0.1s linear;
+}
+.upload-progress-item.complete .upload-progress-bar-inner {
+    background-color: #3a8d3a; /* Green for complete */
+}
+.upload-progress-item.error .upload-progress-bar-inner {
+    background-color: #c9302c; /* Red for error */
+    width: 100% !important; /* Show full bar for error indication */
+}
+.upload-progress-item.error .file-name {
+    color: #ff8a8a; /* Lighter red for error text */
+}
   `;
   document.head.appendChild(style);
 
 };
 
-// --- NEW --- Helper function to update toggle button appearance
 function updateToggleButtonAppearance(buttonElement, isActive) {
     if (!buttonElement) return;
     if (isActive) {
@@ -909,7 +959,6 @@ function updateToggleButtonAppearance(buttonElement, isActive) {
         buttonElement.classList.add('inactive');
     }
 }
-// --- END NEW ---
 
 const initializeUI = () => {
   injectCSS();
@@ -983,24 +1032,22 @@ const initializeUI = () => {
   sidebarDiv.id = 'dev-sidebar';
 
   if (dev_mode) {
-    // --- NEW: Add Video/Audio Toggle Buttons ---
+    // --- Existing Sidebar Elements ---
     videoToggleButtonElement = document.createElement('button');
     videoToggleButtonElement.id = 'videoToggleBtn';
-    videoToggleButtonElement.className = 'toggle-button'; // Add class for styling
-    updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive); // Set initial state
+    videoToggleButtonElement.className = 'toggle-button';
+    updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
     sidebarDiv.appendChild(videoToggleButtonElement);
 
     videoToggleButtonElement.addEventListener('click', () => {
-        if (clientMode !== 'websockets') return; // Only work in websockets mode
+        if (clientMode !== 'websockets') return;
         if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const newState = !isVideoPipelineActive; // Toggle the desired state
+            const newState = !isVideoPipelineActive;
             const message = newState ? 'START_VIDEO' : 'STOP_VIDEO';
             console.log(`Dev Sidebar: Sending ${message} via websocket.`);
             websocket.send(message);
-            // Optimistically update state and UI, will be corrected by postMessage if needed
             isVideoPipelineActive = newState;
             updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
-            // Send message to self to potentially update other parts if needed (or rely on server confirmation)
             window.postMessage({ type: 'pipelineStatusUpdate', video: isVideoPipelineActive, audio: isAudioPipelineActive }, window.location.origin);
         } else {
             console.warn('Websocket not open, cannot send video toggle command.');
@@ -1009,27 +1056,24 @@ const initializeUI = () => {
 
     audioToggleButtonElement = document.createElement('button');
     audioToggleButtonElement.id = 'audioToggleBtn';
-    audioToggleButtonElement.className = 'toggle-button'; // Add class for styling
-    updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive); // Set initial state
+    audioToggleButtonElement.className = 'toggle-button';
+    updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
     sidebarDiv.appendChild(audioToggleButtonElement);
 
     audioToggleButtonElement.addEventListener('click', () => {
-        if (clientMode !== 'websockets') return; // Only work in websockets mode
+        if (clientMode !== 'websockets') return;
         if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const newState = !isAudioPipelineActive; // Toggle the desired state
+            const newState = !isAudioPipelineActive;
             const message = newState ? 'START_AUDIO' : 'STOP_AUDIO';
             console.log(`Dev Sidebar: Sending ${message} via websocket.`);
             websocket.send(message);
-            // Optimistically update state and UI
             isAudioPipelineActive = newState;
             updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
-             // Send message to self
             window.postMessage({ type: 'pipelineStatusUpdate', video: isVideoPipelineActive, audio: isAudioPipelineActive }, window.location.origin);
         } else {
             console.warn('Websocket not open, cannot send audio toggle command.');
         }
     });
-    // --- END NEW ---
 
 
     const encoderContainer = document.createElement('div');
@@ -1060,7 +1104,6 @@ const initializeUI = () => {
     encoderContainer.appendChild(encoderSelectElement);
     sidebarDiv.appendChild(encoderContainer);
 
-    // MODIFIED: Send setting via window.postMessage
     encoderSelectElement.addEventListener('change', (event) => {
         const selectedEncoder = event.target.value;
         console.log(`Dev Sidebar: Encoder selected: ${selectedEncoder}. Sending via window.postMessage.`);
@@ -1092,7 +1135,6 @@ const initializeUI = () => {
     framerateContainer.appendChild(framerateSelectElement);
     sidebarDiv.appendChild(framerateContainer);
 
-    // MODIFIED: Send setting via window.postMessage
     framerateSelectElement.addEventListener('change', (event) => {
         const selectedFramerate = parseInt(event.target.value, 10);
         if (!isNaN(selectedFramerate)) {
@@ -1128,7 +1170,6 @@ const initializeUI = () => {
     bitrateContainer.appendChild(videoBitrateSelectElement);
     sidebarDiv.appendChild(bitrateContainer);
 
-    // MODIFIED: Send setting via window.postMessage
     videoBitrateSelectElement.addEventListener('change', (event) => {
         const selectedBitrate = parseInt(event.target.value, 10);
         if (!isNaN(selectedBitrate)) {
@@ -1162,7 +1203,6 @@ const initializeUI = () => {
     audioBitrateContainer.appendChild(audioBitrateSelectElement);
     sidebarDiv.appendChild(audioBitrateContainer);
 
-    // MODIFIED: Send setting via window.postMessage
     audioBitrateSelectElement.addEventListener('change', (event) => {
         const selectedBitrate = parseInt(event.target.value, 10);
         if (!isNaN(selectedBitrate)) {
@@ -1192,9 +1232,6 @@ const initializeUI = () => {
     videoBufferContainer.appendChild(videoBufferSelectElement);
     sidebarDiv.appendChild(videoBufferContainer);
 
-    // NOTE: videoBufferSize is a client-side rendering/buffering setting,
-    //       not a server setting. It doesn't need to be sent to the server.
-    //       We keep the original logic of updating local state and localStorage.
     videoBufferSelectElement.addEventListener('change', (event) => {
         const selectedSize = parseInt(event.target.value, 10);
         if (!isNaN(selectedSize)) {
@@ -1204,7 +1241,6 @@ const initializeUI = () => {
         }
     });
 
-    // --- New Clipboard Text Area in Dev Sidebar ---
     const clipboardContainer = document.createElement('div');
     clipboardContainer.className = 'dev-clipboard-item';
 
@@ -1215,23 +1251,16 @@ const initializeUI = () => {
 
     serverClipboardTextareaElement = document.createElement('textarea');
     serverClipboardTextareaElement.id = 'serverClipboardTextarea';
-    serverClipboardTextareaElement.value = serverClipboardContent; // Set initial value
+    serverClipboardTextareaElement.value = serverClipboardContent;
 
-    // Add event listener to detect changes and post message back
     serverClipboardTextareaElement.addEventListener('blur', (event) => {
         const newClipboardText = event.target.value;
         console.log(`Dev Sidebar: Clipboard text changed (blur). Sending via window.postMessage.`);
-        // Send the updated text back to the main script's message handler
         window.postMessage({ type: 'clipboardUpdateFromUI', text: newClipboardText }, window.location.origin);
     });
-    // Consider using 'input' with debounce for more reactive updates if needed
-    // serverClipboardTextareaElement.addEventListener('input', debounce((event) => { ... }, 500));
-
 
     clipboardContainer.appendChild(serverClipboardTextareaElement);
     sidebarDiv.appendChild(clipboardContainer);
-    // --------------------------------------------------
-
 
     const systemStatsLabel = document.createElement('label');
     systemStatsLabel.textContent = 'System Stats:';
@@ -1283,7 +1312,11 @@ const initializeUI = () => {
     videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
     sidebarDiv.appendChild(videoBufferDivElement);
 
-  }
+    uploadProgressContainerElement = document.createElement('div');
+    uploadProgressContainerElement.id = 'upload-progress-container';
+    sidebarDiv.appendChild(uploadProgressContainerElement);
+
+  } // End of if(dev_mode)
 
   appDiv.appendChild(videoContainer);
 
@@ -1291,7 +1324,6 @@ const initializeUI = () => {
     appDiv.appendChild(sidebarDiv);
   }
 
-  // Load initial settings from localStorage
   videoBitRate = getIntParam('videoBitRate', videoBitRate);
   videoFramerate = getIntParam('videoFramerate', videoFramerate);
   audioBitRate = getIntParam('audioBitRate', audioBitRate);
@@ -1301,9 +1333,7 @@ const initializeUI = () => {
   turnSwitch = getBoolParam('turnSwitch', turnSwitch);
   videoBufferSize = getIntParam('videoBufferSize', 0);
 
-
   videoElement.classList.toggle('scale', scaleLocal);
-
 
   updateStatusDisplay();
   updateLogOutput();
@@ -1316,7 +1346,7 @@ const initializeUI = () => {
     statusDisplayElement.classList.remove('hidden');
     spinnerElement.classList.remove('hidden');
   }
-}; // Removed the problematic semicolon here
+};
 
 
 const startStream = () => {
@@ -1424,11 +1454,108 @@ const initializeInput = () => {
     }
   }
 
+  // Add drag and drop listeners
+  overlayInput.addEventListener('dragover', handleDragOver);
+  overlayInput.addEventListener('drop', handleDrop);
+
+
   window.webrtcInput = inputInstance;
 };
 
 
 window.addEventListener('message', receiveMessage, false);
+
+function updateSidebarUploadProgress(payload) {
+    if (!dev_mode || !uploadProgressContainerElement) return;
+
+    const { status, fileName, progress, fileSize, message: errorMessage } = payload;
+    const existingUpload = activeUploads[fileName];
+
+    if (status === 'start') {
+        if (Object.keys(activeUploads).length >= MAX_SIDEBAR_UPLOADS) {
+            console.warn(`Dev Sidebar: Max upload items (${MAX_SIDEBAR_UPLOADS}) reached. Ignoring: ${fileName}`);
+            return; // Don't add more than the max
+        }
+        if (existingUpload) {
+            console.warn(`Dev Sidebar: Upload already started for ${fileName}. Ignoring duplicate start.`);
+            return;
+        }
+
+        const item = document.createElement('div');
+        item.className = 'upload-progress-item';
+        item.dataset.fileName = fileName; // Store filename for later retrieval
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'file-name';
+        nameSpan.textContent = fileName;
+        nameSpan.title = fileName; // Show full name on hover
+        item.appendChild(nameSpan);
+
+        const barOuter = document.createElement('div');
+        barOuter.className = 'upload-progress-bar-outer';
+        const barInner = document.createElement('div');
+        barInner.className = 'upload-progress-bar-inner';
+        barOuter.appendChild(barInner);
+        item.appendChild(barOuter);
+
+        uploadProgressContainerElement.appendChild(item);
+        activeUploads[fileName] = { element: item, progress: 0 };
+        console.log(`Dev Sidebar: Added progress for ${fileName}`);
+
+    } else if (existingUpload) {
+        const { element } = existingUpload;
+        const barInner = element.querySelector('.upload-progress-bar-inner');
+
+        if (status === 'progress') {
+            if (barInner) {
+                barInner.style.width = `${progress}%`;
+            }
+            activeUploads[fileName].progress = progress;
+        } else if (status === 'end') {
+            if (barInner) {
+                barInner.style.width = '100%';
+            }
+            element.classList.add('complete');
+            console.log(`Dev Sidebar: Completed ${fileName}`);
+            // Remove after a delay
+            setTimeout(() => {
+                element.classList.add('fade-out');
+                setTimeout(() => {
+                    if (element.parentNode) {
+                        element.parentNode.removeChild(element);
+                    }
+                    delete activeUploads[fileName];
+                    console.log(`Dev Sidebar: Removed progress for ${fileName}`);
+                }, 500); // Matches fade-out transition
+            }, 2000); // Keep completed item visible for 2 seconds
+        } else if (status === 'error') {
+             if (barInner) {
+                 barInner.style.width = '100%'; // Visually indicate error
+             }
+             element.classList.add('error');
+             const nameSpan = element.querySelector('.file-name');
+             if (nameSpan) {
+                 nameSpan.textContent = `${fileName} (Error)`;
+                 nameSpan.title = `Error: ${errorMessage || 'Unknown error'}`;
+             }
+             console.error(`Dev Sidebar: Error uploading ${fileName}: ${errorMessage}`);
+             // Remove after a delay
+             setTimeout(() => {
+                 element.classList.add('fade-out');
+                 setTimeout(() => {
+                    if (element.parentNode) {
+                        element.parentNode.removeChild(element);
+                    }
+                    delete activeUploads[fileName];
+                    console.log(`Dev Sidebar: Removed error progress for ${fileName}`);
+                 }, 500);
+             }, 5000); // Keep error item visible for 5 seconds
+        }
+    } else {
+        console.warn(`Dev Sidebar: Received '${status}' for unknown upload: ${fileName}`);
+    }
+}
+
 
 function receiveMessage(event) {
   if (event.origin !== window.location.origin) {
@@ -1445,14 +1572,12 @@ function receiveMessage(event) {
       console.log('Received getStats message via window.postMessage.');
       sendStatsMessage();
     } else if (message.type === 'clipboardUpdateFromUI') {
-      // --- Handle clipboard update from the UI text area ---
       console.log('Received clipboardUpdateFromUI message via window.postMessage.');
       const newClipboardText = message.text;
 
       if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
           try {
               const encodedText = btoa(newClipboardText);
-               // Use the same message format as the seamless clipboard logic
               const clipboardMessage = `cw,${encodedText}`;
               websocket.send(clipboardMessage);
               console.log(`Sent clipboard update from UI to server via websocket: ${clipboardMessage}`);
@@ -1462,9 +1587,7 @@ function receiveMessage(event) {
       } else {
           console.warn('Cannot send clipboard update from UI: Not in websockets mode or websocket not open.');
       }
-      // --- End clipboard update handling ---
     }
-    // --- NEW --- Handle pipeline status updates
     else if (message.type === 'pipelineStatusUpdate') {
         console.log('Received pipelineStatusUpdate message via window.postMessage:', message);
         if (message.video !== undefined) {
@@ -1480,7 +1603,10 @@ function receiveMessage(event) {
             }
         }
     }
-    // --- END NEW ---
+    else if (message.type === 'fileUpload') {
+        console.log('Received fileUpload message:', message.payload);
+        updateSidebarUploadProgress(message.payload); // Update the sidebar display
+    }
     else {
       console.warn('Received unknown message type via window.postMessage:', message.type, message);
     }
@@ -1489,11 +1615,11 @@ function receiveMessage(event) {
   }
 }
 
+// This function now processes settings received from *any* source
+// (including the dev sidebar via window.postMessage).
+// It updates local state, localStorage, the UI (if dev_mode),
+// and sends the command to the server via the appropriate channel.
 function handleSettingsMessage(settings) {
-  // This function now processes settings received from *any* source
-  // (including the dev sidebar via window.postMessage).
-  // It updates local state, localStorage, the UI (if dev_mode),
-  // and sends the command to the server via the appropriate channel.
 
   console.log('Applying settings:', settings);
 
@@ -1720,35 +1846,29 @@ function handleSettingsMessage(settings) {
      // This is a client-side buffering setting, no server message needed.
   }
 
-  // Note: turnSwitch and debug settings trigger a reload in the original code.
-  // This is a bit disruptive, but keeping the original behavior for now.
-  // These settings are also client-side (affecting how the client connects),
-  // not server-side parameters.
   if (settings.turnSwitch !== undefined) {
     turnSwitch = settings.turnSwitch;
     setBoolParam('turnSwitch', turnSwitch); // Save to localStorage
     console.log(`Applied turnSwitch setting: ${turnSwitch}. Reloading...`);
-    // Check if WebRTC connection exists before reloading
     if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
       console.log('WebRTC not connected, skipping immediate reload.');
       return;
     }
     setTimeout(() => {
       window.location.reload();
-    }, 700); // Delay reload slightly
+    }, 700);
   }
   if (settings.debug !== undefined) {
     debug = settings.debug;
     setBoolParam('debug', debug); // Save to localStorage
      console.log(`Applied debug setting: ${debug}. Reloading...`);
-    // Check if WebRTC connection exists before reloading
     if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
       console.log('WebRTC not connected, skipping immediate reload.');
       return;
     }
     setTimeout(() => {
       window.location.reload();
-    }, 700); // Delay reload slightly
+    }, 700);
   }
 }
 
@@ -1760,15 +1880,12 @@ function sendStatsMessage() {
     clientFps: window.fps,
     audioBuffer: window.currentAudioBufferSize,
     videoBuffer: videoFrameBuffer.length,
-    // --- NEW --- Include pipeline status in stats
     isVideoPipelineActive: isVideoPipelineActive,
     isAudioPipelineActive: isAudioPipelineActive,
-    // --- END NEW ---
   };
    if (typeof encoderName !== 'undefined') {
        stats.encoderName = encoderName;
    }
-  // Send stats data back via window.postMessage
   window.parent.postMessage({ type: 'stats', data: stats }, window.location.origin);
   console.log('Sent stats message via window.postMessage:', stats);
 }
@@ -1776,7 +1893,6 @@ function sendStatsMessage() {
 document.addEventListener('DOMContentLoaded', () => {
   initializeUI();
 
-  // Initialize UI dropdowns with loaded settings and add custom options if needed
   if (dev_mode) {
       if (videoBitrateSelectElement) {
           videoBitrateSelectElement.value = videoBitRate.toString();
@@ -1874,15 +1990,12 @@ document.addEventListener('DOMContentLoaded', () => {
            }
       }
 
-      // Initialize clipboard text area if it exists
       if (serverClipboardTextareaElement) {
           serverClipboardTextareaElement.value = serverClipboardContent;
       }
 
-      // --- NEW --- Initialize toggle button appearance based on initial state
       updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
       updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
-      // --- END NEW ---
   }
 
 
@@ -2011,14 +2124,12 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     webrtc.onclipboardcontent = (content) => {
-      // Seamless clipboard update from server to local clipboard (WebRTC mode)
       navigator.clipboard
         .writeText(content)
         .catch((err) => {
           if (webrtc)
             webrtc._setStatus(`Could not copy text to clipboard: ${err}`);
         });
-       // Also update the dev sidebar textarea if it exists and in dev mode
        if (dev_mode && serverClipboardTextareaElement) {
            serverClipboardContent = content;
            serverClipboardTextareaElement.value = content;
@@ -2123,7 +2234,6 @@ document.addEventListener('DOMContentLoaded', () => {
     )
       websocket.send('kr');
 
-    // Existing seamless clipboard read on focus (only sends if permission is granted)
     navigator.clipboard
       .readText()
       .then((text) => {
@@ -2156,19 +2266,15 @@ document.addEventListener('DOMContentLoaded', () => {
       websocket.send('kr');
   });
 
-  // --- NEW --- Handle page visibility changes for websockets mode
   document.addEventListener('visibilitychange', () => {
-    if (clientMode !== 'websockets') return; // Only handle in websockets mode
+    if (clientMode !== 'websockets') return;
 
     if (document.hidden) {
         console.log('Tab is hidden, stopping video pipeline.');
         if (websocket && websocket.readyState === WebSocket.OPEN) {
-            // Only send STOP if we believe it's currently active
             if (isVideoPipelineActive) {
                 websocket.send('STOP_VIDEO');
-                // Update state immediately (optimistic)
                 isVideoPipelineActive = false;
-                // Notify UI via postMessage
                 window.postMessage({ type: 'pipelineStatusUpdate', video: false }, window.location.origin);
             } else {
                  console.log('Video pipeline already stopped, not sending STOP_VIDEO.');
@@ -2176,18 +2282,14 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             console.warn('Websocket not open, cannot send STOP_VIDEO.');
         }
-        // Clear the buffer when hidden to prevent stale frames on resume
         cleanupVideoBuffer();
 
     } else {
         console.log('Tab is visible, starting video pipeline.');
         if (websocket && websocket.readyState === WebSocket.OPEN) {
-            // Only send START if we believe it's currently stopped
             if (!isVideoPipelineActive) {
                 websocket.send('START_VIDEO');
-                 // Update state immediately (optimistic)
-                isVideoPipelineActive = true;
-                // Notify UI via postMessage
+                 isVideoPipelineActive = true;
                 window.postMessage({ type: 'pipelineStatusUpdate', video: true }, window.location.origin);
             } else {
                 console.log('Video pipeline already started, not sending START_VIDEO.');
@@ -2197,7 +2299,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
   });
-  // --- END NEW ---
 
   /**
    * Handles a decoded video frame from the decoder.
@@ -2205,7 +2306,6 @@ document.addEventListener('DOMContentLoaded', () => {
    * @param {VideoFrame} frame
    */
   function handleDecodedFrame(frame) {
-      // --- MODIFIED --- Keep the frame dropping logic, but visibility control is now in the event listener
       if (document.hidden) {
         console.log('Tab is hidden, dropping video frame.');
         frame.close();
@@ -2214,9 +2314,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return;
       }
-      // --- END MODIFIED ---
 
-      // Only buffer if the video pipeline is supposed to be active
       if (!isVideoPipelineActive && clientMode === 'websockets') {
            console.log('Video pipeline inactive, dropping video frame.');
            frame.close();
@@ -2237,12 +2335,10 @@ document.addEventListener('DOMContentLoaded', () => {
    * Runs on a requestAnimationFrame loop.
    */
   function paintVideoFrame() {
-      // Only paint if the video pipeline is supposed to be active and tab is visible
       if (canvasContext && !document.hidden && isVideoPipelineActive && videoFrameBuffer.length > videoBufferSize) {
           const frameToPaint = videoFrameBuffer.shift();
 
           if (frameToPaint) {
-              // Ensure canvas dimensions match the frame before drawing
               if (canvas.width !== frameToPaint.codedWidth || canvas.height !== frameToPaint.codedHeight) {
                    canvas.width = frameToPaint.codedWidth;
                    canvas.height = frameToPaint.codedHeight;
@@ -2270,18 +2366,11 @@ document.addEventListener('DOMContentLoaded', () => {
               }
           }
       } else {
-           // Update buffer display even if not painting
            if (dev_mode && videoBufferDivElement) {
-               let reason = '';
-               if (document.hidden) reason = '(Tab Hidden)';
-               else if (!isVideoPipelineActive) reason = '(Pipeline Inactive)';
-               else if (videoFrameBuffer.length <= videoBufferSize) reason = '(Buffering)';
-               videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames ${reason}`;
+               videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
            }
-           // If hidden or inactive, clear the canvas to avoid showing a stale frame
            if (canvasContext && (document.hidden || !isVideoPipelineActive)) {
-               // Optional: Clear canvas or leave the last frame visible
-               // canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+               canvasContext.clearRect(0, 0, canvas.width, canvas.height);
            }
       }
 
@@ -2323,11 +2412,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const rightChannel = output ? output[1] : undefined;
 
             if (!leftChannel || !rightChannel) {
-              // console.error("Error: leftChannel or rightChannel is undefined! Output:", output, "Outputs:", outputs);
-              // Return true to keep processor alive, but output silence
               if (leftChannel) leftChannel.fill(0);
               if (rightChannel) rightChannel.fill(0);
-              return true; // Keep processor running even if output is initially undefined
+              return true;
             }
 
             const samplesPerBuffer = leftChannel.length;
@@ -2347,12 +2434,11 @@ document.addEventListener('DOMContentLoaded', () => {
                   data = this.currentAudioData = this.audioBufferQueue.shift();
                   offset = this.currentDataOffset = 0;
                 } else {
-                  // Buffer underrun, output silence for the rest of this block
-                  this.currentAudioData = null; // Ensure we fetch new data next time
+                  this.currentAudioData = null;
                   this.currentDataOffset = 0;
                   leftChannel.fill(0, sampleIndex);
                   rightChannel.fill(0, sampleIndex);
-                  return true; // Finished processing this block
+                  return true;
                 }
               }
 
@@ -2360,19 +2446,17 @@ document.addEventListener('DOMContentLoaded', () => {
               if (offset < data.length) {
                 rightChannel[sampleIndex] = data[offset++];
               } else {
-                 // Handle mono case or end of stereo data cleanly
-                 rightChannel[sampleIndex] = leftChannel[sampleIndex]; // Output mono to both if stereo source ends
-                 offset++; // Increment offset even if data wasn't used for right channel
+                 rightChannel[sampleIndex] = leftChannel[sampleIndex];
+                 offset++;
               }
             }
 
             this.currentDataOffset = offset;
-            // If we finished the current data chunk exactly at the end of the buffer, clear it
             if (offset >= data.length) {
                  this.currentAudioData = null;
                  this.currentDataOffset = 0;
             } else {
-                 this.currentAudioData = data; // Otherwise, keep the remaining data
+                 this.currentAudioData = data;
             }
 
 
@@ -2416,13 +2500,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function handleAudio(frame) {
-    // --- NEW --- Check if audio pipeline is active before processing
     if (!isAudioPipelineActive && clientMode === 'websockets') {
-        // console.log('Audio pipeline inactive, dropping audio frame.'); // Can be noisy
         frame.close();
         return;
     }
-    // --- END NEW ---
 
     if (!audioContext) {
       await initializeAudio();
@@ -2434,7 +2515,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Autoplay policy might require interaction to start/resume audio
     if (audioContext.state !== 'running') {
       console.warn('AudioContext state is:', audioContext.state, '. Attempting resume...');
       try {
@@ -2452,14 +2532,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const sampleCount = frame.numberOfFrames;
 
       const pcmData = new Float32Array(sampleCount * numberOfChannels);
-      const copyOptions = { format: 'f32-planar', planeIndex: 0 }; // Use f32-planar if available and needed
+      const copyOptions = { format: 'f32-planar', planeIndex: 0 };
 
-      // Adjust copyOptions based on frame format if necessary. Assuming interleaved 'f32' for simplicity now.
-      copyOptions.format = 'f32'; // Sticking to interleaved f32 based on previous code
+      copyOptions.format = 'f32';
 
       await frame.copyTo(pcmData, copyOptions);
 
-      // Post the entire Float32Array containing interleaved data
       audioWorkletProcessorPort.postMessage({ audioData: pcmData });
 
       frame.close();
@@ -2482,24 +2560,19 @@ document.addEventListener('DOMContentLoaded', () => {
       output: handleDecodedFrame,
       error: (e) => {
         console.error('VideoDecoder error:', e.message);
-        // Attempt to reset decoder on fatal errors
         if (e.message.includes('fatal')) {
             console.warn('Attempting to reset VideoDecoder due to fatal error.');
-            initializeDecoder(); // Re-initialize
+            initializeDecoder();
         }
       },
     });
-    // Use a default reasonable resolution initially, it will be updated on first frame or resize
     const initialWidth = 1280;
     const initialHeight = 720;
 
-    // Common codecs, avc1.42E01E (H.264 Baseline) is widely supported
-    // We might receive different codecs, configure should handle it if possible.
     const decoderConfig = {
-      codec: 'avc1.42E01E', // A common H.264 profile
+      codec: 'avc1.42E01E',
       codedWidth: initialWidth,
       codedHeight: initialHeight,
-      // optimizeForLatency: true, // Enable if supported and desired
     };
 
     try {
@@ -2509,7 +2582,6 @@ document.addEventListener('DOMContentLoaded', () => {
           console.log('VideoDecoder configured successfully with initial config:', decoderConfig);
       } else {
           console.error('Initial VideoDecoder configuration not supported:', support);
-          // Maybe try a different default codec?
           decoder = null;
       }
     } catch (e) {
@@ -2529,16 +2601,15 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('AudioDecoder error:', e.message);
          if (e.message.includes('fatal')) {
             console.warn('Attempting to reset AudioDecoder due to fatal error.');
-            initializeDecoderAudio(); // Re-initialize
+            initializeDecoderAudio();
         }
       },
     });
 
     const decoderConfig = {
-      codec: 'opus', // Standard Opus codec string
+      codec: 'opus',
       numberOfChannels: 2,
       sampleRate: 48000,
-      // bitDepth: 16 // This is not a standard config property for Opus in AudioDecoder
     };
 
     try {
@@ -2570,11 +2641,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }
 
           try {
-              // Only send metrics if pipelines are active? Or always? Sending always for now.
               websocket.send('cfps,' + window.fps);
-              // Optionally send buffer sizes too
-              // websocket.send('abuf,' + window.currentAudioBufferSize);
-              // websocket.send('vbuf,' + videoFrameBuffer.length);
           } catch (error) {
               console.error('[websockets] Error sending client metrics:', error);
           }
@@ -2586,13 +2653,11 @@ document.addEventListener('DOMContentLoaded', () => {
           if (audioBufferDivElement) {
                audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize} buffers`;
           }
-          // videoBufferDivElement updated in paint loop
       }
   };
 
   websocket.onopen = () => {
     console.log('[websockets] Connection opened!');
-    // Reset pipeline states on new connection
     isVideoPipelineActive = true;
     isAudioPipelineActive = true;
     window.postMessage({ type: 'pipelineStatusUpdate', video: true, audio: true }, window.location.origin);
@@ -2601,7 +2666,6 @@ document.addEventListener('DOMContentLoaded', () => {
         metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
         console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
     }
-     // Send initial resize/scale info
      if (window.webrtcInput) {
          const windowResolution = window.webrtcInput.getWindowResolution();
          const newRes = `${windowResolution[0]}x${windowResolution[1]}`;
@@ -2616,36 +2680,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const arrayBuffer = event.data;
         const dataView = new DataView(arrayBuffer);
 
-        const dataTypeByte = dataView.getUint8(0); // 0 for video, 1 for audio
-        const frameTypeFlag = dataView.getUint8(1); // 1 for key frame, 0 for delta/inter
-        const frameDataArrayBuffer = arrayBuffer.slice(2); // Rest is frame data
+        const dataTypeByte = dataView.getUint8(0);
+        const frameTypeFlag = dataView.getUint8(1);
+        const frameDataArrayBuffer = arrayBuffer.slice(2);
 
-        if (dataTypeByte === 0) { // Video data
-          // --- MODIFIED --- Check if video pipeline is active before decoding
+        if (dataTypeByte === 0) {
           if (!isVideoPipelineActive) {
-              // console.log("Video pipeline inactive, skipping decode."); // Can be noisy
               return;
           }
-          // --- END MODIFIED ---
 
           if (decoder && decoder.state === 'configured') {
             const chunk = new EncodedVideoChunk({
               type: frameTypeFlag === 1 ? 'key' : 'delta',
-              timestamp: performance.now() * 1000, // Use performance.now() for timestamp
-              // duration: 0, // Duration is often unknown for encoded chunks
+              timestamp: performance.now() * 1000,
               data: frameDataArrayBuffer,
             });
             try {
-              // Check queue size before decoding to prevent excessive memory use?
-              // const MAX_DECODE_QUEUE_SIZE = 30; // Example limit
-              // if (decoder.decodeQueueSize < MAX_DECODE_QUEUE_SIZE) {
                    decoder.decode(chunk);
-              // } else {
-              //     console.warn(`Video decode queue full (${decoder.decodeQueueSize}), dropping frame.`);
-              // }
             } catch (e) {
               console.error('Video Decoding error:', e);
-              // Attempt to recover by resetting decoder?
               if (decoder.state === 'closed' || decoder.state === 'unconfigured') {
                    console.warn("Video Decoder is closed or unconfigured, reinitializing...");
                    initializeDecoder();
@@ -2655,42 +2708,34 @@ document.addEventListener('DOMContentLoaded', () => {
             console.warn(
               'Video Decoder not ready or not configured yet, video frame dropped.'
             );
-             // Attempt to initialize if null
              if (!decoder) initializeDecoder();
           }
-        } else if (dataTypeByte === 1) { // Audio data
-            // --- MODIFIED --- Check if audio pipeline is active before decoding
+        } else if (dataTypeByte === 1) {
             if (!isAudioPipelineActive) {
-                // console.log("Audio pipeline inactive, skipping decode."); // Can be noisy
                 return;
             }
-            // --- END MODIFIED ---
 
-          const AUDIO_BUFFER_THRESHOLD = 15; // Increased threshold slightly
+          const AUDIO_BUFFER_THRESHOLD = 10;
 
           if (window.currentAudioBufferSize >= AUDIO_BUFFER_THRESHOLD) {
               console.warn(
                   `Audio buffer (${window.currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`
               );
-              // Maybe clear some buffer here? Or just drop.
               return;
           }
 
           if (decoderAudio && decoderAudio.state === 'configured') {
             const chunk = new EncodedAudioChunk({
-              type: 'key', // Opus frames are typically independent 'key' frames
-              timestamp: performance.now() * 1000, // Use performance.now() for timestamp
-              // duration: 20000, // Common Opus frame duration (e.g., 20ms = 20000 us) - server should provide if possible
+              type: 'key',
+              timestamp: performance.now() * 1000,
               data: frameDataArrayBuffer,
             });
             try {
-               // Check queue size?
-               // const MAX_AUDIO_DECODE_QUEUE_SIZE = 50;
-               // if(decoderAudio.decodeQueueSize < MAX_AUDIO_DECODE_QUEUE_SIZE) {
+                if(decoderAudio.decodeQueueSize < 10) {
                     decoderAudio.decode(chunk);
-               // } else {
-               //      console.warn(`Audio decode queue full (${decoderAudio.decodeQueueSize}), dropping frame.`);
-               // }
+                } else {
+                     console.warn(`Audio decode queue full (${decoderAudio.decodeQueueSize}), dropping frame.`);
+                }
             } catch (e) {
               console.error('Audio Decoding error:', e);
                if (decoderAudio.state === 'closed' || decoderAudio.state === 'unconfigured') {
@@ -2700,7 +2745,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           } else {
              console.warn('Audio Decoder not ready or not configured yet, audio frame dropped.');
-              // Attempt to initialize if null
              if (!decoderAudio) initializeDecoderAudio();
           }
         } else {
@@ -2729,8 +2773,6 @@ document.addEventListener('DOMContentLoaded', () => {
                gpuStatsDivElement.textContent = JSON.stringify(obj, null, 2);
              }
            }
-           // --- NEW --- Handle potential pipeline status confirmation from server (optional)
-           // Example: Server might send {"type": "pipeline_status", "video": true, "audio": false}
            else if (obj.type === 'pipeline_status') {
                 console.log('Received pipeline status confirmation from server:', obj);
                 let statusChanged = false;
@@ -2742,12 +2784,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     isAudioPipelineActive = obj.audio;
                     statusChanged = true;
                 }
-                // Update UI if status changed based on server message
                 if (statusChanged) {
                      window.postMessage({ type: 'pipelineStatusUpdate', video: isVideoPipelineActive, audio: isAudioPipelineActive }, window.location.origin);
                 }
            }
-           // --- END NEW ---
            else {
              console.warn(`Received unexpected JSON message type from server: ${obj.type}`, obj);
            }
@@ -2796,7 +2836,6 @@ document.addEventListener('DOMContentLoaded', () => {
                  console.error('Error parsing system data:', e);
              }
          }
-         // --- NEW --- Handle non-JSON string messages if needed (e.g., simple confirmations)
          else if (event.data === 'VIDEO_STARTED' && !isVideoPipelineActive) {
              console.log('Received VIDEO_STARTED confirmation.');
              isVideoPipelineActive = true;
@@ -2805,7 +2844,7 @@ document.addEventListener('DOMContentLoaded', () => {
              console.log('Received VIDEO_STOPPED confirmation.');
              isVideoPipelineActive = false;
              window.postMessage({ type: 'pipelineStatusUpdate', video: false }, window.location.origin);
-             cleanupVideoBuffer(); // Clear buffer when stopped
+             cleanupVideoBuffer();
          } else if (event.data === 'AUDIO_STARTED' && !isAudioPipelineActive) {
              console.log('Received AUDIO_STARTED confirmation.');
              isAudioPipelineActive = true;
@@ -2815,9 +2854,7 @@ document.addEventListener('DOMContentLoaded', () => {
              isAudioPipelineActive = false;
              window.postMessage({ type: 'pipelineStatusUpdate', audio: false }, window.location.origin);
          }
-         // --- END NEW ---
          else {
-            // Assuming other string messages might be input related if input handler exists
             if (window.webrtcInput && window.webrtcInput.on_message) {
                window.webrtcInput.on_message(event.data);
             } else {
@@ -2827,23 +2864,20 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (event.data === 'MODE websockets') {
         clientMode = 'websockets';
         console.log('[websockets] Switched to websockets mode.');
-        // Ensure decoders are ready
         initializeDecoder();
         initializeDecoderAudio();
-        initializeInput(); // Ensure input is initialized *after* mode is set
+        initializeInput();
 
         if (playButtonElement) playButtonElement.classList.add('hidden');
         if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
         if (spinnerElement) spinnerElement.classList.remove('hidden');
 
         console.log('Starting video painting loop (requestAnimationFrame).');
-        requestAnimationFrame(paintVideoFrame); // Start the paint loop
+        requestAnimationFrame(paintVideoFrame);
 
-        // Request current clipboard content from server when mode is set
         if (websocket && websocket.readyState === WebSocket.OPEN) {
             websocket.send('cr');
             console.log('[websockets] Sent clipboard request (cr) to server.');
-            // Ensure pipelines are started if connecting fresh in this mode
              if (!document.hidden && !isVideoPipelineActive) websocket.send('START_VIDEO');
              if (!isAudioPipelineActive) websocket.send('START_AUDIO');
         }
@@ -2857,10 +2891,9 @@ document.addEventListener('DOMContentLoaded', () => {
             metricsIntervalId = null;
             console.log('[websockets] Stopped client metrics interval for webrtc mode.');
         }
-        // Close websocket-specific resources
         if (decoder) decoder.close();
         if (decoderAudio) decoderAudio.close();
-        cleanupVideoBuffer(); // Clear buffer when switching mode
+        cleanupVideoBuffer();
 
         setupWebRTCMode();
         fetch('./turn')
@@ -2918,20 +2951,17 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('[websockets] Stopped client metrics interval due to close.');
     }
     cleanupVideoBuffer();
-    // Optionally reset decoder states
     if(decoder) decoder.close();
     if(decoderAudio) decoderAudio.close();
     decoder = null;
     decoderAudio = null;
-    // Reset pipeline state flags on close
-    isVideoPipelineActive = false; // Assume stopped on disconnect
+    isVideoPipelineActive = false;
     isAudioPipelineActive = false;
     window.postMessage({ type: 'pipelineStatusUpdate', video: false, audio: false }, window.location.origin);
   };
 });
 
 function cleanupVideoBuffer() {
-    // console.log(`Cleanup: Closing ${videoFrameBuffer.length} video frames in buffer.`); // Can be noisy
     let closedCount = 0;
     while(videoFrameBuffer.length > 0) {
         const frame = videoFrameBuffer.shift();
@@ -2939,7 +2969,6 @@ function cleanupVideoBuffer() {
             frame.close();
             closedCount++;
         } catch (e) {
-            // Ignore errors closing already closed frames
         }
     }
      if (closedCount > 0) console.log(`Cleanup: Closed ${closedCount} video frames.`);
@@ -2957,33 +2986,31 @@ function cleanup() {
       console.log('Cleanup: Stopped client metrics interval.');
   }
 
-  // --- MODIFIED --- Use a flag to prevent recursive cleanup calls if possible
   if (window.isCleaningUp) return;
   window.isCleaningUp = true;
   console.log("Cleanup: Starting cleanup process...");
-  // --- END MODIFIED ---
 
   if (clientMode === 'webrtc' && signalling) {
     signalling.disconnect();
-    signalling = null; // Clear reference
+    signalling = null;
   }
   if (audio_signalling) {
     audio_signalling.disconnect();
-    audio_signalling = null; // Clear reference
+    audio_signalling = null;
   }
   if (clientMode === 'webrtc' && webrtc) {
     webrtc.reset();
-    webrtc = null; // Clear reference
+    webrtc = null;
   }
   if (audio_webrtc) {
     audio_webrtc.reset();
-    audio_webrtc = null; // Clear reference
+    audio_webrtc = null;
   }
   if (websocket) {
     websocket.onopen = null;
     websocket.onmessage = null;
     websocket.onerror = null;
-    websocket.onclose = null; // Important to prevent close handler running again during cleanup
+    websocket.onclose = null;
     if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) {
         websocket.close();
         console.log("Cleanup: Closed websocket connection.");
@@ -3033,8 +3060,7 @@ function cleanup() {
   if (dev_mode && serverClipboardTextareaElement) {
       serverClipboardTextareaElement.value = serverClipboardContent;
   }
-  // Reset states
-  isVideoPipelineActive = true; // Reset to default for next connection attempt
+  isVideoPipelineActive = true;
   isAudioPipelineActive = true;
 
   connectionStat.connectionStatType = 'unknown';
@@ -3075,10 +3101,287 @@ function cleanup() {
    if (dev_mode && audioBufferDivElement) {
         audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize} buffers`;
    }
-   // --- MODIFIED --- Reset cleanup flag
    console.log("Cleanup: Finished cleanup process.");
    window.isCleaningUp = false;
-   // --- END MODIFIED ---
+}
+
+
+/**
+ * Handles the 'dragover' event to allow dropping.
+ * @param {DragEvent} ev
+ */
+function handleDragOver(ev) {
+  ev.preventDefault(); // Necessary to allow dropping
+  ev.dataTransfer.dropEffect = 'copy';
+}
+
+/**
+ * Handles the 'drop' event on the overlayInput element.
+ * Collects entries first, then processes sequentially using async/await.
+ * @param {DragEvent} ev
+ */
+async function handleDrop(ev) {
+  ev.preventDefault();
+  ev.stopPropagation();
+
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+    const errorMsg = "WebSocket is not open. Cannot upload files.";
+    console.error(errorMsg);
+    // Send error message to window if needed
+    window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: errorMsg } }, window.location.origin);
+    return;
+  }
+
+  console.log("File(s) dropped, collecting entries...");
+
+  const entriesToProcess = []; // Array to hold valid entries
+
+  if (ev.dataTransfer.items) {
+    // Synchronously collect all entries from the item list
+    for (let i = 0; i < ev.dataTransfer.items.length; i++) {
+      const item = ev.dataTransfer.items[i];
+      // IMPORTANT: Use webkitGetAsEntry() for broader compatibility
+      const entry = item.webkitGetAsEntry() || item.getAsEntry();
+      if (entry) {
+        entriesToProcess.push(entry); // Add the entry to our array
+      } else {
+         console.warn("Could not get FileSystemEntry for dropped item.", item);
+      }
+    }
+  } else {
+    // Use DataTransfer interface to access the file(s) (legacy)
+    // This path is less common now, but let's try to handle it.
+    // We need File objects here, which uploadFileObject can handle directly.
+    // Note: This legacy path doesn't support directories well.
+    for (let i = 0; i < ev.dataTransfer.files.length; i++) {
+        console.warn("Legacy file drop detected. Handling files directly.");
+    }
+    if (entriesToProcess.length === 0 && ev.dataTransfer.files.length > 0) {
+        console.log("Processing legacy files sequentially.");
+        try {
+            for (let i = 0; i < ev.dataTransfer.files.length; i++) {
+                await uploadFileObject(ev.dataTransfer.files[i], ev.dataTransfer.files[i].name);
+            }
+             console.log("Finished processing all legacy files.");
+        } catch (error) {
+             const errorMsg = `An error occurred during the legacy file upload process: ${error.message || error}`;
+             console.error(errorMsg);
+             window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: errorMsg } }, window.location.origin);
+             if (websocket && websocket.readyState === WebSocket.OPEN) {
+                  try { websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Legacy processing failed`); } catch (_) {}
+             }
+        } finally {
+        }
+        return; // Exit after handling legacy files
+    }
+  }
+
+  console.log(`Collected ${entriesToProcess.length} entries to process sequentially.`);
+
+  // Now, sequentially process the entries from our stable array
+  try {
+    for (const entry of entriesToProcess) {
+      const entryName = entry.name || 'Unknown Entry Name';
+      console.log(`Processing collected entry: ${entryName}`);
+      // Await the handling of each entry from the array
+      await handleDroppedEntry(entry);
+    }
+    console.log("Finished processing all collected entries.");
+  } catch (error) {
+      const errorMsg = `An error occurred during the sequential upload process: ${error.message || error}`;
+      console.error(errorMsg);
+      window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: errorMsg } }, window.location.origin);
+      // Optionally send a generic error to the server or display UI feedback
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+           try { websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Processing failed`); } catch (_) {}
+      }
+  } finally {
+      console.log("Upload process finished.");
+  }
+}
+
+/**
+ * Promisified version of entry.file()
+ * @param {FileSystemFileEntry} fileEntry
+ * @returns {Promise<File>}
+ */
+function getFileFromEntry(fileEntry) {
+    return new Promise((resolve, reject) => {
+        fileEntry.file(resolve, reject);
+    });
+}
+
+/**
+ * Recursively handles a dropped FileSystemEntry (file or directory) sequentially.
+ * @param {FileSystemEntry} entry
+ */
+async function handleDroppedEntry(entry) {
+  if (entry.isFile) {
+    const pathName = entry.fullPath || entry.name; // Use fullPath if available
+    try {
+        // Get the file object using the promisified helper
+        const file = await getFileFromEntry(entry);
+        // Await the upload of this file, passing the path
+        await uploadFileObject(file, pathName); // Pass pathToSend
+    } catch (err) {
+        const errorMsg = `Error getting or uploading file from entry ${pathName}: ${err.message || err}`;
+        console.error(errorMsg);
+        window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathName, message: errorMsg } }, window.location.origin);
+        // Optionally send an error for this specific file
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+             try { websocket.send(`FILE_UPLOAD_ERROR:${pathName}:Failed to get/upload file`); } catch (_) {} // Use pathName
+        }
+        // Rethrow or handle as needed for sequential processing
+        throw err; // Propagate error to stop sequential processing if desired, or remove to continue
+    }
+  } else if (entry.isDirectory) {
+    const dirPath = entry.fullPath || entry.name;
+    console.log(`Reading directory: ${dirPath}`);
+    const dirReader = entry.createReader();
+    // Await the processing of the entire directory
+    await readDirectoryEntries(dirReader);
+  }
+}
+
+/**
+ * Promisified version of dirReader.readEntries()
+ * Reads one batch of entries.
+ * @param {FileSystemDirectoryReader} dirReader
+ * @returns {Promise<FileSystemEntry[]>}
+ */
+function readEntriesPromise(dirReader) {
+    return new Promise((resolve, reject) => {
+        dirReader.readEntries(resolve, reject);
+    });
+}
+
+
+/**
+ * Recursively reads and processes all entries in a directory sequentially.
+ * @param {FileSystemDirectoryReader} dirReader
+ */
+async function readDirectoryEntries(dirReader) {
+    let entries;
+    do {
+        // Await reading a batch of entries
+        entries = await readEntriesPromise(dirReader);
+        if (entries.length > 0) {
+            // Process each entry in the batch sequentially
+            for (const entry of entries) {
+                await handleDroppedEntry(entry); // Await each entry within the directory
+            }
+        }
+    } while (entries.length > 0); // Continue if readEntries returned a non-empty batch
+}
+
+
+/**
+ * Uploads a single File object by chunking it. Returns a Promise.
+ * Sends start, progress, end, and error messages via window.postMessage.
+ * @param {File} file The File object to upload.
+ * @param {string} pathToSend The relative path of the file to send to the server.
+ * @returns {Promise<void>} Resolves when upload is complete, rejects on error.
+ */
+function uploadFileObject(file, pathToSend) {
+    // Wrap in a Promise
+    return new Promise((resolve, reject) => {
+        if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+            const errorMsg = `WebSocket closed before file ${pathToSend} could be uploaded.`;
+            console.error(errorMsg);
+            // Send error message to window
+            window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
+            reject(new Error(errorMsg)); // Reject the promise
+            return;
+        }
+
+        console.log(`Starting upload for: ${pathToSend} (${file.size} bytes)`);
+        // Send START message via window.postMessage
+        window.postMessage({ type: 'fileUpload', payload: { status: 'start', fileName: pathToSend, fileSize: file.size } }, window.location.origin);
+
+        // Send START message via WebSocket
+        websocket.send(`FILE_UPLOAD_START:${pathToSend}:${file.size}`);
+
+        let offset = 0;
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                const errorMsg = `WebSocket closed during upload of ${pathToSend}. Aborting.`;
+                console.error(errorMsg);
+                // Send error message to window
+                window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
+                reject(new Error(errorMsg)); // Reject the promise
+                return;
+            }
+            if (e.target.error) {
+                const errorMsg = `Error reading file ${pathToSend}: ${e.target.error}`;
+                console.error(errorMsg);
+                 // Send error message to window
+                window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
+                // Try to notify server before rejecting
+                try { websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:${e.target.error}`); } catch (_) {}
+                reject(e.target.error); // Reject the promise
+                return;
+            }
+
+            try {
+                websocket.send(e.target.result); // Send ArrayBuffer directly
+                offset += e.target.result.byteLength;
+
+                // Calculate and send PROGRESS message via window.postMessage
+                const progress = file.size > 0 ? Math.round((offset / file.size) * 100) : 100;
+                window.postMessage({ type: 'fileUpload', payload: { status: 'progress', fileName: pathToSend, progress: progress, fileSize: file.size } }, window.location.origin);
+
+                if (offset < file.size) {
+                    readChunk(offset); // Read next chunk
+                } else {
+                    console.log(`Finished uploading ${pathToSend}`);
+                    // Send END message via WebSocket
+                    websocket.send(`FILE_UPLOAD_END:${pathToSend}`);
+                    // Send END message via window.postMessage
+                    window.postMessage({ type: 'fileUpload', payload: { status: 'end', fileName: pathToSend, fileSize: file.size } }, window.location.origin);
+                    resolve(); // Resolve the promise on success
+                }
+            } catch (wsError) {
+                const errorMsg = `WebSocket error sending chunk for ${pathToSend}: ${wsError}`;
+                console.error(errorMsg);
+                // Send error message to window
+                window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
+                // Optionally try to send an error message, but websocket might be broken
+                try { websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:WebSocket send failed`); } catch (_) {}
+                reject(wsError); // Reject the promise
+            }
+        };
+
+        reader.onerror = function(e) {
+            const errorMsg = `FileReader error for ${pathToSend}: ${e.target.error}`;
+            console.error(errorMsg);
+            // Send error message to window
+            window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
+             if (websocket && websocket.readyState === WebSocket.OPEN) {
+                try { websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:${e.target.error}`); } catch (_) {}
+             }
+            reject(e.target.error); // Reject the promise
+        };
+
+        function readChunk(startOffset) {
+            // Check websocket state *before* reading next chunk
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                 const errorMsg = `WebSocket closed before reading next chunk for ${pathToSend}. Aborting.`;
+                 console.error(errorMsg);
+                 // Send error message to window
+                 window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
+                 reject(new Error(errorMsg)); // Reject the promise
+                 return;
+            }
+            const endOffset = Math.min(startOffset + UPLOAD_CHUNK_SIZE, file.size);
+            const slice = file.slice(startOffset, endOffset);
+            reader.readAsArrayBuffer(slice);
+        }
+
+        // Start reading the first chunk
+        readChunk(0);
+    });
 }
 
 window.addEventListener('beforeunload', cleanup);

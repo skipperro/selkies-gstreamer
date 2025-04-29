@@ -89,11 +89,26 @@ MIME_TYPES = {
     "ico": "image/x-icon",
 }
 
+upload_dir_path = os.path.expanduser("~/Desktop")
+try:
+    os.makedirs(upload_dir_path, exist_ok=True)
+    print(f"Upload directory ensured: {upload_dir_path}")
+except OSError as e:
+    print(f"FATAL: Could not create upload directory {upload_dir_path}: {e}")
+    upload_dir_path = None # Disable uploads if dir creation fails
+
+# --- State Management ---
+# Global state for tracking file uploads across connections (if needed, though current implementation is per-connection)
+active_uploads_by_path = {}  # Maps final file path -> file handle
+client_to_filepath_map = {}  # Maps websocket object -> final file path currently uploading
+
 
 class HMACRTCMonitor:
+    """Periodically generates and updates RTC config using HMAC-SHA1 TURN credentials."""
     def __init__(self, turn_host, turn_port, turn_shared_secret, turn_username,
                  turn_protocol='udp', turn_tls=False, stun_host=None,
                  stun_port=None, period=60, enabled=True):
+        """Initializes the HMAC RTC configuration monitor."""
         self.turn_host = turn_host
         self.turn_port = turn_port
         self.turn_username = turn_username
@@ -111,9 +126,11 @@ class HMACRTCMonitor:
             logger.warning("unhandled on_rtc_config")
 
     async def start(self):
+        """Starts the periodic monitoring loop."""
         if self.enabled:
             self.running = True
             while self.running:
+                # Check if it's time to generate a new config based on the period
                 if self.enabled and int(time.time()) % self.period == 0:
                     try:
                         hmac_data = await asyncio.to_thread(
@@ -124,6 +141,7 @@ class HMACRTCMonitor:
                         )
                         stun_servers, turn_servers, rtc_config = \
                             await asyncio.to_thread(parse_rtc_config, hmac_data)
+                        # Call the handler with the new config
                         await asyncio.to_thread(
                             self.on_rtc_config, stun_servers, turn_servers,
                             rtc_config
@@ -137,14 +155,17 @@ class HMACRTCMonitor:
             logger.info("HMAC RTC monitor stopped")
 
     async def stop(self):
+        """Stops the monitoring loop."""
         self.running = False
 
 
 class RESTRTCMonitor:
+    """Periodically fetches and updates RTC config from a TURN REST API."""
     def __init__(self, turn_rest_uri, turn_rest_username,
                  turn_rest_username_auth_header, turn_protocol='udp',
                  turn_rest_protocol_header='x-turn-protocol', turn_tls=False,
                  turn_rest_tls_header='x-turn-tls', period=60, enabled=True):
+        """Initializes the TURN REST API monitor."""
         self.period = period
         self.enabled = enabled
         self.running = False
@@ -161,9 +182,11 @@ class RESTRTCMonitor:
             logger.warning("unhandled on_rtc_config")
 
     async def start(self):
+        """Starts the periodic monitoring loop."""
         if self.enabled:
             self.running = True
             while self.running:
+                # Check if it's time to fetch a new config based on the period
                 if self.enabled and int(time.time()) % self.period == 0:
                     try:
                         stun_servers, turn_servers, rtc_config = \
@@ -175,6 +198,7 @@ class RESTRTCMonitor:
                                 self.turn_rest_protocol_header,
                                 self.turn_tls, self.turn_rest_tls_header
                             )
+                        # Call the handler with the new config
                         await asyncio.to_thread(
                             self.on_rtc_config, stun_servers, turn_servers,
                             rtc_config
@@ -188,11 +212,14 @@ class RESTRTCMonitor:
             logger.info("TURN REST RTC monitor stopped")
 
     async def stop(self):
+        """Stops the monitoring loop."""
         self.running = False
 
 
 class RTCConfigFileMonitor:
+    """Monitors an RTC configuration JSON file for changes."""
     def __init__(self, rtc_file, enabled=True):
+        """Initializes the RTC configuration file monitor."""
         self.enabled = enabled
         self.running = False
         self.rtc_file = rtc_file
@@ -200,6 +227,7 @@ class RTCConfigFileMonitor:
         self.on_rtc_config = lambda stun_servers, turn_servers, rtc_config: \
             logger.warning("unhandled on_rtc_config")
 
+        # Setup watchdog observer to monitor the file
         self.observer = Observer()
         self.file_event_handler = FileSystemEventHandler()
         self.file_event_handler.on_closed = self.event_handler
@@ -207,6 +235,7 @@ class RTCConfigFileMonitor:
                                recursive=False)
 
     def event_handler(self, event):
+        """Handles file close events (often indicating a write completion)."""
         if type(event) is FileClosedEvent:
             print("Detected RTC JSON file change: {}".format(event.src_path))
             try:
@@ -215,6 +244,7 @@ class RTCConfigFileMonitor:
                     stun_servers, turn_servers, rtc_config = parse_rtc_config(
                         data
                     )
+                    # Call the handler with the new config
                     self.on_rtc_config(stun_servers, turn_servers, rtc_config)
             except Exception as e:
                 logger.warning(
@@ -222,11 +252,13 @@ class RTCConfigFileMonitor:
                 )
 
     async def start(self):
+        """Starts the file observer."""
         if self.enabled:
             await asyncio.to_thread(self.observer.start)
             self.running = True
 
     async def stop(self):
+        """Stops the file observer."""
         await asyncio.to_thread(self.observer.stop)
         logger.info("RTC config file monitor stopped")
         self.running = False
@@ -242,6 +274,7 @@ def generate_rtc_config(
     stun_host=None,
     stun_port=None,
 ):
+    """Generates a WebRTC configuration JSON using HMAC-SHA1 TURN credentials."""
     user = user.replace(":", "-")
     expiry_hour = 24
     exp = int(time.time()) + expiry_hour * 3600
@@ -289,6 +322,7 @@ def make_turn_rtc_config_json_legacy(
     stun_host=None,
     stun_port=None,
 ):
+    """Generates a WebRTC configuration JSON using static TURN username/password."""
     stun_list = ["stun:{}:{}".format(turn_host, turn_port)]
     if (
         stun_host is not None
@@ -319,6 +353,7 @@ def make_turn_rtc_config_json_legacy(
 
 
 def parse_rtc_config(data):
+    """Parses a WebRTC configuration JSON to extract STUN and TURN URIs."""
     ice_servers = json.loads(data)["iceServers"]
     stun_uris = []
     turn_uris = []
@@ -365,6 +400,7 @@ def fetch_turn_rest(
     turn_tls=False,
     header_tls="x-turn-tls",
 ):
+    """Fetches WebRTC configuration from a TURN REST API service."""
     parsed_uri = urllib.parse.urlparse(uri)
     if parsed_uri.scheme == "https":
         conn = http.client.HTTPSConnection(parsed_uri.netloc)
@@ -390,8 +426,8 @@ def fetch_turn_rest(
         raise Exception("data from REST API service was empty")
     return parse_rtc_config(data)
 
-
 def fetch_cloudflare_turn(turn_token_id, api_token, ttl=86400):
+    """Fetches temporary TURN credentials from the Cloudflare API."""
     auth_headers = {
         "authorization": f"Bearer {api_token}",
         "content-type": "application/json",
@@ -413,6 +449,7 @@ def fetch_cloudflare_turn(turn_token_id, api_token, ttl=86400):
 
 
 async def wait_for_app_ready(ready_file, app_wait_ready=False):
+    """Waits for a specified file to exist before proceeding."""
     logger.info("Waiting for streaming app ready")
     logging.debug("app_wait_ready=%s, ready_file=%s" % (app_wait_ready, ready_file))
     while app_wait_ready and not os.path.exists(ready_file):
@@ -420,6 +457,7 @@ async def wait_for_app_ready(ready_file, app_wait_ready=False):
 
 
 def set_json_app_argument(config_path, key, value):
+    """Sets a specific key-value pair in a JSON configuration file."""
     if not os.path.exists(config_path):
         with open(config_path, "w") as f:
             json.dump({}, f)
@@ -432,6 +470,7 @@ def set_json_app_argument(config_path, key, value):
 
 
 async def _collect_system_stats_ws(shared_data, interval_seconds=1):
+    """Collects system CPU and memory statistics periodically (for WS mode)."""
     data_logger.debug(
         f"System monitor loop (WS mode) started, collection interval: "
         f"{interval_seconds}s"
@@ -461,6 +500,7 @@ async def _collect_system_stats_ws(shared_data, interval_seconds=1):
 
 
 async def _collect_gpu_stats_ws(shared_data, gpu_id=0, interval_seconds=1):
+    """Collects GPU utilization and memory statistics periodically (for WS mode)."""
     data_logger.debug(
         f"GPU monitor loop (WS mode) started for GPU {gpu_id}, collection interval: "
         f"{interval_seconds}s"
@@ -510,10 +550,12 @@ async def _collect_gpu_stats_ws(shared_data, gpu_id=0, interval_seconds=1):
 
 
 async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5):
+    """Sends collected system and GPU stats over the WebSocket periodically (WS mode)."""
     try:
         while True:
             await asyncio.sleep(interval_seconds)
 
+            # Get and remove stats from shared dict to avoid sending duplicates
             system_stats = shared_data.pop("system", None)
             gpu_stats = shared_data.pop("gpu", None)
 
@@ -528,6 +570,9 @@ async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5
                         json_data = json.dumps(gpu_stats)
                         await websocket.send(json_data)
                         data_logger.debug("Sent GPU stats over WS.")
+                else:
+                    data_logger.info("Stats sender: WebSocket connection closed or invalid, stopping sender loop.")
+                    break # Exit loop if connection is not valid
 
             except websockets.exceptions.ConnectionClosed:
                 data_logger.info("Stats sender: WebSocket connection closed.")
@@ -544,24 +589,30 @@ async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5
 
 
 class DataStreamingServer:
+    """Handles the data WebSocket connection for input, stats, and control messages."""
+    # Cooldown period after making an FPS/bitrate adjustment
     ADJUSTMENT_COOL_DOWN_SECONDS = 8.0
+    # Duration the low FPS condition must persist before triggering adjustment
     DEBOUNCE_DURATION_SECONDS = 2.0
 
     def __init__(self, port, mode, app, uinput_mouse_socket, js_socket_path,
                  enable_clipboard, enable_cursors, cursor_size, cursor_scale,
                  cursor_debug):
+        """Initializes the data WebSocket server."""
         self.port = port
         self.mode = mode
         self.server = None
         self.stop_server = None
-        self.data_ws = None
-        self.app = app
+        self.data_ws = None # Holds the currently active websocket connection
+        self.app = app # Reference to the main GST application
 
+        # State for Websockets mode stats collection/sending
         self._system_monitor_task_ws = None
         self._gpu_monitor_task_ws = None
         self._stats_sender_task_ws = None
         self._shared_stats_ws = {}
 
+        # Input handling configuration
         self.uinput_mouse_socket = uinput_mouse_socket
         self.js_socket_path = js_socket_path
         self.enable_clipboard = enable_clipboard
@@ -571,10 +622,12 @@ class DataStreamingServer:
         self.cursor_debug = cursor_debug
         self.webrtc_input = None
 
+        # State for adaptive FPS/bitrate adjustment
         self._last_adjustment_timestamp = 0.0
         self._low_fps_condition_start_timestamp = None
 
     async def ws_handler(self, websocket):
+        """Handles incoming WebSocket connections and messages."""
         global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
 
         raddr = websocket.remote_address
@@ -584,16 +637,52 @@ class DataStreamingServer:
             await websocket.send(mode_message)
         except websockets.exceptions.ConnectionClosed:
              data_logger.warning(
-                 "Connection closed immediately after connecting from "
-                 f"{raddr}"
+                 f"Connection closed immediately after connecting from {raddr}"
              )
              return
 
         self.data_ws = websocket
 
+        # Maps final server file path -> file handle for ongoing uploads for this connection
+        active_uploads_by_path = {}
+        # Tracks the final file path currently being uploaded by this connection
+        active_upload_target_path = None
+
+        # Define the base upload directory
+        upload_dir_path = os.path.expanduser("~/Desktop")
+
+        # Create the base upload directory if it doesn't exist
+        upload_dir_valid = False
+        try:
+            os.makedirs(upload_dir_path, exist_ok=True)
+            data_logger.info(f"Upload directory ensured: {upload_dir_path}")
+            upload_dir_valid = True
+        except OSError as e:
+            data_logger.error(f"Could not create upload directory {upload_dir_path}: {e}")
+
         if self.mode == "websockets":
             data_logger.info("Operating in websockets mode.")
+            # Initialize Input Handler for this connection
+            try:
+                logger.info("Initializing WebRTCInput for new websocket connection...")
+                self.webrtc_input = WebRTCInput(
+                    self.app,
+                    self.uinput_mouse_socket,
+                    self.js_socket_path,
+                    self.enable_clipboard,
+                    self.enable_cursors,
+                    self.cursor_size,
+                    self.cursor_scale,
+                    self.cursor_debug,
+                )
+                if hasattr(self.webrtc_input, 'connect') and asyncio.iscoroutinefunction(self.webrtc_input.connect):
+                    await self.webrtc_input.connect()
+                logger.info("WebRTCInput initialized and connected for websocket.")
+            except Exception as e:
+                logger.error(f"Failed to initialize or connect WebRTCInput for websockets mode: {e}", exc_info=True)
+                self.webrtc_input = None # Ensure it's None if setup fails
 
+            # Automatically start pipelines on connection
             data_logger.info("Attempting to start WS pipelines automatically on connection.")
             try:
                 if hasattr(self.app, 'start_websocket_video_pipeline'):
@@ -609,39 +698,31 @@ class DataStreamingServer:
             except Exception as e:
                  data_logger.error(f"Error during automatic pipeline start: {e}", exc_info=True)
 
-            self._shared_stats_ws = {}
-
+            # Setup stats collection and sending for this connection
+            self._shared_stats_ws = {} # Reset stats for this connection
             gpu_id_for_monitor = getattr(self.app, 'gpu_id', 0)
+            # Start system stats collection task
             self._system_monitor_task_ws = asyncio.create_task(
                 _collect_system_stats_ws(self._shared_stats_ws, interval_seconds=1)
             )
+            # Start GPU stats collection task
             self._gpu_monitor_task_ws = asyncio.create_task(
                 _collect_gpu_stats_ws(self._shared_stats_ws,
-                                      gpu_id=gpu_id_for_monitor,
-                                      interval_seconds=1)
+                                          gpu_id=gpu_id_for_monitor,
+                                          interval_seconds=1)
             )
+            # Start task to send collected stats periodically
             self._stats_sender_task_ws = asyncio.create_task(
                 _send_stats_periodically_ws(websocket, self._shared_stats_ws,
-                                            interval_seconds=5)
+                                                interval_seconds=5)
             )
-
             data_logger.info(
                 "System/GPU monitor and sender tasks started for websockets mode."
             )
 
-            self.webrtc_input = WebRTCInput(
-                self.app,
-                self.uinput_mouse_socket,
-                self.js_socket_path,
-                self.enable_clipboard,
-                self.enable_cursors,
-                self.cursor_size,
-                self.cursor_scale,
-                self.cursor_debug,
-            )
             try:
-                 await self.webrtc_input.connect()
-                 data_logger.info("WebRTCInput local connections established.")
+                 # await self.webrtc_input.connect() # Connect local sockets if needed
+                 data_logger.info("WebRTCInput local connections established (if applicable).")
             except Exception as e:
                  data_logger.error(
                      f"Failed to establish WebRTCInput local connections: {e}",
@@ -649,393 +730,436 @@ class DataStreamingServer:
                  )
 
         else:
+            # Operating in webrtc mode
             data_logger.info(
                 "Operating in webrtc mode. Data websocket handler is minimal."
             )
-            self.webrtc_input = None
+            self.webrtc_input = None # Ensure it's None if not in WS mode
+
 
         try:
             async for message in websocket:
-                if self.mode == "websockets":
-                    if message == "START_VIDEO":
-                        data_logger.info("Received START_VIDEO command.")
-                        if hasattr(self.app, 'start_websocket_video_pipeline'):
-                            try:
-                                await self.app.start_websocket_video_pipeline()
-                            except Exception as e:
-                                data_logger.error(f"Error starting WS video pipeline via helper: {e}", exc_info=True)
-                        else:
-                            data_logger.error("app instance has no start_websocket_video_pipeline method.")
-                            await websocket.send("ERROR START_VIDEO Method not found")
-                    elif message == "STOP_VIDEO":
-                        data_logger.info("Received STOP_VIDEO command.")
-                        if hasattr(self.app, 'stop_websocket_video_pipeline'):
-                            try:
-                                await self.app.stop_websocket_video_pipeline()
-                            except Exception as e:
-                                data_logger.error(f"Error stopping WS video pipeline via helper: {e}", exc_info=True)
-                        else:
-                            data_logger.error("app instance has no stop_websocket_video_pipeline method.")
-                    elif message == "START_AUDIO":
-                        data_logger.info("Received START_AUDIO command.")
-                        if hasattr(self.app, 'start_websocket_audio_pipeline'):
-                             try:
-                                await self.app.start_websocket_audio_pipeline()
-                             except Exception as e:
-                                data_logger.error(f"Error starting WS audio pipeline via helper: {e}", exc_info=True)
-                        else:
-                            data_logger.error("app instance has no start_websocket_audio_pipeline method.")
-                    elif message == "STOP_AUDIO":
-                        data_logger.info("Received STOP_AUDIO command.")
-                        if hasattr(self.app, 'stop_websocket_audio_pipeline'):
-                             try:
-                                await self.app.stop_websocket_audio_pipeline()
-                             except Exception as e:
-                                data_logger.error(f"Error stopping WS audio pipeline via helper: {e}", exc_info=True)
-                        else:
-                            data_logger.error("app instance has no stop_websocket_audio_pipeline method.")
-                    elif message.startswith("r,"):
-                        res = message[2:]
-                        on_resize_handler(res, self.app)
-                    elif message.startswith("s,"):
-                        scale = message[2:]
+                if isinstance(message, bytes):
+                    if active_upload_target_path and active_upload_target_path in active_uploads_by_path:
+                        file_handle = active_uploads_by_path[active_upload_target_path]
                         try:
-                            scale = float(scale)
-                            on_scaling_ratio_handler(scale, self.app)
-                        except ValueError:
-                            logger.error(f"Invalid scale value received: {scale}")
-                    elif message.startswith("cfps,"):
-                      try:
-                          parts = message.split(",")
-                          if len(parts) != 2:
-                              print(f"Invalid cfps message format: {message}")
-                              continue
-                          current_cfps_str = parts[1]
-                          current_cfps = int(float(current_cfps_str))
-                          now = time.monotonic()
-
-                          if now - self._last_adjustment_timestamp < \
-                             self.ADJUSTMENT_COOL_DOWN_SECONDS:
-                              self._low_fps_condition_start_timestamp = None
-                              continue
-
-                          is_low_fps_condition_met = (
-                              current_cfps != 0 and
-                              current_cfps < TARGET_FRAMERATE - FPS_ADJUST_THRESHOLD
-                          )
-
-                          if is_low_fps_condition_met:
-                              if self._low_fps_condition_start_timestamp is None:
-                                  self._low_fps_condition_start_timestamp = now
-
-                              elif now - self._low_fps_condition_start_timestamp >= \
-                                   self.DEBOUNCE_DURATION_SECONDS:
-                                  new_framerate = max(
-                                      MIN_FRAMERATE, TARGET_FRAMERATE - FPS_ADJUST_STEP
-                                  )
-                                  new_bitrate_kbps = max(
-                                      MIN_VIDEO_BITRATE_KBPS,
-                                      TARGET_VIDEO_BITRATE_KBPS - BITRATE_ADJUST_STEP_KBPS
-                                  )
-
-                                  if new_framerate < TARGET_FRAMERATE or \
-                                     new_bitrate_kbps < TARGET_VIDEO_BITRATE_KBPS:
-                                      print(
-                                          f"Client FPS ({current_cfps}) persistently low "
-                                          f"(>{FPS_ADJUST_THRESHOLD} below target "
-                                          f"{TARGET_FRAMERATE}) for "
-                                          f"{self.DEBOUNCE_DURATION_SECONDS}s. "
-                                          f"Adjusting server FPS to {new_framerate} "
-                                          f"and bitrate to {new_bitrate_kbps}kbps."
-                                      )
-
-                                      # Use helper functions if available
-                                      if hasattr(self.app, 'stop_websocket_video_pipeline'):
-                                          await self.app.stop_websocket_video_pipeline()
-                                      else:
-                                          print(
-                                              "Warning: app instance has no "
-                                              "stop_websocket_video_pipeline method."
-                                          )
-                                      if hasattr(self.app, 'stop_websocket_audio_pipeline'):
-                                          await self.app.stop_websocket_audio_pipeline()
-                                      else:
-                                           print(
-                                               "Warning: app instance has no "
-                                               "stop_websocket_audio_pipeline method."
-                                           )
-
-
-                                      TARGET_FRAMERATE = new_framerate
-                                      TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps
-
-                                      if hasattr(self.app, 'framerate'):
-                                           self.app.framerate = TARGET_FRAMERATE
-                                      if hasattr(self.app, 'video_bitrate'):
-                                           self.app.video_bitrate = TARGET_VIDEO_BITRATE_KBPS
-
-                                      self._last_adjustment_timestamp = time.monotonic()
-
-                                      if hasattr(self.app, 'start_websocket_video_pipeline'):
-                                          await self.app.start_websocket_video_pipeline()
-                                          print(
-                                              "Video pipeline stopped and restarted with "
-                                              "adjusted FPS and bitrate. Starting "
-                                              "cool-down."
-                                          )
-                                      else:
-                                          print(
-                                              "Error: app instance has no "
-                                              "start_websocket_video_pipeline method after stop."
-                                          )
-                                      if hasattr(self.app, 'start_websocket_audio_pipeline'):
-                                           await self.app.start_websocket_audio_pipeline()
-                                           print(
-                                               "Audio pipeline stopped and restarted."
-                                           )
-                                      else:
-                                           print(
-                                               "Warning: app instance has no "
-                                               "start_websocket_audio_pipeline method."
-                                           )
-
-                                      self._low_fps_condition_start_timestamp = None
-
-                                  pass
-
-                          else:
-                              self._low_fps_condition_start_timestamp = None
-
-                      except ValueError:
-                          print(
-                              "Error: Invalid cfps value received (not a number): "
-                              f"{message}"
-                          )
-                      except Exception as e:
-                          print(f"Error processing cfps message: {e}")
-                          traceback.print_exc()
-
-                    elif message.startswith("SET_VIDEO_BITRATE,"):
-                        try:
-                            parts = message.split(",")
-                            if len(parts) != 2:
-                                logger.error(
-                                    "Invalid SET_VIDEO_BITRATE message format: "
-                                    f"{message}"
-                                )
-                                await websocket.send(
-                                    "ERROR Invalid SET_VIDEO_BITRATE format"
-                                )
-                                continue
-                            new_bitrate_kbps = int(parts[1])
-                            logger.info(
-                                f"Received SET_VIDEO_BITRATE: {new_bitrate_kbps}kbps"
-                            )
-
-                            TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps
-
-                            # Use helper functions if available
-                            if hasattr(self.app, 'stop_websocket_video_pipeline'):
-                                 await self.app.stop_websocket_video_pipeline()
-                            else:
-                                 logger.warning(
-                                     "app instance has no stop_websocket_video_pipeline method."
-                                 )
-
-                            self.app.video_bitrate = new_bitrate_kbps
-
-                            if hasattr(self.app, 'start_websocket_video_pipeline'):
-                                 await self.app.start_websocket_video_pipeline()
-                                 logger.info(
-                                     "Video pipeline stopped and restarted with new "
-                                     "video bitrate."
-                                 )
-                            else:
-                                 logger.error(
-                                     "app instance has no start_websocket_video_pipeline "
-                                     "method after stop."
-                                 )
-                                 await websocket.send(
-                                     "ERROR Failed to restart video pipeline after "
-                                     "setting bitrate"
-                                 )
-                        except ValueError:
-                            logger.error(
-                                "Invalid SET_VIDEO_BITRATE value (not an integer): "
-                                f"{message}"
-                            )
-                            await websocket.send(
-                                "ERROR Invalid SET_VIDEO_BITRATE value"
-                            )
+                            file_handle.write(message)
                         except Exception as e:
-                            logger.error(
-                                "Error setting video bitrate and restarting pipeline: "
-                                f"{e}", exc_info=True
+                            data_logger.error(
+                                f"Error writing chunk to file {active_upload_target_path}: {e}",
+                                exc_info=True
                             )
-                            await websocket.send("ERROR Failed to set video bitrate")
-                    elif message.startswith("SET_AUDIO_BITRATE,"):
+                            try:
+                                file_handle.close()
+                            except Exception: pass
+                            del active_uploads_by_path[active_upload_target_path]
+                            try:
+                                os.remove(active_upload_target_path)
+                                data_logger.info(f"Deleted partial file {active_upload_target_path} after write error.")
+                            except Exception as remove_e:
+                                data_logger.warning(f"Could not remove partial file {active_upload_target_path} after write error: {remove_e}")
+                            active_upload_target_path = None # Reset active path for this connection
+
+                elif isinstance(message, str):
+                    if message.startswith('FILE_UPLOAD_START:'):
+                        if not upload_dir_valid: # Check if upload directory is okay
+                            data_logger.error("Upload directory not configured or creation failed. Skipping upload.")
+                            continue
                         try:
-                            parts = message.split(",")
-                            if len(parts) != 2:
-                                logger.error(
-                                    "Invalid SET_AUDIO_BITRATE message format: "
-                                    f"{message}"
-                                )
-                                await websocket.send(
-                                    "ERROR Invalid SET_AUDIO_BITRATE format"
-                                )
+                            _, relative_path, size_str = message.split(':', 2)
+                            file_size = int(size_str)
+                            data_logger.info(f"Received FILE_UPLOAD_START from {raddr}: Path='{relative_path}', Size={file_size}")
+                            relative_path = relative_path.lstrip('/\\')
+                            if "\x00" in relative_path:
+                                data_logger.error(f"Invalid path rejected (contains null byte): {relative_path}")
                                 continue
-                            new_bitrate_bps = int(parts[1])
-                            logger.info(f"Received SET_AUDIO_BITRATE: {new_bitrate_bps}bps")
+                            if "//" in relative_path or "\\\\" in relative_path:
+                                 data_logger.error(f"Invalid path format rejected (double slashes): {relative_path}")
+                                 continue
+                            normalized_relative_path = os.path.normpath(relative_path)
+                            if os.path.isabs(normalized_relative_path) or os.path.isabs(relative_path):
+                                data_logger.error(f"Absolute path rejected: {normalized_relative_path} (from original: {relative_path})")
+                                continue
+                            intended_full_path = os.path.join(upload_dir_path, normalized_relative_path)
+                            absolute_intended_path = os.path.abspath(intended_full_path)
+                            absolute_upload_dir = os.path.abspath(upload_dir_path)
+                            if not absolute_intended_path.startswith(absolute_upload_dir + os.sep) and absolute_intended_path != absolute_upload_dir:
+                                 data_logger.error(f"Directory traversal attempt rejected: '{relative_path}' resolved outside upload directory to '{absolute_intended_path}'")
+                                 continue
 
-                            self.app.audio_bitrate = new_bitrate_bps
+                            # --- Path Processing ---
+                            # Path seems safe, separate directory and filename
+                            server_dir_part = os.path.dirname(absolute_intended_path)
+                            base_name = os.path.basename(absolute_intended_path)
 
-                            # Use helper functions if available
-                            if hasattr(self.app, 'stop_websocket_audio_pipeline'):
-                                 await self.app.stop_websocket_audio_pipeline()
+                            # Sanitize the final filename component
+                            sanitized_basename = re.sub(r'[^\w\-.\s]', '_', base_name).strip()
+                            if not sanitized_basename: # Handle empty filenames
+                                sanitized_basename = "uploaded_file"
+
+                            # Construct the final full path
+                            final_file_path = os.path.join(server_dir_part, sanitized_basename)
+
+                            # --- Create Directories ---
+                            try:
+                                os.makedirs(server_dir_part, exist_ok=True)
+                            except OSError as e:
+                                data_logger.error(f"Error creating directory {server_dir_part}: {e}")
+                                continue
+
+                            data_logger.info(f"Final server file path for {raddr}: {final_file_path}")
+
+                            # --- Open File ---
+                            # Check if this connection is already uploading something else
+                            if active_upload_target_path:
+                                 data_logger.warning(f"Client {raddr} started new upload for '{final_file_path}' while already uploading '{active_upload_target_path}'. Cleaning up previous.")
+                                 # Clean up previous potentially orphaned entry
+                                 if active_upload_target_path in active_uploads_by_path:
+                                     try: active_uploads_by_path[active_upload_target_path].close()
+                                     except: pass
+                                     try: os.remove(active_upload_target_path) # Optionally delete partial file
+                                     except: pass
+                                     del active_uploads_by_path[active_upload_target_path]
+                                 active_upload_target_path = None
+
+                            # Open the file for writing (binary mode)
+                            file_handle = open(final_file_path, 'wb')
+                            active_uploads_by_path[final_file_path] = file_handle
+                            active_upload_target_path = final_file_path # Set the active path for this connection
+                            data_logger.info(f"Opened file for writing: {final_file_path}")
+
+
+                        except ValueError as e:
+                            data_logger.error(f"Invalid FILE_UPLOAD_START format or size from {raddr}: {message} ({e})")
+                        except Exception as e:
+                            data_logger.error(f"Error processing FILE_UPLOAD_START '{message}' from {raddr}: {e}", exc_info=True)
+                            active_upload_target_path = None # Ensure reset on error
+                    elif message.startswith('FILE_UPLOAD_END:'):
+                        try:
+                            _, relative_path_end = message.split(':', 1)
+                            # Use the server-tracked active path for consistency
+                            if active_upload_target_path:
+                                target_path = active_upload_target_path
+                                data_logger.info(f"Received FILE_UPLOAD_END for active path: {target_path} (Client sent: {relative_path_end})")
+                                if target_path in active_uploads_by_path:
+                                    # Close the file handle
+                                    active_uploads_by_path[target_path].close()
+                                    data_logger.info(f"Closed file: {target_path}")
+                                    del active_uploads_by_path[target_path]
+                                else:
+                                    data_logger.warning(f"END received, path {target_path} was active, but not in active_uploads_by_path (already closed/cleaned?).")
+                                # Reset active path for this connection
+                                active_upload_target_path = None
                             else:
-                                 logger.warning(
-                                     "app instance has no stop_websocket_audio_pipeline method."
-                                 )
+                                data_logger.warning(f"Received FILE_UPLOAD_END from {raddr} but no active upload path for this connection. Client sent: {relative_path_end}")
 
+                        except ValueError:
+                            data_logger.error(f"Invalid FILE_UPLOAD_END format from {raddr}: {message}")
+                        except Exception as e:
+                             data_logger.error(f"Error processing FILE_UPLOAD_END '{message}' from {raddr}: {e}", exc_info=True)
+                             # Attempt cleanup based on active_upload_target_path if it's still set
+                             if active_upload_target_path and active_upload_target_path in active_uploads_by_path:
+                                 try: active_uploads_by_path[active_upload_target_path].close();
+                                 except: pass
+                                 # Optionally delete partial file on error during END processing
+                                 try: os.remove(active_upload_target_path)
+                                 except: pass
+                                 del active_uploads_by_path[active_upload_target_path]
+                             active_upload_target_path = None # Ensure reset
+
+                    elif message.startswith('FILE_UPLOAD_ERROR:'):
+                         try:
+                             _, relative_path_err, error_msg = message.split(':', 2)
+                             data_logger.error(f"Received FILE_UPLOAD_ERROR from {raddr} for '{relative_path_err}': {error_msg}")
+
+                             # Use the server-tracked active path for cleanup
+                             if active_upload_target_path:
+                                 target_path = active_upload_target_path
+                                 data_logger.info(f"Cleaning up upload due to client error for path: {target_path} (Client sent: {relative_path_err})")
+                                 if target_path in active_uploads_by_path:
+                                     try:
+                                         active_uploads_by_path[target_path].close()
+                                         # Delete the partially uploaded file on client error
+                                         os.remove(target_path)
+                                         data_logger.info(f"Deleted partial file: {target_path}")
+                                     except Exception as e:
+                                         data_logger.error(f"Error during cleanup for {target_path}: {e}")
+                                     finally:
+                                         # Ensure removal from active uploads dict
+                                         if target_path in active_uploads_by_path:
+                                             del active_uploads_by_path[target_path]
+                                 else:
+                                     data_logger.warning(f"Client error received, path {target_path} was active, but not in active_uploads_by_path.")
+                                 # Reset active path for this connection
+                                 active_upload_target_path = None
+                             else:
+                                  data_logger.warning(f"Received FILE_UPLOAD_ERROR from {raddr} but no active upload path mapped. Client sent: {relative_path_err}")
+                         except ValueError:
+                             data_logger.error(f"Invalid FILE_UPLOAD_ERROR message format from {raddr}: {message}")
+                         except Exception as e:
+                            data_logger.error(f"Error processing FILE_UPLOAD_ERROR '{message}' from {raddr}: {e}", exc_info=True)
+                            # Attempt cleanup based on active_upload_target_path if it's still set
+                            if active_upload_target_path and active_upload_target_path in active_uploads_by_path:
+                                try: active_uploads_by_path[active_upload_target_path].close();
+                                except: pass
+                                # Optionally delete partial file
+                                try: os.remove(active_upload_target_path)
+                                except: pass
+                                del active_uploads_by_path[active_upload_target_path]
+                            active_upload_target_path = None # Ensure reset
+                    elif self.mode == "websockets":
+                        # Handle standard commands for websockets mode
+                        if message == "START_VIDEO":
+                            data_logger.info("Received START_VIDEO command.")
+                            if hasattr(self.app, 'start_websocket_video_pipeline'):
+                                try:
+                                    await self.app.start_websocket_video_pipeline()
+                                except Exception as e:
+                                    data_logger.error(f"Error starting WS video pipeline via helper: {e}", exc_info=True)
+                            else:
+                                data_logger.error("app instance has no start_websocket_video_pipeline method.")
+                                await websocket.send("ERROR START_VIDEO Method not found")
+                        elif message == "STOP_VIDEO":
+                            data_logger.info("Received STOP_VIDEO command.")
+                            if hasattr(self.app, 'stop_websocket_video_pipeline'):
+                                try:
+                                    await self.app.stop_websocket_video_pipeline()
+                                except Exception as e:
+                                    data_logger.error(f"Error stopping WS video pipeline via helper: {e}", exc_info=True)
+                            else:
+                                data_logger.error("app instance has no stop_websocket_video_pipeline method.")
+                        elif message == "START_AUDIO":
+                            data_logger.info("Received START_AUDIO command.")
                             if hasattr(self.app, 'start_websocket_audio_pipeline'):
-                                 await self.app.start_websocket_audio_pipeline()
-                                 logger.info(
-                                     "Audio pipeline stopped and restarted after "
-                                     "setting audio bitrate."
-                                 )
+                                 try:
+                                    await self.app.start_websocket_audio_pipeline()
+                                 except Exception as e:
+                                    data_logger.error(f"Error starting WS audio pipeline via helper: {e}", exc_info=True)
                             else:
-                                 logger.error(
-                                     "app instance has no start_websocket_audio_pipeline "
-                                     "method after stop."
-                                 )
-                                 await websocket.send(
-                                     "ERROR Failed to restart audio pipeline after "
-                                     "setting audio bitrate"
-                                 )
-                        except ValueError:
-                            logger.error(
-                                "Invalid SET_AUDIO_BITRATE value (not an integer): "
-                                f"{message}"
-                            )
-                            await websocket.send(
-                                "ERROR Invalid SET_AUDIO_BITRATE value"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                "Error setting audio bitrate and restarting pipeline: "
-                                f"{e}", exc_info=True
-                            )
-                            await websocket.send("ERROR Failed to set audio bitrate")
-                    elif message.startswith("SET_ENCODER,"):
-                        try:
-                            parts = message.split(",")
-                            if len(parts) != 2:
-                                logger.error(
-                                    f"Invalid SET_ENCODER message format: {message}"
-                                )
-                                await websocket.send("ERROR Invalid SET_ENCODER format")
-                                continue
-                            new_encoder_str = parts[1]
-                            logger.info(f"Received SET_ENCODER: {new_encoder_str}")
-
-                            # Use helper functions if available
-                            if hasattr(self.app, 'stop_websocket_video_pipeline'):
-                                 await self.app.stop_websocket_video_pipeline()
+                                data_logger.error("app instance has no start_websocket_audio_pipeline method.")
+                        elif message == "STOP_AUDIO":
+                            data_logger.info("Received STOP_AUDIO command.")
+                            if hasattr(self.app, 'stop_websocket_audio_pipeline'):
+                                 try:
+                                    await self.app.stop_websocket_audio_pipeline()
+                                 except Exception as e:
+                                    data_logger.error(f"Error stopping WS audio pipeline via helper: {e}", exc_info=True)
                             else:
-                                 logger.warning(
-                                     "app instance has no stop_websocket_video_pipeline method."
-                                 )
+                                data_logger.error("app instance has no stop_websocket_audio_pipeline method.")
+                        elif message.startswith("r,"):
+                            # Handle resolution change request
+                            res = message[2:]
+                            on_resize_handler(res, self.app)
+                        elif message.startswith("s,"):
+                            # Handle scaling ratio change request
+                            scale = message[2:]
+                            try:
+                                scale = float(scale)
+                                on_scaling_ratio_handler(scale, self.app)
+                            except ValueError:
+                                data_logger.error(f"Invalid scale value received: {scale}")
+                        elif message.startswith("cfps,"):
+                          # Handle client FPS report and potentially adjust server settings
+                          try:
+                              parts = message.split(",")
+                              if len(parts) != 2:
+                                  data_logger.error(f"Invalid cfps message format: {message}")
+                                  continue
+                              current_cfps_str = parts[1]
+                              current_cfps = int(float(current_cfps_str))
+                              now = time.monotonic()
 
-                            self.app.encoder = new_encoder_str
-                            if hasattr(self.app, 'start_websocket_video_pipeline'):
-                                 await self.app.start_websocket_video_pipeline()
-                                 logger.info(
-                                     "Video pipeline stopped and restarted with new encoder."
-                                 )
-                            else:
-                                 logger.error(
-                                     "app instance has no start_websocket_video_pipeline "
-                                     "method after stop."
-                                 )
-                                 await websocket.send(
-                                     "ERROR Failed to restart video pipeline after "
-                                     "setting encoder"
-                                 )
-                        except Exception as e:
-                            logger.error(
-                                "Error setting encoder and restarting pipeline: "
-                                f"{e}", exc_info=True
-                            )
-                            await websocket.send("ERROR Failed to set encoder")
-                    elif message.startswith("SET_FRAMERATE,"):
-                        try:
-                            parts = message.split(",")
-                            if len(parts) != 2:
-                                logger.error(
-                                    f"Invalid SET_FRAMERATE message format: {message}"
-                                )
-                                await websocket.send("ERROR Invalid SET_FRAMERATE format")
-                                continue
-                            new_framerate_int = int(parts[1])
-                            logger.info(f"Received SET_FRAMERATE: {new_framerate_int}fps")
+                              # Check if adjustment is currently cooling down
+                              if now - self._last_adjustment_timestamp < self.ADJUSTMENT_COOL_DOWN_SECONDS:
+                                  self._low_fps_condition_start_timestamp = None # Reset timer if cooling down
+                                  continue # Skip adjustment logic
 
-                            TARGET_FRAMERATE = new_framerate_int
-
-                            # Use helper functions if available
-                            if hasattr(self.app, 'stop_websocket_video_pipeline'):
-                                 await self.app.stop_websocket_video_pipeline()
-                            else:
-                                 logger.warning(
-                                     "app instance has no stop_websocket_video_pipeline method."
-                                 )
-
-                            self.app.framerate = new_framerate_int
-
-                            if hasattr(self.app, 'start_websocket_video_pipeline'):
-                                 await self.app.start_websocket_video_pipeline()
-                                 logger.info(
-                                     "Video pipeline stopped and restarted with new framerate."
-                                 )
-                            else:
-                                 logger.error(
-                                     "app instance has no start_websocket_video_pipeline "
-                                     "method after stop."
-                                 )
-                                 await websocket.send(
-                                     "ERROR Failed to restart video pipeline after "
-                                     "setting framerate"
-                                 )
-                        except ValueError:
-                            logger.error(
-                                "Invalid SET_FRAMERATE value (not an integer): "
-                                f"{message}"
-                            )
-                            await websocket.send("ERROR Invalid SET_FRAMERATE value")
-                        except Exception as e:
-                            logger.error(
-                                "Error setting framerate and restarting pipeline: "
-                                f"{e}", exc_info=True
-                            )
-                            await websocket.send("ERROR Failed to set framerate")
-
-                    else:
-                         if self.webrtc_input:
-                              await self.webrtc_input.on_message(message)
-                         else:
-                              data_logger.warning(
-                                  "Received message but webrtc_input is not "
-                                  f"initialized: {message}"
+                              # Check if current client FPS is significantly below target
+                              is_low_fps_condition_met = (
+                                  current_cfps != 0 and
+                                  current_cfps < TARGET_FRAMERATE - FPS_ADJUST_THRESHOLD
                               )
 
-                elif self.mode == "webrtc":
-                    data_logger.warning(
-                        "Received unexpected message in webrtc mode on data "
-                        f"websocket: {message}"
-                    )
+                              if is_low_fps_condition_met:
+                                  if self._low_fps_condition_start_timestamp is None:
+                                      # Start the timer if condition met for the first time
+                                      self._low_fps_condition_start_timestamp = now
+                                  # Check if the condition has persisted long enough (debounce)
+                                  elif now - self._low_fps_condition_start_timestamp >= self.DEBOUNCE_DURATION_SECONDS:
+                                      # Calculate new target values, ensuring they don't go below minimums
+                                      new_framerate = max(MIN_FRAMERATE, TARGET_FRAMERATE - FPS_ADJUST_STEP)
+                                      new_bitrate_kbps = max(MIN_VIDEO_BITRATE_KBPS, TARGET_VIDEO_BITRATE_KBPS - BITRATE_ADJUST_STEP_KBPS)
 
-        except websockets.exceptions.ConnectionClosed:
-            data_logger.info(f"Data WebSocket disconnected from {raddr}")
+                                      # Only adjust if there's actually a change needed
+                                      if new_framerate < TARGET_FRAMERATE or new_bitrate_kbps < TARGET_VIDEO_BITRATE_KBPS:
+                                          data_logger.warning(
+                                              f"Client FPS ({current_cfps}) persistently low "
+                                              f"(>{FPS_ADJUST_THRESHOLD} below target {TARGET_FRAMERATE}) for "
+                                              f"{self.DEBOUNCE_DURATION_SECONDS}s. Adjusting server: "
+                                              f"FPS -> {new_framerate}, Bitrate -> {new_bitrate_kbps}kbps."
+                                          )
+
+                                          # Stop pipelines before changing settings
+                                          if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
+                                          if hasattr(self.app, 'stop_websocket_audio_pipeline'): await self.app.stop_websocket_audio_pipeline()
+
+                                          # Update global/target values
+                                          TARGET_FRAMERATE = new_framerate
+                                          TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps
+
+                                          # Update app instance attributes if they exist
+                                          if hasattr(self.app, 'framerate'): self.app.framerate = TARGET_FRAMERATE
+                                          if hasattr(self.app, 'video_bitrate'): self.app.video_bitrate = TARGET_VIDEO_BITRATE_KBPS
+
+                                          # Record adjustment time to start cool-down
+                                          self._last_adjustment_timestamp = time.monotonic()
+
+                                          # Restart pipelines with new settings
+                                          if hasattr(self.app, 'start_websocket_video_pipeline'): await self.app.start_websocket_video_pipeline()
+                                          if hasattr(self.app, 'start_websocket_audio_pipeline'): await self.app.start_websocket_audio_pipeline()
+
+                                          data_logger.info("Pipelines restarted with adjusted settings. Starting cool-down.")
+
+                                      # Reset the timer regardless of whether an adjustment was made
+                                      self._low_fps_condition_start_timestamp = None
+                              else:
+                                  # Condition not met, reset the timer
+                                  self._low_fps_condition_start_timestamp = None
+
+                          except ValueError:
+                              data_logger.error(f"Error: Invalid cfps value received (not a number): {message}")
+                          except Exception as e:
+                              data_logger.error(f"Error processing cfps message: {e}", exc_info=True)
+
+                        elif message.startswith("SET_VIDEO_BITRATE,"):
+                            # Handle request to change video bitrate
+                            try:
+                                parts = message.split(",")
+                                if len(parts) != 2:
+                                    data_logger.error(f"Invalid SET_VIDEO_BITRATE message format: {message}")
+                                    await websocket.send("ERROR Invalid SET_VIDEO_BITRATE format")
+                                    continue
+                                new_bitrate_kbps = int(parts[1])
+                                data_logger.info(f"Received SET_VIDEO_BITRATE: {new_bitrate_kbps}kbps")
+
+                                TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps # Update global target
+
+                                # Stop, update bitrate, restart pipeline
+                                if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
+                                if hasattr(self.app, 'video_bitrate'): self.app.video_bitrate = new_bitrate_kbps # Update app instance
+                                if hasattr(self.app, 'start_websocket_video_pipeline'):
+                                    await self.app.start_websocket_video_pipeline()
+                                    data_logger.info("Video pipeline stopped and restarted with new video bitrate.")
+                                else:
+                                    data_logger.error("app instance has no start_websocket_video_pipeline method after stop.")
+                                    await websocket.send("ERROR Failed to restart video pipeline after setting bitrate")
+                            except ValueError:
+                                data_logger.error(f"Invalid SET_VIDEO_BITRATE value (not an integer): {message}")
+                                await websocket.send("ERROR Invalid SET_VIDEO_BITRATE value")
+                            except Exception as e:
+                                data_logger.error(f"Error setting video bitrate and restarting pipeline: {e}", exc_info=True)
+                                await websocket.send("ERROR Failed to set video bitrate")
+                        elif message.startswith("SET_AUDIO_BITRATE,"):
+                            # Handle request to change audio bitrate
+                            try:
+                                parts = message.split(",")
+                                if len(parts) != 2:
+                                    data_logger.error(f"Invalid SET_AUDIO_BITRATE message format: {message}")
+                                    await websocket.send("ERROR Invalid SET_AUDIO_BITRATE format")
+                                    continue
+                                new_bitrate_bps = int(parts[1])
+                                data_logger.info(f"Received SET_AUDIO_BITRATE: {new_bitrate_bps}bps")
+
+                                # Stop, update bitrate, restart pipeline
+                                if hasattr(self.app, 'stop_websocket_audio_pipeline'): await self.app.stop_websocket_audio_pipeline()
+                                if hasattr(self.app, 'audio_bitrate'): self.app.audio_bitrate = new_bitrate_bps
+                                if hasattr(self.app, 'start_websocket_audio_pipeline'):
+                                    await self.app.start_websocket_audio_pipeline()
+                                    data_logger.info("Audio pipeline stopped and restarted after setting audio bitrate.")
+                                else:
+                                    data_logger.error("app instance has no start_websocket_audio_pipeline method after stop.")
+                                    await websocket.send("ERROR Failed to restart audio pipeline after setting audio bitrate")
+                            except ValueError:
+                                data_logger.error(f"Invalid SET_AUDIO_BITRATE value (not an integer): {message}")
+                                await websocket.send("ERROR Invalid SET_AUDIO_BITRATE value")
+                            except Exception as e:
+                                data_logger.error(f"Error setting audio bitrate and restarting pipeline: {e}", exc_info=True)
+                                await websocket.send("ERROR Failed to set audio bitrate")
+                        elif message.startswith("SET_ENCODER,"):
+                            # Handle request to change video encoder
+                            try:
+                                parts = message.split(",")
+                                if len(parts) != 2:
+                                    data_logger.error(f"Invalid SET_ENCODER message format: {message}")
+                                    await websocket.send("ERROR Invalid SET_ENCODER format")
+                                    continue
+                                new_encoder_str = parts[1]
+                                data_logger.info(f"Received SET_ENCODER: {new_encoder_str}")
+
+                                # Stop, update encoder, restart pipeline
+                                if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
+                                if hasattr(self.app, 'encoder'): self.app.encoder = new_encoder_str # Update app instance
+                                if hasattr(self.app, 'start_websocket_video_pipeline'):
+                                    await self.app.start_websocket_video_pipeline()
+                                    data_logger.info("Video pipeline stopped and restarted with new encoder.")
+                                else:
+                                    data_logger.error("app instance has no start_websocket_video_pipeline method after stop.")
+                                    await websocket.send("ERROR Failed to restart video pipeline after setting encoder")
+                            except Exception as e:
+                                data_logger.error(f"Error setting encoder and restarting pipeline: {e}", exc_info=True)
+                                await websocket.send("ERROR Failed to set encoder")
+                        elif message.startswith("SET_FRAMERATE,"):
+                            # Handle request to change framerate
+                            try:
+                                parts = message.split(",")
+                                if len(parts) != 2:
+                                    data_logger.error(f"Invalid SET_FRAMERATE message format: {message}")
+                                    await websocket.send("ERROR Invalid SET_FRAMERATE format")
+                                    continue
+                                new_framerate_int = int(parts[1])
+                                data_logger.info(f"Received SET_FRAMERATE: {new_framerate_int}fps")
+
+                                TARGET_FRAMERATE = new_framerate_int # Update global target
+
+                                # Stop, update framerate, restart pipeline
+                                if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
+                                if hasattr(self.app, 'framerate'): self.app.framerate = new_framerate_int # Update app instance
+                                if hasattr(self.app, 'start_websocket_video_pipeline'):
+                                    await self.app.start_websocket_video_pipeline()
+                                    data_logger.info("Video pipeline stopped and restarted with new framerate.")
+                                else:
+                                    data_logger.error("app instance has no start_websocket_video_pipeline method after stop.")
+                                    await websocket.send("ERROR Failed to restart video pipeline after setting framerate")
+                            except ValueError:
+                                data_logger.error(f"Invalid SET_FRAMERATE value (not an integer): {message}")
+                                await websocket.send("ERROR Invalid SET_FRAMERATE value")
+                            except Exception as e:
+                                data_logger.error(f"Error setting framerate and restarting pipeline: {e}", exc_info=True)
+                                await websocket.send("ERROR Failed to set framerate")
+
+                        else:
+                             # Default handling for other string messages (e.g., input events)
+                             if self.webrtc_input and hasattr(self.webrtc_input, 'on_message'):
+                                  await self.webrtc_input.on_message(message)
+                             else:
+                                  data_logger.warning(
+                                      f"Received message '{message}' but webrtc_input is not "
+                                      "initialized or has no on_message method."
+                                  )
+
+                    elif self.mode == "webrtc":
+                        # Should not receive these commands in WebRTC mode via this websocket
+                        data_logger.warning(
+                            "Received unexpected string message in webrtc mode on data "
+                            f"websocket: {message}"
+                        )
+                    else:
+                         data_logger.warning(f"Received unhandled string message in unknown mode: {message}")
+
+        except websockets.exceptions.ConnectionClosedOK:
+            data_logger.info(f"Data WebSocket disconnected gracefully from {raddr}")
+        except websockets.exceptions.ConnectionClosedError as e:
+             data_logger.warning(f"Data WebSocket connection closed with error from {raddr}: {e}")
         except Exception as e:
             data_logger.error(
                 f"Error in Data WebSocket handler for {raddr}: {e}",
@@ -1044,55 +1168,90 @@ class DataStreamingServer:
 
         finally:
             data_logger.info(f"Cleaning up Data WebSocket handler for {raddr}...")
+
+            # Clean up any incomplete uploads associated with this connection
+            if active_upload_target_path and active_upload_target_path in active_uploads_by_path:
+                target_path = active_upload_target_path
+                data_logger.warning(f"Connection closed with active upload: '{target_path}'. Cleaning up.")
+                file_handle = active_uploads_by_path[target_path]
+                try:
+                    file_handle.close()
+                    data_logger.info(f"Closed handle for incomplete upload: '{target_path}'")
+                except Exception as e:
+                    data_logger.error(f"Error closing handle for '{target_path}' during cleanup: {e}")
+                try:
+                    os.remove(target_path)
+                    data_logger.info(f"Deleted incomplete file: '{target_path}'")
+                except FileNotFoundError:
+                     pass # File might not have been created or already deleted
+                except OSError as e:
+                    data_logger.error(f"Could not delete incomplete file '{target_path}': {e}")
+            elif active_uploads_by_path:
+                data_logger.warning(f"Connection closed, active_upload_target_path was None, but active_uploads_by_path dict still contained {len(active_uploads_by_path)} entries. Cleaning up residual handles.")
+                for path, handle in list(active_uploads_by_path.items()):
+                     try: handle.close()
+                     except: pass
+                     try: os.remove(path) # Attempt to delete residual files
+                     except: pass
+
             if self.mode == "websockets":
+                # Clean up resources specific to websockets mode for this connection
                 data_logger.info("Stopping websockets mode tasks...")
                 tasks_to_cancel = []
-                if self._system_monitor_task_ws:
+                # Cancel stats collection and sending tasks
+                if self._system_monitor_task_ws and not self._system_monitor_task_ws.done():
                     self._system_monitor_task_ws.cancel()
                     tasks_to_cancel.append(self._system_monitor_task_ws)
-                if self._gpu_monitor_task_ws:
+                if self._gpu_monitor_task_ws and not self._gpu_monitor_task_ws.done():
                     self._gpu_monitor_task_ws.cancel()
                     tasks_to_cancel.append(self._gpu_monitor_task_ws)
-                if self._stats_sender_task_ws:
+                if self._stats_sender_task_ws and not self._stats_sender_task_ws.done():
                     self._stats_sender_task_ws.cancel()
                     tasks_to_cancel.append(self._stats_sender_task_ws)
 
                 if tasks_to_cancel:
                      data_logger.info("Waiting for websockets mode tasks to cancel...")
-                     await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
-                     data_logger.info("Websockets mode tasks cancelled.")
+                     try:
+                         await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+                         data_logger.info("Websockets mode tasks cancelled.")
+                     except asyncio.CancelledError:
+                         data_logger.info("Gather itself was cancelled during task cleanup.")
 
+                # Stop associated GStreamer pipelines
                 data_logger.info("Stopping websockets mode pipelines.")
-                # Use helper functions if available for cleanup
                 if hasattr(self.app, 'stop_websocket_video_pipeline'):
-                    await self.app.stop_websocket_video_pipeline()
+                    try: await self.app.stop_websocket_video_pipeline()
+                    except Exception as e: data_logger.error(f"Error stopping WS video pipeline: {e}", exc_info=True)
                 else:
                     data_logger.warning("app instance has no stop_websocket_video_pipeline method.")
                 if hasattr(self.app, 'stop_websocket_audio_pipeline'):
-                    await self.app.stop_websocket_audio_pipeline()
+                    try: await self.app.stop_websocket_audio_pipeline()
+                    except Exception as e: data_logger.error(f"Error stopping WS audio pipeline: {e}", exc_info=True)
                 else:
                     data_logger.warning("app instance has no stop_websocket_audio_pipeline method.")
 
-
+                # Disconnect the input handler if it was initialized
                 if self.webrtc_input:
                     data_logger.info("Disconnecting WebRTCInput.")
                     if hasattr(self.webrtc_input, 'disconnect'):
-                         await self.webrtc_input.disconnect()
+                         try: await self.webrtc_input.disconnect()
+                         except Exception as e: data_logger.error(f"Error disconnecting webrtc_input: {e}", exc_info=True)
                     else:
-                         data_logger.warning(
-                             "webrtc_input instance has no disconnect method."
-                         )
-                    self.webrtc_input = None
+                         data_logger.warning("webrtc_input instance has no disconnect method.")
+                    self.webrtc_input = None # Clear reference
 
+                # Reset FPS adjustment state for the next connection
                 self._last_adjustment_timestamp = 0.0
                 self._low_fps_condition_start_timestamp = None
 
-            self.data_ws = None
+            self.data_ws = None # Clear the reference to the closed websocket
             data_logger.info(f"Data WebSocket handler finished for {raddr}")
 
     async def run_server(self):
+        """Starts the data WebSocket server."""
         self.stop_server = asyncio.Future()
         try:
+            # Start the server using websockets library
             async with websockets.asyncio.server.serve(
                 self.ws_handler,
                 '0.0.0.0',
@@ -1102,7 +1261,12 @@ class DataStreamingServer:
                 data_logger.info(
                     f"Data WebSocket Server listening on port {self.port}"
                 )
+                # Wait until stop() is called
                 await self.stop_server
+        except OSError as e:
+             # Handle specific errors like address in use
+             data_logger.error(f"Failed to start Data WebSocket Server on port {self.port}: {e}")
+             raise
         except Exception as e:
              data_logger.error(
                  f"Exception starting Data WebSocket Server: {e}",
@@ -1111,40 +1275,49 @@ class DataStreamingServer:
              raise
 
     async def stop(self):
+        """Stops the data WebSocket server."""
         logger_signaling.info("Stopping Data WebSocket Server...")
+        # Signal the run_server loop to exit
         if self.stop_server is not None and not self.stop_server.done():
             self.stop_server.set_result(True)
+        # Close the underlying server object
         if self.server:
             try:
                 self.server.close()
-                await self.server.wait_closed()
+                # Wait briefly for close completion
+                await asyncio.wait_for(self.server.wait_closed(), timeout=2.0)
+            except asyncio.TimeoutError:
+                 data_logger.warning("Timeout waiting for Data WebSocket server to close.")
             except Exception as e:
                  data_logger.warning(
                      f"Error waiting for Data WebSocket server to close: {e}"
                  )
+            self.server = None # Ensure it's None after attempt
 
         data_logger.info("Data WebSocket Server Stopped.")
 
 
-class WebRTCSimpleServer(object):
+class WebRTCSimpleServer:
+    """A simple WebRTC signaling server with HTTP file serving capabilities."""
     def __init__(self, options):
-        self.peers = dict()
-        self.sessions = dict()
-        self.rooms = dict()
-        self.server = None
-        self.stop_server = None
+        """Initializes the combined signaling and web server."""
+        self.peers = dict() # Stores connected peers {uid: [ws, raddr, status, meta]}
+        self.sessions = dict() # Stores active peer-to-peer sessions {uid: peer_id}
+        self.rooms = dict() # Stores active rooms {room_id: {uid1, uid2, ...}}
+        self.server = None # Websocket server instance
+        self.stop_server = None # Future to signal server stop
         self.addr = options.addr
         self.port = options.port
         self.keepalive_timeout = options.keepalive_timeout
-        self.cert_restart = options.cert_restart
+        self.cert_restart = options.cert_restart # Unused currently
         self.enable_https = options.enable_https
         self.https_cert = options.https_cert
         self.https_key = options.https_key
         self.health_path = options.health
         self.web_root = options.web_root
-        self.cert_mtime = -1
-        self.cache_ttl = 300
-        self.http_cache = {}
+        self.cert_mtime = -1 # Unused currently
+        self.cache_ttl = 300 # Cache duration for static files
+        self.http_cache = {} # Cache for static file content
         self.turn_shared_secret = options.turn_shared_secret
         self.turn_host = options.turn_host
         self.turn_port = options.turn_port
@@ -1158,7 +1331,7 @@ class WebRTCSimpleServer(object):
         self.enable_basic_auth = options.enable_basic_auth
         self.basic_auth_user = options.basic_auth_user
         self.basic_auth_password = options.basic_auth_password
-        self.rtc_config = options.rtc_config
+        self.rtc_config = options.rtc_config # Initial RTC config
         if os.path.exists(options.rtc_config_file):
             logger_signaling.info(
                 "parsing rtc_config_file: {}".format(options.rtc_config_file)
@@ -1176,21 +1349,26 @@ class WebRTCSimpleServer(object):
                 )
 
     def set_rtc_config(self, rtc_config):
+        """Updates the RTC configuration served by the /turn endpoint."""
         self.rtc_config = rtc_config
 
     def read_file(self, path):
+        """Reads a file from disk."""
         with open(path, "rb") as f:
             return f.read()
 
     async def cache_file(self, full_path):
+        """Reads a file from disk or returns a cached version."""
         data, cached_at = self.http_cache.get(full_path, (None, None))
         now = time.time()
+        # Check if cache entry exists and is still valid
         if data is None or now - cached_at >= self.cache_ttl:
             data = await asyncio.to_thread(self.read_file, full_path)
             self.http_cache[full_path] = (data, now)
         return data
 
     def http_response(self, status, response_headers, body):
+        """Constructs an HTTP response object."""
         if isinstance(body, str):
             body = body.encode()
         status = http.HTTPStatus(status)
@@ -1201,6 +1379,7 @@ class WebRTCSimpleServer(object):
                 ("Content-Type", "text/plain; charset=utf-8"),
             ]
         )
+        # Merge provided headers, overwriting defaults if necessary
         for key, value in response_headers.raw_items():
             if headers.get(key) is not None:
                 del headers[key]
@@ -1208,131 +1387,157 @@ class WebRTCSimpleServer(object):
         return websockets.http11.Response(status.value, status.phrase, headers, body)
 
     async def process_request(self, server_root, connection, request):
+        """Handles incoming HTTP requests (before potential WebSocket upgrade)."""
         path = request.path
         request_headers = request.headers
         response_headers = websockets.datastructures.Headers()
         username = ""
+
+        # --- Basic Authentication Check ---
         if self.enable_basic_auth:
-            if "basic" in request_headers.get("authorization", "").lower():
-                (
-                    decoded_username,
-                    decoded_password,
-                ) = websockets.headers.parse_authorization_basic(
-                    request_headers.get("authorization")
-                )
-                if not (
-                    decoded_username == self.basic_auth_user
-                    and decoded_password == self.basic_auth_password
-                ):
-                    return self.http_response(
-                        http.HTTPStatus.UNAUTHORIZED, response_headers, b"Unauthorized"
-                    )
+            auth_header = request_headers.get("authorization", "").lower()
+            if "basic" in auth_header:
+                try:
+                    decoded_username, decoded_password = \
+                        websockets.headers.parse_authorization_basic(request_headers.get("authorization"))
+                    if not (decoded_username == self.basic_auth_user and decoded_password == self.basic_auth_password):
+                        return self.http_response(http.HTTPStatus.UNAUTHORIZED, response_headers, b"Unauthorized")
+                    username = decoded_username # Store username if needed later
+                except ValueError: # Handle malformed header
+                    return self.http_response(http.HTTPStatus.BAD_REQUEST, response_headers, b"Malformed Authorization Header")
             else:
-                response_headers[
-                    "WWW-Authenticate"
-                ] = 'Basic realm="restricted, charset="UTF-8"'
-                return self.http_response(
-                    http.HTTPStatus.UNAUTHORIZED,
-                    response_headers,
-                    b"Authorization required",
-                )
-        if path == "/websocket":
-            return None
-        if (
-            path == "/ws/"
-            or path == "/ws"
-            or path.endswith("/signalling/")
-            or path.endswith("/signalling")
-        ):
-            return None
+                # Request authentication
+                response_headers["WWW-Authenticate"] = 'Basic realm="restricted", charset="UTF-8"'
+                return self.http_response(http.HTTPStatus.UNAUTHORIZED, response_headers, b"Authorization required")
+
+        # --- WebSocket Upgrade Path Check ---
+        # Check if the path matches known WebSocket endpoints exactly
+        if path == "/websocket" or path == "/ws" or path == "/ws/" or path.endswith("/signalling") or path.endswith("/signalling/"):
+             # Let the websockets library handle the upgrade request
+             return None
+
+        # --- Handle Specific HTTP Endpoints ---
+        # Health check endpoint
         if path == self.health_path + "/" or path == self.health_path:
             return self.http_response(http.HTTPStatus.OK, response_headers, b"OK\n")
+
+        # TURN/RTC configuration endpoint
         if path == "/turn/" or path == "/turn":
             if self.turn_shared_secret:
-                if not username:
-                    username = request_headers.get(
-                        self.turn_auth_header_name, "username"
-                    )
-                    if not username:
-                        web_logger.warning(
-                            "HTTP GET {} 401 Unauthorized - missing auth header: {}".format(
-                                path, self.turn_auth_header_name
-                            )
-                        )
-                        return self.http_response(
-                            http.HTTPStatus.UNAUTHORIZED,
-                            response_headers,
-                            b"401 Unauthorized - missing auth header",
-                        )
+                # Generate HMAC credentials if shared secret is configured
+                if not username: # If basic auth didn't provide username, check header
+                    username = request_headers.get(self.turn_auth_header_name, "default_user")
                 web_logger.info(
-                    "Generating HMAC cargparseargparseredential for user: {}".format(username)
+                    "Generating HMAC credential for user: {}".format(username)
                 )
-                rtc_config = generate_rtc_config(
-                    self.turn_host,
-                    self.turn_port,
-                    self.turn_shared_secret,
-                    username,
-                    self.turn_protocol,
-                    self.turn_tls,
-                    self.stun_host,
-                    self.stun_port,
+                rtc_config_str = generate_rtc_config(
+                    self.turn_host, self.turn_port, self.turn_shared_secret, username,
+                    self.turn_protocol, self.turn_tls, self.stun_host, self.stun_port
                 )
-                return self.http_response(
-                    http.HTTPStatus.OK, response_headers, str.encode(rtc_config)
-                )
+                response_headers["Content-Type"] = "application/json"
+                return self.http_response(http.HTTPStatus.OK, response_headers, str.encode(rtc_config_str))
             elif self.rtc_config:
+                # Serve the pre-configured RTC config (from file or default)
                 data = self.rtc_config
-                if type(data) == str:
-                    data = str.encode(data)
+                if isinstance(data, str):
+                    data = data.encode()
                 response_headers["Content-Type"] = "application/json"
                 return self.http_response(http.HTTPStatus.OK, response_headers, data)
             else:
-                web_logger.warning(
-                    "HTTP GET {} 404 NOT FOUND - Missing RTC config".format(path)
-                )
-                return self.http_response(
-                    http.HTTPStatus.NOT_FOUND, response_headers, b"404 NOT FOUND"
-                )
-        path = path.split("?")[0]
-        if path == "/":
-            path = "/index.html"
-        full_path = os.path.realpath(os.path.join(server_root, path[1:]))
-        if (
-            os.path.commonpath((server_root, full_path)) != server_root
-            or not os.path.exists(full_path)
-            or not os.path.isfile(full_path)
-        ):
+                # No RTC config available
+                web_logger.warning("HTTP GET {} 404 NOT FOUND - Missing RTC config".format(path))
+                return self.http_response(http.HTTPStatus.NOT_FOUND, response_headers, b"404 NOT FOUND - No RTC Config")
+
+        # --- Serve Static Files ---
+        path_part = path.split("?")[0]
+        if path_part == "/":
+            path_part = "/index.html" # Default to index.html for root path
+
+        # Securely join path components and prevent traversal
+        try:
+            # Ensure server_root is absolute
+            abs_server_root = os.path.abspath(server_root)
+            # Normalize the requested path part (remove leading '/')
+            normalized_req_path = os.path.normpath(path_part.lstrip('/'))
+            # Prevent path components like '..'
+            if '..' in normalized_req_path.split(os.path.sep):
+                 raise ValueError("Invalid path component '..'")
+            # Join safely
+            full_path = os.path.join(abs_server_root, normalized_req_path)
+            # Final check: ensure the resolved path is still within the root directory
+            if os.path.commonpath((abs_server_root, full_path)) != abs_server_root:
+                 raise ValueError("Attempted path traversal")
+        except ValueError as e:
+             web_logger.warning(f"Blocked potentially insecure path request: {path_part} ({e})")
+             return self.http_response(http.HTTPStatus.BAD_REQUEST, response_headers, b"400 Bad Request")
+
+        # Check if file exists and is a file
+        if not os.path.exists(full_path) or not os.path.isfile(full_path):
             response_headers["Content-Type"] = "text/html"
             web_logger.info("HTTP GET {} 404 NOT FOUND".format(path))
-            return self.http_response(
-                http.HTTPStatus.NOT_FOUND, response_headers, b"404 NOT FOUND"
-            )
+            return self.http_response(http.HTTPStatus.NOT_FOUND, response_headers, b"404 NOT FOUND")
+
+        # Determine MIME type based on extension
         extension = full_path.split(".")[-1]
         mime_type = MIME_TYPES.get(extension, "application/octet-stream")
         response_headers["Content-Type"] = mime_type
-        body = await self.cache_file(full_path)
+
+        # Read file (using cache)
+        try:
+            body = await self.cache_file(full_path)
+        except FileNotFoundError:
+             # Should not happen due to exists check, but handle defensively
+             web_logger.error(f"File disappeared after check: {full_path}")
+             return self.http_response(http.HTTPStatus.INTERNAL_SERVER_ERROR, response_headers, b"500 Internal Server Error")
+        except Exception as e:
+             web_logger.error(f"Error reading file {full_path}: {e}")
+             return self.http_response(http.HTTPStatus.INTERNAL_SERVER_ERROR, response_headers, b"500 Internal Server Error")
+
+        # Send the file content
         response_headers["Content-Length"] = str(len(body))
         web_logger.info("HTTP GET {} 200 OK".format(path))
         return self.http_response(http.HTTPStatus.OK, response_headers, body)
 
     async def recv_msg_ping(self, ws, raddr):
+        """Wrapper for ws.recv() that includes a keepalive ping mechanism."""
         msg = None
-        while msg is None:
+        try:
+            # Wait for a message with the configured timeout
+            msg = await asyncio.wait_for(ws.recv(), self.keepalive_timeout)
+        except (asyncio.TimeoutError, concurrent.futures._base.TimeoutError):
+            # If timeout occurs, send a ping to check if the client is still responsive
+            logger_signaling.debug("Sending keepalive ping to {!r} in recv".format(raddr))
+            await ws.ping()
+            # Wait again for a short period after pinging for a potential pong or message
             try:
-                msg = await asyncio.wait_for(ws.recv(), self.keepalive_timeout)
+                 msg = await asyncio.wait_for(ws.recv(), self.keepalive_timeout / 2) # Shorter timeout after ping
             except (asyncio.TimeoutError, concurrent.futures._base.TimeoutError):
-                web_logger.info("Sending keepalive ping to {!r} in recv".format(raddr))
-                await ws.ping()
+                 # If still no response, assume disconnected
+                 logger_signaling.warning(f"No reply from {raddr} after ping, assuming disconnected.")
+                 raise websockets.exceptions.ConnectionClosedOK(1000, "Keepalive timeout") # Simulate clean close
+            except websockets.exceptions.ConnectionClosed as e:
+                 # If client disconnected while waiting for pong/message
+                 logger_signaling.info(f"Connection closed by {raddr} while waiting for pong/message.")
+                 raise e # Re-raise original close exception
         return msg
 
+
     async def cleanup_session(self, uid):
+        """Cleans up state associated with a peer-to-peer session involving uid."""
         if uid in self.sessions:
-            other_id = self.sessions[uid]
-            del self.sessions[uid]
+            other_id = self.sessions.pop(uid) # Use pop for atomicity
             logger_signaling.info("Cleaned up {} session".format(uid))
+            # Also clean up the other side of the session if it exists
             if other_id in self.sessions:
-                del self.sessions[other_id]
-                logger_signaling.info("Also cleaned up {} session".format(other_id))
+                # Check if the other side still points to us before deleting
+                if self.sessions.get(other_id) == uid:
+                    del self.sessions[other_id]
+                    logger_signaling.info("Also cleaned up {} session".format(other_id))
+                else:
+                    # This indicates a potential state inconsistency
+                    logger_signaling.warning(f"Session mismatch during cleanup: {other_id} no longer points to {uid}")
+
+                # Close connection to the other peer if they still exist in the peers dict
                 if other_id in self.peers:
                     logger_signaling.info("Closing connection to {}".format(other_id))
                     wso, oaddr, _, _ = self.peers[other_id]
@@ -1340,17 +1545,57 @@ class WebRTCSimpleServer(object):
                     await wso.close()
 
     async def cleanup_room(self, uid, room_id):
+        """Removes a user from a room and notifies remaining peers."""
+        if room_id not in self.rooms:
+             logger_signaling.warning(f"Attempted to cleanup room {room_id} for {uid}, but room doesn't exist.")
+             return
+
         room_peers = self.rooms[room_id]
         if uid not in room_peers:
+            # Peer might have already been removed (e.g., simultaneous disconnects)
+            # logger_signaling.debug(f"User {uid} not found in room {room_id} during cleanup.")
             return
+
+        logger_signaling.info(f"Removing {uid} from room {room_id}")
         room_peers.remove(uid)
+
+        # If room is now empty, remove the room itself
+        if not room_peers:
+            logger_signaling.info(f"Room {room_id} is now empty, removing.")
+            del self.rooms[room_id]
+            return # No peers left to notify
+
+        # Notify remaining peers that uid has left
+        msg = "ROOM_PEER_LEFT {}".format(uid)
+        notify_tasks = []
+        peers_to_remove_from_room = [] # Track peers found disconnected during notification prep
+
         for pid in room_peers:
-            wsp, paddr, _, _ = self.peers[pid]
-            msg = "ROOM_PEER_LEFT {}".format(uid)
-            logger_signaling.info(
-                "room {}: {} -> {}: {}".format(room_id, uid, pid, msg)
-            )
-            await wsp.send(msg)
+            if pid in self.peers:
+                wsp, paddr, _, _ = self.peers[pid]
+                logger_signaling.info(
+                    "room {}: Notifying {} -> {}: {}".format(room_id, uid, pid, msg)
+                )
+                # Create task to send notification concurrently
+                notify_tasks.append(asyncio.create_task(wsp.send(msg)))
+            else:
+                # Inconsistency: Peer in room set but not in main peers dict
+                logger_signaling.warning(f"Peer {pid} in room {room_id} but not in self.peers during LEFT notification.")
+                peers_to_remove_from_room.append(pid) # Mark for removal from room set
+
+        # Remove inconsistent peers found during notification prep
+        for pid_remove in peers_to_remove_from_room:
+             if pid_remove in room_peers: room_peers.remove(pid_remove)
+
+        # Wait for all notification tasks to complete
+        if notify_tasks:
+            results = await asyncio.gather(*notify_tasks, return_exceptions=True)
+            for i, result in enumerate(results):
+                 if isinstance(result, Exception):
+                     # Log errors during notification (recipient peer likely disconnected)
+                     logger_signaling.warning(f"Error sending ROOM_PEER_LEFT notification: {result}")
+                     # The disconnect of the recipient peer will be handled separately
+
 
     async def remove_peer(self, uid):
         await self.cleanup_session(uid)
@@ -1365,240 +1610,483 @@ class WebRTCSimpleServer(object):
             )
 
     async def connection_handler(self, ws, uid, meta=None):
+        """Handles the message loop for a single connected peer."""
         raddr = ws.remote_address
-        peer_status = None
+        peer_status = None # Initial status (None = idle, "session" = in session, room_id = in room)
+        # Register peer *after* successful HELLO in run() -> handler()
         self.peers[uid] = [ws, raddr, peer_status, meta]
         logger_signaling.info(
             "Registered peer {!r} at {!r} with meta: {}".format(uid, raddr, meta)
         )
-        while True:
-            msg = await self.recv_msg_ping(ws, raddr)
-            peer_status = self.peers[uid][2]
-            if peer_status is not None:
-                if peer_status == "session":
-                    other_id = self.sessions[uid]
-                    wso, oaddr, status, _ = self.peers[other_id]
-                    assert status == "session"
-                    logger_signaling.info("{} -> {}: {}".format(uid, other_id, msg))
-                    await wso.send(msg)
-                elif peer_status:
-                    if msg.startswith("ROOM_PEER_MSG"):
-                        _, other_id, msg = msg.split(maxsplit=2)
-                        if other_id not in self.peers:
-                            await ws.send(
-                                "ERROR peer {!r} not found" "".format(other_id)
-                            )
-                            continue
+
+        try:
+            # Main message processing loop for this peer
+            while True:
+                # Wait for message using keepalive mechanism
+                msg = await self.recv_msg_ping(ws, raddr)
+
+                # Check if peer still exists before processing (could be removed by another task)
+                if uid not in self.peers:
+                    logger_signaling.warning(f"Peer {uid} removed during message handling loop. Breaking.")
+                    break
+                # Update local status from the potentially modified peers dict entry
+                current_ws, current_raddr, peer_status, current_meta = self.peers[uid]
+                if ws != current_ws: # Sanity check
+                     logger_signaling.error(f"Websocket mismatch for peer {uid}. Aborting handler.")
+                     break
+
+                # --- Handle messages based on peer status ---
+                if peer_status is not None: # Peer is in a session or room
+                    if peer_status == "session":
+                        # --- In a Session ---
+                        other_id = self.sessions.get(uid)
+                        # Check if session partner still exists and is valid
+                        if not other_id or other_id not in self.peers:
+                            logger_signaling.warning(f"Session partner {other_id} for {uid} not found or disconnected. Cleaning up.")
+                            break # Exit loop, finally block will call remove_peer
+
                         wso, oaddr, status, _ = self.peers[other_id]
-                        if status != room_id:
-                            await ws.send(
-                                "ERROR peer {!r} is not in the room" "".format(other_id)
-                            )
-                            continue
-                        msg = "ROOM_PEER_MSG {} {}".format(uid, msg)
-                        logger_signaling.info(
-                            "room {}: {} -> {}: {}".format(room_id, uid, other_id, msg)
-                        )
-                        await wso.send(msg)
+                        if status != "session": # Partner status mismatch
+                            logger_signaling.warning(f"Session partner {other_id} status is not 'session' ({status}). Cleaning up.")
+                            break # Exit loop
+
+                        # Forward the message to the session partner
+                        logger_signaling.debug("{} -> {}: {}".format(uid, other_id, msg))
+                        try:
+                            await wso.send(msg)
+                        except websockets.exceptions.ConnectionClosed:
+                             logger_signaling.info(f"Connection to session partner {other_id} closed while sending. Cleaning up.")
+                             break # Exit loop
+                        except Exception as e:
+                             logger_signaling.error(f"Error sending message to session partner {other_id}: {e}")
+                             break # Exit loop on send error
+
                     else:
-                        await ws.send("ERROR invalid msg, already in room")
-                        continue
+                        # --- In a Room (peer_status == room_id) ---
+                        room_id = peer_status
+                        if msg.startswith("ROOM_PEER_MSG"):
+                            # Handle message directed to another peer in the same room
+                            try:
+                                _, other_id, room_msg = msg.split(maxsplit=2)
+                            except ValueError:
+                                 logger_signaling.warning(f"Invalid ROOM_PEER_MSG format from {uid}: {msg}")
+                                 await ws.send("ERROR invalid ROOM_PEER_MSG format")
+                                 continue
+
+                            if other_id == uid: # Cannot send to self
+                                await ws.send("ERROR cannot send room message to self")
+                                continue
+
+                            # Check if recipient exists and is in the same room
+                            if other_id not in self.peers:
+                                await ws.send("ERROR peer {!r} not found".format(other_id))
+                                continue
+                            wso, oaddr, status, _ = self.peers[other_id]
+                            if status != room_id:
+                                await ws.send("ERROR peer {!r} is not in the same room".format(other_id))
+                                continue
+
+                            # Forward message with sender ID prepended
+                            full_msg = "ROOM_PEER_MSG {} {}".format(uid, room_msg)
+                            logger_signaling.debug(
+                                "room {}: {} -> {}: {}".format(room_id, uid, other_id, full_msg)
+                            )
+                            try:
+                                await wso.send(full_msg)
+                            except websockets.exceptions.ConnectionClosed:
+                                # Log but don't break sender's loop; receiver will handle their disconnect
+                                logger_signaling.info(f"Connection to room peer {other_id} closed while sending.")
+                            except Exception as e:
+                                logger_signaling.error(f"Error sending message to room peer {other_id}: {e}")
+                        else:
+                            # Invalid command while in a room
+                            await ws.send("ERROR invalid command while in a room")
+                            continue
+
                 else:
-                    raise AssertionError("Unknown peer status {!r}".format(peer_status))
-            elif msg.startswith("SESSION"):
-                _, callee_id = msg.split(maxsplit=1)
-                if callee_id not in self.peers:
-                    await ws.send("ERROR peer {!r} not found".format(callee_id))
-                    continue
-                if peer_status is not None:
-                    await ws.send("ERROR peer {!r} busy".format(callee_id))
-                    continue
-                meta = self.peers[callee_id][3]
-                if meta:
-                    meta64 = base64.b64encode(bytes(json.dumps(meta).encode())).decode(
-                        "ascii"
-                    )
-                else:
-                    meta64 = ""
-                await ws.send("SESSION_OK {}".format(meta64))
-                wsc = self.peers[callee_id][0]
-                logger_signaling.info(
-                    "Session from {!r} ({!r}) to {!r} ({!r})"
-                    "".format(uid, raddr, callee_id, wsc.remote_address)
-                )
-                self.peers[uid][2] = peer_status = "session"
-                self.sessions[uid] = callee_id
-                self.peers[callee_id][2] = "session"
-                self.sessions[callee_id] = uid
-            elif msg.startswith("ROOM"):
-                logger_signaling.info("{!r} command {!r}".format(uid, msg))
-                _, room_id = msg.split(maxsplit=1)
-                if room_id == "session" or room_id.split() != [room_id]:
-                    await ws.send("ERROR invalid room id {!r}".format(room_id))
-                    continue
-                if room_id in self.rooms:
-                    if uid in self.rooms[room_id]:
-                        raise AssertionError(
-                            "How did we accept a ROOM command "
-                            "despite already being in a room?"
+                    # --- Peer is Idle (peer_status is None) ---
+                    if msg.startswith("SESSION"):
+                        # Request to start a session with another peer
+                        try:
+                            _, callee_id = msg.split(maxsplit=1)
+                        except ValueError:
+                            logger_signaling.warning(f"Invalid SESSION command format from {uid}: {msg}")
+                            await ws.send("ERROR invalid SESSION command")
+                            continue
+
+                        if callee_id == uid: # Cannot start session with self
+                             await ws.send("ERROR cannot start session with self")
+                             continue
+
+                        # Check if callee exists and is idle
+                        if callee_id not in self.peers:
+                            await ws.send("ERROR peer {!r} not found".format(callee_id))
+                            continue
+                        callee_ws, callee_raddr, callee_status, callee_meta = self.peers[callee_id]
+                        if callee_status is not None: # Check if callee is busy
+                            await ws.send("ERROR peer {!r} busy".format(callee_id))
+                            continue
+
+                        # Initiate session: Update states for both peers
+                        self.peers[uid][2] = "session"
+                        self.sessions[uid] = callee_id
+                        self.peers[callee_id][2] = "session"
+                        self.sessions[callee_id] = uid
+                        peer_status = "session" # Update local status for next loop iteration
+
+                        # Send SESSION_OK to caller, including callee metadata if available
+                        meta64 = ""
+                        if callee_meta:
+                            try:
+                                meta64 = base64.b64encode(bytes(json.dumps(callee_meta).encode())).decode("ascii")
+                            except Exception as e:
+                                logger_signaling.error(f"Failed to encode metadata for callee {callee_id}: {e}")
+                        await ws.send("SESSION_OK {}".format(meta64))
+
+                        logger_signaling.info(
+                            "Session initiated: {!r} ({!r}) <-> {!r} ({!r})"
+                            "".format(uid, raddr, callee_id, callee_raddr)
                         )
-                else:
-                    self.rooms[room_id] = set()
-                room_peers = " ".join([pid for pid in self.rooms[room_id]])
-                await ws.send("ROOM_OK {}".format(room_peers))
-                self.peers[uid][2] = peer_status = room_id
-                self.rooms[room_id].add(uid)
-                for pid in self.rooms[room_id]:
-                    if pid == uid:
-                        continue
-                    wsp, paddr, _, _ = self.peers[pid]
-                    msg = "ROOM_PEER_JOINED {}".format(uid)
-                    logger_signaling.info(
-                        "room {}: {} -> {}: {}".format(room_id, uid, pid, msg)
-                    )
-                    await wsp.send(msg)
-            else:
-                logger_signaling.info(
-                    "Ignoring unknown message {!r} from {!r}".format(msg, uid)
-                )
+
+                    elif msg.startswith("ROOM"):
+                        # Request to join or create a room
+                        try:
+                            _, room_id = msg.split(maxsplit=1)
+                        except ValueError:
+                            logger_signaling.warning(f"Invalid ROOM command format from {uid}: {msg}")
+                            await ws.send("ERROR invalid ROOM command")
+                            continue
+
+                        # Validate room_id (basic checks)
+                        if not room_id or room_id == "session" or room_id.split() != [room_id]:
+                            await ws.send("ERROR invalid room id {!r}".format(room_id))
+                            continue
+
+                        # Create room if it doesn't exist
+                        if room_id not in self.rooms:
+                            self.rooms[room_id] = set()
+                        room_peers_set = self.rooms[room_id]
+
+                        # Send ROOM_OK with list of current peers BEFORE adding self
+                        room_peers_str = " ".join(list(room_peers_set)) # Send a copy
+                        await ws.send("ROOM_OK {}".format(room_peers_str))
+
+                        # Update state AFTER sending OK: Add peer to room and update status
+                        self.peers[uid][2] = room_id
+                        room_peers_set.add(uid)
+                        peer_status = room_id # Update local status variable
+
+                        logger_signaling.info(f"Peer {uid} joined room {room_id}. Current peers: {list(room_peers_set)}")
+
+                        # Notify existing peers AFTER adding self to the room set
+                        join_msg = "ROOM_PEER_JOINED {}".format(uid)
+                        notify_tasks = []
+                        peers_to_remove_from_room = [] # Track inconsistent peers
+                        for pid in room_peers_set:
+                            if pid == uid: continue # Don't notify self
+                            if pid in self.peers:
+                                wsp, paddr, _, _ = self.peers[pid]
+                                logger_signaling.debug(
+                                    "room {}: Notifying {} -> {}: {}".format(room_id, uid, pid, join_msg)
+                                )
+                                notify_tasks.append(asyncio.create_task(wsp.send(join_msg)))
+                            else:
+                                # Inconsistency: Peer in room but not main dict
+                                logger_signaling.warning(f"Peer {pid} in room {room_id} but not in self.peers during JOIN notification.")
+                                peers_to_remove_from_room.append(pid)
+
+                        # Cleanup room set if inconsistent peers found
+                        for pid_remove in peers_to_remove_from_room:
+                            if pid_remove in room_peers_set: room_peers_set.remove(pid_remove)
+
+                        # Wait for notifications to complete
+                        if notify_tasks:
+                            results = await asyncio.gather(*notify_tasks, return_exceptions=True)
+                            # Log errors, but don't break loop for sender
+                            for res in results:
+                                if isinstance(res, Exception):
+                                    logger_signaling.warning(f"Error sending ROOM_PEER_JOINED notification: {res}")
+
+                    else:
+                        # Unknown command from an idle peer
+                        logger_signaling.warning(
+                            "Ignoring unknown message {!r} from idle peer {!r}".format(msg, uid)
+                        )
+                        await ws.send("ERROR unknown command")
+
+        except websockets.exceptions.ConnectionClosed as e:
+            # Expected closure
+            logger_signaling.info(f"Connection handler loop for {uid} ended. Reason: Connection closed ({e.code} {e.reason})")
+        except Exception as e:
+            # Unexpected error during handling
+            logger_signaling.error(f"Unexpected error in connection handler for {uid}: {e}", exc_info=True)
+            # Ensure connection is closed on unexpected error
+            if ws.open:
+                await ws.close(code=1011, reason="Internal handler error")
+        finally:
+            # Cleanup (removing the peer) is handled by the caller (run -> handler's finally block)
+            logger_signaling.debug(f"Exiting connection_handler for {uid}.")
+
 
     async def hello_peer(self, ws):
+        """Handles the initial HELLO handshake from a new connection."""
         raddr = ws.remote_address
-        hello = await ws.recv()
+        try:
+            # Wait for the HELLO message
+            hello = await ws.recv()
+        except websockets.exceptions.ConnectionClosed:
+            raise Exception(f"Connection closed by {raddr} before HELLO received")
+
+        # Parse HELLO message (HELLO <uid> [metadata_base64])
         toks = hello.split(maxsplit=2)
         metab64str = None
-        if len(toks) > 2:
-            hello, uid, metab64str = toks
+        uid = None
+        if len(toks) >= 2:
+            hello_cmd, uid = toks[:2]
+            if len(toks) > 2:
+                metab64str = toks[2]
         else:
-            hello, uid = toks
-        if hello != "HELLO":
-            await ws.close(code=1002, reason="invalid protocol")
-            raise Exception("Invalid hello from {!r}".format(raddr))
-        if not uid or uid in self.peers or uid.split() != [uid]:
+             hello_cmd = None # Force failure below
+
+        # Validate command
+        if hello_cmd != "HELLO":
+            await ws.close(code=1002, reason="invalid protocol - expected HELLO")
+            raise Exception("Invalid hello command {!r} from {!r}".format(hello_cmd, raddr))
+
+        # Basic UID validation (non-empty, no spaces, not reserved keyword)
+        if not uid or uid.split() != [uid] or uid == "session":
             await ws.close(code=1002, reason="invalid peer uid")
             raise Exception("Invalid uid {!r} from {!r}".format(uid, raddr))
+
+        # Check if UID is already taken
+        if uid in self.peers:
+             await ws.close(code=1008, reason="peer uid already taken") # Policy Violation
+             raise Exception("UID {!r} already taken by another peer.".format(uid))
+
+        # Decode optional metadata
         meta = None
         if metab64str:
-            meta = json.loads(base64.b64decode(metab64str))
+            try:
+                meta = json.loads(base64.b64decode(metab64str))
+            except (json.JSONDecodeError, base64.binascii.Error, TypeError) as e:
+                 logger_signaling.warning(f"Failed to decode metadata from {raddr} for uid {uid}: {e}")
+                 meta = None # Proceed without metadata on error
+
+        # Send HELLO confirmation back to client
         await ws.send("HELLO")
         return uid, meta
 
     def get_https_certs(self):
+        """Returns the paths to the configured HTTPS certificate and key files."""
         cert_pem = (
             os.path.abspath(self.https_cert)
-            if os.path.isfile(self.https_cert)
+            if self.https_cert and os.path.isfile(self.https_cert) # Check file exists
             else None
         )
         key_pem = (
-            os.path.abspath(self.https_key) if os.path.isfile(self.https_key) else None
+            os.path.abspath(self.https_key)
+            if self.https_key and os.path.isfile(self.https_key) # Check file exists
+            else None
         )
         return cert_pem, key_pem
 
     def get_ssl_ctx(self, https_server=True):
+        """Creates and configures an SSL context for HTTPS if enabled."""
         if not self.enable_https:
             return None
         cert_pem, key_pem = self.get_https_certs()
+        # Certificate file is mandatory for HTTPS
+        if not cert_pem:
+             logger_signaling.error(f"HTTPS enabled but certificate file not found or invalid: {self.https_cert}")
+             sys.exit(1)
+        # Key file can be optional if embedded in the certificate
+        if key_pem and not os.path.exists(key_pem):
+             logger_signaling.error(f"HTTPS enabled but key file not found or invalid: {self.https_key}")
+             sys.exit(1)
+
         logger_signaling.info(
-            "Using TLS with provided certificate and private key from arguments"
+            "Using TLS certificate: {}, Key: {}".format(cert_pem, key_pem or "Embedded/None")
         )
-        ssl_purpose = (
-            ssl.Purpose.CLIENT_AUTH if https_server else ssl.Purpose.SERVER_AUTH
-        )
+        # Use SERVER_AUTH purpose for the server-side context
+        ssl_purpose = ssl.Purpose.SERVER_AUTH
         sslctx = ssl.create_default_context(purpose=ssl_purpose)
-        sslctx.check_hostname = False
-        sslctx.verify_mode = ssl.CERT_NONE
+
         try:
+            # Load the certificate chain and private key
             sslctx.load_cert_chain(cert_pem, keyfile=key_pem)
-        except Exception:
-            logger_signaling.error(
-                "Certificate or private key file not found or incorrect. To use a self-signed certificate, install the package 'ssl-cert' and add the group 'ssl-cert' to your user in Debian-based distributions or generate a new certificate with root using 'openssl req -x509 -newkey rsa:4096 -keyout /etc/ssl/private/ssl-cert-snakeoil.key -out /etc/ssl/certs/ssl-cert-snakeoil.pem -days 3650 -nodes -subj \"/CN=localhost\"'"
-            )
+        except ssl.SSLError as e:
+            logger_signaling.error(f"Error loading certificate/key: {e}")
+            # Provide helpful hints for common SSL errors
+            if "PEM routines" in str(e) and "bad end line" in str(e):
+                 logger_signaling.error("This might indicate an improperly formatted certificate or key file.")
+            elif "private key" in str(e) and "does not match the certificate public key" in str(e):
+                 logger_signaling.error("The private key file does not correspond to the certificate file.")
+            else:
+                 logger_signaling.error(
+                     "Please ensure the certificate and key files are valid and accessible. "
+                     "For self-signed, try: 'openssl req -x509 -newkey rsa:4096 "
+                     "-keyout key.pem -out cert.pem -days 3650 -nodes -subj \"/CN=localhost\"'"
+                 )
             sys.exit(1)
+        except Exception as e:
+             logger_signaling.error(f"Unexpected error loading certificate/key: {e}", exc_info=True)
+             sys.exit(1)
+
         return sslctx
 
     async def run(self):
+        """Starts the signaling and web server."""
+        # Define the main WebSocket connection handler
         async def handler(ws):
             raddr = ws.remote_address
-            logger_signaling.info("Connected to {!r}".format(raddr))
-            peer_id, meta = await self.hello_peer(ws)
+            logger_signaling.info("Signaling WebSocket connected from {!r}".format(raddr))
+            peer_id = None # Initialize peer_id, assigned after successful HELLO
             try:
+                # Perform initial handshake
+                peer_id, meta = await self.hello_peer(ws)
+                # If handshake successful, start the main message loop
                 await self.connection_handler(ws, peer_id, meta)
-            except websockets.exceptions.ConnectionClosed:
+            except websockets.exceptions.ConnectionClosed as e:
+                # Log expected connection closures
+                reason = f"Code: {e.code}, Reason: {e.reason}" if e.code else "Closed uncleanly"
                 logger_signaling.info(
-                    "Connection to peer {!r} closed, exiting handler".format(raddr)
+                    "Signaling connection from {!r} (ID: {}) closed: {}".format(raddr, peer_id or 'N/A', reason)
                 )
+            except Exception as e:
+                 # Log unexpected errors during handshake or connection handling
+                 logger_signaling.error(
+                     f"Error handling signaling connection for {raddr} (ID: {peer_id or 'N/A'}): {e}",
+                     exc_info=True # Log traceback for unexpected errors
+                 )
+                 # Attempt to close the connection cleanly if an error occurred
+                 if ws.open:
+                     await ws.close(code=1011, reason="Internal server error") # Internal Error
             finally:
-                await self.remove_peer(peer_id)
-        await asyncio.gather(
-            *[
-                self.cache_file(os.path.realpath(f))
-                for f in pathlib.Path(self.web_root).rglob("*.*")
-            ]
-        )
+                # Ensure cleanup happens when the handler exits (normally or due to error)
+                # Remove the peer ONLY if the HELLO handshake completed successfully (peer_id assigned)
+                if peer_id:
+                    await self.remove_peer(peer_id)
+                else:
+                    # Log if connection closed before registration
+                    logger_signaling.info(f"Disconnected from {raddr} before registration completed.")
+
+        # Pre-cache static web files for faster serving
+        try:
+            static_files = list(pathlib.Path(self.web_root).rglob("*.*"))
+            logger_signaling.info(f"Caching {len(static_files)} static files from {self.web_root}...")
+            await asyncio.gather(
+                *[
+                    self.cache_file(os.path.realpath(f))
+                    for f in static_files if os.path.isfile(f)
+                ]
+            )
+            logger_signaling.info("Static file caching complete.")
+        except Exception as e:
+            logger_signaling.warning(f"Error during static file caching (non-fatal): {e}")
+
+        # Get SSL context if HTTPS is enabled
         sslctx = self.get_ssl_ctx(https_server=True)
         logger_signaling.setLevel(logging.INFO)
-        web_logger.setLevel(logging.WARN)
+        web_logger.setLevel(logging.WARN) # Reduce verbosity of web file serving logs
         http_protocol = "https:" if self.enable_https else "http:"
         logger_signaling.info(
-            "Listening on {}//{}:{}".format(http_protocol, self.addr, self.port)
+            "Signaling/Web server listening on {}//{}:{}".format(http_protocol, self.addr, self.port)
         )
+        # Create partial function for HTTP request processing
         http_handler = functools.partial(self.process_request, self.web_root)
         self.stop_server = asyncio.Future()
         try:
+            # Configure server options
+            server_options = {
+                "ssl": sslctx,
+                "process_request": http_handler, # Handle HTTP requests before upgrade
+                "max_queue": 16, # Limit queued connections
+                "ping_interval": 20, # Enable keepalive pings
+                "ping_timeout": 20,
+            }
+            # Start the WebSocket server
             async with websockets.asyncio.server.serve(
-                handler,
+                handler, # Main WebSocket connection handler
                 self.addr,
                 self.port,
-                ssl=sslctx,
-                process_request=http_handler,
-                max_queue=16,
+                **server_options
             ) as self.server:
+                # Wait until stop() is called
                 await self.stop_server
-            if self.enable_https:
-                asyncio.create_task(self.check_server_needs_restart())
+        except OSError as e:
+             # Handle common startup errors like address in use
+             logger_signaling.error(f"Failed to start Signaling/Web server on {self.addr}:{self.port}: {e}")
+             self.server = None
+             raise
         except Exception as e:
             logger_signaling.error(f"Exception starting WebRTCSimpleServer: {e}", exc_info=True)
             self.server = None
             raise
 
     async def stop(self):
-        logger_signaling.info("Stopping server... ")
+        """Stops the signaling and web server gracefully."""
+        logger_signaling.info("Stopping Signaling/Web server... ")
+        # Signal the run() loop to exit
         if self.stop_server is not None and not self.stop_server.done():
             self.stop_server.set_result(True)
+        # Close the server instance
         if self.server:
+            self.server.close()
             try:
-                self.server.close()
-                await self.server.wait_closed()
+                # Wait for the server to close
+                await asyncio.wait_for(self.server.wait_closed(), timeout=5.0)
+            except asyncio.TimeoutError:
+                 logger_signaling.warning("Timeout waiting for Signaling/Web server to close.")
             except Exception as e:
-                logger_signaling.warning(f"Error waiting for WebRTCSimpleServer to close: {e}")
+                logger_signaling.warning(f"Error waiting for Signaling/Web server to close: {e}")
+            self.server = None
 
-        logger_signaling.info("Stopped.")
+        # Clean up any remaining peers that might not have disconnected cleanly
+        if self.peers:
+             logger_signaling.info(f"Cleaning up {len(self.peers)} remaining signaling peer connections...")
+             # Create tasks to remove all remaining peers concurrently
+             cleanup_tasks = [self.remove_peer(peer_id) for peer_id in list(self.peers.keys())]
+             await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+             logger_signaling.info("Remaining signaling peer cleanup finished.")
+
+        logger_signaling.info("Signaling/Web server stopped.")
 
     def check_cert_changed(self):
+        """Checks if the HTTPS certificate or key file has been modified."""
         cert_pem, key_pem = self.get_https_certs()
-        mtime = max(os.stat(key_pem).st_mtime, os.stat(cert_pem).st_mtime)
-        if self.cert_mtime < 0:
-            self.cert_mtime = mtime
-            return False
-        if mtime > self.cert_mtime:
-            self.cert_mtime = mtime
-            return True
+        if not cert_pem or not os.path.exists(cert_pem): return False
+        if key_pem and not os.path.exists(key_pem): return False # Check key only if specified
+        try:
+            mtime = os.stat(cert_pem).st_mtime
+            if key_pem: mtime = max(mtime, os.stat(key_pem).st_mtime)
+
+            if self.cert_mtime < 0: # First check
+                self.cert_mtime = mtime
+                return False
+            if mtime > self.cert_mtime: # Subsequent checks
+                self.cert_mtime = mtime
+                return True
+        except OSError as e:
+            logger_signaling.error(f"Error stating certificate/key files: {e}")
         return False
 
     async def check_server_needs_restart(self):
+        """Periodically checks if the certificate changed and stops the server if needed."""
         while self.cert_restart:
             await asyncio.sleep(1.0)
             if self.check_cert_changed():
                 logger_signaling.info("Certificate changed, stopping server...")
                 await self.stop()
-                return
+                return # Exit the check loop
 
 
 class WebRTCSignallingError(Exception):
+    """Custom exception for general WebRTC signaling errors."""
     pass
 
 
 class WebRTCSignallingErrorNoPeer(Exception):
+    """Custom exception for errors when a specific peer is not found."""
     pass
 
 
@@ -1761,37 +2249,53 @@ class WebRTCSignalling:
              )
              await self.on_disconnect()
 
-
 def on_resize_handler(res, current_app):
-    curr_res, new_res, _, __, ___ = get_new_res(res)
-    if curr_res != new_res:
-        if not current_app.last_resize_success:
-            logger.warning("skipping resize because last resize failed.")
-            return
-        logger.warning("resizing display from {} to {}".format(curr_res, new_res))
-        if resize_display(res):
-            current_app.send_remote_resolution(res)
+    """Handles client request to resize the remote display."""
+    try:
+        curr_res, new_res, _, __, ___ = get_new_res(res)
+        if curr_res != new_res:
+            # Check if the last resize attempt failed to prevent rapid failed attempts
+            if not getattr(current_app, 'last_resize_success', True):
+                logger.warning("skipping resize because last resize failed.")
+                return
+            logger.warning("resizing display from {} to {}".format(curr_res, new_res))
+            # Attempt to resize the display using external tools (e.g., xrandr)
+            if resize_display(res):
+                current_app.send_remote_resolution(res) # Notify client of new resolution
+                current_app.last_resize_success = True # Reset flag on success
+            else:
+                current_app.last_resize_success = False # Set flag on failure
+    except Exception as e:
+        logger.error(f"Error during resize handling for '{res}': {e}", exc_info=True)
+        if current_app: current_app.last_resize_success = False # Assume failure on error
 
 
 def on_scaling_ratio_handler(scale, current_app):
-    if scale < 0.75 or scale > 2.5:
+    """Handles client request to change DPI scaling and cursor size."""
+    if scale < 0.75 or scale > 2.5: # Basic validation
         logger.error("requested scale ratio out of bounds: {}".format(scale))
         return
+    # Calculate and set DPI
     dpi = int(96 * scale)
     logger.info("Setting DPI to: {}".format(dpi))
     if not set_dpi(dpi):
         logger.error("failed to set DPI to {}".format(dpi))
+    # Calculate and set cursor size
     cursor_size = int(16 * scale)
     logger.info("Setting cursor size to: {}".format(cursor_size))
     if not set_cursor_size(cursor_size):
         logger.error("failed to set cursor size to {}".format(cursor_size))
 
-
 async def main():
+    """Main asynchronous function to set up and run the server components."""
+    # --- Argument Parsing ---
     if "DEV_MODE" in os.environ:
-        with open("../../addons/gst-web-core/selkies-version.txt", "a"):
-            os.utime("../../addons/gst-web-core/selkies-version.txt", None)
+        try:
+            pathlib.Path("../../addons/gst-web-core/selkies-version.txt").touch()
+        except OSError as e:
+            logger.warning(f"Could not touch selkies-version.txt: {e}")
     parser = argparse.ArgumentParser()
+    # --- Server Configuration ---
     parser.add_argument(
         "--json_config",
         default=os.environ.get("SELKIES_JSON_CONFIG", "/tmp/selkies_config.json"),
@@ -1817,6 +2321,7 @@ async def main():
         default=os.environ.get("SELKIES_WEB_ROOT", "/opt/gst-web"),
         help='Path to directory containing web application files, default: "/opt/gst-web"',
     )
+    # --- Security ---
     parser.add_argument(
         "--enable_https",
         default=os.environ.get("SELKIES_ENABLE_HTTPS", "false"),
@@ -1851,6 +2356,7 @@ async def main():
         default=os.environ.get("SELKIES_BASIC_AUTH_PASSWORD", "mypasswd"),
         help="Password used when basic authentication is set",
     )
+    # --- WebRTC Configuration (STUN/TURN) ---
     parser.add_argument(
         "--rtc_config_json",
         default=os.environ.get("SELKIES_RTC_CONFIG_JSON", "/tmp/rtc.json"),
@@ -1943,6 +2449,7 @@ async def main():
         default=os.environ.get("SELKIES_CLOUDFLARE_TURN_API_TOKEN", ""),
         help="The Cloudflare TURN API token.",
     )
+    # --- Application Integration ---
     parser.add_argument(
         "--app_wait_ready",
         default=os.environ.get("SELKIES_APP_WAIT_READY", "false"),
@@ -1953,6 +2460,7 @@ async def main():
         default=os.environ.get("SELKIES_APP_READY_FILE", "/tmp/selkies-appready"),
         help="File set by sidecar used to indicate that app is initialized and ready",
     )
+    # --- Input Handling ---
     parser.add_argument(
         "--uinput_mouse_socket",
         default=os.environ.get("SELKIES_UINPUT_MOUSE_SOCKET", ""),
@@ -1963,6 +2471,34 @@ async def main():
         default=os.environ.get("SELKIES_JS_SOCKET_PATH", "/tmp"),
         help="Directory to write the Selkies Joystick Interposer communication sockets to, default: /tmp, results in socket files: /tmp/selkies_js{0-3}.sock",
     )
+    parser.add_argument(
+        "--enable_clipboard",
+        default=os.environ.get("SELKIES_ENABLE_CLIPBOARD", "true"),
+        help="Enable or disable the clipboard features, supported values: true, false, in, out",
+    )
+    parser.add_argument(
+        "--enable_resize",
+        default=os.environ.get("SELKIES_ENABLE_RESIZE", "false"),
+        help="Enable dynamic resizing to match browser size",
+    )
+    parser.add_argument(
+        "--enable_cursors",
+        default=os.environ.get("SELKIES_ENABLE_CURSORS", "true"),
+        help="Enable passing remote cursors to client",
+    )
+    parser.add_argument(
+        "--debug_cursors",
+        default=os.environ.get("SELKIES_DEBUG_CURSORS", "false"),
+        help="Enable cursor debug logging",
+    )
+    parser.add_argument(
+        "--cursor_size",
+        default=os.environ.get(
+            "SELKIES_CURSOR_SIZE", os.environ.get("XCURSOR_SIZE", "-1")
+        ),
+        help="Cursor size in points for the local cursor, set instead XCURSOR_SIZE without of this argument to configure the cursor size for both the local and remote cursors",
+    )
+    # --- GStreamer Pipeline Configuration ---
     parser.add_argument(
         "--encoder",
         default=os.environ.get("SELKIES_ENCODER", "x264enc"),
@@ -2013,33 +2549,7 @@ async def main():
         default=os.environ.get("SELKIES_AUDIO_PACKETLOSS_PERCENT", "0"),
         help='Expected packet loss percentage (%%) for ULP/RED Forward Error Correction (FEC) in audio, use "0" to disable FEC',
     )
-    parser.add_argument(
-        "--enable_clipboard",
-        default=os.environ.get("SELKIES_ENABLE_CLIPBOARD", "true"),
-        help="Enable or disable the clipboard features, supported values: true, false, in, out",
-    )
-    parser.add_argument(
-        "--enable_resize",
-        default=os.environ.get("SELKIES_ENABLE_RESIZE", "false"),
-        help="Enable dynamic resizing to match browser size",
-    )
-    parser.add_argument(
-        "--enable_cursors",
-        default=os.environ.get("SELKIES_ENABLE_CURSORS", "true"),
-        help="Enable passing remote cursors to client",
-    )
-    parser.add_argument(
-        "--debug_cursors",
-        default=os.environ.get("SELKIES_DEBUG_CURSORS", "false"),
-        help="Enable cursor debug logging",
-    )
-    parser.add_argument(
-        "--cursor_size",
-        default=os.environ.get(
-            "SELKIES_CURSOR_SIZE", os.environ.get("XCURSOR_SIZE", "-1")
-        ),
-        help="Cursor size in points for the local cursor, set instead XCURSOR_SIZE without of this argument to configure the cursor size for both the local and remote cursors",
-    )
+    # --- Statistics and Monitoring ---
     parser.add_argument(
         "--enable_webrtc_statistics",
         default=os.environ.get("SELKIES_ENABLE_WEBRTC_STATISTICS", "false"),
@@ -2051,12 +2561,6 @@ async def main():
         help="Directory to save WebRTC Statistics CSV from client with filenames selkies-stats-video-[timestamp].csv and selkies-stats-audio-[timestamp].csv",
     )
     parser.add_argument(
-        "--mode",
-        default=os.environ.get("SELKIES_MODE", "webrtc"),
-        choices=['webrtc', 'websockets'],
-        help='Mode of operation: "webrtc" for standard WebRTC, "websockets" for Websockets-based pipelines. Default: "webrtc"',
-    )
-    parser.add_argument(
         "--enable_metrics_http",
         default=os.environ.get("SELKIES_ENABLE_METRICS_HTTP", "false"),
         help="Enable the Prometheus HTTP metrics port",
@@ -2066,18 +2570,30 @@ async def main():
         default=os.environ.get("SELKIES_METRICS_HTTP_PORT", "8000"),
         help="Port to start the Prometheus metrics server on",
     )
+    # --- Operating Mode ---
+    parser.add_argument(
+        "--mode",
+        default=os.environ.get("SELKIES_MODE", "webrtc"),
+        choices=['webrtc', 'websockets'],
+        help='Mode of operation: "webrtc" for standard WebRTC, "websockets" for Websockets-based pipelines. Default: "webrtc"',
+    )
+    # --- Debugging ---
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
+    #args.mode = 'webrtc'
 
+    # --- Apply JSON Config Overlay ---
     global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
     TARGET_FRAMERATE = int(args.framerate)
     TARGET_VIDEO_BITRATE_KBPS = int(args.video_bitrate)
 
+    # Load settings from JSON file, potentially overriding command-line args/env vars
     if os.path.exists(args.json_config):
         try:
             with open(args.json_config, "r") as f:
                 json_args = json.load(f)
             for k, v in json_args.items():
+                # Apply specific overrides from JSON config
                 if k == "framerate":
                     TARGET_FRAMERATE = int(v)
                     args.framerate = str(TARGET_FRAMERATE)
@@ -2096,151 +2612,180 @@ async def main():
                     args.json_config, str(e)
                 )
             )
-    logging.warning(args)
+
+    # --- Logging Setup ---
     if args.debug:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
+        # Ensure all loggers inherit debug level if not explicitly set
+        for name in logging.root.manager.loggerDict:
+             if logging.getLogger(name).level == logging.NOTSET:
+                 logging.getLogger(name).setLevel(logging.DEBUG)
     else:
-        logging.basicConfig(level=logging.INFO)
+        logging.getLogger().setLevel(logging.INFO)
+        # Reduce noise from verbose libraries
+        logging.getLogger("websockets").setLevel(logging.WARNING)
+        logging.getLogger("aiortc").setLevel(logging.WARNING)
+
+    # Log effective arguments after parsing and overlay
+    logger.info(f"Effective arguments: {args}")
+
+    # --- Wait for App Ready ---
+    # Optionally wait for an external application signal file
     await wait_for_app_ready(args.app_ready_file, args.app_wait_ready.lower() == "true")
-    my_id = 0
-    peer_id = 1
-    my_audio_id = 2
-    audio_peer_id = 3
+
+    # --- Setup IDs and Metrics ---
+    my_id = 0 # ID for main (video) signaling client
+    peer_id = 1 # Expected ID of the peer for main (video) connection
+    my_audio_id = 2 # ID for audio-only signaling client
+    audio_peer_id = 3 # Expected ID of the peer for audio-only connection
     using_metrics_http = args.enable_metrics_http.lower() == "true"
     using_webrtc_csv = args.enable_webrtc_statistics.lower() == "true"
     metrics = Metrics(int(args.metrics_http_port), using_webrtc_csv)
+
+    # --- Setup Server Flags ---
     using_https = args.enable_https.lower() == "true"
     using_basic_auth = args.enable_basic_auth.lower() == "true"
-    ws_protocol = "wss:" if using_https else "ws:"
-    signalling = WebRTCSignalling(
-        "%s//127.0.0.1:%s/ws" % (ws_protocol, args.port),
-        my_id,
-        peer_id,
-        enable_https=using_https,
-        enable_basic_auth=using_basic_auth,
-        basic_auth_user=args.basic_auth_user,
-        basic_auth_password=args.basic_auth_password,
-    )
-    audio_signalling = WebRTCSignalling(
-        "%s//127.0.0.1:%s/ws" % (ws_protocol, args.port),
-        my_audio_id,
-        audio_peer_id,
-        enable_https=using_https,
-        enable_basic_auth=using_basic_auth,
-        basic_auth_user=args.basic_auth_user,
-        basic_auth_password=args.basic_auth_password,
-    )
-    async def on_signalling_error(e):
-        if isinstance(e, WebRTCSignallingErrorNoPeer):
-            await asyncio.sleep(1.0)
-            await signalling.setup_call()
-        else:
-            logger.error("signalling error: %s", str(e))
-            if app: await app.stop_pipeline()
-    async def on_audio_signalling_error(e):
-        if isinstance(e, WebRTCSignallingErrorNoPeer):
-            await asyncio.sleep(1.0)
-            await audio_signalling.setup_call()
-        else:
-            logger.error("signalling error: %s", str(e))
-            if audio_app: await audio_app.stop_pipeline()
-    signalling.on_error = on_signalling_error
-    audio_signalling.on_error = on_audio_signalling_error
-    signalling.on_disconnect = lambda: app.stop_pipeline() if app else None
-    audio_signalling.on_disconnect = lambda: audio_app.stop_pipeline() if audio_app else None
-    signalling.on_connect = signalling.setup_call
-    audio_signalling.on_connect = audio_signalling.setup_call
-    turn_rest_username = args.turn_rest_username.replace(":", "-")
+    if using_basic_auth and not args.basic_auth_password:
+        logger.critical("Basic auth enabled but --basic_auth_password not set. Exiting.")
+        sys.exit(1)
+
+    # --- Setup Signaling Clients (WebRTC Mode Only) ---
+    signalling = None
+    audio_signalling = None
+    if args.mode == 'webrtc':
+        ws_protocol = "wss:" if using_https else "ws:"
+        # Signaling clients connect to the local signaling server instance
+        signalling_url = f"{ws_protocol}//127.0.0.1:{args.port}/ws"
+        # Video/App signaling client
+        signalling = WebRTCSignalling(
+            signalling_url, my_id, peer_id, using_https, using_basic_auth,
+            args.basic_auth_user, args.basic_auth_password
+        )
+        # Audio-only signaling client
+        audio_signalling = WebRTCSignalling(
+            signalling_url, my_audio_id, audio_peer_id, using_https, using_basic_auth,
+            args.basic_auth_user, args.basic_auth_password
+        )
+
+        # Define error handlers for signaling clients
+        async def on_signalling_error(e):
+            if isinstance(e, WebRTCSignallingErrorNoPeer):
+                # If peer not found, retry session setup after a delay
+                logger.warning(f"Signaling: Peer {signalling.peer_id} not found, retrying setup call...")
+                await asyncio.sleep(1.0)
+                await signalling.setup_call()
+            else:
+                # Log other signaling errors and potentially stop the pipeline
+                logger.error("Signalling error: %s", str(e), exc_info=True)
+                if app: await app.stop_pipeline()
+        async def on_audio_signalling_error(e):
+            if isinstance(e, WebRTCSignallingErrorNoPeer):
+                 # If audio peer not found, retry session setup
+                 logger.warning(f"Audio Signaling: Peer {audio_signalling.peer_id} not found, retrying setup call...")
+                 await asyncio.sleep(1.0)
+                 await audio_signalling.setup_call()
+            else:
+                 logger.error("Audio signalling error: %s", str(e), exc_info=True)
+                 if audio_app: await audio_app.stop_pipeline()
+
+        # Assign handlers to signaling clients
+        signalling.on_error = on_signalling_error
+        audio_signalling.on_error = on_audio_signalling_error
+        # Stop pipelines if signaling disconnects
+        signalling.on_disconnect = lambda: app.stop_pipeline() if app else None
+        audio_signalling.on_disconnect = lambda: audio_app.stop_pipeline() if audio_app else None
+        # Initiate session setup upon successful connection
+        signalling.on_connect = signalling.setup_call
+        audio_signalling.on_connect = audio_signalling.setup_call
+
+    # --- RTC Configuration Determination ---
+    # Determine the source and content of the WebRTC ICE server configuration
+    turn_rest_username = args.turn_rest_username.replace(":", "-") # Ensure username is compatible
     rtc_config = None
+    stun_servers = []
+    turn_servers = []
     turn_protocol = "tcp" if args.turn_protocol.lower() == "tcp" else "udp"
     using_turn_tls = args.turn_tls.lower() == "true"
     using_turn_rest = False
     using_hmac_turn = False
     using_rtc_config_json = False
+
+    # Priority 1: Cloudflare TURN
     if args.enable_cloudflare_turn == "true":
         if args.cloudflare_turn_token_id and args.cloudflare_turn_api_token:
             try:
-                json_config = fetch_cloudflare_turn(
-                    args.cloudflare_turn_token_id, args.cloudflare_turn_api_token
-                )
-                logger.info(f"Got Cloudflare TURN config: {json_config}")
-                stun_servers, turn_servers, rtc_config = parse_rtc_config(
-                    json.dumps({"iceServers": [json_config["iceServers"]]})
-                )
+                cf_creds = fetch_cloudflare_turn(args.cloudflare_turn_token_id, args.cloudflare_turn_api_token)
+                logger.info(f"Got Cloudflare TURN credentials") # Avoid logging credentials
+                # Construct standard iceServers list including Cloudflare TURN
+                ice_servers_list = []
+                ice_servers_list.append({"urls": [f"stun:{args.stun_host}:{args.stun_port}", "stun:stun.l.google.com:19302"]})
+                ice_servers_list.append({
+                    "urls": cf_creds.get("uris", []),
+                    "username": cf_creds.get("username"),
+                    "credential": cf_creds.get("password")
+                })
+                rtc_config_data = {"iceServers": ice_servers_list}
+                rtc_config = json.dumps(rtc_config_data)
+                stun_servers, turn_servers, _ = parse_rtc_config(rtc_config)
             except Exception as e:
-                logger.warning(f"failed to fetch TURN config from Cloudflare: {e}")
+                logger.warning(f"failed to fetch or parse TURN config from Cloudflare: {e}")
         else:
-            logger.error("missing cloudflare TURN Token ID and TURN API token")
-    elif os.path.exists(args.rtc_config_json):
-        logger.warning(
-            "using JSON file from argument for RTC config, overrides all other STUN/TURN configuration"
-        )
-        with open(args.rtc_config_json, "r") as f:
-            stun_servers, turn_servers, rtc_config = parse_rtc_config(f.read())
-        using_rtc_config_json = True
-    else:
-        if args.turn_rest_uri:
-            try:
-                stun_servers, turn_servers, rtc_config = fetch_turn_rest(
-                    args.turn_rest_uri,
-                    turn_rest_username,
-                    args.turn_rest_username_auth_header,
-                    turn_protocol,
-                    args.turn_rest_protocol_header,
-                    using_turn_tls,
-                    args.turn_rest_tls_header,
-                )
-                logger.info(
-                    "using TURN REST API RTC configuration, overrides long-term username/password or short-term shared secret STUN/TURN configuration"
-                )
-                using_turn_rest = True
-            except Exception as e:
-                logger.warning(
-                    "error fetching TURN REST API RTC configuration, falling back to other methods: {}".format(
-                        str(e)
-                    )
-                )
-                using_turn_rest = False
-        if not using_turn_rest:
-            if (args.turn_username and args.turn_password) and (
-                args.turn_host and args.turn_port
-            ):
-                config_json = make_turn_rtc_config_json_legacy(
-                    args.turn_host,
-                    args.turn_port,
-                    args.turn_username,
-                    args.turn_password,
-                    turn_protocol,
-                    using_turn_tls,
-                    args.stun_host,
-                    args.stun_port,
-                )
-                stun_servers, turn_servers, rtc_config = parse_rtc_config(config_json)
-                logger.info(
-                    "using TURN long-term username/password credentials, prioritized over short-term shared secret configuration"
-                )
-            elif args.turn_shared_secret and (args.turn_host and args.turn_port):
-                hmac_data = generate_rtc_config(
-                    args.turn_host,
-                    args.turn_port,
-                    args.turn_shared_secret,
-                    turn_rest_username,
-                    turn_protocol,
-                    using_turn_tls,
-                    args.stun_host,
-                    args.stun_port,
-                )
-                stun_servers, turn_servers, rtc_config = parse_rtc_config(hmac_data)
-                logger.info("using TURN short-term shared secret HMAC credentials")
-                using_hmac_turn = True
-            else:
-                stun_servers, turn_servers, rtc_config = parse_rtc_config(
-                    DEFAULT_RTC_CONFIG
-                )
-                logger.warning(
-                    "missing TURN server information, using DEFAULT_RTC_CONFIG"
-                )
-    logger.info("initial server RTC configuration fetched")
+            logger.error("Cloudflare TURN enabled but missing --cloudflare_turn_token_id or --cloudflare_turn_api_token")
+
+    # Priority 2: RTC Config JSON File
+    if rtc_config is None and os.path.exists(args.rtc_config_json):
+        logger.warning(f"Using JSON file from {args.rtc_config_json} for RTC config")
+        try:
+            with open(args.rtc_config_json, "r") as f:
+                config_content = f.read()
+            stun_servers, turn_servers, rtc_config = parse_rtc_config(config_content)
+            using_rtc_config_json = True # Enable file monitor
+        except Exception as e:
+            logger.error(f"Failed to read/parse RTC config file {args.rtc_config_json}: {e}")
+            rtc_config = None # Ensure fallback if parsing fails
+
+    # Priority 3: TURN REST API
+    if rtc_config is None and args.turn_rest_uri:
+        try:
+            stun_servers, turn_servers, rtc_config = fetch_turn_rest(
+                args.turn_rest_uri, turn_rest_username, args.turn_rest_username_auth_header,
+                turn_protocol, args.turn_rest_protocol_header, using_turn_tls, args.turn_rest_tls_header
+            )
+            logger.info("Using TURN REST API RTC configuration")
+            using_turn_rest = True # Enable REST monitor
+        except Exception as e:
+            logger.warning(f"Error fetching TURN REST API ({args.turn_rest_uri}): {e}. Falling back...")
+            using_turn_rest = False
+            rtc_config = None # Ensure fallback
+
+    # Priority 4: Fallback Credentials (Legacy, HMAC, Default STUN)
+    if rtc_config is None:
+        if (args.turn_username and args.turn_password) and (args.turn_host and args.turn_port):
+            # Use legacy static username/password
+            config_json = make_turn_rtc_config_json_legacy(
+                args.turn_host, args.turn_port, args.turn_username, args.turn_password,
+                turn_protocol, using_turn_tls, args.stun_host, args.stun_port
+            )
+            stun_servers, turn_servers, rtc_config = parse_rtc_config(config_json)
+            logger.info("Using TURN long-term username/password credentials")
+        elif args.turn_shared_secret and (args.turn_host and args.turn_port):
+            # Use HMAC shared secret
+            hmac_data = generate_rtc_config(
+                args.turn_host, args.turn_port, args.turn_shared_secret, turn_rest_username,
+                turn_protocol, using_turn_tls, args.stun_host, args.stun_port
+            )
+            stun_servers, turn_servers, rtc_config = parse_rtc_config(hmac_data)
+            logger.info("Using TURN short-term shared secret HMAC credentials")
+            using_hmac_turn = True # Enable HMAC monitor
+        else:
+            # Use default STUN servers only
+            stun_servers, turn_servers, rtc_config = parse_rtc_config(DEFAULT_RTC_CONFIG)
+            logger.warning("No valid TURN configured. Using default STUN servers only.")
+
+    logger.info("Initial server RTC configuration determined.")
+    # --- End RTC Config Determination ---
+
+    # --- Setup App Parameters ---
     enable_resize = args.enable_resize.lower() == "true"
     audio_channels = int(args.audio_channels)
     initial_fps = TARGET_FRAMERATE
@@ -2254,490 +2799,446 @@ async def main():
     congestion_control = args.congestion_control.lower() == "true"
     video_packetloss_percent = float(args.video_packetloss_percent)
     audio_packetloss_percent = float(args.audio_packetloss_percent)
+
+    # --- Initialize GST Apps and Data Server ---
     event_loop = asyncio.get_running_loop()
+    # Main application instance (handles video/app stream)
     app = GSTWebRTCApp(
-        event_loop,
-        stun_servers,
-        turn_servers,
-        audio_channels,
-        initial_fps,
-        args.encoder,
-        gpu_id,
-        initial_video_bitrate,
-        initial_audio_bitrate,
-        keyframe_distance,
-        congestion_control,
-        video_packetloss_percent,
-        audio_packetloss_percent,
-        data_streaming_server=None,
+        event_loop, stun_servers, turn_servers, audio_channels, initial_fps, args.encoder,
+        gpu_id, initial_video_bitrate, initial_audio_bitrate, keyframe_distance,
+        congestion_control, video_packetloss_percent, audio_packetloss_percent,
+        data_streaming_server=None, # Will be set below
         mode=args.mode
     )
-    # Ensure helper methods exist even if not fully implemented in base class, prevent attribute errors
-    if not hasattr(GSTWebRTCApp, 'start_websocket_video_pipeline'):
-        GSTWebRTCApp.start_websocket_video_pipeline = \
-            lambda self: logger.warning("start_websocket_video_pipeline not implemented.")
-    if not hasattr(GSTWebRTCApp, 'stop_websocket_video_pipeline'):
-        GSTWebRTCApp.stop_websocket_video_pipeline = \
-            lambda self: logger.warning("stop_websocket_video_pipeline not implemented.")
-    if not hasattr(GSTWebRTCApp, 'start_websocket_audio_pipeline'):
-        GSTWebRTCApp.start_websocket_audio_pipeline = \
-            lambda self: logger.warning("start_websocket_audio_pipeline not implemented.")
-    if not hasattr(GSTWebRTCApp, 'stop_websocket_audio_pipeline'):
-        GSTWebRTCApp.stop_websocket_audio_pipeline = \
-            lambda self: logger.warning("stop_websocket_audio_pipeline not implemented.")
+    # Add helper methods if they don't exist (for compatibility/websockets mode)
+    if not hasattr(GSTWebRTCApp, 'start_websocket_video_pipeline'): GSTWebRTCApp.start_websocket_video_pipeline = lambda self: logger.warning("start_websocket_video_pipeline not implemented.")
+    if not hasattr(GSTWebRTCApp, 'stop_websocket_video_pipeline'): GSTWebRTCApp.stop_websocket_video_pipeline = lambda self: logger.warning("stop_websocket_video_pipeline not implemented.")
+    if not hasattr(GSTWebRTCApp, 'start_websocket_audio_pipeline'): GSTWebRTCApp.start_websocket_audio_pipeline = lambda self: logger.warning("start_websocket_audio_pipeline not implemented.")
+    if not hasattr(GSTWebRTCApp, 'stop_websocket_audio_pipeline'): GSTWebRTCApp.stop_websocket_audio_pipeline = lambda self: logger.warning("stop_websocket_audio_pipeline not implemented.")
+    if not hasattr(GSTWebRTCApp, 'stop_ws_pipeline'): GSTWebRTCApp.stop_ws_pipeline = GSTWebRTCApp.stop_pipeline
+    if not hasattr(GSTWebRTCApp, 'build_audio_ws_pipeline'): GSTWebRTCApp.build_audio_ws_pipeline = lambda self: logger.warning("build_audio_ws_pipeline not implemented.")
 
-    # Keep existing conditional definitions
-    if not hasattr(GSTWebRTCApp, 'stop_ws_pipeline'):
-        GSTWebRTCApp.stop_ws_pipeline = GSTWebRTCApp.stop_pipeline
-    if not hasattr(GSTWebRTCApp, 'build_audio_ws_pipeline'):
-        GSTWebRTCApp.build_audio_ws_pipeline = \
-            lambda self: logger.warning("build_audio_ws_pipeline not implemented.")
-
-    app.last_resize_success = True
+    app.last_resize_success = True # Track resize success state
+    # Data WebSocket server instance
     data_websocket_server = DataStreamingServer(
-        int(args.data_websocket_port),
-        args.mode,
-        app,
-        args.uinput_mouse_socket,
-        args.js_socket_path,
-        args.enable_clipboard.lower(),
-        enable_cursors,
-        cursor_size,
-        1.0,
-        cursor_debug
+        int(args.data_websocket_port), args.mode, app, args.uinput_mouse_socket, args.js_socket_path,
+        args.enable_clipboard.lower(), enable_cursors, cursor_size, 1.0, cursor_debug
     )
-    app.data_streaming_server = data_websocket_server
+    app.data_streaming_server = data_websocket_server # Link data server to main app
+
+    # Audio-only application instance (WebRTC mode only)
     audio_app = None
     if args.mode == 'webrtc':
         audio_app = GSTWebRTCApp(
-            event_loop,
-            stun_servers,
-            turn_servers,
-            audio_channels,
-            initial_fps,
-            "opusenc",
-            -1,
-            initial_video_bitrate,
-            initial_audio_bitrate,
-            keyframe_distance,
-            congestion_control,
-            video_packetloss_percent,
-            audio_packetloss_percent,
-            data_streaming_server=data_websocket_server,
-            mode=args.mode
+            event_loop, stun_servers, turn_servers, audio_channels, initial_fps, "opusenc", -1, # Use Opus for audio
+            initial_video_bitrate, initial_audio_bitrate, keyframe_distance, congestion_control,
+            video_packetloss_percent, audio_packetloss_percent, data_streaming_server=data_websocket_server, mode=args.mode
         )
 
+    # --- Setup Callbacks (Linking components) ---
     if args.mode == 'webrtc':
+        if not signalling or not audio_signalling:
+             # Should not happen if mode is webrtc, but check defensively
+             logger.critical("WebRTC mode setup error: Signaling objects not initialized. Exiting.")
+             sys.exit(1)
+        # Link GSTApp SDP/ICE generation to Signaling client sending methods
         app.on_sdp = signalling.send_sdp
         if audio_app: audio_app.on_sdp = audio_signalling.send_sdp
         app.on_ice = signalling.send_ice
         if audio_app: audio_app.on_ice = audio_signalling.send_ice
+        # Link Signaling client SDP/ICE receiving methods to GSTApp handlers
         signalling.on_sdp = app.set_sdp
-        if audio_signalling: audio_signalling.on_sdp = audio_app.set_sdp if audio_app else None
+        if audio_signalling: audio_signalling.on_sdp = audio_app.set_sdp if audio_app else lambda *_: None
         signalling.on_ice = app.set_ice
-        if audio_signalling: audio_signalling.on_ice = audio_app.set_ice if audio_app else None
+        if audio_signalling: audio_signalling.on_ice = audio_app.set_ice if audio_app else lambda *_: None
 
+    # Handler for when a signaling session is established
     def on_session_handler(session_peer_id, meta=None):
+        logger.info(f"Session handler called for peer_id {session_peer_id} with meta: {meta}")
         if args.mode == 'webrtc':
-            logger.info(
-                "starting session for peer id {} with meta: {}".format(
-                    session_peer_id, meta
-                )
-            )
+            # Check which session (main or audio) was established
             if str(session_peer_id) == str(peer_id):
+                # Main video/app session established
                 if meta:
+                    # Process initial metadata from client (e.g., resolution)
                     if enable_resize:
-                        if meta.get("res"):
-                            on_resize_handler(meta["res"], app)
-                        if meta.get("scale"):
-                            on_scaling_ratio_handler(meta["scale"], app)
+                        if meta.get("res"): on_resize_handler(meta["res"], app)
+                        if meta.get("scale"): on_scaling_ratio_handler(meta["scale"], app)
                     else:
-                        logger.info("setting cursor to default size")
-                        set_cursor_size(16)
+                        logger.info("Remote resize disabled by server config.")
+                        if cursor_size <= 0: set_cursor_size(16) # Set default cursor if not specified
+                logger.info("Starting main video/app pipeline (webrtc mode)")
                 app.start_pipeline()
             elif str(session_peer_id) == str(audio_peer_id) and audio_app:
-                logger.info("starting audio pipeline (webrtc mode)")
+                # Audio-only session established
+                logger.info("Starting audio pipeline (webrtc mode)")
                 audio_app.start_pipeline(audio_only=True)
-                logger.info("WebRTC audio pipeline started (webrtc mode)")
             else:
-                logger.error("failed to start pipeline for peer_id: %s" % peer_id)
-        else:
-            logger.debug("on_session_handler called in websockets mode - doing nothing")
+                logger.error("Failed to start pipeline for unexpected peer_id: %s" % session_peer_id)
+        # else: # websockets mode doesn't use signaling sessions this way
+            # logger.debug("on_session_handler called in websockets mode - doing nothing")
 
-    signalling.on_session = on_session_handler
-    if audio_signalling: audio_signalling.on_session = on_session_handler
-    cursor_scale = 1.0
+    # Assign the session handler to signaling clients (WebRTC mode)
+    if args.mode == 'webrtc':
+        signalling.on_session = on_session_handler
+        if audio_signalling: audio_signalling.on_session = on_session_handler
+
+    # Initialize the input handler
+    cursor_scale = 1.0 # Initial cursor scale
     webrtc_input = WebRTCInput(
-        app,
-        args.uinput_mouse_socket,
-        args.js_socket_path,
-        args.enable_clipboard.lower(),
-        enable_cursors,
-        cursor_size,
-        cursor_scale,
-        cursor_debug,
+        app, args.uinput_mouse_socket, args.js_socket_path, args.enable_clipboard.lower(),
+        enable_cursors, cursor_size, cursor_scale, cursor_debug
     )
+    # Link input handler back to data server (needed for cursor updates in WS mode)
+    if args.mode == 'websockets':
+        data_websocket_server.webrtc_input = webrtc_input
+
+    # Callback for sending cursor changes (used by cursor monitor)
     webrtc_input.on_cursor_change = webrtc_input.send_cursor_data
 
+    # Handler for when WebRTC data channel opens
     def data_channel_ready():
-        logger.info("opened peer data channel for user input to X11")
+        logger.info("WebRTC data channel opened. Sending initial state.")
+        # Send initial configuration values to the client
         app.send_framerate(app.framerate)
         app.send_video_bitrate(app.video_bitrate)
         audio_bitrate_to_send = audio_app.audio_bitrate if audio_app else app.audio_bitrate
         app.send_audio_bitrate(audio_bitrate_to_send)
         app.send_resize_enabled(enable_resize)
         app.send_encoder(app.encoder)
-        app.send_cursor_data(app.last_cursor_sent)
+        app.send_cursor_data(app.last_cursor_sent) # Send last known cursor
 
+    # Assign data channel callbacks (WebRTC mode)
     if args.mode == 'webrtc':
-        app.on_data_open = lambda: data_channel_ready()
-        app.on_data_message = webrtc_input.on_message
+        app.on_data_open = data_channel_ready
+        app.on_data_message = webrtc_input.on_message # Route data channel messages to input handler
 
-    webrtc_input.on_video_encoder_bit_rate = lambda bitrate: set_json_app_argument(
-        args.json_config, "video_bitrate", bitrate
-    ) and (app.set_video_bitrate(int(bitrate)))
-    webrtc_input.on_audio_encoder_bit_rate = lambda bitrate: set_json_app_argument(
-        args.json_config, "audio_bitrate", bitrate
-    ) and (audio_app.set_audio_bitrate(int(bitrate)) if args.mode == 'webrtc' and audio_app else app.set_audio_bitrate(int(bitrate)))
+    # --- Input Handler Callbacks ---
+    # Callbacks triggered by messages received via WebRTC data channel or WebSocket
+    webrtc_input.on_video_encoder_bit_rate = lambda bitrate: set_json_app_argument(args.json_config, "video_bitrate", bitrate) and app.set_video_bitrate(int(bitrate))
+    webrtc_input.on_audio_encoder_bit_rate = lambda bitrate: set_json_app_argument(args.json_config, "audio_bitrate", bitrate) and (audio_app.set_audio_bitrate(int(bitrate)) if args.mode == 'webrtc' and audio_app else app.set_audio_bitrate(int(bitrate)))
+    webrtc_input.on_mouse_pointer_visible = lambda visible: app.set_pointer_visible(visible)
+    webrtc_input.on_clipboard_read = webrtc_input.send_clipboard_data # Triggered when client requests clipboard content
 
-    webrtc_input.on_mouse_pointer_visible = lambda visible: app.set_pointer_visible(
-        visible
-    )
-    webrtc_input.on_clipboard_read = webrtc_input.send_clipboard_data
-
+    # Handler for setting FPS
     def set_fps_handler(fps):
         set_json_app_argument(args.json_config, "framerate", fps)
         app.set_framerate(fps)
-    webrtc_input.on_set_fps = lambda fps: set_fps_handler(fps)
+    webrtc_input.on_set_fps = set_fps_handler
 
+    # Assign resize/scaling handlers only if enabled
     if enable_resize:
         webrtc_input.on_resize = lambda res: on_resize_handler(res, app)
         webrtc_input.on_scaling_ratio = lambda scale: on_scaling_ratio_handler(scale, app)
     else:
         logger.info("remote resize is disabled, removing handler for on_resize/on_scaling_ratio")
-        webrtc_input.on_resize = lambda res: logger.warning(
-            "remote resize is disabled, skipping resize to %s" % res
-        )
-        webrtc_input.on_scaling_ratio = lambda scale: logger.warning(
-            "remote resize is disabled, skipping DPI scale change to %s"
-            % str(scale)
-        )
+        webrtc_input.on_resize = lambda res: logger.warning(f"remote resize is disabled, skipping resize to {res}")
+        webrtc_input.on_scaling_ratio = lambda scale: logger.warning(f"remote resize is disabled, skipping DPI scale change to {scale}")
+
+    # Callback for ping response (latency calculation)
     webrtc_input.on_ping_response = lambda latency: app.send_latency_time(latency)
 
+    # Handler for enabling/disabling remote resize dynamically
     def enable_resize_handler(enabled, enable_res):
-        set_json_app_argument(args.json_config, "enable_resize", enabled)
-        if enabled:
+        global enable_resize # Need to modify global state
+        new_state = str(enabled).lower() == 'true'
+        logger.info(f"Setting remote resize enabled to: {new_state}")
+        set_json_app_argument(args.json_config, "enable_resize", new_state)
+        enable_resize = new_state # Update global state
+        if new_state:
+            # Re-assign handlers if enabled
             webrtc_input.on_resize = lambda res: on_resize_handler(res, app)
             webrtc_input.on_scaling_ratio = lambda scale: on_scaling_ratio_handler(scale, app)
-            on_resize_handler(enable_res, app)
+            if enable_res: on_resize_handler(enable_res, app) # Apply initial resize if provided
         else:
-            logger.info("removing handler for on_resize")
-            webrtc_input.on_resize = lambda res: logger.warning(
-                "remote resize is disabled, skipping resize to %s" % res
-            )
-            webrtc_input.on_scaling_ratio = lambda scale: logger.warning(
-                "remote resize is disabled, skipping DPI scale change to %s"
-                % str(scale)
-            )
+            # Remove handlers if disabled
+            logger.info("Disabling remote resize handlers.")
+            webrtc_input.on_resize = lambda res: logger.warning(f"remote resize is disabled, skipping resize to {res}")
+            webrtc_input.on_scaling_ratio = lambda scale: logger.warning(f"remote resize is disabled, skipping DPI scale change to {scale}")
     webrtc_input.on_set_enable_resize = enable_resize_handler
+
+    # Callbacks for receiving client-side metrics
     webrtc_input.on_client_fps = lambda fps: metrics.set_fps(fps)
     webrtc_input.on_client_latency = lambda latency_ms: metrics.set_latency(latency_ms)
-    webrtc_input.on_client_webrtc_stats = (
-        lambda webrtc_stat_type, webrtc_stats: metrics.set_webrtc_stats(
-            webrtc_stat_type, webrtc_stats
-        )
+    webrtc_input.on_client_webrtc_stats = lambda type, stats: metrics.set_webrtc_stats(type, stats)
+
+    # --- Setup Monitors (GPU, System) ---
+    gpu_mon = None
+    system_mon = None
+    if args.mode == 'webrtc': # Monitors primarily send stats via WebRTC data channel
+        # GPU Monitor (only if NVENC encoder is likely used)
+        gpu_mon = GPUMonitor(enabled=args.encoder.startswith("nv"))
+        def on_gpu_stats(load, memory_total, memory_used):
+            app.send_gpu_stats(load, memory_total, memory_used) # Send via data channel
+            metrics.set_gpu_utilization(load * 100) # Update Prometheus metrics
+        gpu_mon.on_stats = on_gpu_stats
+
+        # System Monitor (CPU/Mem)
+        system_mon = SystemMonitor()
+        def on_sysmon_timer(t):
+            # Send system stats and initiate ping via data channel
+            webrtc_input.ping_start = t
+            app.send_system_stats(system_mon.cpu_percent, system_mon.mem_total, system_mon.mem_used)
+            app.send_ping(t)
+        system_mon.on_timer = on_sysmon_timer
+
+    # --- Setup Signaling Server ---
+    # Configure the signaling server instance
+    options = argparse.Namespace(
+        addr=args.addr, port=int(args.port), enable_basic_auth=using_basic_auth,
+        basic_auth_user=args.basic_auth_user, basic_auth_password=args.basic_auth_password,
+        enable_https=using_https, https_cert=args.https_cert, https_key=args.https_key,
+        health="/health", web_root=os.path.abspath(args.web_root), keepalive_timeout=30,
+        cert_restart=False, # Certificate restart logic is currently disabled
+        rtc_config_file=args.rtc_config_json, rtc_config=rtc_config, # Pass initial RTC config
+        turn_shared_secret=args.turn_shared_secret if using_hmac_turn else "", # Pass secret only if HMAC is used
+        turn_host=args.turn_host if using_hmac_turn else "",
+        turn_port=args.turn_port if using_hmac_turn else 0,
+        turn_protocol=turn_protocol, turn_tls=using_turn_tls,
+        turn_auth_header_name=args.turn_rest_username_auth_header,
+        stun_host=args.stun_host, stun_port=int(args.stun_port)
     )
-    gpu_mon = GPUMonitor(enabled=args.encoder.startswith("nv"))
-
-    def on_gpu_stats(load, memory_total, memory_used):
-        app.send_gpu_stats(load, memory_total, memory_used)
-        metrics.set_gpu_utilization(load * 100)
-    gpu_mon.on_stats = on_gpu_stats
-
-    system_mon = SystemMonitor()
-
-    def on_sysmon_timer(t):
-        webrtc_input.ping_start = t
-        app.send_system_stats(
-            system_mon.cpu_percent, system_mon.mem_total, system_mon.mem_used
-        )
-        app.send_ping(t)
-    system_mon.on_timer = on_sysmon_timer
-
-    options = argparse.Namespace()
-    options.addr = args.addr
-    options.port = args.port
-    options.enable_basic_auth = using_basic_auth
-    options.basic_auth_user = args.basic_auth_user
-    options.basic_auth_password = args.basic_auth_password
-    options.enable_https = using_https
-    options.https_cert = args.https_cert
-    options.https_key = args.https_key
-    options.health = "/health"
-    options.web_root = os.path.abspath(args.web_root)
-    options.keepalive_timeout = 30
-    options.cert_restart = False
-    options.rtc_config_file = args.rtc_config_json
-    options.rtc_config = rtc_config
-    options.turn_shared_secret = args.turn_shared_secret if using_hmac_turn else ""
-    options.turn_host = args.turn_host if using_hmac_turn else ""
-    options.turn_port = args.turn_port if using_hmac_turn else ""
-    options.turn_protocol = turn_protocol
-    options.turn_tls = using_turn_tls
-    options.turn_auth_header_name = args.turn_rest_username_auth_header
-    options.stun_host = args.stun_host
-    options.stun_port = args.stun_port
     server = WebRTCSimpleServer(options)
 
-    def mon_rtc_config(stun_servers, turn_servers, rtc_config):
-        if app.webrtcbin:
-            logger.info("updating STUN server")
-            app.webrtcbin.set_property("stun-server", stun_servers[0])
-            for i, turn_server in enumerate(turn_servers):
-                logger.info("updating TURN server")
-                if i == 0:
-                    app.webrtcbin.set_property("turn-server", turn_server)
-                else:
-                    app.webrtcbin.emit("add-turn-server", turn_server)
-        server.set_rtc_config(rtc_config)
+    # --- Setup RTC Monitors (File, REST, HMAC) ---
+    # Monitors that dynamically update the RTC config
+    hmac_turn_mon = None
+    turn_rest_mon = None
+    rtc_file_mon = None
+    if args.mode == 'webrtc':
+        # Define handler for when a monitor detects an RTC config change
+        def mon_rtc_config(new_stun_servers, new_turn_servers, new_rtc_config):
+            logger.info("RTC config updated by monitor. Applying changes.")
+            # Update running GStreamer pipelines
+            if app and app.webrtcbin: app.update_rtc_config(new_stun_servers, new_turn_servers)
+            if audio_app and audio_app.webrtcbin: audio_app.update_rtc_config(new_stun_servers, new_turn_servers)
+            # Update config served by the signaling server's /turn endpoint
+            server.set_rtc_config(new_rtc_config)
 
-    hmac_turn_mon = HMACRTCMonitor(
-        args.turn_host,
-        args.turn_port,
-        args.turn_shared_secret,
-        turn_rest_username,
-        turn_protocol=turn_protocol,
-        turn_tls=using_turn_tls,
-        stun_host=args.stun_host,
-        stun_port=args.stun_port,
-        period=60,
-        enabled=using_hmac_turn,
-    )
-    hmac_turn_mon.on_rtc_config = mon_rtc_config
-    turn_rest_mon = RESTRTCMonitor(
-        args.turn_rest_uri,
-        turn_rest_username,
-        args.turn_rest_username_auth_header,
-        turn_protocol=turn_protocol,
-        turn_rest_protocol_header=args.turn_rest_protocol_header,
-        turn_tls=using_turn_tls,
-        turn_rest_tls_header=args.turn_rest_tls_header,
-        period=60,
-        enabled=using_turn_rest,
-    )
-    turn_rest_mon.on_rtc_config = mon_rtc_config
-    rtc_file_mon = RTCConfigFileMonitor(
-        rtc_file=args.rtc_config_json, enabled=using_rtc_config_json
-    )
-    rtc_file_mon.on_rtc_config = mon_rtc_config
+        # Initialize monitors based on which RTC config source was chosen
+        hmac_turn_mon = HMACRTCMonitor(
+            args.turn_host, int(args.turn_port), args.turn_shared_secret, turn_rest_username,
+            turn_protocol=turn_protocol, turn_tls=using_turn_tls, stun_host=args.stun_host,
+            stun_port=args.stun_port, period=60, enabled=using_hmac_turn
+        )
+        hmac_turn_mon.on_rtc_config = mon_rtc_config
+        turn_rest_mon = RESTRTCMonitor(
+            args.turn_rest_uri, turn_rest_username, args.turn_rest_username_auth_header,
+            turn_protocol=turn_protocol, turn_rest_protocol_header=args.turn_rest_protocol_header,
+            turn_tls=using_turn_tls, turn_rest_tls_header=args.turn_rest_tls_header,
+            period=60, enabled=using_turn_rest
+        )
+        turn_rest_mon.on_rtc_config = mon_rtc_config
+        rtc_file_mon = RTCConfigFileMonitor(rtc_file=args.rtc_config_json, enabled=using_rtc_config_json)
+        rtc_file_mon.on_rtc_config = mon_rtc_config
+
+    # --- Main Execution Logic ---
+    # Initialize task variables
+    server_task = None
+    data_websocket_server_task = None
+    metrics_http_task = None
+    webrtc_input_connect_task = None
+    clipboard_monitor_task = None
+    cursor_monitor_task = None
+    signaling_task = None
+    audio_signaling_task = None
+    rtc_monitor_tasks = []
+    webrtc_monitor_tasks = []
+    gst_bus_tasks = []
 
     try:
+        # Start Core Servers (Essential for both modes)
+        logger.info("Starting Signaling/Web server...")
         server_task = asyncio.create_task(server.run())
-        data_websocket_server_task = asyncio.create_task(
-            data_websocket_server.run_server()
-        )
+        logger.info("Starting Data WebSocket server...")
+        data_websocket_server_task = asyncio.create_task(data_websocket_server.run_server())
 
-        metrics_http_task = None
-        if args.mode == 'webrtc' and metrics:
-             if metrics.port > 0:
-                 metrics_http_task = asyncio.create_task(metrics.start_http())
-             else:
-                 logger.warning(
-                     "metrics_http_port is invalid ({}), Prometheus server "
-                     "will not start.".format(metrics.port)
-                 )
+        # Start Metrics HTTP Server (If enabled)
+        if using_metrics_http and metrics.port > 0:
+            logger.info(f"Starting Prometheus metrics HTTP server on port {metrics.port}...")
+            metrics_http_task = asyncio.create_task(metrics.start_http())
 
+        # Start Input Handling Components (Essential for both modes)
+        logger.info("Connecting WebRTCInput components...")
         webrtc_input_connect_task = asyncio.create_task(webrtc_input.connect())
+        logger.info("Starting clipboard monitor...")
         clipboard_monitor_task = asyncio.create_task(webrtc_input.start_clipboard())
+        logger.info("Starting cursor monitor...")
         cursor_monitor_task = asyncio.create_task(webrtc_input.start_cursor_monitor())
 
-        rtc_monitors_tasks = []
-        if args.mode == 'webrtc':
-             if hmac_turn_mon and hmac_turn_mon.enabled:
-                 rtc_monitors_tasks.append(asyncio.create_task(hmac_turn_mon.start()))
-             if turn_rest_mon and turn_rest_mon.enabled:
-                 rtc_monitors_tasks.append(asyncio.create_task(turn_rest_mon.start()))
-             if rtc_file_mon and rtc_file_mon.enabled:
-                 rtc_monitors_tasks.append(asyncio.create_task(rtc_file_mon.start()))
-
-        webrtc_monitors_tasks = []
-        if args.mode == 'webrtc':
-            if gpu_mon and gpu_mon.enabled:
-                webrtc_monitors_tasks.append(
-                    asyncio.create_task(gpu_mon.start(int(args.gpu_id)))
-                )
-            if system_mon and system_mon.enabled:
-                 webrtc_monitors_tasks.append(asyncio.create_task(system_mon.start()))
-
-        gst_bus_tasks = []
-        # Make sure bus tasks are created regardless of mode if app exists
+        # Start GStreamer Bus Handlers (Essential if apps exist)
+        logger.info("Starting GStreamer bus handlers...")
         if app: gst_bus_tasks.append(asyncio.create_task(app.handle_bus_calls()))
-        # Note: audio_app only exists in webrtc mode based on current logic
         if audio_app: gst_bus_tasks.append(asyncio.create_task(audio_app.handle_bus_calls()))
 
+        # --- Mode-Specific Task Starting and Waiting ---
         if args.mode == 'webrtc':
-             logger.info("Starting WebRTC signaling loop.")
-             while True:
-                try:
-                    await signalling.connect()
-                    if audio_signalling: await audio_signalling.connect()
+            # Start WebRTC Specific Monitors
+            logger.info("Starting WebRTC monitors (RTC config, GPU, System)...")
+            if hmac_turn_mon and hmac_turn_mon.enabled: rtc_monitor_tasks.append(asyncio.create_task(hmac_turn_mon.start()))
+            if turn_rest_mon and turn_rest_mon.enabled: rtc_monitor_tasks.append(asyncio.create_task(turn_rest_mon.start()))
+            if rtc_file_mon and rtc_file_mon.enabled: rtc_monitor_tasks.append(asyncio.create_task(rtc_file_mon.start()))
+            if gpu_mon and gpu_mon.enabled: webrtc_monitor_tasks.append(asyncio.create_task(gpu_mon.start(int(args.gpu_id))))
+            if system_mon and system_mon.enabled: webrtc_monitor_tasks.append(asyncio.create_task(system_mon.start()))
 
-                    audio_signaling_start_task = None
-                    if audio_signalling:
-                         audio_signaling_start_task = asyncio.create_task(
-                             audio_signalling.start()
-                         )
-                    await signalling.start()
+            # Start Signaling Client Loop
+            logger.info("Connecting and starting WebRTC signaling client loops...")
+            await signalling.connect()
+            signaling_task = asyncio.create_task(signalling.start())
+            if audio_signalling:
+                await audio_signalling.connect()
+                audio_signaling_task = asyncio.create_task(audio_signalling.start())
 
-                    logger.info(
-                        "WebRTC signaling loop: Signaling connection closed. "
-                        "Attempting to restart."
-                    )
+            # Define essential tasks to wait for in WebRTC mode
+            # The application should run as long as the servers and signaling loops are active
+            essential_webrtc_tasks = [server_task, data_websocket_server_task, signaling_task]
+            if audio_signaling_task: essential_webrtc_tasks.append(audio_signaling_task)
 
-                except (WebRTCSignallingError, websockets.exceptions.ConnectionClosed) as e:
-                    logger.error(
-                        f"WebRTC signaling loop caught signaling error or connection closed: {e}. "
-                        "Retrying connection in 5s.", exc_info=True
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"WebRTC signaling loop caught unexpected error: {e}. "
-                        "Retrying connection in 5s.", exc_info=True
-                    )
-                finally:
-                    if signalling: await signalling.stop()
-                    if audio_signalling: await audio_signalling.stop()
-                    if app: await app.stop_pipeline()
-                    if audio_app: await audio_app.stop_pipeline()
-                    if audio_signaling_start_task and not audio_signaling_start_task.done():
-                        audio_signaling_start_task.cancel()
-                        try:
-                            await audio_signaling_start_task
-                        except asyncio.CancelledError:
-                            pass
-                        except Exception as ce:
-                            logger.warning(
-                                f"Error waiting for audio signaling task cancellation: {ce}"
-                            )
-                    await asyncio.sleep(5.0)
+            logger.info("WebRTC mode: Waiting for essential server/signaling tasks to complete...")
+            # Wait for the first essential task to complete (which indicates an error or shutdown)
+            done, pending = await asyncio.wait(essential_webrtc_tasks, return_when=asyncio.FIRST_COMPLETED)
 
         elif args.mode == 'websockets':
-             logger.info(
-                 "Running in websockets mode. Main loop waiting on server tasks."
-             )
-             running_tasks = [
-                 server_task, data_websocket_server_task,
-                 webrtc_input_connect_task, clipboard_monitor_task,
-                 cursor_monitor_task
-             ]
-             if metrics_http_task: running_tasks.append(metrics_http_task)
+             logger.info("Websockets mode: Waiting for essential server tasks to complete...")
+             # In websockets mode, only the servers need to keep running indefinitely
+             # The ws_handler manages pipelines and other resources per connection
+             essential_websocket_tasks = [server_task, data_websocket_server_task]
+             # Wait for the first essential server task to complete
+             done, pending = await asyncio.wait(essential_websocket_tasks, return_when=asyncio.FIRST_COMPLETED)
 
-             # Add the gst bus task for websockets mode as well
-             running_tasks.extend(gst_bus_tasks)
+        # Log which task finished causing the main loop to exit
+        for task in done:
+            try:
+                 task_name = task.get_name() if hasattr(task, 'get_name') else repr(task)
+                 logger.warning(f"Essential task {task_name} finished unexpectedly, triggering cleanup.")
+                 # Log exception if the task finished with one
+                 if task.exception():
+                      logger.error(f"Task {task_name} raised an exception:", exc_info=task.exception())
+            except asyncio.CancelledError:
+                 logger.info(f"Essential task {task_name} was cancelled.")
+            except Exception as e:
+                 logger.error(f"Error inspecting completed task {repr(task)}: {e}")
 
-             await asyncio.gather(*running_tasks)
 
     except asyncio.CancelledError:
         logger.info("Main loop cancelled.")
     except Exception as e:
-        logger.error("Caught unhandled exception in main: %s", e, exc_info=True)
-        sys.exit(1)
+        logger.critical("Caught unhandled exception in main: %s", e, exc_info=True)
+        # Let finally block handle cleanup
     finally:
-        logger.info("Main loop exiting, performing cleanup.")
+        logger.info("Main loop ending or interrupted, performing cleanup...")
 
+        # --- Cleanup Logic ---
+        # Gracefully stop all running tasks and components
         tasks_to_cancel = []
+        # Collect all potentially running tasks
+        all_tasks = [
+            server_task, data_websocket_server_task, metrics_http_task,
+            webrtc_input_connect_task, clipboard_monitor_task, cursor_monitor_task,
+            signaling_task, audio_signaling_task
+        ] + rtc_monitor_tasks + webrtc_monitor_tasks + gst_bus_tasks
 
-        if server_task and not server_task.done(): tasks_to_cancel.append(server_task)
-        if data_websocket_server_task and not data_websocket_server_task.done(): tasks_to_cancel.append(data_websocket_server_task)
-        if metrics_http_task and not metrics_http_task.done(): tasks_to_cancel.append(metrics_http_task)
+        # Identify tasks that are still running and need cancellation
+        for task in all_tasks:
+            if task and not task.done():
+                tasks_to_cancel.append(task)
 
-        if webrtc_input_connect_task and not webrtc_input_connect_task.done(): tasks_to_cancel.append(webrtc_input_connect_task)
-        if clipboard_monitor_task and not clipboard_monitor_task.done(): tasks_to_cancel.append(clipboard_monitor_task)
-        if cursor_monitor_task and not cursor_monitor_task.done(): tasks_to_cancel.append(cursor_monitor_task)
+        # Cancel running tasks concurrently
+        if tasks_to_cancel:
+            logger.info(f"Cancelling {len(tasks_to_cancel)} running tasks...")
+            for task in tasks_to_cancel:
+                task.cancel()
+            # Wait for cancellation to complete (suppress CancelledError from gather)
+            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+            logger.info("Task cancellation complete.")
 
-        if gst_bus_tasks:
-             for task in gst_bus_tasks:
-                 if task and not task.done(): tasks_to_cancel.append(task)
-
+        # Stop Monitors (WebRTC mode)
         if args.mode == 'webrtc':
-             if gpu_mon: gpu_mon.stop()
-             if system_mon: system_mon.stop()
-
+             logger.info("Stopping WebRTC monitors...")
+             if gpu_mon and hasattr(gpu_mon, 'stop'): gpu_mon.stop() # Assuming sync stop
+             if system_mon and hasattr(system_mon, 'stop'): system_mon.stop() # Assuming sync stop
+             # RTC monitors have async stop methods
              if hmac_turn_mon: await hmac_turn_mon.stop()
              if turn_rest_mon: await turn_rest_mon.stop()
              if rtc_file_mon: await rtc_file_mon.stop()
 
-             if signalling: await signalling.stop()
-             if audio_signalling: await audio_signalling.stop()
+        # Stop Signaling Clients (WebRTC mode)
+        logger.info("Stopping signaling clients...")
+        if signalling: await signalling.stop()
+        if audio_signalling: await audio_signalling.stop()
 
-        if tasks_to_cancel:
-            logger.info(f"Cancelling {len(tasks_to_cancel)} remaining tasks...")
-            for task in tasks_to_cancel:
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
-            logger.info("Remaining tasks cancelled.")
-
+        # Stop GStreamer Pipelines (Both modes)
         if app:
             logger.info("Stopping main app pipeline...")
-            # Use helper functions for cleanup in websockets mode too
+            stop_method = None
+            # Use appropriate stop method based on mode
             if args.mode == 'websockets':
-                 if hasattr(app, 'stop_websocket_video_pipeline'):
-                     await app.stop_websocket_video_pipeline()
-                 else:
-                      logger.warning("app instance has no stop_websocket_video_pipeline method.")
-                 if hasattr(app, 'stop_websocket_audio_pipeline'):
-                     await app.stop_websocket_audio_pipeline()
-                 else:
-                      logger.warning("app instance has no stop_websocket_audio_pipeline method.")
-            elif hasattr(app, 'stop_pipeline'):
-                 await app.stop_pipeline()
-            else:
-                 logger.warning(
-                     "app instance has no stop_pipeline or stop_ws_pipeline method."
-                 )
+                 # Prefer specific websocket stop methods if they exist
+                 if hasattr(app, 'stop_websocket_video_pipeline'): stop_method = app.stop_websocket_video_pipeline
+                 elif hasattr(app, 'stop_websocket_audio_pipeline'): stop_method = app.stop_websocket_audio_pipeline
+            # Fallback to generic stop_pipeline if mode-specific not found or in webrtc mode
+            if not stop_method and hasattr(app, 'stop_pipeline'): stop_method = app.stop_pipeline
 
-        if audio_app:
+            if stop_method:
+                try:
+                    # Await if the stop method is async
+                    if asyncio.iscoroutinefunction(stop_method): await stop_method()
+                    else: stop_method()
+                except Exception as e: logger.error(f"Error stopping main app pipeline: {e}", exc_info=True)
+            else: logger.warning("Could not find a suitable stop method for the main app.")
+
+        if audio_app: # Only exists in webrtc mode
             logger.info("Stopping audio app pipeline...")
             if hasattr(audio_app, 'stop_pipeline'):
-                await audio_app.stop_pipeline()
-            else:
-                 logger.warning("audio_app instance has no stop_pipeline method.")
+                try:
+                    if asyncio.iscoroutinefunction(audio_app.stop_pipeline): await audio_app.stop_pipeline()
+                    else: audio_app.stop_pipeline()
+                except Exception as e: logger.error(f"Error stopping audio app pipeline: {e}", exc_info=True)
+            else: logger.warning("audio_app instance has no stop_pipeline method.")
 
+        # Stop WebRTCInput components (Both modes)
         if webrtc_input:
-            logger.info("Stopping WebRTCInput local resources...")
-            webrtc_input.stop_clipboard()
-            webrtc_input.stop_cursor_monitor()
-            if hasattr(webrtc_input, 'stop_js_server'):
-                 await webrtc_input.stop_js_server()
-            else:
-                 logger.warning("webrtc_input instance has no stop_js_server method.")
+            logger.info("Stopping WebRTCInput components...")
+            # Stop background monitors/servers managed by input handler
+            if hasattr(webrtc_input, 'stop_clipboard'): webrtc_input.stop_clipboard()
+            if hasattr(webrtc_input, 'stop_cursor_monitor'): webrtc_input.stop_cursor_monitor()
+            if hasattr(webrtc_input, 'stop_js_server') and asyncio.iscoroutinefunction(webrtc_input.stop_js_server):
+                 try: await webrtc_input.stop_js_server()
+                 except Exception as e: logger.error(f"Error stopping js_server: {e}")
+            # Disconnect any remaining connections
+            if hasattr(webrtc_input, 'disconnect') and asyncio.iscoroutinefunction(webrtc_input.disconnect):
+                 try: await webrtc_input.disconnect()
+                 except Exception as e: logger.error(f"Error disconnecting webrtc_input: {e}")
+            logger.info("WebRTCInput components stopped.")
 
-            if hasattr(webrtc_input, 'disconnect'):
-                 await webrtc_input.disconnect()
-            else:
-                 logger.warning("webrtc_input instance has no disconnect method.")
-            logger.info("WebRTCInput local resources stopped.")
-
-        logger.info("Stopping servers...")
-        await server.stop()
-        await data_websocket_server.stop()
+        # Stop Servers (Both modes - stop these last)
+        logger.info("Stopping main servers...")
+        if server: await server.stop()
+        if data_websocket_server: await data_websocket_server.stop()
         logger.info("Servers stopped.")
 
-        logger.info("Cleanup complete. Exiting.")
+        # Stop Metrics HTTP server if running
+        if metrics_http_task and not metrics_http_task.done(): # Should have been cancelled already
+             if hasattr(metrics, 'stop_http') and asyncio.iscoroutinefunction(metrics.stop_http):
+                 try: await metrics.stop_http()
+                 except Exception as e: logger.error(f"Error stopping metrics http server: {e}")
+
+        logger.info("Cleanup complete.")
 
 
 def entrypoint():
+    """Application entrypoint to run the main async function and handle exits."""
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Asyncio event loop stopped by KeyboardInterrupt.")
     except SystemExit as e:
         logger.info(f"Caught SystemExit({e.code}).")
-        sys.exit(e.code)
+        sys.exit(e.code) # Propagate exit code
     except Exception as e:
-        logger.error("Entrypoint caught unhandled exception: %s", e, exc_info=True)
-        sys.exit(1)
+        # Log critical errors from main that weren't handled in its own try/except
+        logger.critical("Entrypoint caught unhandled critical exception: %s", e, exc_info=True)
+        sys.exit(1) # Exit with error code
 
 
 if __name__ == "__main__":
