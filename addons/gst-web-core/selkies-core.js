@@ -390,14 +390,27 @@ let serverClipboardContent = '';
 
 let isVideoPipelineActive = true;
 let isAudioPipelineActive = true;
+let isMicrophoneActive = false;
+let isGamepadEnabled = true;
+let gamepadStates = {};
+const GAMEPAD_VIS_THRESHOLD = 0.1;
+const STICK_VIS_MULTIPLIER = 10;
 
+// Microphone related resources
+let micStream = null;
+let micAudioContext = null;
+let micSourceNode = null;
+let micWorkletNode = null;
+let preferredInputDeviceId = null;
+let preferredOutputDeviceId = null;
+let advancedAudioSettingsBtnElement;
+let audioDeviceSettingsDivElement;
+let audioInputSelectElement;
+let audioOutputSelectElement;
 let metricsIntervalId = null;
-const METRICS_INTERVAL_MS = 100;
-
-// Define the chunk size for file uploads
-const UPLOAD_CHUNK_SIZE = 1024 * 1024; // 1 MB
-
-const MAX_SIDEBAR_UPLOADS = 3; // Max uploads to show in sidebar
+const METRICS_INTERVAL_MS = 500;
+const UPLOAD_CHUNK_SIZE = (1024 * 1024) - 1;
+const MAX_SIDEBAR_UPLOADS = 3;
 let uploadProgressContainerElement;
 let activeUploads = {};
 
@@ -415,7 +428,7 @@ const appName =
   window.location.pathname.split('/')[1] || 'webrtc';
 let videoBitRate = 8000;
 let videoFramerate = 60;
-let audioBitRate = 128;
+let audioBitRate = 320000;
 let showStart = true;
 const logEntries = [];
 const debugEntries = [];
@@ -489,6 +502,8 @@ let fpsCounterDivElement;
 let audioBufferDivElement;
 let videoToggleButtonElement;
 let audioToggleButtonElement;
+let gamepadToggleButtonElement;
+let micToggleButtonElement;
 
 
 const getIntParam = (key, default_value) => {
@@ -540,6 +555,11 @@ const enterFullscreen = () => {
     'enterFullscreen' in webrtc.input
   ) {
     webrtc.input.enterFullscreen();
+  } else if (
+    clientMode === 'websockets' &&
+    'webrtcInput' in window
+  ) {
+    window.webrtcInput.enterFullscreen();
   }
 };
 
@@ -647,13 +667,9 @@ body {
   height: 100vh;
   width: 100%;
 }
-
-/* DEV MODE LAYOUT */
 #app.dev-mode {
   flex-direction: row;
 }
-
-/* Container for video, canvas, input, etc. */
 .video-container {
   flex-grow: 1;
   flex-shrink: 1;
@@ -666,8 +682,6 @@ body {
   position: relative;
   overflow: hidden;
 }
-
-/* Ensure video, canvas, input take 100% of their container */
 .video-container video,
 .video-container canvas,
 .video-container #overlayInput {
@@ -677,22 +691,16 @@ body {
     width: 100%;
     height: 100%;
 }
-
-/* Specific video rules */
 .video-container video {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
 }
-
-/* Canvas is typically drawn over the video */
 .video-container #videoCanvas {
     z-index: 2;
     pointer-events: none;
     display: block;
 }
-
-/* Overlay input for capturing events */
 .video-container #overlayInput {
     opacity: 0;
     z-index: 3;
@@ -706,8 +714,6 @@ body {
     padding: 0;
     margin: 0;
 }
-
-/* Absolute positioning for spinner and play button within video-container */
 .video-container .spinner-container,
 .video-container #playButton {
   position: absolute;
@@ -716,16 +722,37 @@ body {
   transform: translate(-50%, -50%);
   z-index: 10;
 }
-
+:root {
+  --spinner-size: 2rem;
+  --spinner-thickness: 0.25rem;
+  --spinner-color: #ffc000;
+  --spinner-track-color: rgba(255, 192, 0, 0.2);
+  --spinner-speed: 1s;
+  --spinner-bg-color: #fff;
+}
 .spinner-container {
-  width: 2rem;
-  height: 2rem;
-  border: 0.25rem solid #ffc000;
-  border-bottom: 0.25rem solid rgba(255,255,255,0);
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+  position: relative;
   border-radius: 50%;
-  -webkit-animation: spin 1s linear infinite;
-  animation: spin 1s linear infinite;
-  background-color: #000;
+  background: conic-gradient(
+    var(--spinner-track-color) 0deg,
+    var(--spinner-color) 90deg,
+    var(--spinner-color) 360deg
+  );
+  -webkit-animation: spin var(--spinner-speed) linear infinite;
+  animation: spin var(--spinner-speed) linear infinite;
+}
+.spinner-container::before {
+  content: '';
+  position: absolute;
+  /* Center the inner circle */
+  top: var(--spinner-thickness);
+  left: var(--spinner-thickness);
+  right: var(--spinner-thickness);
+  bottom: var(--spinner-thickness);
+  border-radius: 50%;
+  background-color: var(--spinner-bg-color);
 }
 .spinner--hidden {
   display: none;
@@ -742,12 +769,9 @@ body {
     transform: rotate(360deg);
   }
 }
-
 .hidden {
   display: none !important;
 }
-
-/* Status bar positioning */
 .video-container .status-bar {
   position: absolute;
   bottom: 0;
@@ -759,7 +783,6 @@ body {
   text-align: center;
   z-index: 5;
 }
-
 #playButton {
   padding: 15px 30px;
   font-size: 1.5em;
@@ -770,13 +793,9 @@ body {
   border-radius: 3px;
   backdrop-filter: blur(5px);
 }
-
-/* DEV SIDEBAR STYLES */
 #dev-sidebar {
-  /* Default: hidden in non-dev mode */
   display: none;
 }
-
 #app.dev-mode #dev-sidebar {
   display: flex;
   flex-direction: column;
@@ -790,7 +809,6 @@ body {
   overflow-y: auto;
   gap: 10px; /* Add gap between items */
 }
-
 #dev-sidebar button {
     margin-bottom: 10px;
     padding: 8px;
@@ -801,26 +819,25 @@ body {
     border-radius: 3px;
     width: 100%;
     box-sizing: border-box;
-    transition: background-color 0.2s ease; /* Smooth transition */
+    transition: background-color 0.2s ease;
 }
 #dev-sidebar button:hover {
     background-color: #555;
 }
 #dev-sidebar button.toggle-button.active {
-    background-color: #3a8d3a; /* Green for active */
+    background-color: #3a8d3a;
     border-color: #5cb85c;
 }
 #dev-sidebar button.toggle-button.active:hover {
     background-color: #4cae4c;
 }
 #dev-sidebar button.toggle-button.inactive {
-    background-color: #c9302c; /* Red for inactive */
+    background-color: #c9302c;
     border-color: #d43f3a;
 }
 #dev-sidebar button.toggle-button.inactive:hover {
     background-color: #d9534f;
 }
-
 .dev-setting-item {
     display: flex;
     flex-direction: column;
@@ -832,7 +849,6 @@ body {
     font-size: 0.9em;
     color: #bbb;
 }
-
 .dev-setting-item select {
     padding: 5px;
     background-color: #333;
@@ -843,7 +859,14 @@ body {
     width: 100%;
     box-sizing: border-box;
 }
-
+#audio-device-settings {
+    border-top: 1px solid #555;
+    padding-top: 10px;
+    margin-top: 10px;
+}
+#audio-device-settings label {
+    margin-top: 8px;
+}
 .dev-stats-item {
     display: flex;
     flex-direction: column;
@@ -856,26 +879,22 @@ body {
     white-space: pre-wrap;
     word-break: break-all;
 }
-
 .dev-stats-item label {
     margin-bottom: 5px;
     font-size: 0.9em;
     color: #bbb;
     font-family: sans-serif;
 }
-
 .dev-clipboard-item {
     display: flex;
     flex-direction: column;
     margin-bottom: 10px;
 }
-
 .dev-clipboard-item label {
     margin-bottom: 5px;
     font-size: 0.9em;
     color: #bbb;
 }
-
 .dev-clipboard-item textarea {
     padding: 5px;
     background-color: #333;
@@ -889,7 +908,6 @@ body {
     resize: vertical; /* Allow vertical resize */
     font-family: monospace; /* Use monospace for text content */
 }
-
 #upload-progress-container {
     display: flex;
     flex-direction: column;
@@ -942,6 +960,23 @@ body {
 .upload-progress-item.error .file-name {
     color: #ff8a8a; /* Lighter red for error text */
 }
+#gamepad-visualization-container {
+    border-top: 1px solid #555;
+    padding-top: 10px;
+    margin-top: 10px;
+}
+#gamepad-visualization-container label {
+    margin-bottom: 5px;
+    font-size: 0.9em;
+    color: #bbb;
+    display: block; /* Ensure label is on its own line */
+}
+#gamepad-svg-vis {
+    background-color: #222; /* Dark background for the SVG area */
+    border-radius: 3px;
+    display: block; /* Prevent extra space below */
+    margin-top: 10px; /* <<< ADDED THIS LINE for padding */
+}
   `;
   document.head.appendChild(style);
 
@@ -949,12 +984,17 @@ body {
 
 function updateToggleButtonAppearance(buttonElement, isActive) {
     if (!buttonElement) return;
+    let label = 'Unknown';
+    if (buttonElement.id === 'videoToggleBtn') label = 'Video';
+    else if (buttonElement.id === 'audioToggleBtn') label = 'Audio';
+    else if (buttonElement.id === 'micToggleBtn') label = 'Microphone';
+    else if (buttonElement.id === 'gamepadToggleBtn') label = 'Gamepad'; 
     if (isActive) {
-        buttonElement.textContent = buttonElement.id === 'videoToggleBtn' ? 'Video: ON' : 'Audio: ON';
+        buttonElement.textContent = `${label}: ON`;
         buttonElement.classList.remove('inactive');
         buttonElement.classList.add('active');
     } else {
-        buttonElement.textContent = buttonElement.id === 'videoToggleBtn' ? 'Video: OFF' : 'Audio: OFF';
+        buttonElement.textContent = `${label}: OFF`;
         buttonElement.classList.remove('active');
         buttonElement.classList.add('inactive');
     }
@@ -962,9 +1002,8 @@ function updateToggleButtonAppearance(buttonElement, isActive) {
 
 const initializeUI = () => {
   injectCSS();
-
   document.title = `Selkies - ${appName}`;
-
+  window.addEventListener('requestFileUpload', handleRequestFileUpload);
   const appDiv = document.getElementById('app');
   if (!appDiv) {
       console.error("FATAL: Could not find #app element.");
@@ -973,23 +1012,19 @@ const initializeUI = () => {
   if (dev_mode) {
       appDiv.classList.add('dev-mode');
   }
-
   const videoContainer = document.createElement('div');
   videoContainer.className = 'video-container';
-
   statusDisplayElement = document.createElement('div');
   statusDisplayElement.id = 'status-display';
   statusDisplayElement.className = 'status-bar';
   statusDisplayElement.textContent = 'Connecting...';
   statusDisplayElement.classList.toggle('hidden', !showStart);
   videoContainer.appendChild(statusDisplayElement);
-
   overlayInput = document.createElement('input');
   overlayInput.type = 'text';
   overlayInput.readOnly = true;
   overlayInput.id = 'overlayInput';
   videoContainer.appendChild(overlayInput);
-
   videoElement = document.createElement('video');
   videoElement.id = 'stream';
   videoElement.className = 'video';
@@ -997,7 +1032,6 @@ const initializeUI = () => {
   videoElement.playsInline = true;
   videoElement.contentEditable = 'true';
   videoContainer.appendChild(videoElement);
-
   canvas = document.getElementById('videoCanvas');
   if (!canvas) {
     canvas = document.createElement('canvas');
@@ -1008,37 +1042,37 @@ const initializeUI = () => {
   if (!canvasContext) {
     console.error('Failed to get 2D rendering context');
   }
-
   audioElement = document.createElement('audio');
   audioElement.id = 'audio_stream';
   audioElement.style.display = 'none';
   audioElement.autoplay = true;
   audioElement.playsInline = true;
   videoContainer.appendChild(audioElement);
-
   spinnerElement = document.createElement('div');
   spinnerElement.id = 'spinner';
   spinnerElement.className = 'spinner-container';
   spinnerElement.classList.toggle('hidden', showStart);
   videoContainer.appendChild(spinnerElement);
-
   playButtonElement = document.createElement('button');
   playButtonElement.id = 'playButton';
   playButtonElement.textContent = 'Play Stream';
   playButtonElement.classList.toggle('hidden', !showStart);
   videoContainer.appendChild(playButtonElement);
-
   const sidebarDiv = document.createElement('div');
   sidebarDiv.id = 'dev-sidebar';
-
+  const hiddenFileInput = document.createElement('input');
+  hiddenFileInput.type = 'file';
+  hiddenFileInput.id = 'globalFileInput';
+  hiddenFileInput.multiple = true;
+  hiddenFileInput.style.display = 'none';
+  document.body.appendChild(hiddenFileInput);
+  hiddenFileInput.addEventListener('change', handleFileInputChange);
   if (dev_mode) {
-    // --- Existing Sidebar Elements ---
     videoToggleButtonElement = document.createElement('button');
     videoToggleButtonElement.id = 'videoToggleBtn';
     videoToggleButtonElement.className = 'toggle-button';
     updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
     sidebarDiv.appendChild(videoToggleButtonElement);
-
     videoToggleButtonElement.addEventListener('click', () => {
         if (clientMode !== 'websockets') return;
         if (websocket && websocket.readyState === WebSocket.OPEN) {
@@ -1053,13 +1087,11 @@ const initializeUI = () => {
             console.warn('Websocket not open, cannot send video toggle command.');
         }
     });
-
     audioToggleButtonElement = document.createElement('button');
     audioToggleButtonElement.id = 'audioToggleBtn';
     audioToggleButtonElement.className = 'toggle-button';
     updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
     sidebarDiv.appendChild(audioToggleButtonElement);
-
     audioToggleButtonElement.addEventListener('click', () => {
         if (clientMode !== 'websockets') return;
         if (websocket && websocket.readyState === WebSocket.OPEN) {
@@ -1074,67 +1106,167 @@ const initializeUI = () => {
             console.warn('Websocket not open, cannot send audio toggle command.');
         }
     });
-
-
+    micToggleButtonElement = document.createElement('button');
+    micToggleButtonElement.id = 'micToggleBtn';
+    micToggleButtonElement.className = 'toggle-button';
+    updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+    sidebarDiv.appendChild(micToggleButtonElement);
+    micToggleButtonElement.addEventListener('click', () => {
+        const newState = !isMicrophoneActive;
+        console.log(`Dev Sidebar: Toggling microphone ${newState ? 'ON' : 'OFF'}. Sending via window.postMessage.`);
+        window.postMessage({ type: 'pipelineControl', pipeline: 'microphone', enabled: newState }, window.location.origin);
+    });
+    const fullscreenButton = document.createElement('button');
+    fullscreenButton.id = 'fullscreenBtn';
+    fullscreenButton.textContent = 'Enter Fullscreen';
+    sidebarDiv.appendChild(fullscreenButton);
+    fullscreenButton.addEventListener('click', () => {
+        console.log('Dev Sidebar: Fullscreen button clicked. Posting message.');
+        window.postMessage({ type: 'requestFullscreen' }, window.location.origin);
+    });
+    gamepadToggleButtonElement = document.createElement('button');
+    gamepadToggleButtonElement.id = 'gamepadToggleBtn';
+    gamepadToggleButtonElement.className = 'toggle-button';
+    sidebarDiv.appendChild(gamepadToggleButtonElement);
+    const gamepadVisContainer = document.createElement('div');
+    gamepadVisContainer.id = 'gamepad-visualization-container';
+    gamepadVisContainer.className = 'dev-setting-item';
+    const gamepadVisLabel = document.createElement('label');
+    gamepadVisLabel.textContent = 'Gamepad 0 Input:';
+    gamepadVisContainer.appendChild(gamepadVisLabel);
+    const gamepadSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    gamepadSVG.setAttribute('viewBox', '0 0 260 100');
+    gamepadSVG.setAttribute('width', '100%');
+    gamepadSVG.setAttribute('height', '100');
+    gamepadSVG.id = 'gamepad-svg-vis';
+    gamepadSVG.innerHTML = `
+        <style>
+            .gp-vis-base { fill: #555; stroke: #888; stroke-width: 0.5; }
+            .gp-vis-button { fill: #8ecae6; stroke: #a1d8f0; stroke-width: 0.5; transition: fill 0.05s linear; }
+            .gp-vis-stick-base { fill: #2a527a; }
+            .gp-vis-stick-top { fill: #6699cc; stroke: #8cb3d9; stroke-width: 0.5; transition: transform 0.05s linear; }
+            .gp-vis-dpad { fill: #8ecae6; stroke: #a1d8f0; stroke-width: 0.5; transition: fill 0.05s linear; }
+            .gp-vis-trigger {
+                fill: #8ecae6;
+                stroke: #a1d8f0;
+                stroke-width: 0.5;
+                transition: opacity 0.05s linear;
+            }
+            .gp-vis-bumper { fill: #8ecae6; stroke: #a1d8f0; stroke-width: 0.5; transition: fill 0.05s linear; }
+            .gp-vis-button-pressed,
+            .gp-vis-dpad-pressed,
+            .gp-vis-bumper-pressed {
+                fill: #4a90e2;
+            }
+        </style>
+        <!-- Base Rectangle -->
+        <rect class="gp-vis-base" x="30" y="10" width="200" height="80" rx="10" ry="10" />
+        <!-- Bumpers -->
+        <rect id="gp-vis-btn-4" class="gp-vis-bumper" x="40" y="0" width="40" height="8" rx="2" />
+        <rect id="gp-vis-btn-5" class="gp-vis-bumper" x="180" y="0" width="40" height="8" rx="2" />
+        <!-- Triggers -->
+        <rect id="gp-vis-btn-6" class="gp-vis-trigger" x="40" y="10" width="40" height="10" rx="2" />
+        <rect id="gp-vis-btn-7" class="gp-vis-trigger" x="180" y="10" width="40" height="10" rx="2" />
+        <!-- Face Buttons -->
+        <circle id="gp-vis-btn-0" class="gp-vis-button" cx="185" cy="55" r="6" /> <!-- A -->
+        <circle id="gp-vis-btn-1" class="gp-vis-button" cx="205" cy="40" r="6" /> <!-- B -->
+        <circle id="gp-vis-btn-2" class="gp-vis-button" cx="165" cy="40" r="6" /> <!-- X -->
+        <circle id="gp-vis-btn-3" class="gp-vis-button" cx="185" cy="25" r="6" /> <!-- Y -->
+        <!-- Special Buttons -->
+        <rect id="gp-vis-btn-8" class="gp-vis-button" x="105" y="25" width="10" height="5" /> <!-- Back -->
+        <rect id="gp-vis-btn-9" class="gp-vis-button" x="145" y="25" width="10" height="5" /> <!-- Start -->
+        <!-- D-Pad -->
+        <rect id="gp-vis-btn-12" class="gp-vis-dpad" x="70" y="50" width="10" height="10" /> <!-- Up -->
+        <rect id="gp-vis-btn-13" class="gp-vis-dpad" x="70" y="70" width="10" height="10" /> <!-- Down -->
+        <rect id="gp-vis-btn-14" class="gp-vis-dpad" x="60" y="60" width="10" height="10" /> <!-- Left -->
+        <rect id="gp-vis-btn-15" class="gp-vis-dpad" x="80" y="60" width="10" height="10" /> <!-- Right -->
+        <!-- Sticks -->
+        <circle class="gp-vis-stick-base" cx="75" cy="30" r="12" />
+        <circle id="gp-vis-stick-left" class="gp-vis-stick-top" cx="75" cy="30" r="8" />
+        <circle id="gp-vis-btn-10" class="gp-vis-button" cx="75" cy="30" r="3" /> <!-- Left Stick Press -->
+        <circle class="gp-vis-stick-base" cx="155" cy="65" r="12" />
+        <circle id="gp-vis-stick-right" class="gp-vis-stick-top" cx="155" cy="65" r="8" />
+        <circle id="gp-vis-btn-11" class="gp-vis-button" cx="155" cy="65" r="3" /> <!-- Right Stick Press -->
+    `;
+    gamepadVisContainer.appendChild(gamepadSVG);
+    sidebarDiv.appendChild(gamepadVisContainer);
+    gamepadToggleButtonElement.addEventListener('click', () => {
+        const newState = !isGamepadEnabled;
+        console.log(`Dev Sidebar: Toggling gamepad ${newState ? 'ON' : 'OFF'}. Sending via window.postMessage.`);
+        window.postMessage({ type: 'gamepadControl', enabled: newState }, window.location.origin);
+    });
+    advancedAudioSettingsBtnElement = document.createElement('button');
+    advancedAudioSettingsBtnElement.id = 'advancedAudioSettingsBtn';
+    advancedAudioSettingsBtnElement.textContent = 'Advanced Audio Settings';
+    sidebarDiv.appendChild(advancedAudioSettingsBtnElement);
+    advancedAudioSettingsBtnElement.addEventListener('click', handleAdvancedAudioClick);
+    audioDeviceSettingsDivElement = document.createElement('div');
+    audioDeviceSettingsDivElement.id = 'audio-device-settings';
+    audioDeviceSettingsDivElement.className = 'dev-setting-item hidden';
+    sidebarDiv.appendChild(audioDeviceSettingsDivElement);
+    const inputDeviceLabel = document.createElement('label');
+    inputDeviceLabel.textContent = 'Audio Input (Microphone):';
+    inputDeviceLabel.htmlFor = 'audioInputSelect';
+    audioDeviceSettingsDivElement.appendChild(inputDeviceLabel);
+    audioInputSelectElement = document.createElement('select');
+    audioInputSelectElement.id = 'audioInputSelect';
+    audioDeviceSettingsDivElement.appendChild(audioInputSelectElement);
+    audioInputSelectElement.addEventListener('change', handleAudioDeviceChange);
+    const outputDeviceLabel = document.createElement('label');
+    outputDeviceLabel.textContent = 'Audio Output (Speaker):';
+    outputDeviceLabel.htmlFor = 'audioOutputSelect';
+    outputDeviceLabel.id = 'audioOutputLabel';
+    audioDeviceSettingsDivElement.appendChild(outputDeviceLabel);
+    audioOutputSelectElement = document.createElement('select');
+    audioOutputSelectElement.id = 'audioOutputSelect';
+    audioDeviceSettingsDivElement.appendChild(audioOutputSelectElement);
+    audioOutputSelectElement.addEventListener('change', handleAudioDeviceChange);
     const encoderContainer = document.createElement('div');
     encoderContainer.className = 'dev-setting-item';
-
     const encoderLabel = document.createElement('label');
     encoderLabel.textContent = 'Encoder:';
     encoderLabel.htmlFor = 'encoderSelect';
     encoderContainer.appendChild(encoderLabel);
-
     encoderSelectElement = document.createElement('select');
     encoderSelectElement.id = 'encoderSelect';
-
     const encoders = [
         'x264enc',
         'nvh264enc',
         'vah264enc',
         'openh264enc'
     ];
-
     encoders.forEach(encoder => {
         const option = document.createElement('option');
         option.value = encoder;
         option.textContent = encoder;
         encoderSelectElement.appendChild(option);
     });
-
     encoderContainer.appendChild(encoderSelectElement);
     sidebarDiv.appendChild(encoderContainer);
-
     encoderSelectElement.addEventListener('change', (event) => {
         const selectedEncoder = event.target.value;
         console.log(`Dev Sidebar: Encoder selected: ${selectedEncoder}. Sending via window.postMessage.`);
         window.postMessage({ type: 'settings', settings: { encoder: selectedEncoder } }, window.location.origin);
     });
-
     const framerateContainer = document.createElement('div');
     framerateContainer.className = 'dev-setting-item';
-
     const framerateLabel = document.createElement('label');
     framerateLabel.textContent = 'Frames per second:';
     framerateLabel.htmlFor = 'framerateSelect';
     framerateContainer.appendChild(framerateLabel);
-
     framerateSelectElement = document.createElement('select');
     framerateSelectElement.id = 'framerateSelect';
-
     const framerates = [
         8, 12, 15, 24, 25, 30, 48, 50, 60, 90, 100, 120, 144
     ];
-
     framerates.forEach(rate => {
         const option = document.createElement('option');
         option.value = rate.toString();
         option.textContent = `${rate} FPS`;
         framerateSelectElement.appendChild(option);
     });
-
     framerateContainer.appendChild(framerateSelectElement);
     sidebarDiv.appendChild(framerateContainer);
-
     framerateSelectElement.addEventListener('change', (event) => {
         const selectedFramerate = parseInt(event.target.value, 10);
         if (!isNaN(selectedFramerate)) {
@@ -1142,34 +1274,27 @@ const initializeUI = () => {
             window.postMessage({ type: 'settings', settings: { videoFramerate: selectedFramerate } }, window.location.origin);
         }
     });
-
     const bitrateContainer = document.createElement('div');
     bitrateContainer.className = 'dev-setting-item';
-
     const bitrateLabel = document.createElement('label');
     bitrateLabel.textContent = 'Video Bitrate (KBs):';
     bitrateLabel.htmlFor = 'videoBitrateSelect';
     bitrateContainer.appendChild(bitrateLabel);
-
     videoBitrateSelectElement = document.createElement('select');
     videoBitrateSelectElement.id = 'videoBitrateSelect';
-
     const bitrates = [
         1000, 2000, 4000, 8000, 10000, 12000, 14000, 16000, 18000, 20000,
         25000, 30000, 35000, 40000, 45000, 50000,
         60000, 70000, 80000, 90000, 100000
     ];
-
     bitrates.forEach(bitrate => {
         const option = document.createElement('option');
         option.value = bitrate.toString();
         option.textContent = `${bitrate} KBs`;
         videoBitrateSelectElement.appendChild(option);
     });
-
     bitrateContainer.appendChild(videoBitrateSelectElement);
     sidebarDiv.appendChild(bitrateContainer);
-
     videoBitrateSelectElement.addEventListener('change', (event) => {
         const selectedBitrate = parseInt(event.target.value, 10);
         if (!isNaN(selectedBitrate)) {
@@ -1177,32 +1302,25 @@ const initializeUI = () => {
             window.postMessage({ type: 'settings', settings: { videoBitRate: selectedBitrate } }, window.location.origin);
         }
     });
-
     const audioBitrateContainer = document.createElement('div');
     audioBitrateContainer.className = 'dev-setting-item';
-
     const audioBitrateLabel = document.createElement('label');
     audioBitrateLabel.textContent = 'Audio Bitrate (kbit/s):';
     audioBitrateLabel.htmlFor = 'audioBitrateSelect';
     audioBitrateContainer.appendChild(audioBitrateLabel);
-
     audioBitrateSelectElement = document.createElement('select');
     audioBitrateSelectElement.id = 'audioBitrateSelect';
-
     const audioBitrates = [
         32000, 64000, 96000, 128000, 192000, 256000, 320000, 512000
     ];
-
     audioBitrates.forEach(bitrate => {
         const option = document.createElement('option');
         option.value = bitrate.toString();
         option.textContent = `${bitrate} kbit/s`;
         audioBitrateSelectElement.appendChild(option);
     });
-
     audioBitrateContainer.appendChild(audioBitrateSelectElement);
     sidebarDiv.appendChild(audioBitrateContainer);
-
     audioBitrateSelectElement.addEventListener('change', (event) => {
         const selectedBitrate = parseInt(event.target.value, 10);
         if (!isNaN(selectedBitrate)) {
@@ -1210,28 +1328,22 @@ const initializeUI = () => {
             window.postMessage({ type: 'settings', settings: { audioBitRate: selectedBitrate } }, window.location.origin);
         }
     });
-
     const videoBufferContainer = document.createElement('div');
     videoBufferContainer.className = 'dev-setting-item';
-
     const videoBufferLabel = document.createElement('label');
     videoBufferLabel.textContent = 'Video Buffer Size (frames):';
     videoBufferLabel.htmlFor = 'videoBufferSelect';
     videoBufferContainer.appendChild(videoBufferLabel);
-
     videoBufferSelectElement = document.createElement('select');
     videoBufferSelectElement.id = 'videoBufferSelect';
-
     for (let i = 0; i <= 15; i++) {
         const option = document.createElement('option');
         option.value = i.toString();
         option.textContent = i === 0 ? '0 (Immediate)' : `${i} frames`;
         videoBufferSelectElement.appendChild(option);
     }
-
     videoBufferContainer.appendChild(videoBufferSelectElement);
     sidebarDiv.appendChild(videoBufferContainer);
-
     videoBufferSelectElement.addEventListener('change', (event) => {
         const selectedSize = parseInt(event.target.value, 10);
         if (!isNaN(selectedSize)) {
@@ -1240,90 +1352,78 @@ const initializeUI = () => {
             console.log(`Dev Sidebar: Video buffer size set to ${videoBufferSize} frames via UI`);
         }
     });
-
     const clipboardContainer = document.createElement('div');
     clipboardContainer.className = 'dev-clipboard-item';
-
     const clipboardLabel = document.createElement('label');
     clipboardLabel.textContent = 'Server Clipboard:';
     clipboardLabel.htmlFor = 'serverClipboardTextarea';
     clipboardContainer.appendChild(clipboardLabel);
-
     serverClipboardTextareaElement = document.createElement('textarea');
     serverClipboardTextareaElement.id = 'serverClipboardTextarea';
     serverClipboardTextareaElement.value = serverClipboardContent;
-
     serverClipboardTextareaElement.addEventListener('blur', (event) => {
         const newClipboardText = event.target.value;
         console.log(`Dev Sidebar: Clipboard text changed (blur). Sending via window.postMessage.`);
         window.postMessage({ type: 'clipboardUpdateFromUI', text: newClipboardText }, window.location.origin);
     });
-
     clipboardContainer.appendChild(serverClipboardTextareaElement);
     sidebarDiv.appendChild(clipboardContainer);
-
     const systemStatsLabel = document.createElement('label');
     systemStatsLabel.textContent = 'System Stats:';
     sidebarDiv.appendChild(systemStatsLabel);
-
     systemStatsDivElement = document.createElement('div');
     systemStatsDivElement.id = 'system-stats-div';
     systemStatsDivElement.className = 'dev-stats-item';
     systemStatsDivElement.textContent = 'Waiting for data...';
     sidebarDiv.appendChild(systemStatsDivElement);
-
     const gpuStatsLabel = document.createElement('label');
     gpuStatsLabel.textContent = 'GPU Stats:';
     sidebarDiv.appendChild(gpuStatsLabel);
-
     gpuStatsDivElement = document.createElement('div');
     gpuStatsDivElement.id = 'gpu-stats-div';
     gpuStatsDivElement.className = 'dev-stats-item';
     gpuStatsDivElement.textContent = 'Waiting for data...';
     sidebarDiv.appendChild(gpuStatsDivElement);
-
     const fpsLabel = document.createElement('label');
     fpsLabel.textContent = 'Client FPS:';
     sidebarDiv.appendChild(fpsLabel);
-
     fpsCounterDivElement = document.createElement('div');
     fpsCounterDivElement.id = 'fps-counter-div';
     fpsCounterDivElement.className = 'dev-stats-item';
     fpsCounterDivElement.textContent = `FPS: ${window.fps}`;
     sidebarDiv.appendChild(fpsCounterDivElement);
-
     const audioBufferLabel = document.createElement('label');
     audioBufferLabel.textContent = 'Audio Buffer Size (buffers):';
     sidebarDiv.appendChild(audioBufferLabel);
-
     audioBufferDivElement = document.createElement('div');
     audioBufferDivElement.id = 'audio-buffer-div';
     audioBufferDivElement.className = 'dev-stats-item';
     audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize}`;
     sidebarDiv.appendChild(audioBufferDivElement);
-
     const videoBufferDisplayLabel = document.createElement('label');
     videoBufferDisplayLabel.textContent = 'Video Buffer Size (current):';
     sidebarDiv.appendChild(videoBufferDisplayLabel);
-
     videoBufferDivElement = document.createElement('div');
     videoBufferDivElement.id = 'video-buffer-div';
     videoBufferDivElement.className = 'dev-stats-item';
     videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
     sidebarDiv.appendChild(videoBufferDivElement);
-
     uploadProgressContainerElement = document.createElement('div');
     uploadProgressContainerElement.id = 'upload-progress-container';
     sidebarDiv.appendChild(uploadProgressContainerElement);
-
-  } // End of if(dev_mode)
-
+    const uploadButton = document.createElement('button');
+    uploadButton.id = 'devUploadButton';
+    uploadButton.textContent = 'Upload File(s)';
+    uploadButton.addEventListener('click', () => {
+        console.log("Dev sidebar upload button clicked, dispatching requestFileUpload event.");
+        window.dispatchEvent(new CustomEvent('requestFileUpload'));
+    });
+    sidebarDiv.appendChild(uploadButton);
+  }
   appDiv.appendChild(videoContainer);
-
   if (dev_mode) {
     appDiv.appendChild(sidebarDiv);
   }
-
   videoBitRate = getIntParam('videoBitRate', videoBitRate);
   videoFramerate = getIntParam('videoFramerate', videoFramerate);
   audioBitRate = getIntParam('audioBitRate', audioBitRate);
@@ -1332,14 +1432,11 @@ const initializeUI = () => {
   debug = getBoolParam('debug', debug);
   turnSwitch = getBoolParam('turnSwitch', turnSwitch);
   videoBufferSize = getIntParam('videoBufferSize', 0);
-
   videoElement.classList.toggle('scale', scaleLocal);
-
   updateStatusDisplay();
   updateLogOutput();
   updateDebugOutput();
   updatePublishingErrorDisplay();
-
   playButtonElement.addEventListener('click', playStream);
   if (clientMode === 'websockets') {
     playButtonElement.classList.add('hidden');
@@ -1348,6 +1445,139 @@ const initializeUI = () => {
   }
 };
 
+async function handleAdvancedAudioClick() {
+    console.log("Advanced Audio Settings button clicked.");
+    if (!audioDeviceSettingsDivElement || !audioInputSelectElement || !audioOutputSelectElement) {
+        console.error("Audio device UI elements not found in dev sidebar.");
+        return;
+    }
+    // Check if the settings are currently hidden
+    const isHidden = audioDeviceSettingsDivElement.classList.contains('hidden');
+    if (isHidden) {
+        console.log("Settings are hidden, attempting to show and populate...");
+        // Check for setSinkId support for output selection
+        const supportsSinkId = typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
+        const outputLabel = document.getElementById('audioOutputLabel');
+        if (!supportsSinkId) {
+            console.warn('Browser does not support selecting audio output device (setSinkId). Hiding output selection.');
+            if (outputLabel) outputLabel.classList.add('hidden');
+            audioOutputSelectElement.classList.add('hidden');
+            return;
+        } else {
+            if (outputLabel) outputLabel.classList.remove('hidden');
+            audioOutputSelectElement.classList.remove('hidden');
+        }
+        try {
+            // Request temporary microphone permission to get device labels
+            console.log("Requesting microphone permission for device listing...");
+            const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            tempStream.getTracks().forEach(track => track.stop());
+            console.log("Microphone permission granted or already available (temporary stream stopped).");
+            console.log("Enumerating media devices...");
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            console.log("Devices found:", devices);
+            // Clear existing options
+            audioInputSelectElement.innerHTML = '';
+            audioOutputSelectElement.innerHTML = '';
+            // Populate dropdowns
+            let inputCount = 0;
+            let outputCount = 0;
+            devices.forEach(device => {
+                if (device.kind === 'audioinput') {
+                    inputCount++;
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `Microphone ${inputCount}`;
+                    audioInputSelectElement.appendChild(option);
+                } else if (device.kind === 'audiooutput' && supportsSinkId) {
+                    outputCount++;
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `Speaker ${outputCount}`;
+                    audioOutputSelectElement.appendChild(option);
+                }
+            });
+
+            console.log(`Populated ${inputCount} input devices and ${outputCount} output devices.`);
+            // Make the container visible
+            audioDeviceSettingsDivElement.classList.remove('hidden');
+
+        } catch (err) {
+            console.error('Error getting media devices or permissions:', err);
+            // Keep it hidden and inform the user
+            audioDeviceSettingsDivElement.classList.add('hidden');
+            alert(`Could not list audio devices. Please ensure microphone permissions are granted.\nError: ${err.message || err.name}`);
+        }
+    } else {
+        console.log("Settings are visible, hiding...");
+        audioDeviceSettingsDivElement.classList.add('hidden');
+    }
+}
+
+function handleAudioDeviceChange(event) {
+    const selectedDeviceId = event.target.value;
+    const isInput = event.target.id === 'audioInputSelect';
+    const contextType = isInput ? 'input' : 'output';
+    console.log(`Dev Sidebar: Audio device selected - Type: ${contextType}, ID: ${selectedDeviceId}. Posting message...`);
+    window.postMessage({
+        type: 'audioDeviceSelected',
+        context: contextType,
+        deviceId: selectedDeviceId
+    }, window.location.origin);
+}
+
+function handleRequestFileUpload() {
+    const hiddenInput = document.getElementById('globalFileInput');
+    if (!hiddenInput) {
+        console.error("Global file input not found!");
+        return;
+    }
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+        console.warn("WebSocket is not open. File upload cannot be initiated.");
+        return;
+    }
+    console.log("Triggering click on hidden file input.");
+    hiddenInput.click();
+}
+
+async function handleFileInputChange(event) {
+    const files = event.target.files;
+    if (!files || files.length === 0) {
+        // Clear the input value in case the user cancels
+        event.target.value = null;
+        return;
+    }
+
+    console.log(`File input changed, processing ${files.length} files sequentially.`);
+
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+         console.error("WebSocket is not open. Cannot upload selected files.");
+         // Maybe post an error message?
+         window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: "WebSocket not open for upload." } }, window.location.origin);
+         event.target.value = null; 
+         return;
+    }
+
+    try {
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const pathToSend = file.name;
+            console.log(`Uploading file ${i + 1}/${files.length}: ${pathToSend}`);
+            // Await the upload of each file before starting the next
+            await uploadFileObject(file, pathToSend);
+        }
+        console.log("Finished processing all files from input.");
+    } catch (error) {
+        const errorMsg = `An error occurred during the file input upload process: ${error.message || error}`;
+        console.error(errorMsg);
+         window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: errorMsg } }, window.location.origin);
+         if (websocket && websocket.readyState === WebSocket.OPEN) {
+              try { websocket.send(`FILE_UPLOAD_ERROR:GENERAL:File input processing failed`); } catch (_) {}
+         }
+    } finally {
+         event.target.value = null;
+    }
+}
 
 const startStream = () => {
   if (streamStarted) return;
@@ -1416,8 +1646,18 @@ const initializeInput = () => {
 
 
   inputInstance.ongamepadconnected = (gamepad_id) => {
+    // Update global state for display/stats
     gamepad.gamepadState = 'connected';
     gamepad.gamepadName = gamepad_id;
+
+    // Enforce the current desired enable/disable state on the newly created manager instance
+    if (window.webrtcInput && window.webrtcInput.gamepadManager) {
+        if (!isGamepadEnabled) {
+            window.webrtcInput.gamepadManager.disable();
+        }
+    } else {
+        console.error("Gamepad connected callback fired, but gamepadManager instance not found on webrtcInput.");
+    }
   };
 
   inputInstance.ongamepaddisconnected = () => {
@@ -1429,11 +1669,6 @@ const initializeInput = () => {
   const handleResizeUI = () => {
     const windowResolution = inputInstance.getWindowResolution();
     const newRes = `${windowResolution[0]}x${windowResolution[1]}`;
-
-    if (canvas) {
-      // Existing canvas resize logic would go here if needed, but it's handled in paintVideoFrame
-    }
-
     if (clientMode === 'webrtc') {
       webrtcSendInput(`r,${newRes}`);
       webrtcSendInput(`s,${window.devicePixelRatio}`);
@@ -1461,6 +1696,59 @@ const initializeInput = () => {
 
   window.webrtcInput = inputInstance;
 };
+
+/**
+ * Attempts to apply the preferredOutputDeviceId to the playback audio context
+ * and the audio element.
+ */
+async function applyOutputDevice() {
+    if (!preferredOutputDeviceId) {
+        console.log("No preferred output device set, using default.");
+        return;
+    }
+
+    const supportsSinkId = (typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype) ||
+                           (audioElement && typeof audioElement.setSinkId === 'function');
+
+    if (!supportsSinkId) {
+        console.warn("Browser does not support setSinkId, cannot apply output device preference.");
+        // Hide the output selection UI elements if they exist and haven't been hidden already
+        if (audioOutputSelectElement) audioOutputSelectElement.classList.add('hidden');
+        const outputLabel = document.getElementById('audioOutputLabel');
+        if (outputLabel) outputLabel.classList.add('hidden');
+        return;
+    }        
+
+    // Apply to Playback AudioContext
+    if (audioContext) {
+        if (audioContext.state === 'running') {
+            try {
+                // Check if the current sinkId is already the preferred one
+                await audioContext.setSinkId(preferredOutputDeviceId);
+                console.log(`Playback AudioContext output set to device: ${preferredOutputDeviceId}`);
+            } catch (err) {
+                console.error(`Error setting sinkId on Playback AudioContext (ID: ${preferredOutputDeviceId}): ${err.name}`, err);
+                // Optionally: Fallback or notify user
+            }
+        } else {
+             console.warn(`Playback AudioContext not running (state: ${audioContext.state}), cannot set sinkId yet.`);
+        }
+    } else {
+        console.log("Playback AudioContext doesn't exist yet, sinkId will be applied on initialization.");
+    }
+
+    // Apply to <audio> element (for redundancy or direct playback scenarios)
+    if (audioElement && typeof audioElement.setSinkId === 'function') {
+        try {
+            if (audioElement.sinkId !== preferredOutputDeviceId) {
+                await audioElement.setSinkId(preferredOutputDeviceId);
+                console.log(`<audio> element output set to device: ${preferredOutputDeviceId}`);
+            }
+        } catch (err) {
+            console.error(`Error setting sinkId on <audio> element (ID: ${preferredOutputDeviceId}): ${err.name}`, err);
+        }
+    }
+}
 
 
 window.addEventListener('message', receiveMessage, false);
@@ -1607,6 +1895,104 @@ function receiveMessage(event) {
         console.log('Received fileUpload message:', message.payload);
         updateSidebarUploadProgress(message.payload); // Update the sidebar display
     }
+    else if (message.type === 'pipelineControl' && message.pipeline === 'microphone') {
+        console.log(`Received microphone control message: enabled=${message.enabled}`);
+        if (message.enabled) {
+            startMicrophoneCapture();
+        } else {
+            stopMicrophoneCapture();
+        }
+    }
+    else if (message.type === 'audioDeviceSelected') {
+        console.log('Received audioDeviceSelected message via window.postMessage:', message);
+        const { context, deviceId } = message;
+
+        if (!deviceId) {
+            console.warn("Received audioDeviceSelected message without a deviceId.");
+            return;
+        }
+
+        if (context === 'input') {
+            console.log(`Setting preferred input device to: ${deviceId}`);
+            // Update the UI selection visually
+            if (dev_mode && audioInputSelectElement && audioInputSelectElement.value !== deviceId) {
+                audioInputSelectElement.value = deviceId;
+            }
+            // Only store if different to avoid unnecessary restarts
+            if (preferredInputDeviceId !== deviceId) {
+                 preferredInputDeviceId = deviceId;
+                 // If the mic is currently running, restart it to apply the change
+                 if (isMicrophoneActive) {
+                     console.log("Microphone is active, restarting to apply new input device...");
+                     // Stop first, then start after a short delay to ensure resources are released
+                     stopMicrophoneCapture();
+                     setTimeout(startMicrophoneCapture, 150);
+                 }
+            }
+        } else if (context === 'output') {
+             console.log(`Setting preferred output device to: ${deviceId}`);
+             // Update the UI selection visually
+             if (dev_mode && audioOutputSelectElement && audioOutputSelectElement.value !== deviceId) {
+                 audioOutputSelectElement.value = deviceId;
+             }
+             // Only apply if different
+             if (preferredOutputDeviceId !== deviceId) {
+                 preferredOutputDeviceId = deviceId;
+                 applyOutputDevice(); // Attempt to apply immediately
+             }
+        } else {
+            console.warn(`Unknown context in audioDeviceSelected message: ${context}`);
+        }
+    }
+    else if (message.type === 'gamepadControl') {
+        console.log(`Received gamepad control message: enabled=${message.enabled}`);
+
+        // 1. Update the global state variable
+        isGamepadEnabled = message.enabled;
+
+        // 2. Update the button appearance
+        if (dev_mode && gamepadToggleButtonElement) {
+            updateToggleButtonAppearance(gamepadToggleButtonElement, isGamepadEnabled);
+        }
+
+        // 3. Call enable/disable on the GamepadManager via the Input instance
+        if (window.webrtcInput && window.webrtcInput.gamepadManager) {
+            if (isGamepadEnabled) {
+                window.webrtcInput.gamepadManager.enable();
+                // Log is already inside enable() method
+            } else {
+                window.webrtcInput.gamepadManager.disable();
+                // Log is already inside disable() method
+            }
+        } else {
+            console.warn("Could not toggle gamepad state: window.webrtcInput or window.webrtcInput.gamepadManager not found.");
+        }
+    }
+    else if (message.type === 'gamepadButtonUpdate') {
+        // Only visualize the first gamepad
+        if (message.gamepadIndex === 0) {
+            const { buttonIndex, value } = message;
+            if (!gamepadStates[0]) gamepadStates[0] = { buttons: {}, axes: {} };
+            if (!gamepadStates[0].buttons) gamepadStates[0].buttons = {};
+            gamepadStates[0].buttons[buttonIndex] = value;
+            updateGamepadVisuals(0); // Update visuals for gamepad 0
+        }
+    } else if (message.type === 'gamepadAxisUpdate') {
+        // Only visualize the first gamepad
+        if (message.gamepadIndex === 0) {
+            const { axisIndex, value } = message;
+            if (!gamepadStates[0]) gamepadStates[0] = { buttons: {}, axes: {} };
+            if (!gamepadStates[0].axes) gamepadStates[0].axes = {};
+            // Clamp axis value just in case
+            const clampedValue = Math.max(-1, Math.min(1, value));
+            gamepadStates[0].axes[axisIndex] = clampedValue;
+            updateGamepadVisuals(0); // Update visuals for gamepad 0
+        }
+    }
+    else if (message.type === 'requestFullscreen') {
+        console.log('Received requestFullscreen message via window.postMessage. Calling enterFullscreen().');
+        enterFullscreen('websockets');
+    }
     else {
       console.warn('Received unknown message type via window.postMessage:', message.type, message);
     }
@@ -1615,10 +2001,61 @@ function receiveMessage(event) {
   }
 }
 
-// This function now processes settings received from *any* source
-// (including the dev sidebar via window.postMessage).
-// It updates local state, localStorage, the UI (if dev_mode),
-// and sends the command to the server via the appropriate channel.
+function updateGamepadVisuals(gamepadIndex) {
+    if (gamepadIndex !== 0 || !dev_mode) return; // Only visualize the first gamepad
+
+    const state = gamepadStates[0];
+    if (!state) return; // No state for this gamepad yet
+
+    const svg = document.getElementById('gamepad-svg-vis');
+    if (!svg) return; // SVG not found
+
+    // --- Update Buttons (including bumpers, dpad, stick clicks) ---
+    for (let i = 0; i <= 15; i++) { // Standard buttons 0-15
+        const buttonElement = svg.querySelector(`#gp-vis-btn-${i}`);
+        if (buttonElement) {
+            const value = state.buttons?.[i] || 0;
+            const pressed = value > GAMEPAD_VIS_THRESHOLD;
+
+            // Special handling for Triggers (opacity)
+            if (i === 6 || i === 7) { // LT (6), RT (7)
+                 buttonElement.style.opacity = 0.5 + (value * 0.5);
+            }
+            // Handling for Bumpers, DPad, Face Buttons, Stick Clicks (toggle class)
+            else if ([0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15].includes(i)) {
+                if (pressed) {
+                    // Use specific classes based on type for potential style differences
+                    if (i >= 12) buttonElement.classList.add('gp-vis-dpad-pressed');
+                    else if (i === 4 || i === 5) buttonElement.classList.add('gp-vis-bumper-pressed');
+                    else buttonElement.classList.add('gp-vis-button-pressed');
+                } else {
+                    buttonElement.classList.remove('gp-vis-button-pressed', 'gp-vis-dpad-pressed', 'gp-vis-bumper-pressed');
+                }
+            }
+        }
+    }
+
+    // --- Update Sticks ---
+    const leftStickElement = svg.querySelector('#gp-vis-stick-left');
+    const rightStickElement = svg.querySelector('#gp-vis-stick-right');
+
+    if (leftStickElement) {
+        const x = state.axes?.[0] || 0; // Axis 0: Left Stick X
+        const y = state.axes?.[1] || 0; // Axis 1: Left Stick Y
+        const translateX = x * STICK_VIS_MULTIPLIER;
+        const translateY = y * STICK_VIS_MULTIPLIER;
+        leftStickElement.style.transform = `translate(${translateX}px, ${translateY}px)`;
+    }
+
+    if (rightStickElement) {
+        const x = state.axes?.[2] || 0; // Axis 2: Right Stick X
+        const y = state.axes?.[3] || 0; // Axis 3: Right Stick Y
+        const translateX = x * STICK_VIS_MULTIPLIER;
+        const translateY = y * STICK_VIS_MULTIPLIER;
+        rightStickElement.style.transform = `translate(${translateX}px, ${translateY}px)`;
+    }
+}
+
 function handleSettingsMessage(settings) {
 
   console.log('Applying settings:', settings);
@@ -1637,7 +2074,7 @@ function handleSettingsMessage(settings) {
                  break;
              }
          }
-         // Add option if it doesn't exist (e.g., custom value from external source)
+         // Add option if it doesn't exist
          if (!optionExists) {
              console.warn(`Received video bitrate ${videoBitRate} kbit/s from settings is not in dropdown options. Adding it.`);
              const option = document.createElement('option');
@@ -1733,7 +2170,6 @@ function handleSettingsMessage(settings) {
   if (settings.scaleLocal !== undefined) {
     scaleLocal = settings.scaleLocal;
     setBoolParam('scaleLocal', scaleLocal); // Save to localStorage
-    // This is a client-side rendering setting, no server message needed.
     videoElement.classList.toggle('scale', scaleLocal);
     console.log(`Applied scaleLocal setting: ${scaleLocal}`);
   }
@@ -1843,7 +2279,6 @@ function handleSettingsMessage(settings) {
               videoBufferSelectElement.value = videoBufferSize.toString(); // Ensure the new option is selected
           }
      }
-     // This is a client-side buffering setting, no server message needed.
   }
 
   if (settings.turnSwitch !== undefined) {
@@ -1882,6 +2317,7 @@ function sendStatsMessage() {
     videoBuffer: videoFrameBuffer.length,
     isVideoPipelineActive: isVideoPipelineActive,
     isAudioPipelineActive: isAudioPipelineActive,
+    isMicrophoneActive: isMicrophoneActive,
   };
    if (typeof encoderName !== 'undefined') {
        stats.encoderName = encoderName;
@@ -1996,6 +2432,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
       updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
+      updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+      updateToggleButtonAppearance(gamepadToggleButtonElement, isGamepadEnabled);
   }
 
 
@@ -2290,7 +2728,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!isVideoPipelineActive) {
                 websocket.send('START_VIDEO');
                  isVideoPipelineActive = true;
-                window.postMessage({ type: 'pipelineStatusUpdate', video: true }, window.location.origin);
+                 window.postMessage({ type: 'pipelineStatusUpdate', video: true }, window.location.origin);
             } else {
                 console.log('Video pipeline already started, not sending START_VIDEO.');
             }
@@ -2380,13 +2818,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function initializeAudio() {
     if (!audioContext) {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate:48000,
-      });
+      const contextOptions = {
+          sampleRate: 48000,
+      };
+
+      audioContext = new (window.AudioContext || window.webkitAudioContext)(contextOptions);
       console.log(
-        'AudioContext initialized in initializeAudio with sampleRate:',
-        audioContext.sampleRate
+        'Playback AudioContext initialized with options:', contextOptions,
+        'Actual sampleRate:', audioContext.sampleRate,
+        'Initial state:', audioContext.state
       );
+       // Handle state changes (e.g., if it starts suspended and resumes later)
+       audioContext.onstatechange = () => {
+           console.log(`Playback AudioContext state changed to: ${audioContext.state}`);
+           // Re-apply sinkId if it becomes running, in case it wasn't set before
+           if (audioContext.state === 'running') {
+               applyOutputDevice();
+           }
+       };
     }
 
     try {
@@ -2490,14 +2939,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
       audioWorkletNode.connect(audioContext.destination);
-      console.log('AudioWorkletProcessor initialized and connected.');
+      console.log('Playback AudioWorkletProcessor initialized and connected.');
+
+      await applyOutputDevice();
+
     } catch (error) {
-      console.error('Error initializing AudioWorklet:', error);
+      console.error('Error initializing Playback AudioWorklet:', error);
+      if (audioContext && audioContext.state !== 'closed') {
+          audioContext.close(); // Clean up context if worklet failed
+      }
       audioContext = null;
       audioWorkletNode = null;
       audioWorkletProcessorPort = null;
     }
   }
+
 
   async function handleAudio(frame) {
     if (!isAudioPipelineActive && clientMode === 'websockets') {
@@ -2507,21 +2963,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!audioContext) {
       await initializeAudio();
+      // Check again if initialization failed
+      if (!audioContext) {
+           console.warn("Playback AudioContext initialization failed, dropping audio frame.");
+           frame.close();
+           return;
+      }
     }
 
     if (!audioContext || !audioWorkletProcessorPort) {
-      console.log('Audio context or AudioWorkletProcessor not available, waiting for user interaction!');
+      console.log('Playback Audio context or AudioWorkletProcessor not available, waiting for user interaction!');
       frame.close();
       return;
     }
 
     if (audioContext.state !== 'running') {
-      console.warn('AudioContext state is:', audioContext.state, '. Attempting resume...');
+      console.warn('Playback AudioContext state is:', audioContext.state, '. Attempting resume...');
       try {
           await audioContext.resume();
-          console.log('AudioContext resumed successfully.');
+          console.log('Playback AudioContext resumed successfully.');
+          await applyOutputDevice();
       } catch (resumeError) {
-           console.error('Failed to resume AudioContext:', resumeError, ' Dropping audio frame.');
+           console.error('Failed to resume Playback AudioContext:', resumeError, ' Dropping audio frame.');
            frame.close();
            return;
       }
@@ -2532,10 +2995,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const sampleCount = frame.numberOfFrames;
 
       const pcmData = new Float32Array(sampleCount * numberOfChannels);
-      const copyOptions = { format: 'f32-planar', planeIndex: 0 };
+      const copyOptions = { format: 'f32', planeIndex: 0 };
 
-      copyOptions.format = 'f32';
-
+      // Assuming interleaved f32 format from decoder:
       await frame.copyTo(pcmData, copyOptions);
 
       audioWorkletProcessorPort.postMessage({ audioData: pcmData });
@@ -2547,7 +3009,7 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeInput();
       }
     } catch (error) {
-      console.error('Audio processing error:', error);
+      console.error('Playback audio processing error:', error);
       frame.close();
     }
   }
@@ -2592,15 +3054,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function initializeDecoderAudio() {
      if (decoderAudio && decoderAudio.state !== 'closed') {
-        console.warn("AudioDecoder already exists, closing before re-initializing.");
+        console.warn("Playback AudioDecoder already exists, closing before re-initializing.");
         decoderAudio.close();
     }
     decoderAudio = new AudioDecoder({
-      output: handleAudio,
+      output: handleAudio, // Uses the playback handler
       error: (e) => {
-        console.error('AudioDecoder error:', e.message);
+        console.error('Playback AudioDecoder error:', e.message);
          if (e.message.includes('fatal')) {
-            console.warn('Attempting to reset AudioDecoder due to fatal error.');
+            console.warn('Attempting to reset Playback AudioDecoder due to fatal error.');
             initializeDecoderAudio();
         }
       },
@@ -2616,13 +3078,13 @@ document.addEventListener('DOMContentLoaded', () => {
        const support = await AudioDecoder.isConfigSupported(decoderConfig);
        if (support.supported) {
            decoderAudio.configure(decoderConfig);
-           console.log('AudioDecoder configured successfully.');
+           console.log('Playback AudioDecoder configured successfully.');
        } else {
-           console.error('AudioDecoder configuration not supported:', support);
+           console.error('Playback AudioDecoder configuration not supported:', support);
            decoderAudio = null;
        }
     } catch (e) {
-      console.error('Error configuring AudioDecoder:', e);
+      console.error('Error configuring Playback AudioDecoder:', e);
       decoderAudio = null;
     }
   }
@@ -2636,7 +3098,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const sendClientMetrics = () => {
       if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-          if (audioWorkletProcessorPort) {
+          if (audioWorkletProcessorPort) { // Playback worklet port
                audioWorkletProcessorPort.postMessage({ type: 'getBufferSize' });
           }
 
@@ -2661,6 +3123,9 @@ document.addEventListener('DOMContentLoaded', () => {
     isVideoPipelineActive = true;
     isAudioPipelineActive = true;
     window.postMessage({ type: 'pipelineStatusUpdate', video: true, audio: true }, window.location.origin);
+    isMicrophoneActive = false;
+    updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+
 
     if (metricsIntervalId === null) {
         metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
@@ -2669,8 +3134,9 @@ document.addEventListener('DOMContentLoaded', () => {
      if (window.webrtcInput) {
          const windowResolution = window.webrtcInput.getWindowResolution();
          const newRes = `${windowResolution[0]}x${windowResolution[1]}`;
-         websocketSendInput(`r,${newRes}`);
-         websocketSendInput(`s,${window.devicePixelRatio}`);
+         const sendInputFunc = window.webrtcInput.sendInputFunction || websocketSendInput;
+         sendInputFunc(`r,${newRes}`);
+         sendInputFunc(`s,${window.devicePixelRatio}`);
      }
   };
 
@@ -2680,11 +3146,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const arrayBuffer = event.data;
         const dataView = new DataView(arrayBuffer);
 
+        // Check length before reading bytes
+        if (arrayBuffer.byteLength < 1) { // Need at least 1 byte for type
+             console.warn('Received empty binary message, ignoring.');
+             return;
+        }
+
         const dataTypeByte = dataView.getUint8(0);
-        const frameTypeFlag = dataView.getUint8(1);
-        const frameDataArrayBuffer = arrayBuffer.slice(2);
 
         if (dataTypeByte === 0) {
+          if (arrayBuffer.byteLength < 2) {
+               console.warn('Received short video message (type 0), ignoring.');
+               return;
+          }
+          const frameTypeFlag = dataView.getUint8(1);
+          const videoDataArrayBuffer = arrayBuffer.slice(2);
+
           if (!isVideoPipelineActive) {
               return;
           }
@@ -2693,7 +3170,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const chunk = new EncodedVideoChunk({
               type: frameTypeFlag === 1 ? 'key' : 'delta',
               timestamp: performance.now() * 1000,
-              data: frameDataArrayBuffer,
+              data: videoDataArrayBuffer,
             });
             try {
                    decoder.decode(chunk);
@@ -2710,43 +3187,48 @@ document.addEventListener('DOMContentLoaded', () => {
             );
              if (!decoder) initializeDecoder();
           }
-        } else if (dataTypeByte === 1) {
-            if (!isAudioPipelineActive) {
-                return;
-            }
-
+        } else if (dataTypeByte === 1) { 
           const AUDIO_BUFFER_THRESHOLD = 10;
-
           if (window.currentAudioBufferSize >= AUDIO_BUFFER_THRESHOLD) {
               console.warn(
-                  `Audio buffer (${window.currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`
+                  `Playback Audio buffer (${window.currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`
               );
               return;
           }
-
+          if (!isAudioPipelineActive) {
+              return;
+          }
+          if (audioContext && audioContext.state !== 'running') {
+              console.warn(`Playback AudioContext is ${audioContext.state}, discarding.`);
+              audioContext.resume();
+              return;
+          } 
+          const audioDataArrayBuffer = arrayBuffer.slice(2);
           if (decoderAudio && decoderAudio.state === 'configured') {
             const chunk = new EncodedAudioChunk({
               type: 'key',
               timestamp: performance.now() * 1000,
-              data: frameDataArrayBuffer,
+              data: audioDataArrayBuffer,
             });
             try {
                 if(decoderAudio.decodeQueueSize < 10) {
                     decoderAudio.decode(chunk);
                 } else {
-                     console.warn(`Audio decode queue full (${decoderAudio.decodeQueueSize}), dropping frame.`);
+                     console.warn(`Playback Audio decode queue full (${decoderAudio.decodeQueueSize}), dropping frame.`);
                 }
             } catch (e) {
-              console.error('Audio Decoding error:', e);
+              console.error('Playback Audio Decoding error:', e);
                if (decoderAudio.state === 'closed' || decoderAudio.state === 'unconfigured') {
-                   console.warn("Audio Decoder is closed or unconfigured, reinitializing...");
+                   console.warn("Playback Audio Decoder is closed or unconfigured, reinitializing...");
                    initializeDecoderAudio();
               }
             }
           } else {
-             console.warn('Audio Decoder not ready or not configured yet, audio frame dropped.');
+             console.warn('Playback Audio Decoder not ready or not configured yet, audio frame dropped.');
              if (!decoderAudio) initializeDecoderAudio();
           }
+        } else if (dataTypeByte === 0x02) {
+            console.log('Received unexpected microphone data (type 0x02) from server.');
         } else {
           console.warn('Unknown binary data payload type received:', dataTypeByte);
         }
@@ -2784,6 +3266,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     isAudioPipelineActive = obj.audio;
                     statusChanged = true;
                 }
+                // Update UI based on confirmed state
                 if (statusChanged) {
                      window.postMessage({ type: 'pipelineStatusUpdate', video: isVideoPipelineActive, audio: isAudioPipelineActive }, window.location.origin);
                 }
@@ -2856,9 +3339,12 @@ document.addEventListener('DOMContentLoaded', () => {
          }
          else {
             if (window.webrtcInput && window.webrtcInput.on_message) {
-               window.webrtcInput.on_message(event.data);
+               const handled = window.webrtcInput.on_message(event.data);
+               if (!handled) {
+                   console.warn('Received unhandled string message (not input):', event.data);
+               }
             } else {
-               console.warn('Received unhandled string message:', event.data);
+               console.warn('Received unhandled string message (no input handler):', event.data);
             }
          }
       } else if (event.data === 'MODE websockets') {
@@ -2892,8 +3378,9 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('[websockets] Stopped client metrics interval for webrtc mode.');
         }
         if (decoder) decoder.close();
-        if (decoderAudio) decoderAudio.close();
+        if (decoderAudio) decoderAudio.close(); // Close Playback Audio Decoder
         cleanupVideoBuffer();
+        stopMicrophoneCapture(); // Ensure microphone is stopped if switching modes
 
         setupWebRTCMode();
         fetch('./turn')
@@ -2952,12 +3439,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     cleanupVideoBuffer();
     if(decoder) decoder.close();
-    if(decoderAudio) decoderAudio.close();
+    if(decoderAudio) decoderAudio.close(); // Close Playback Audio Decoder
     decoder = null;
     decoderAudio = null;
+    stopMicrophoneCapture(); // Ensure microphone is stopped on disconnect
     isVideoPipelineActive = false;
     isAudioPipelineActive = false;
+    isMicrophoneActive = false;
     window.postMessage({ type: 'pipelineStatusUpdate', video: false, audio: false }, window.location.origin);
+    // Update UI buttons
+    if (dev_mode) {
+        updateToggleButtonAppearance(videoToggleButtonElement, false);
+        updateToggleButtonAppearance(audioToggleButtonElement, false);
+        updateToggleButtonAppearance(micToggleButtonElement, false);
+    }
   };
 });
 
@@ -2969,6 +3464,7 @@ function cleanupVideoBuffer() {
             frame.close();
             closedCount++;
         } catch (e) {
+            // Ignore errors closing already closed frames
         }
     }
      if (closedCount > 0) console.log(`Cleanup: Closed ${closedCount} video frames.`);
@@ -2976,6 +3472,224 @@ function cleanupVideoBuffer() {
      if (dev_mode && videoBufferDivElement) {
         videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
      }
+}
+
+// --- Microphone Worklet Code ---
+const micWorkletProcessorCode = `
+class MicWorkletProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+  }
+
+  process(inputs, outputs, parameters) {
+    const input = inputs[0];
+
+    if (input && input[0]) { // Check if input and channel data are available
+      const inputChannelData = input[0];
+      const int16Array = Int16Array.from(inputChannelData, x => x * 32767);
+      if (! int16Array.every(item => item === 0)) {
+        this.port.postMessage(int16Array.buffer, [int16Array.buffer]);
+      }
+    }
+    return true; // Keep the processor alive
+  }
+}
+
+registerProcessor('mic-worklet-processor', MicWorkletProcessor);
+`;
+
+async function startMicrophoneCapture() {
+    if (isMicrophoneActive || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('Microphone already active or getUserMedia not supported.');
+        if (isMicrophoneActive) {
+             // Ensure button reflects the active state even if start is called again
+             updateToggleButtonAppearance(micToggleButtonElement, true);
+        }
+        return;
+    }
+
+    console.log('Attempting to start microphone capture...');
+
+    try {
+        // 1. Get Microphone Stream with selected device preference
+        const constraints = {
+            audio: {
+                // Use preferred device if set and not empty, otherwise default
+                deviceId: preferredInputDeviceId ? { exact: preferredInputDeviceId } : undefined,
+                sampleRate: 24000,
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            },
+            video: false
+        };
+        console.log("Requesting microphone with constraints:", JSON.stringify(constraints.audio));
+        micStream = await navigator.mediaDevices.getUserMedia(constraints);
+        console.log('Microphone access granted.');
+        const audioTracks = micStream.getAudioTracks();
+        if (audioTracks.length > 0) {
+             const settings = audioTracks[0].getSettings();
+             console.log("Actual microphone settings obtained:", settings);
+             // Update preferredInputDeviceId if default was used and we got a specific ID back
+             if (!preferredInputDeviceId && settings.deviceId) {
+                  console.log(`Default input device resolved to: ${settings.deviceId} (${settings.label || 'No Label'})`);
+                  preferredInputDeviceId = settings.deviceId;
+                  // Update UI dropdown if it exists
+                  if (dev_mode && audioInputSelectElement && audioInputSelectElement.value !== preferredInputDeviceId) {
+                        // Check if the option exists before setting
+                        let optionExists = false;
+                        for(let i=0; i < audioInputSelectElement.options.length; i++){
+                            if(audioInputSelectElement.options[i].value === preferredInputDeviceId){
+                                optionExists = true;
+                                break;
+                            }
+                        }
+                        if(optionExists) {
+                            audioInputSelectElement.value = preferredInputDeviceId;
+                        } else {
+                            console.warn(`Device ID ${preferredInputDeviceId} from stream not found in dropdown.`);
+                        }
+                  }
+             }
+        }
+
+
+        // 2. Create *separate* AudioContext for Microphone
+        micAudioContext = new AudioContext({sampleRate: 24000});
+        console.log('Microphone AudioContext created. Initial State:', micAudioContext.state, 'Sample Rate:', micAudioContext.sampleRate);
+        // If state is suspended, try resuming
+        if (micAudioContext.state === 'suspended') {
+            console.log('Mic AudioContext is suspended, attempting resume...');
+            await micAudioContext.resume();
+            console.log('Mic AudioContext resumed. New State:', micAudioContext.state);
+        }
+
+
+        // 3. Add MicWorkletProcessor Module
+        const micWorkletBlob = new Blob([micWorkletProcessorCode], { type: 'text/javascript' });
+        const micWorkletURL = URL.createObjectURL(micWorkletBlob);
+        await micAudioContext.audioWorklet.addModule(micWorkletURL);
+        URL.revokeObjectURL(micWorkletURL);
+        console.log('Microphone AudioWorklet module added.');
+
+        // 4. Create Source and Worklet Nodes
+        micSourceNode = micAudioContext.createMediaStreamSource(micStream);
+        micWorkletNode = new AudioWorkletNode(micAudioContext, 'mic-worklet-processor');
+        console.log('Microphone source and worklet nodes created.');
+
+        // 5. Set up WebSocket message handler for processed audio
+        micWorkletNode.port.onmessage = (event) => {
+            const pcm16Buffer = event.data; // This is the ArrayBuffer from the worklet
+            const wsState = websocket ? websocket.readyState : 'No WebSocket';
+            if (websocket && websocket.readyState === WebSocket.OPEN && isMicrophoneActive) {
+
+                // Ensure buffer is valid
+                if (!pcm16Buffer || pcm16Buffer.byteLength === 0) {
+                    // console.warn("Received empty or invalid buffer from mic worklet. Skipping send."); // Can be noisy
+                    return;
+                }
+
+                // Create the message ArrayBuffer: 1 byte for type (0x02) + PCM data length
+                const messageBuffer = new ArrayBuffer(1 + pcm16Buffer.byteLength);
+                const messageView = new DataView(messageBuffer);
+
+                messageView.setUint8(0, 0x02); // Set the type byte
+
+                // Copy the PCM data into the message buffer starting at offset 1
+                const pcmDataView = new Uint8Array(pcm16Buffer);
+                new Uint8Array(messageBuffer, 1).set(pcmDataView);
+
+                try {
+                    websocket.send(messageBuffer); // Send the combined ArrayBuffer
+                } catch (e) {
+                    console.error("Error sending microphone data via websocket:", e);
+                }
+            } else if (!isMicrophoneActive) {
+                console.log("Microphone inactive, dropping message from worklet.");
+            } else {
+                console.warn("WebSocket not open or null, cannot send microphone data. State:", wsState);
+            }
+        };
+
+        micWorkletNode.port.onmessageerror = (event) => {
+             console.error("Error receiving message from mic worklet:", event);
+        };
+
+
+        // 6. Connect the nodes: Mic Stream -> Source Node -> Worklet Node
+        micSourceNode.connect(micWorkletNode);
+        console.log('Microphone nodes connected.');
+
+        // 7. Update State and UI
+        isMicrophoneActive = true;
+        updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+        console.log('Microphone capture started successfully.'); // This is the log the user sees
+
+    } catch (error) {
+        console.error('Failed to start microphone capture:', error);
+        // If getUserMedia failed, log the constraints that failed
+        if (error.name === 'OverconstrainedError' || error.name === 'NotFoundError' || error.name === 'NotReadableError' || error.name === 'AbortError') {
+             console.error('Error likely due to constraints or device issue. Constraints used:', JSON.stringify(constraints.audio));
+             // If a specific device ID was requested and failed
+             if (preferredInputDeviceId) {
+                 console.warn(`Failed to get stream for preferred device ${preferredInputDeviceId}. Clearing preference.`);
+                 preferredInputDeviceId = null;
+             }
+        }
+        // Clean up any resources that might have been partially created
+        stopMicrophoneCapture();
+        // Update UI to reflect failure
+        isMicrophoneActive = false;
+        updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+    }
+}
+
+// --- Stop Microphone Capture ---
+function stopMicrophoneCapture() {
+    if (!isMicrophoneActive) {
+        return;
+    }
+
+    console.log('Stopping microphone capture...');
+
+    // 1. Stop MediaStream Tracks
+    if (micStream) {
+        micStream.getTracks().forEach(track => track.stop());
+        console.log('Microphone MediaStream tracks stopped.');
+        micStream = null;
+    }
+
+    // 2. Disconnect Nodes
+    if (micSourceNode) {
+        micSourceNode.disconnect();
+        micSourceNode = null;
+        console.log('Microphone source node disconnected.');
+    }
+    if (micWorkletNode) {
+        micWorkletNode.port.onmessage = null; // Remove listener
+        micWorkletNode.port.onmessageerror = null;
+        micWorkletNode.disconnect();
+        micWorkletNode = null;
+        console.log('Microphone worklet node disconnected.');
+    }
+
+    // 3. Close Microphone AudioContext
+    if (micAudioContext) {
+        if (micAudioContext.state !== 'closed') {
+            micAudioContext.close().then(() => {
+                console.log('Microphone AudioContext closed.');
+            }).catch(e => {
+                console.error('Error closing microphone AudioContext:', e);
+            });
+        }
+        micAudioContext = null;
+    }
+
+    // 4. Update State and UI
+    isMicrophoneActive = false;
+    updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+    console.log('Microphone capture stopped.');
 }
 
 
@@ -2989,6 +3703,9 @@ function cleanup() {
   if (window.isCleaningUp) return;
   window.isCleaningUp = true;
   console.log("Cleanup: Starting cleanup process...");
+
+  // Stop microphone first
+  stopMicrophoneCapture();
 
   if (clientMode === 'webrtc' && signalling) {
     signalling.disconnect();
@@ -3017,10 +3734,11 @@ function cleanup() {
     }
     websocket = null;
   }
+  // Cleanup Playback Audio Context
   if (audioContext) {
       if (audioContext.state !== 'closed') {
-           console.log(`Cleanup: Closing AudioContext (state: ${audioContext.state})`);
-           audioContext.close().then(() => console.log('Cleanup: AudioContext closed.')).catch(e => console.error('Cleanup: Error closing AudioContext:', e));
+           console.log(`Cleanup: Closing Playback AudioContext (state: ${audioContext.state})`);
+           audioContext.close().then(() => console.log('Cleanup: Playback AudioContext closed.')).catch(e => console.error('Cleanup: Error closing Playback AudioContext:', e));
       }
       audioContext = null;
       audioWorkletNode = null;
@@ -3038,12 +3756,17 @@ function cleanup() {
   if (decoderAudio) {
       if (decoderAudio.state !== 'closed') {
           decoderAudio.close();
-          console.log("Cleanup: Closed AudioDecoder.");
+          console.log("Cleanup: Closed Playback AudioDecoder.");
       }
       decoderAudio = null;
   }
 
   cleanupVideoBuffer();
+
+  // Reset audio device preferences
+  preferredInputDeviceId = null;
+  preferredOutputDeviceId = null;
+  console.log("Cleanup: Reset preferred audio device IDs.");
 
 
   status = 'connecting';
@@ -3062,6 +3785,7 @@ function cleanup() {
   }
   isVideoPipelineActive = true;
   isAudioPipelineActive = true;
+  isMicrophoneActive = false;
 
   connectionStat.connectionStatType = 'unknown';
   connectionStat.connectionLatency = 0;
@@ -3095,12 +3819,15 @@ function cleanup() {
   window.fps = 0;
   frameCount = 0;
   lastFpsUpdateTime = performance.now();
-  if (dev_mode && fpsCounterDivElement) {
-      fpsCounterDivElement.textContent = `Client FPS: ${window.fps}`;
+  if (dev_mode) {
+      if (fpsCounterDivElement) fpsCounterDivElement.textContent = `Client FPS: ${window.fps}`;
+      if (audioBufferDivElement) audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize} buffers`;
+      updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
+      updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
+      updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+      updateToggleButtonAppearance(gamepadToggleButtonElement, isGamepadEnabled);
   }
-   if (dev_mode && audioBufferDivElement) {
-        audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize} buffers`;
-   }
+
    console.log("Cleanup: Finished cleanup process.");
    window.isCleaningUp = false;
 }
@@ -3140,7 +3867,6 @@ async function handleDrop(ev) {
     // Synchronously collect all entries from the item list
     for (let i = 0; i < ev.dataTransfer.items.length; i++) {
       const item = ev.dataTransfer.items[i];
-      // IMPORTANT: Use webkitGetAsEntry() for broader compatibility
       const entry = item.webkitGetAsEntry() || item.getAsEntry();
       if (entry) {
         entriesToProcess.push(entry); // Add the entry to our array
@@ -3149,10 +3875,6 @@ async function handleDrop(ev) {
       }
     }
   } else {
-    // Use DataTransfer interface to access the file(s) (legacy)
-    // This path is less common now, but let's try to handle it.
-    // We need File objects here, which uploadFileObject can handle directly.
-    // Note: This legacy path doesn't support directories well.
     for (let i = 0; i < ev.dataTransfer.files.length; i++) {
         console.warn("Legacy file drop detected. Handling files directly.");
     }
@@ -3171,8 +3893,9 @@ async function handleDrop(ev) {
                   try { websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Legacy processing failed`); } catch (_) {}
              }
         } finally {
+            // No explicit cleanup needed here for legacy files
         }
-        return; // Exit after handling legacy files
+        return;
     }
   }
 
@@ -3183,7 +3906,6 @@ async function handleDrop(ev) {
     for (const entry of entriesToProcess) {
       const entryName = entry.name || 'Unknown Entry Name';
       console.log(`Processing collected entry: ${entryName}`);
-      // Await the handling of each entry from the array
       await handleDroppedEntry(entry);
     }
     console.log("Finished processing all collected entries.");
@@ -3191,7 +3913,6 @@ async function handleDrop(ev) {
       const errorMsg = `An error occurred during the sequential upload process: ${error.message || error}`;
       console.error(errorMsg);
       window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: errorMsg } }, window.location.origin);
-      // Optionally send a generic error to the server or display UI feedback
       if (websocket && websocket.readyState === WebSocket.OPEN) {
            try { websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Processing failed`); } catch (_) {}
       }
@@ -3222,17 +3943,15 @@ async function handleDroppedEntry(entry) {
         // Get the file object using the promisified helper
         const file = await getFileFromEntry(entry);
         // Await the upload of this file, passing the path
-        await uploadFileObject(file, pathName); // Pass pathToSend
+        await uploadFileObject(file, pathName);
     } catch (err) {
         const errorMsg = `Error getting or uploading file from entry ${pathName}: ${err.message || err}`;
         console.error(errorMsg);
         window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathName, message: errorMsg } }, window.location.origin);
-        // Optionally send an error for this specific file
         if (websocket && websocket.readyState === WebSocket.OPEN) {
-             try { websocket.send(`FILE_UPLOAD_ERROR:${pathName}:Failed to get/upload file`); } catch (_) {} // Use pathName
+             try { websocket.send(`FILE_UPLOAD_ERROR:${pathName}:Failed to get/upload file`); } catch (_) {}
         }
-        // Rethrow or handle as needed for sequential processing
-        throw err; // Propagate error to stop sequential processing if desired, or remove to continue
+        throw err;
     }
   } else if (entry.isDirectory) {
     const dirPath = entry.fullPath || entry.name;
@@ -3268,10 +3987,10 @@ async function readDirectoryEntries(dirReader) {
         if (entries.length > 0) {
             // Process each entry in the batch sequentially
             for (const entry of entries) {
-                await handleDroppedEntry(entry); // Await each entry within the directory
+                await handleDroppedEntry(entry);
             }
         }
-    } while (entries.length > 0); // Continue if readEntries returned a non-empty batch
+    } while (entries.length > 0);
 }
 
 
@@ -3290,7 +4009,7 @@ function uploadFileObject(file, pathToSend) {
             console.error(errorMsg);
             // Send error message to window
             window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
-            reject(new Error(errorMsg)); // Reject the promise
+            reject(new Error(errorMsg));
             return;
         }
 
@@ -3298,7 +4017,6 @@ function uploadFileObject(file, pathToSend) {
         // Send START message via window.postMessage
         window.postMessage({ type: 'fileUpload', payload: { status: 'start', fileName: pathToSend, fileSize: file.size } }, window.location.origin);
 
-        // Send START message via WebSocket
         websocket.send(`FILE_UPLOAD_START:${pathToSend}:${file.size}`);
 
         let offset = 0;
@@ -3310,7 +4028,7 @@ function uploadFileObject(file, pathToSend) {
                 console.error(errorMsg);
                 // Send error message to window
                 window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
-                reject(new Error(errorMsg)); // Reject the promise
+                reject(new Error(errorMsg));
                 return;
             }
             if (e.target.error) {
@@ -3320,12 +4038,15 @@ function uploadFileObject(file, pathToSend) {
                 window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
                 // Try to notify server before rejecting
                 try { websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:${e.target.error}`); } catch (_) {}
-                reject(e.target.error); // Reject the promise
+                reject(e.target.error);
                 return;
             }
 
             try {
-                websocket.send(e.target.result); // Send ArrayBuffer directly
+                const prefixedView = new Uint8Array(1 + e.target.result.byteLength);
+                prefixedView[0] = 0x01;
+                prefixedView.set(new Uint8Array(e.target.result), 1);
+                websocket.send(prefixedView.buffer);
                 offset += e.target.result.byteLength;
 
                 // Calculate and send PROGRESS message via window.postMessage
@@ -3336,20 +4057,16 @@ function uploadFileObject(file, pathToSend) {
                     readChunk(offset); // Read next chunk
                 } else {
                     console.log(`Finished uploading ${pathToSend}`);
-                    // Send END message via WebSocket
                     websocket.send(`FILE_UPLOAD_END:${pathToSend}`);
-                    // Send END message via window.postMessage
                     window.postMessage({ type: 'fileUpload', payload: { status: 'end', fileName: pathToSend, fileSize: file.size } }, window.location.origin);
-                    resolve(); // Resolve the promise on success
+                    resolve();
                 }
             } catch (wsError) {
                 const errorMsg = `WebSocket error sending chunk for ${pathToSend}: ${wsError}`;
                 console.error(errorMsg);
-                // Send error message to window
                 window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
-                // Optionally try to send an error message, but websocket might be broken
                 try { websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:WebSocket send failed`); } catch (_) {}
-                reject(wsError); // Reject the promise
+                reject(wsError);
             }
         };
 
@@ -3361,7 +4078,7 @@ function uploadFileObject(file, pathToSend) {
              if (websocket && websocket.readyState === WebSocket.OPEN) {
                 try { websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:${e.target.error}`); } catch (_) {}
              }
-            reject(e.target.error); // Reject the promise
+            reject(e.target.error);
         };
 
         function readChunk(startOffset) {
@@ -3371,7 +4088,7 @@ function uploadFileObject(file, pathToSend) {
                  console.error(errorMsg);
                  // Send error message to window
                  window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
-                 reject(new Error(errorMsg)); // Reject the promise
+                 reject(new Error(errorMsg));
                  return;
             }
             const endOffset = Math.min(startOffset + UPLOAD_CHUNK_SIZE, file.size);

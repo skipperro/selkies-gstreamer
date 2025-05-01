@@ -44,7 +44,13 @@ from shutil import which
 from signal import SIGINT, signal
 from watchdog.events import FileClosedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
-
+try:
+    import pulsectl
+    import pasimple
+    PULSEAUDIO_AVAILABLE = True
+except ImportError:
+    PULSEAUDIO_AVAILABLE = False
+    data_logger.warning("pulsectl or pasimple not found. Microphone forwarding will be disabled.")
 from system_metrics import Metrics, GPUMonitor, SystemMonitor, FPS_HIST_BUCKETS
 from input_handler import (WebRTCInput, SelkiesGamepad, GamepadMapper,
                            get_btn_event, get_axis_event, detect_gamepad_config,
@@ -56,20 +62,16 @@ from gstreamer_pipeline import (GSTWebRTCApp, GSTWebRTCAppError, fit_res,
                                 get_new_res, resize_display,
                                 generate_xrandr_gtf_modeline, set_dpi,
                                 set_cursor_size)
-
 import psutil
 import GPUtil
 import traceback
-
 TARGET_FRAMERATE = 60
 TARGET_VIDEO_BITRATE_KBPS = 16000
-
 FPS_ADJUST_THRESHOLD = 3
 FPS_ADJUST_STEP = 10
 MIN_FRAMERATE = 8
 BITRATE_ADJUST_STEP_KBPS = 8000
 MIN_VIDEO_BITRATE_KBPS = 500
-
 DEFAULT_RTC_CONFIG = """{
   "lifetimeDuration": "86400s",
   "iceServers": [
@@ -88,20 +90,15 @@ MIME_TYPES = {
     "css": "text/css",
     "ico": "image/x-icon",
 }
-
 upload_dir_path = os.path.expanduser("~/Desktop")
 try:
     os.makedirs(upload_dir_path, exist_ok=True)
     print(f"Upload directory ensured: {upload_dir_path}")
 except OSError as e:
     print(f"FATAL: Could not create upload directory {upload_dir_path}: {e}")
-    upload_dir_path = None # Disable uploads if dir creation fails
-
-# --- State Management ---
-# Global state for tracking file uploads across connections (if needed, though current implementation is per-connection)
-active_uploads_by_path = {}  # Maps final file path -> file handle
-client_to_filepath_map = {}  # Maps websocket object -> final file path currently uploading
-
+    upload_dir_path = None
+active_uploads_by_path = {}
+client_to_filepath_map = {}
 
 class HMACRTCMonitor:
     """Periodically generates and updates RTC config using HMAC-SHA1 TURN credentials."""
@@ -522,6 +519,12 @@ async def _collect_gpu_stats_ws(shared_data, gpu_id=0, interval_seconds=1):
 
         while True:
             try:
+                # Re-fetch GPUs inside the loop to handle potential changes/errors
+                gpus = GPUtil.getGPUs()
+                if not gpus or gpu_id >= len(gpus):
+                     data_logger.error(f"GPU {gpu_id} no longer available. Stopping GPU monitor.")
+                     break # Exit loop if GPU disappears or ID becomes invalid
+
                 gpu = gpus[gpu_id]
                 load = gpu.load
                 memory_total = gpu.memoryTotal * 1024 * 1024
@@ -541,13 +544,15 @@ async def _collect_gpu_stats_ws(shared_data, gpu_id=0, interval_seconds=1):
                      f"GPU monitor (WS mode): Error getting GPU stats for ID "
                      f"{gpu_id}: {e}"
                  )
+                 # Optional: Add a delay before retrying after an error
+                 await asyncio.sleep(interval_seconds * 2)
+
 
             await asyncio.sleep(interval_seconds)
     except asyncio.CancelledError:
         data_logger.info("GPU monitor loop (WS mode) cancelled.")
     except Exception as e:
         data_logger.error(f"GPU monitor loop (WS mode) error: {e}", exc_info=True)
-
 
 async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5):
     """Sends collected system and GPU stats over the WebSocket periodically (WS mode)."""
@@ -603,8 +608,8 @@ class DataStreamingServer:
         self.mode = mode
         self.server = None
         self.stop_server = None
-        self.data_ws = None # Holds the currently active websocket connection
-        self.app = app # Reference to the main GST application
+        self.data_ws = None
+        self.app = app
 
         # State for Websockets mode stats collection/sending
         self._system_monitor_task_ws = None
@@ -659,6 +664,13 @@ class DataStreamingServer:
             upload_dir_valid = True
         except OSError as e:
             data_logger.error(f"Could not create upload directory {upload_dir_path}: {e}")
+
+        mic_setup_done = False
+        pa_module_index = None
+        pa_stream = None
+        current_pa_rate = None
+        pulse = None
+        sink_name = "SelkiesVirtualMic"
 
         if self.mode == "websockets":
             data_logger.info("Operating in websockets mode.")
@@ -721,7 +733,7 @@ class DataStreamingServer:
             )
 
             try:
-                 # await self.webrtc_input.connect() # Connect local sockets if needed
+                 await self.webrtc_input.connect()
                  data_logger.info("WebRTCInput local connections established (if applicable).")
             except Exception as e:
                  data_logger.error(
@@ -734,31 +746,233 @@ class DataStreamingServer:
             data_logger.info(
                 "Operating in webrtc mode. Data websocket handler is minimal."
             )
-            self.webrtc_input = None # Ensure it's None if not in WS mode
+            self.webrtc_input = None
 
 
         try:
+            # ---- Initialize pulsectl client for this connection ----
+            if PULSEAUDIO_AVAILABLE:
+                try:
+                    pulse = pulsectl.Pulse('selkies-mic-handler')
+                    data_logger.debug("PulseAudio client connected.")
+                except Exception as e:
+                    data_logger.error(f"Failed to connect to PulseAudio: {e}. Microphone forwarding disabled for this connection.")
+                    pulse = None
+            else:
+                pulse = None
+
             async for message in websocket:
                 if isinstance(message, bytes):
-                    if active_upload_target_path and active_upload_target_path in active_uploads_by_path:
-                        file_handle = active_uploads_by_path[active_upload_target_path]
+                    message_type = message[0]
+                    payload = message[1:]
+                    if message_type == 0x01: # File data
+                        if active_upload_target_path and active_upload_target_path in active_uploads_by_path:
+                            file_handle = active_uploads_by_path[active_upload_target_path]
+                            try:
+                                file_handle.write(payload)
+                            except Exception as e:
+                                data_logger.error(
+                                    f"Error writing chunk to file {active_upload_target_path}: {e}",
+                                    exc_info=True
+                                )
+                                try:
+                                    file_handle.close()
+                                except Exception: pass
+                                active_uploads_by_path.pop(active_upload_target_path, None)
+                                try:
+                                    if os.path.exists(active_upload_target_path):
+                                        os.remove(active_upload_target_path)
+                                        data_logger.info(f"Deleted partial file {active_upload_target_path} after write error.")
+                                except Exception as remove_e:
+                                    data_logger.warning(f"Could not remove partial file {active_upload_target_path} after write error: {remove_e}")
+                                active_upload_target_path = None
+                        else:
+                             if payload:
+                                 data_logger.warning(f"Received file chunk (0x01) but no upload active. Ignoring {len(payload)} bytes.")
+
+                    elif message_type == 0x02: # Microphone Data
+                        if not pulse: # Check if PulseAudio connection succeeded earlier or is available
+                            if len(payload) > 0: # Only log if there was data to send
+                                data_logger.warning("PulseAudio not available/connected. Skipping microphone data.")
+                            continue # Skip processing mic data
+                        if not mic_setup_done:
+                            virtual_source_name = "SelkiesVirtualMic"
+                            master_monitor = "input.monitor"
+
+                            data_logger.info("Checking PulseAudio state for virtual microphone setup...")
+
+                            try:
+                                # Ensure we have a PulseAudio client connection
+                                if pulse is None:
+                                    data_logger.info("Establishing PulseAudio connection...")
+                                    pulse = pulsectl.Pulse('selkies-mic-handler')
+
+                                # --- Step 1: Check if the desired Virtual Source already exists ---
+                                data_logger.debug(f"Checking for existing source named '{virtual_source_name}'...")
+                                existing_source_info = None # Initialize as None
+                                try:
+                                    # Get the list of all current sources
+                                    source_list = pulse.source_list()
+                                    # Iterate through the list to find the source by name
+                                    for source in source_list:
+                                        if source.name == virtual_source_name:
+                                            existing_source_info = source
+                                            break # Exit the loop once found
+                                except pulsectl.PulseError as pe:
+                                    # Handle potential connection errors during check
+                                    data_logger.error(f"PulseAudio error while listing sources: {pe}", exc_info=True)
+                                    raise # Re-raise to be caught by the outer handler
+
+                                if existing_source_info:
+                                    # Source already exists! Use the found 'existing_source_info' object
+                                    data_logger.info(f"Virtual source '{virtual_source_name}' (Index: {existing_source_info.index}) already exists.")
+
+                                    # Access proplist directly from the found SourceInfo object
+                                    actual_master = existing_source_info.proplist.get('device.master_device')
+                                    if actual_master == master_monitor:
+                                        data_logger.info(f"Existing source is correctly linked to '{master_monitor}'.")
+                                    else:
+                                        data_logger.warning(f"Existing source '{virtual_source_name}' is linked to '{actual_master}' "
+                                                            f"instead of the expected '{master_monitor}'. "
+                                                            f"Manual intervention might be required to fix the link.")
+
+                                    # Since it exists, mark setup as done for this run
+                                    mic_setup_done = True
+                                    pa_module_index = existing_source_info.owner_module
+                                    # Restart audio pipeline
+                                    await self.app.stop_websocket_audio_pipeline()
+                                    await self.app.start_websocket_audio_pipeline()
+
+                                else:
+                                    # Source does NOT exist, proceed to create it
+                                    data_logger.info(f"Virtual source '{virtual_source_name}' not found. Attempting to load module...")
+                                    try:
+                                        # Load the module, including the description property
+                                        load_args = f'source_name={virtual_source_name} master={master_monitor}'
+                                        data_logger.info(f"Loading module-virtual-source with args: {load_args}")
+                                        pa_module_index = pulse.module_load('module-virtual-source', load_args)
+                                        data_logger.info(f"Loaded virtual source module with index {pa_module_index}.")
+
+                                        # Verification after load: Re-fetch the list and check again
+                                        data_logger.info(f"Verifying creation of source '{virtual_source_name}'...")
+                                        new_source_info = None
+                                        source_list_after_load = pulse.source_list()
+                                        for source in source_list_after_load:
+                                            if source.name == virtual_source_name:
+                                                new_source_info = source
+                                                break
+
+                                        if new_source_info:
+                                            data_logger.info(f"Successfully verified creation of source '{virtual_source_name}' (Index: {new_source_info.index}).")
+                                            mic_setup_done = True # Mark setup done ONLY after successful load AND verificationi
+                                            # Restart audio pipeline
+                                            await self.app.stop_websocket_audio_pipeline()
+                                            await self.app.start_websocket_audio_pipeline()
+                                        else:
+                                            data_logger.error(f"Loaded module {pa_module_index} but failed to find source '{virtual_source_name}' immediately after checking list.")
+                                            # Attempt to clean up the potentially problematic module load
+                                            try:
+                                                pulse.module_unload(pa_module_index)
+                                                data_logger.info(f"Unloaded module {pa_module_index} due to verification failure.")
+                                            except Exception as unload_err:
+                                                data_logger.error(f"Failed to unload module {pa_module_index} after verification failure: {unload_err}")
+                                            # Do NOT set mic_setup_done = True if verification fails
+
+                                    except pulsectl.PulseError as e_load:
+                                        data_logger.error(f"Failed to load module-virtual-source: {e_load}", exc_info=True)
+                                        # Don't set mic_setup_done = True
+
+                                # --- Step 2: Attempt to Set as Default Source (Only if setup is now marked as done) ---
+                                if mic_setup_done:
+                                    try:
+                                        # Find the source object again (could be pre-existing or newly created)
+                                        source_info_for_default = None
+                                        source_list_for_default = pulse.source_list()
+                                        for source in source_list_for_default:
+                                            if source.name == virtual_source_name:
+                                                source_info_for_default = source
+                                                break
+
+                                        if source_info_for_default:
+                                            current_default_source = pulse.server_info().default_source_name
+                                            if current_default_source != source_info_for_default.name:
+                                                data_logger.info(f"Setting default source to '{source_info_for_default.name}'...")
+                                                pulse.default_set(source_info_for_default) # Use the SourceInfo object
+                                                data_logger.info(f"Default source set successfully.")
+                                            else:
+                                                data_logger.info(f"Default source is already '{source_info_for_default.name}'. No change needed.")
+                                        else:
+                                            data_logger.error(f"Cannot set default: Source '{virtual_source_name}' not found even after setup was marked done.")
+
+                                    except Exception as e_set_default:
+                                        data_logger.error(f"Failed during set default source operation for '{virtual_source_name}': {e_set_default}", exc_info=True)
+
+                                data_logger.info("PulseAudio virtual microphone setup check/attempt finished for this run.")
+
+                            except (pulsectl.PulseError, Exception) as e:
+                                data_logger.error(f"Error during PulseAudio virtual mic setup process: {e}", exc_info=True)
+                                if pulse:
+                                    try:
+                                        pulse.close()
+                                    except Exception as close_e:
+                                        data_logger.error(f"Error closing pulse connection after setup failure: {close_e}")
+                                pulse = None
+                                continue
+                        # --- Process Microphone Data ---
+                        if not mic_setup_done:
+                            data_logger.warning("Mic setup flag not set despite receiving data. Skipping.")
+                            continue
+
+                        # The rest is s16le mono PCM data
+                        if len(payload) < 1:
+                            data_logger.warning(f"Received microphone data packet too short ({len(payload)} bytes) to contain data. Skipping.")
+                            continue
+
                         try:
-                            file_handle.write(message)
-                        except Exception as e:
-                            data_logger.error(
-                                f"Error writing chunk to file {active_upload_target_path}: {e}",
-                                exc_info=True
-                            )
-                            try:
-                                file_handle.close()
-                            except Exception: pass
-                            del active_uploads_by_path[active_upload_target_path]
-                            try:
-                                os.remove(active_upload_target_path)
-                                data_logger.info(f"Deleted partial file {active_upload_target_path} after write error.")
-                            except Exception as remove_e:
-                                data_logger.warning(f"Could not remove partial file {active_upload_target_path} after write error: {remove_e}")
-                            active_upload_target_path = None # Reset active path for this connection
+                            pcm_data = payload[4:]
+                            # --- Manage pasimple Stream ---
+                            if pa_stream is None:
+                                data_logger.info(f"Opening new pasimple playback stream to '{sink_name}' at 24000 Hz (s16le, mono).")
+                                try:
+                                    pa_stream = pasimple.PaSimple(
+                                        pasimple.PA_STREAM_PLAYBACK,    # Direction
+                                        pasimple.PA_SAMPLE_S16LE,       # Format
+                                        1,                              # Channels
+                                        24000,                          # Rate
+                                        "SelkiesClient",                # App name
+                                        "Microphone Stream",            # Stream name
+                                        server_name=None,
+                                        device_name="input"
+                                    )
+                                    data_logger.debug(f"Successfully opened pasimple stream to '{sink_name}' at {current_pa_rate} Hz.")
+                                except Exception as e_open:
+                                    data_logger.error(f"Failed to open pasimple stream to '{sink_name}': {e_open}", exc_info=True)
+                                    pa_stream = None
+                                    continue
+
+                            # --- Write Data to PulseAudio ---
+                            if pa_stream:
+                                try:
+                                    pa_stream.write(pcm_data)
+                                except Exception as e_write:
+                                    # Log error and close stream to force reopen on next packet
+                                    data_logger.error(f"Error writing to pasimple stream '{sink_name}': {e_write}. Closing stream.", exc_info=False) # Keep log cleaner
+                                    try:
+                                        pa_stream.close()
+                                    except Exception: pass
+                                    pa_stream = None
+
+                        except struct.error as e_struct:
+                            data_logger.warning(f"Failed to unpack sample rate from microphone data: {e_struct}. Skipping packet.")
+                        except Exception as e_mic:
+                            data_logger.error(f"Unexpected error processing microphone data: {e_mic}", exc_info=True)
+                            # Attempt to clean up stream on unexpected errors
+                            if pa_stream:
+                                try: pa_stream.close()
+                                except Exception: pass
+                            pa_stream = None
+                    else:
+                        data_logger.warning(f"Received unknown binary message type: {hex(message_type)}. Ignoring {len(payload)} bytes.")
 
                 elif isinstance(message, str):
                     if message.startswith('FILE_UPLOAD_START:'):
@@ -788,7 +1002,6 @@ class DataStreamingServer:
                                  continue
 
                             # --- Path Processing ---
-                            # Path seems safe, separate directory and filename
                             server_dir_part = os.path.dirname(absolute_intended_path)
                             base_name = os.path.basename(absolute_intended_path)
 
@@ -817,7 +1030,7 @@ class DataStreamingServer:
                                  if active_upload_target_path in active_uploads_by_path:
                                      try: active_uploads_by_path[active_upload_target_path].close()
                                      except: pass
-                                     try: os.remove(active_upload_target_path) # Optionally delete partial file
+                                     try: os.remove(active_upload_target_path) # Delete partial file
                                      except: pass
                                      del active_uploads_by_path[active_upload_target_path]
                                  active_upload_target_path = None
@@ -1148,7 +1361,6 @@ class DataStreamingServer:
                                   )
 
                     elif self.mode == "webrtc":
-                        # Should not receive these commands in WebRTC mode via this websocket
                         data_logger.warning(
                             "Received unexpected string message in webrtc mode on data "
                             f"websocket: {message}"
@@ -1167,7 +1379,28 @@ class DataStreamingServer:
             )
 
         finally:
-            data_logger.info(f"Cleaning up Data WebSocket handler for {raddr}...")
+            data_logger.info(f"Cleaning up Data WebSocket handler for {raddr} (including PulseAudio)...")
+            if pa_stream:
+                data_logger.info(f"Closing pasimple stream connected to '{sink_name}'.")
+                try:
+                    pa_stream.close()
+                except Exception as e:
+                    data_logger.error(f"Error closing pasimple stream during cleanup: {e}")
+                pa_stream = None
+            if pa_module_index is not None and pulse:
+                # Only unload the module if this handler instance loaded it
+                data_logger.info(f"Unloading PulseAudio module index {pa_module_index}.")
+                try:
+                    pulse.module_unload(pa_module_index)
+                except Exception as e:
+                    # Log error but continue cleanup
+                    data_logger.error(f"Error unloading PulseAudio module {pa_module_index}: {e}")
+            if pulse:
+                data_logger.debug("Closing pulsectl client connection.")
+                try:
+                    pulse.close()
+                except Exception as e:
+                     data_logger.error(f"Error closing pulsectl connection: {e}")
 
             # Clean up any incomplete uploads associated with this connection
             if active_upload_target_path and active_upload_target_path in active_uploads_by_path:
@@ -2580,7 +2813,6 @@ async def main():
     # --- Debugging ---
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
-    #args.mode = 'webrtc'
 
     # --- Apply JSON Config Overlay ---
     global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
@@ -2625,12 +2857,14 @@ async def main():
         # Reduce noise from verbose libraries
         logging.getLogger("websockets").setLevel(logging.WARNING)
         logging.getLogger("aiortc").setLevel(logging.WARNING)
+        # Reduce pulsectl/pasimple noise unless debugging
+        if not args.debug:
+            logging.getLogger("pulsectl").setLevel(logging.WARNING)
 
     # Log effective arguments after parsing and overlay
     logger.info(f"Effective arguments: {args}")
 
     # --- Wait for App Ready ---
-    # Optionally wait for an external application signal file
     await wait_for_app_ready(args.app_ready_file, args.app_wait_ready.lower() == "true")
 
     # --- Setup IDs and Metrics ---
@@ -2875,8 +3109,6 @@ async def main():
                 audio_app.start_pipeline(audio_only=True)
             else:
                 logger.error("Failed to start pipeline for unexpected peer_id: %s" % session_peer_id)
-        # else: # websockets mode doesn't use signaling sessions this way
-            # logger.debug("on_session_handler called in websockets mode - doing nothing")
 
     # Assign the session handler to signaling clients (WebRTC mode)
     if args.mode == 'webrtc':
@@ -3155,8 +3387,8 @@ async def main():
         # Stop Monitors (WebRTC mode)
         if args.mode == 'webrtc':
              logger.info("Stopping WebRTC monitors...")
-             if gpu_mon and hasattr(gpu_mon, 'stop'): gpu_mon.stop() # Assuming sync stop
-             if system_mon and hasattr(system_mon, 'stop'): system_mon.stop() # Assuming sync stop
+             if gpu_mon and hasattr(gpu_mon, 'stop'): gpu_mon.stop()
+             if system_mon and hasattr(system_mon, 'stop'): system_mon.stop()
              # RTC monitors have async stop methods
              if hmac_turn_mon: await hmac_turn_mon.stop()
              if turn_rest_mon: await turn_rest_mon.stop()

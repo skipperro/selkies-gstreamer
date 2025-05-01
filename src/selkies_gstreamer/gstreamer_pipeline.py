@@ -128,7 +128,7 @@ class GSTWebRTCApp:
         logger_gstwebrtc_app.info("starting websocket audio pipeline using Gst.parse_launch()")
 
         audio_pipeline_string = f"""
-            pulsesrc name=source ! queue name=queue1 ! audioconvert name=convert !
+            pulsesrc name=source device=output.monitor ! queue name=queue1 ! audioconvert name=convert !
             capsfilter name=audioconvert_capsfilter caps=audio/x-raw,channels={self.audio_channels} !
             opusenc name=encoder
                 audio-type=restricted-lowdelay bandwidth=fullband bitrate-type=cbr frame-size=10
@@ -138,6 +138,8 @@ class GSTWebRTCApp:
         """
         try:
             self.audio_ws_pipeline = Gst.parse_launch(audio_pipeline_string)
+            audio_source = self.audio_ws_pipeline.get_by_name("source")
+            audio_source.set_property("device", "output.monitor")
         except Gst.ParseError as e:
             error_message = f"Error parsing audio pipeline string: {e}"
             logger_gstwebrtc_app.error(error_message)
@@ -1070,7 +1072,6 @@ class GSTWebRTCApp:
 
     stop_ws_pipeline = stop_pipeline
 
-    # --- START: New helper functions ---
     async def start_websocket_video_pipeline(self):
         if self.mode == 'websockets':
             logger_gstwebrtc_app.info("Helper: Starting WebSocket video pipeline.")
@@ -1143,7 +1144,6 @@ class GSTWebRTCApp:
                 logger_gstwebrtc_app.info("Helper: No WebSocket audio pipeline instance found to stop.")
         else:
             logger_gstwebrtc_app.warning("Helper: stop_websocket_audio_pipeline called but mode is not 'websockets'.")
-    # --- END: New helper functions ---
 
     def build_audio_pipeline(self):
         pulsesrc = Gst.ElementFactory.make("pulsesrc", "pulsesrc")

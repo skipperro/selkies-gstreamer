@@ -12,6 +12,7 @@ import json
 
 import pynput
 from PIL import Image
+import Xlib
 from Xlib import display
 from Xlib import X
 from Xlib.ext import xfixes, xtest

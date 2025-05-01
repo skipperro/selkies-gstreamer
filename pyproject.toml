@@ -33,6 +33,8 @@ dependencies = [
     "watchdog",
     "Pillow",
     "python-xlib @ https://github.com/selkies-project/python-xlib/archive/master.zip",
+    "pulsectl",
+    "pasimple",
 ]
 
 [project.urls]

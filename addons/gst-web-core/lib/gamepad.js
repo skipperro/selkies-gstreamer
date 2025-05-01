@@ -23,51 +23,83 @@
 // Based on https://github.com/parsec-cloud/web-client/blob/master/src/gamepad.js
 
 /*eslint no-unused-vars: ["error", { "vars": "local" }]*/
-
 export const GP_TIMEOUT = 16;
 const MAX_GAMEPADS = 4;
 
 export class GamepadManager {
     constructor(gamepad, onButton, onAxis) {
-        this.gamepad = gamepad;
-        this.numButtons = gamepad.buttons.length
-        this.numAxes = gamepad.axes.length
+        this.gamepad = gamepad; 
+        this.numButtons = 0;
+        this.numAxes = 0;
         this.onButton = onButton;
         this.onAxis = onAxis;
         this.state = {};
+        this._active = true;
         this.interval = setInterval(() => {
             this._poll();
         }, GP_TIMEOUT);
     }
 
+    enable() {
+        if (!this._active) {
+             this._active = true;
+             console.log("GamepadManager polling activated.");
+        }
+    }
+
+    disable() {
+         if (this._active) {
+            this._active = false;
+            console.log("GamepadManager polling deactivated.");
+         }
+    }
+
     _poll() {
+        if (!this._active) {
+            return; // Do nothing if disabled
+        }
         const gamepads = navigator.getGamepads();
-
         for (let i = 0; i < MAX_GAMEPADS; i++) {
-            if (gamepads[i]) {
-                let gp = this.state[i];
+            const currentGp = gamepads[i];
+            if (currentGp) {
+                let gpState = this.state[i];
 
-                if (!gp)
-                    gp = this.state[i] = { axes: [], buttons: [] };
-
-                for (let x = 0; x < gamepads[i].buttons.length; x++) {
-                    const value = gamepads[i].buttons[x].value;
-
-                    if (gp.buttons[x] !== undefined && gp.buttons[x] !== value) { //eslint-disable-line no-undefined
-                        this.onButton(i, x, value);
-                    }
-
-                    gp.buttons[x] = value;
+                if (!gpState) {
+                    gpState = this.state[i] = { axes: new Array(currentGp.axes.length).fill(0), buttons: new Array(currentGp.buttons.length).fill(0) };
                 }
 
-                for (let x = 0; x < gamepads[i].axes.length; x++) {
-                    let val = gamepads[i].axes[x];
+                if (gpState.buttons.length !== currentGp.buttons.length) {
+                    gpState.buttons = new Array(currentGp.buttons.length).fill(0);
+                }
+                if (gpState.axes.length !== currentGp.axes.length) {
+                     gpState.axes = new Array(currentGp.axes.length).fill(0);
+                }
+
+
+                for (let x = 0; x < currentGp.buttons.length; x++) {
+                    if (currentGp.buttons[x] === undefined) continue;
+                    const value = currentGp.buttons[x].value;
+                    const pressed = currentGp.buttons[x].pressed;
+
+                    // Check against previous state
+                    if (gpState.buttons[x] !== value) {
+                        this.onButton(i, x, value, pressed);
+                        gpState.buttons[x] = value; 
+                    }
+                }
+
+                for (let x = 0; x < currentGp.axes.length; x++) {
+                    if (currentGp.axes[x] === undefined) continue;
+
+                    let val = currentGp.axes[x];
+                    // Apply deadzone
                     if (Math.abs(val) < 0.05) val = 0;
 
-                    if (gp.axes[x] !== undefined && gp.axes[x] !== val) //eslint-disable-line no-undefined
+                    // Check against previous state
+                    if (gpState.axes[x] !== val) {
                         this.onAxis(i, x, val);
-
-                    gp.axes[x] = val;
+                        gpState.axes[x] = val;
+                    }
                 }
 
             } else if (this.state[i]) {
@@ -78,5 +110,7 @@ export class GamepadManager {
 
     destroy() {
         clearInterval(this.interval);
+        this.state = {}; // Clear state on final destruction
+        console.log("GamepadManager destroyed.");
     }
 }

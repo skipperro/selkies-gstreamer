@@ -844,12 +844,11 @@ export class Input {
      * @param {GamepadEvent} event
      */
     _gamepadConnected(event) {
+        this.gamepadManager = new GamepadManager(event.gamepad, this._gamepadButton.bind(this), this._gamepadAxis.bind(this));
+
         if (this.ongamepadconnected !== null) {
             this.ongamepadconnected(event.gamepad.id);
         }
-
-        // Initialize the gamepad manager.
-        this.gamepadManager = new GamepadManager(event.gamepad, this._gamepadButton.bind(this), this._gamepadAxis.bind(this));
 
         // Send joystick connect message over data channel.
         this.send("js,c," + event.gamepad.index + "," + btoa(event.gamepad.id) + "," + this.gamepadManager.numAxes + "," + this.gamepadManager.numButtons);
@@ -875,6 +874,12 @@ export class Input {
      */
     _gamepadButton(gp_num, btn_num, val) {
         this.send("js,b," + gp_num + "," + btn_num + "," + val);
+        window.postMessage({
+            type: 'gamepadButtonUpdate',
+            gamepadIndex: gp_num,
+            buttonIndex: btn_num,
+            value: val
+        }, window.location.origin);
     }
 
     /**
@@ -886,6 +891,12 @@ export class Input {
      */
     _gamepadAxis(gp_num, axis_num, val) {
         this.send("js,a," + gp_num + "," + axis_num + "," + val)
+        window.postMessage({
+            type: 'gamepadAxisUpdate',
+            gamepadIndex: gp_num,
+            axisIndex: axis_num,
+            value: val
+        }, window.location.origin);
     }
 
     /**
