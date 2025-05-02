@@ -1074,18 +1074,10 @@ const initializeUI = () => {
     updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
     sidebarDiv.appendChild(videoToggleButtonElement);
     videoToggleButtonElement.addEventListener('click', () => {
-        if (clientMode !== 'websockets') return;
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const newState = !isVideoPipelineActive;
-            const message = newState ? 'START_VIDEO' : 'STOP_VIDEO';
-            console.log(`Dev Sidebar: Sending ${message} via websocket.`);
-            websocket.send(message);
-            isVideoPipelineActive = newState;
-            updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
-            window.postMessage({ type: 'pipelineStatusUpdate', video: isVideoPipelineActive, audio: isAudioPipelineActive }, window.location.origin);
-        } else {
-            console.warn('Websocket not open, cannot send video toggle command.');
-        }
+        // Determine the desired state based on the current state
+        const newState = !isVideoPipelineActive;
+        // Post a message requesting the control action
+        window.postMessage({ type: 'pipelineControl', pipeline: 'video', enabled: newState }, window.location.origin);
     });
     audioToggleButtonElement = document.createElement('button');
     audioToggleButtonElement.id = 'audioToggleBtn';
@@ -1093,18 +1085,10 @@ const initializeUI = () => {
     updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
     sidebarDiv.appendChild(audioToggleButtonElement);
     audioToggleButtonElement.addEventListener('click', () => {
-        if (clientMode !== 'websockets') return;
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const newState = !isAudioPipelineActive;
-            const message = newState ? 'START_AUDIO' : 'STOP_AUDIO';
-            console.log(`Dev Sidebar: Sending ${message} via websocket.`);
-            websocket.send(message);
-            isAudioPipelineActive = newState;
-            updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
-            window.postMessage({ type: 'pipelineStatusUpdate', video: isVideoPipelineActive, audio: isAudioPipelineActive }, window.location.origin);
-        } else {
-            console.warn('Websocket not open, cannot send audio toggle command.');
-        }
+        // Determine the desired state based on the current state
+        const newState = !isAudioPipelineActive;
+        // Post a message requesting the control action
+        window.postMessage({ type: 'pipelineControl', pipeline: 'audio', enabled: newState }, window.location.origin);
     });
     micToggleButtonElement = document.createElement('button');
     micToggleButtonElement.id = 'micToggleBtn';
@@ -1844,161 +1828,260 @@ function updateSidebarUploadProgress(payload) {
     }
 }
 
+function postSidebarButtonUpdate() {
+    // Gather current states
+    const updatePayload = {
+        type: 'sidebarButtonStatusUpdate',
+        video: isVideoPipelineActive,
+        audio: isAudioPipelineActive,
+        microphone: isMicrophoneActive,
+        gamepad: isGamepadEnabled
+    };
+    console.log('Posting sidebarButtonStatusUpdate:', updatePayload);
+    window.postMessage(updatePayload, window.location.origin);
+}
 
 function receiveMessage(event) {
-  if (event.origin !== window.location.origin) {
-    console.warn(`Received message from unexpected origin: ${event.origin}`);
-    return;
-  }
-
-  const message = event.data;
-  if (typeof message === 'object' && message !== null) {
-    if (message.type === 'settings') {
-      console.log('Received settings message via window.postMessage:', message.settings);
-      handleSettingsMessage(message.settings);
-    } else if (message.type === 'getStats') {
-      console.log('Received getStats message via window.postMessage.');
-      sendStatsMessage();
-    } else if (message.type === 'clipboardUpdateFromUI') {
-      console.log('Received clipboardUpdateFromUI message via window.postMessage.');
-      const newClipboardText = message.text;
-
-      if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-          try {
-              const encodedText = btoa(newClipboardText);
-              const clipboardMessage = `cw,${encodedText}`;
-              websocket.send(clipboardMessage);
-              console.log(`Sent clipboard update from UI to server via websocket: ${clipboardMessage}`);
-          } catch (e) {
-              console.error('Failed to encode or send clipboard text from UI:', e);
-          }
-      } else {
-          console.warn('Cannot send clipboard update from UI: Not in websockets mode or websocket not open.');
-      }
+    // 1. Origin Check (Security)
+    if (event.origin !== window.location.origin) {
+        console.warn(`Received message from unexpected origin: ${event.origin}. Expected ${window.location.origin}. Ignoring.`);
+        return;
     }
-    else if (message.type === 'pipelineStatusUpdate') {
-        console.log('Received pipelineStatusUpdate message via window.postMessage:', message);
-        if (message.video !== undefined) {
-            isVideoPipelineActive = message.video;
-            if (dev_mode) {
-                updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
-            }
-        }
-        if (message.audio !== undefined) {
-            isAudioPipelineActive = message.audio;
-             if (dev_mode) {
-                updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
-            }
-        }
+
+    const message = event.data;
+
+    // 2. Message Type Check (Basic Validation)
+    if (typeof message !== 'object' || message === null) {
+        console.warn('Received non-object message via window.postMessage:', message);
+        return;
     }
-    else if (message.type === 'fileUpload') {
-        console.log('Received fileUpload message:', message.payload);
-        updateSidebarUploadProgress(message.payload); // Update the sidebar display
+
+    if (!message.type) {
+        console.warn('Received message without a type property:', message);
+        return;
     }
-    else if (message.type === 'pipelineControl' && message.pipeline === 'microphone') {
-        console.log(`Received microphone control message: enabled=${message.enabled}`);
-        if (message.enabled) {
-            startMicrophoneCapture();
-        } else {
-            stopMicrophoneCapture();
-        }
-    }
-    else if (message.type === 'audioDeviceSelected') {
-        console.log('Received audioDeviceSelected message via window.postMessage:', message);
-        const { context, deviceId } = message;
 
-        if (!deviceId) {
-            console.warn("Received audioDeviceSelected message without a deviceId.");
-            return;
-        }
+    // 3. Message Handling based on type
+    // console.log(`Message Receiver: Processing type '${message.type}'`, message); // Optional verbose log
 
-        if (context === 'input') {
-            console.log(`Setting preferred input device to: ${deviceId}`);
-            // Update the UI selection visually
-            if (dev_mode && audioInputSelectElement && audioInputSelectElement.value !== deviceId) {
-                audioInputSelectElement.value = deviceId;
-            }
-            // Only store if different to avoid unnecessary restarts
-            if (preferredInputDeviceId !== deviceId) {
-                 preferredInputDeviceId = deviceId;
-                 // If the mic is currently running, restart it to apply the change
-                 if (isMicrophoneActive) {
-                     console.log("Microphone is active, restarting to apply new input device...");
-                     // Stop first, then start after a short delay to ensure resources are released
-                     stopMicrophoneCapture();
-                     setTimeout(startMicrophoneCapture, 150);
-                 }
-            }
-        } else if (context === 'output') {
-             console.log(`Setting preferred output device to: ${deviceId}`);
-             // Update the UI selection visually
-             if (dev_mode && audioOutputSelectElement && audioOutputSelectElement.value !== deviceId) {
-                 audioOutputSelectElement.value = deviceId;
-             }
-             // Only apply if different
-             if (preferredOutputDeviceId !== deviceId) {
-                 preferredOutputDeviceId = deviceId;
-                 applyOutputDevice(); // Attempt to apply immediately
-             }
-        } else {
-            console.warn(`Unknown context in audioDeviceSelected message: ${context}`);
-        }
-    }
-    else if (message.type === 'gamepadControl') {
-        console.log(`Received gamepad control message: enabled=${message.enabled}`);
+    switch (message.type) {
+        case 'settings':
+            console.log('Received settings message:', message.settings);
+            handleSettingsMessage(message.settings);
+            break;
 
-        // 1. Update the global state variable
-        isGamepadEnabled = message.enabled;
+        case 'getStats':
+            console.log('Received getStats message.');
+            sendStatsMessage();
+            break;
 
-        // 2. Update the button appearance
-        if (dev_mode && gamepadToggleButtonElement) {
-            updateToggleButtonAppearance(gamepadToggleButtonElement, isGamepadEnabled);
-        }
-
-        // 3. Call enable/disable on the GamepadManager via the Input instance
-        if (window.webrtcInput && window.webrtcInput.gamepadManager) {
-            if (isGamepadEnabled) {
-                window.webrtcInput.gamepadManager.enable();
-                // Log is already inside enable() method
+        case 'clipboardUpdateFromUI':
+            console.log('Received clipboardUpdateFromUI message.');
+            const newClipboardText = message.text;
+            if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+                try {
+                    const encodedText = btoa(newClipboardText); // Base64 encode
+                    const clipboardMessage = `cw,${encodedText}`; // Prepend type
+                    websocket.send(clipboardMessage);
+                    console.log(`Sent clipboard update from UI to server: cw,...`);
+                } catch (e) {
+                    console.error('Failed to encode or send clipboard text from UI:', e);
+                }
             } else {
-                window.webrtcInput.gamepadManager.disable();
-                // Log is already inside disable() method
+                console.warn('Cannot send clipboard update from UI: Not in websockets mode or websocket not open.');
             }
-        } else {
-            console.warn("Could not toggle gamepad state: window.webrtcInput or window.webrtcInput.gamepadManager not found.");
-        }
+            break;
+
+        case 'pipelineStatusUpdate':
+            // Handles status updates potentially coming FROM the server or other logic
+            console.log('Received pipelineStatusUpdate message:', message);
+            let stateChangedFromStatus = false;
+
+            // Update state variables based on the message content IF they differ
+            if (message.video !== undefined && isVideoPipelineActive !== message.video) {
+                console.log(`pipelineStatusUpdate: Updating isVideoPipelineActive to ${message.video}`);
+                isVideoPipelineActive = message.video;
+                stateChangedFromStatus = true;
+            }
+            if (message.audio !== undefined && isAudioPipelineActive !== message.audio) {
+                console.log(`pipelineStatusUpdate: Updating isAudioPipelineActive to ${message.audio}`);
+                isAudioPipelineActive = message.audio;
+                stateChangedFromStatus = true;
+            }
+            if (message.microphone !== undefined && isMicrophoneActive !== message.microphone) {
+                console.log(`pipelineStatusUpdate: Updating isMicrophoneActive to ${message.microphone}`);
+                isMicrophoneActive = message.microphone;
+                stateChangedFromStatus = true;
+            }
+
+            // If any relevant state changed, trigger the sidebar UI update message
+            if (stateChangedFromStatus) {
+                console.log("pipelineStatusUpdate: State changed, posting sidebar button update.");
+                postSidebarButtonUpdate(); // Trigger UI update via separate message
+            } else {
+                 console.log("pipelineStatusUpdate: No relevant state change detected.");
+            }
+            break;
+
+        case 'fileUpload':
+            console.log('Received fileUpload message:', message.payload);
+            updateSidebarUploadProgress(message.payload); // Update the sidebar display
+            break;
+
+        case 'pipelineControl':
+            // Handles clicks from the dev sidebar buttons
+            console.log(`Received pipeline control message: pipeline=${message.pipeline}, enabled=${message.enabled}`);
+            const pipeline = message.pipeline;
+            const desiredState = message.enabled;
+            let stateChangedFromControl = false;
+
+            if (pipeline === 'video' || pipeline === 'audio') {
+                if (pipeline === 'video') {
+                    if (isVideoPipelineActive !== desiredState) {
+                        isVideoPipelineActive = desiredState;
+                        console.log(`pipelineControl: Immediately updating isVideoPipelineActive to ${isVideoPipelineActive}`);
+                        stateChangedFromControl = true;
+                        if (!isVideoPipelineActive) { cleanupVideoBuffer(); } // Cleanup if stopping
+                    }
+                } else if (pipeline === 'audio') {
+                     if (isAudioPipelineActive !== desiredState) {
+                        isAudioPipelineActive = desiredState;
+                        console.log(`pipelineControl: Immediately updating isAudioPipelineActive to ${isAudioPipelineActive}`);
+                        stateChangedFromControl = true;
+                     }
+                }
+                if (stateChangedFromControl) {
+                    postSidebarButtonUpdate(); // Trigger UI update via separate message
+                }
+                // --- Send WebSocket Command ---
+                if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+                    let wsMessage = '';
+                    if (pipeline === 'video') { wsMessage = desiredState ? 'START_VIDEO' : 'STOP_VIDEO'; }
+                    else if (pipeline === 'audio') { wsMessage = desiredState ? 'START_AUDIO' : 'STOP_AUDIO'; }
+
+                    if (wsMessage) {
+                        console.log(`pipelineControl: Sending ${wsMessage} via websocket.`);
+                        websocket.send(wsMessage);
+                    }
+                } else {
+                     console.warn(`Cannot send ${pipeline} pipelineControl command: Not in websockets mode or websocket not open.`);
+                }
+
+            } else if (pipeline === 'microphone') {
+                // Microphone state/UI update is handled within start/stop functions
+                if (desiredState) {
+                    startMicrophoneCapture();
+                } else {
+                    stopMicrophoneCapture();
+                }
+            } else {
+                 console.warn(`Received pipelineControl message for unknown pipeline: ${pipeline}`);
+            }
+            break;
+
+        case 'sidebarButtonStatusUpdate':
+            // Handles the message posted by postSidebarButtonUpdate() to update the actual UI
+            console.log('Received sidebarButtonStatusUpdate:', message);
+            // Only update the dev sidebar UI elements if dev_mode is enabled
+            if (dev_mode) {
+                console.log('Dev mode enabled, updating sidebar button appearances.');
+                // Update buttons based on the state provided in the message
+                if (message.video !== undefined && videoToggleButtonElement) {
+                     updateToggleButtonAppearance(videoToggleButtonElement, message.video);
+                }
+                if (message.audio !== undefined && audioToggleButtonElement) {
+                    updateToggleButtonAppearance(audioToggleButtonElement, message.audio);
+                }
+                 if (message.microphone !== undefined && micToggleButtonElement) {
+                    updateToggleButtonAppearance(micToggleButtonElement, message.microphone);
+                }
+            } else {
+                 console.log('Dev mode not enabled, skipping sidebar button UI update.');
+            }
+            break;
+
+        case 'audioDeviceSelected':
+            console.log('Received audioDeviceSelected message:', message);
+            const { context, deviceId } = message;
+            if (!deviceId) {
+                console.warn("Received audioDeviceSelected message without a deviceId.");
+                break; // Exit case
+            }
+            if (context === 'input') {
+                console.log(`Setting preferred input device to: ${deviceId}`);
+                if (dev_mode && audioInputSelectElement && audioInputSelectElement.value !== deviceId) {
+                    audioInputSelectElement.value = deviceId; // Update dropdown UI
+                }
+                if (preferredInputDeviceId !== deviceId) {
+                     preferredInputDeviceId = deviceId;
+                     if (isMicrophoneActive) { // Restart mic if active to apply change
+                         console.log("Microphone is active, restarting to apply new input device...");
+                         stopMicrophoneCapture();
+                         // Add a small delay before restarting
+                         setTimeout(startMicrophoneCapture, 150);
+                     }
+                }
+            } else if (context === 'output') {
+                 console.log(`Setting preferred output device to: ${deviceId}`);
+                 if (dev_mode && audioOutputSelectElement && audioOutputSelectElement.value !== deviceId) {
+                     audioOutputSelectElement.value = deviceId; // Update dropdown UI
+                 }
+                 if (preferredOutputDeviceId !== deviceId) {
+                     preferredOutputDeviceId = deviceId;
+                     applyOutputDevice(); // Apply change to audio elements
+                 }
+            } else {
+                console.warn(`Unknown context in audioDeviceSelected message: ${context}`);
+            }
+            break;
+
+        case 'gamepadControl':
+            console.log(`Received gamepad control message: enabled=${message.enabled}`);
+            isGamepadEnabled = message.enabled;
+            if (dev_mode && gamepadToggleButtonElement) { // Update sidebar UI if exists
+                updateToggleButtonAppearance(gamepadToggleButtonElement, isGamepadEnabled);
+            }
+            // Enable/disable actual gamepad input handling
+            if (window.webrtcInput && window.webrtcInput.gamepadManager) {
+                if (isGamepadEnabled) {
+                    window.webrtcInput.gamepadManager.enable();
+                } else {
+                    window.webrtcInput.gamepadManager.disable();
+                }
+            } else {
+                console.warn("Could not toggle gamepad state: window.webrtcInput or gamepadManager not found.");
+            }
+            break;
+
+        case 'gamepadButtonUpdate':
+        case 'gamepadAxisUpdate':
+             // Handle gamepad viz updates if needed (kept separate from main button updates for now)
+             if (message.gamepadIndex === 0) { // Assuming only first gamepad for viz
+                 if (!gamepadStates[0]) gamepadStates[0] = { buttons: {}, axes: {} };
+                 if (message.type === 'gamepadButtonUpdate') {
+                     const { buttonIndex, value } = message;
+                     if (!gamepadStates[0].buttons) gamepadStates[0].buttons = {};
+                     gamepadStates[0].buttons[buttonIndex] = value;
+                 } else { // gamepadAxisUpdate
+                     const { axisIndex, value } = message;
+                     if (!gamepadStates[0].axes) gamepadStates[0].axes = {};
+                     const clampedValue = Math.max(-1, Math.min(1, value)); // Clamp axis value
+                     gamepadStates[0].axes[axisIndex] = clampedValue;
+                 }
+                 updateGamepadVisuals(0); // Update the sidebar visualizer
+             }
+            break;
+
+        case 'requestFullscreen':
+            console.log('Received requestFullscreen message. Calling enterFullscreen().');
+            enterFullscreen();
+            break;
+
+        default:
+            console.warn('Received unknown message type via window.postMessage:', message.type, message);
+            break;
     }
-    else if (message.type === 'gamepadButtonUpdate') {
-        // Only visualize the first gamepad
-        if (message.gamepadIndex === 0) {
-            const { buttonIndex, value } = message;
-            if (!gamepadStates[0]) gamepadStates[0] = { buttons: {}, axes: {} };
-            if (!gamepadStates[0].buttons) gamepadStates[0].buttons = {};
-            gamepadStates[0].buttons[buttonIndex] = value;
-            updateGamepadVisuals(0); // Update visuals for gamepad 0
-        }
-    } else if (message.type === 'gamepadAxisUpdate') {
-        // Only visualize the first gamepad
-        if (message.gamepadIndex === 0) {
-            const { axisIndex, value } = message;
-            if (!gamepadStates[0]) gamepadStates[0] = { buttons: {}, axes: {} };
-            if (!gamepadStates[0].axes) gamepadStates[0].axes = {};
-            // Clamp axis value just in case
-            const clampedValue = Math.max(-1, Math.min(1, value));
-            gamepadStates[0].axes[axisIndex] = clampedValue;
-            updateGamepadVisuals(0); // Update visuals for gamepad 0
-        }
-    }
-    else if (message.type === 'requestFullscreen') {
-        console.log('Received requestFullscreen message via window.postMessage. Calling enterFullscreen().');
-        enterFullscreen('websockets');
-    }
-    else {
-      console.warn('Received unknown message type via window.postMessage:', message.type, message);
-    }
-  } else {
-     console.warn('Received non-object message via window.postMessage:', message);
-  }
+
 }
 
 function updateGamepadVisuals(gamepadIndex) {
@@ -3499,24 +3582,31 @@ registerProcessor('mic-worklet-processor', MicWorkletProcessor);
 `;
 
 async function startMicrophoneCapture() {
+    // Check if already active or prerequisites missing
     if (isMicrophoneActive || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.warn('Microphone already active or getUserMedia not supported.');
-        if (isMicrophoneActive) {
-             // Ensure button reflects the active state even if start is called again
-             updateToggleButtonAppearance(micToggleButtonElement, true);
+        if (!isMicrophoneActive) {
+             console.warn('getUserMedia not supported or mediaDevices not available.');
+             // Ensure state reflects reality and trigger UI update
+             isMicrophoneActive = false;
+             postSidebarButtonUpdate(); // Post update even on failure to start due to lack of support
+        } else {
+            console.warn('Microphone already active.');
+            // Ensure button reflects the active state via postMessage if start is called again redundantly
+            postSidebarButtonUpdate(); // Post update to ensure UI consistency
         }
-        return;
+        return; // Exit if already active or not supported
     }
 
     console.log('Attempting to start microphone capture...');
 
+    // Define constraints variable here to be accessible in catch block
+    let constraints;
     try {
         // 1. Get Microphone Stream with selected device preference
-        const constraints = {
+        constraints = { // Assign to the outer scope variable
             audio: {
-                // Use preferred device if set and not empty, otherwise default
                 deviceId: preferredInputDeviceId ? { exact: preferredInputDeviceId } : undefined,
-                sampleRate: 24000,
+                sampleRate: 24000, // Request specific rate
                 channelCount: 1,
                 echoCancellation: true,
                 noiseSuppression: true,
@@ -3527,127 +3617,152 @@ async function startMicrophoneCapture() {
         console.log("Requesting microphone with constraints:", JSON.stringify(constraints.audio));
         micStream = await navigator.mediaDevices.getUserMedia(constraints);
         console.log('Microphone access granted.');
+
+        // Log actual settings and update preferred device if needed
         const audioTracks = micStream.getAudioTracks();
         if (audioTracks.length > 0) {
              const settings = audioTracks[0].getSettings();
              console.log("Actual microphone settings obtained:", settings);
-             // Update preferredInputDeviceId if default was used and we got a specific ID back
              if (!preferredInputDeviceId && settings.deviceId) {
                   console.log(`Default input device resolved to: ${settings.deviceId} (${settings.label || 'No Label'})`);
                   preferredInputDeviceId = settings.deviceId;
-                  // Update UI dropdown if it exists
-                  if (dev_mode && audioInputSelectElement && audioInputSelectElement.value !== preferredInputDeviceId) {
-                        // Check if the option exists before setting
-                        let optionExists = false;
-                        for(let i=0; i < audioInputSelectElement.options.length; i++){
-                            if(audioInputSelectElement.options[i].value === preferredInputDeviceId){
-                                optionExists = true;
-                                break;
-                            }
-                        }
-                        if(optionExists) {
-                            audioInputSelectElement.value = preferredInputDeviceId;
-                        } else {
-                            console.warn(`Device ID ${preferredInputDeviceId} from stream not found in dropdown.`);
-                        }
-                  }
+                  // Post a message to update the UI dropdown if needed (handled by 'audioDeviceSelected' logic elsewhere potentially)
+                  // Or, if dev_mode is known here, update directly or post a specific dropdown update message.
+                  // For now, just update the variable. The sidebar can query/update on its own schedule or via a refresh.
+             }
+             // Log if the requested sample rate was achieved
+             if (settings.sampleRate && settings.sampleRate !== 24000) {
+                 console.warn(`Requested sampleRate 24000 but got ${settings.sampleRate}`);
              }
         }
 
-
         // 2. Create *separate* AudioContext for Microphone
-        micAudioContext = new AudioContext({sampleRate: 24000});
+        // Ensure any existing context is closed first if reusing variable
+        if (micAudioContext && micAudioContext.state !== 'closed') {
+            console.warn("Closing existing micAudioContext before creating a new one.");
+            await micAudioContext.close();
+            micAudioContext = null; // Clear reference
+        }
+        micAudioContext = new AudioContext({ sampleRate: 24000 }); // Use the requested sample rate
         console.log('Microphone AudioContext created. Initial State:', micAudioContext.state, 'Sample Rate:', micAudioContext.sampleRate);
-        // If state is suspended, try resuming
         if (micAudioContext.state === 'suspended') {
             console.log('Mic AudioContext is suspended, attempting resume...');
             await micAudioContext.resume();
             console.log('Mic AudioContext resumed. New State:', micAudioContext.state);
         }
+        // Check if the actual context sample rate matches requested
+        if (micAudioContext.sampleRate !== 24000) {
+             console.warn(`Requested AudioContext sampleRate 24000 but created context has ${micAudioContext.sampleRate}`);
+        }
 
-
-        // 3. Add MicWorkletProcessor Module
-        const micWorkletBlob = new Blob([micWorkletProcessorCode], { type: 'text/javascript' });
+        // 3. Add MicWorkletProcessor Module (Ensure micWorkletProcessorCode is defined)
+        if (typeof micWorkletProcessorCode === 'undefined' || !micWorkletProcessorCode) {
+            throw new Error("micWorkletProcessorCode is not defined. Cannot add AudioWorklet module.");
+        }
+        const micWorkletBlob = new Blob([micWorkletProcessorCode], { type: 'application/javascript' }); // Use correct MIME type
         const micWorkletURL = URL.createObjectURL(micWorkletBlob);
-        await micAudioContext.audioWorklet.addModule(micWorkletURL);
-        URL.revokeObjectURL(micWorkletURL);
-        console.log('Microphone AudioWorklet module added.');
+        try {
+            await micAudioContext.audioWorklet.addModule(micWorkletURL);
+            console.log('Microphone AudioWorklet module added.');
+        } finally {
+            URL.revokeObjectURL(micWorkletURL); // Revoke URL immediately after addModule promise resolves/rejects
+        }
+
 
         // 4. Create Source and Worklet Nodes
         micSourceNode = micAudioContext.createMediaStreamSource(micStream);
-        micWorkletNode = new AudioWorkletNode(micAudioContext, 'mic-worklet-processor');
+        micWorkletNode = new AudioWorkletNode(micAudioContext, 'mic-worklet-processor'); // Ensure this name matches registerProcessor
         console.log('Microphone source and worklet nodes created.');
 
         // 5. Set up WebSocket message handler for processed audio
         micWorkletNode.port.onmessage = (event) => {
-            const pcm16Buffer = event.data; // This is the ArrayBuffer from the worklet
+            const pcm16Buffer = event.data; // This should be the ArrayBuffer from the worklet
             const wsState = websocket ? websocket.readyState : 'No WebSocket';
-            if (websocket && websocket.readyState === WebSocket.OPEN && isMicrophoneActive) {
 
-                // Ensure buffer is valid
-                if (!pcm16Buffer || pcm16Buffer.byteLength === 0) {
-                    // console.warn("Received empty or invalid buffer from mic worklet. Skipping send."); // Can be noisy
+            if (websocket && websocket.readyState === WebSocket.OPEN && isMicrophoneActive) {
+                if (!pcm16Buffer || !(pcm16Buffer instanceof ArrayBuffer) || pcm16Buffer.byteLength === 0) {
+                    // console.warn("Received empty or invalid buffer from mic worklet. Skipping send.");
                     return;
                 }
 
-                // Create the message ArrayBuffer: 1 byte for type (0x02) + PCM data length
+                // Message format: 1 byte type (0x02) + PCM data
                 const messageBuffer = new ArrayBuffer(1 + pcm16Buffer.byteLength);
                 const messageView = new DataView(messageBuffer);
-
-                messageView.setUint8(0, 0x02); // Set the type byte
-
-                // Copy the PCM data into the message buffer starting at offset 1
-                const pcmDataView = new Uint8Array(pcm16Buffer);
-                new Uint8Array(messageBuffer, 1).set(pcmDataView);
+                messageView.setUint8(0, 0x02); // Type byte for PCM audio
+                new Uint8Array(messageBuffer, 1).set(new Uint8Array(pcm16Buffer)); // Copy PCM data
 
                 try {
-                    websocket.send(messageBuffer); // Send the combined ArrayBuffer
+                    websocket.send(messageBuffer);
                 } catch (e) {
                     console.error("Error sending microphone data via websocket:", e);
+                    // Consider stopping mic capture if send fails repeatedly?
                 }
             } else if (!isMicrophoneActive) {
-                console.log("Microphone inactive, dropping message from worklet.");
+                // If mic stopped while worklet was processing, just drop the message
+                // console.log("Microphone inactive, dropping message from worklet.");
             } else {
                 console.warn("WebSocket not open or null, cannot send microphone data. State:", wsState);
             }
         };
-
         micWorkletNode.port.onmessageerror = (event) => {
              console.error("Error receiving message from mic worklet:", event);
         };
 
-
-        // 6. Connect the nodes: Mic Stream -> Source Node -> Worklet Node
+        // 6. Connect the nodes
         micSourceNode.connect(micWorkletNode);
         console.log('Microphone nodes connected.');
 
-        // 7. Update State and UI
+        // 7. Update State and Trigger UI Update via postMessage
         isMicrophoneActive = true;
-        updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
-        console.log('Microphone capture started successfully.'); // This is the log the user sees
+        // *** MODIFICATION: Replace direct UI update with postMessage ***
+        // REMOVED: updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+        postSidebarButtonUpdate(); // Post message to update UI
+        // *** END MODIFICATION ***
+        console.log('Microphone capture started successfully.');
 
     } catch (error) {
         console.error('Failed to start microphone capture:', error);
-        // If getUserMedia failed, log the constraints that failed
-        if (error.name === 'OverconstrainedError' || error.name === 'NotFoundError' || error.name === 'NotReadableError' || error.name === 'AbortError') {
-             console.error('Error likely due to constraints or device issue. Constraints used:', JSON.stringify(constraints.audio));
-             // If a specific device ID was requested and failed
+        if (constraints) { // Log constraints if they were defined
+             console.error('Error occurred after requesting constraints:', JSON.stringify(constraints.audio));
+        }
+        if (error.name === 'NotAllowedError') {
+             alert("Microphone access was denied. Please grant permission in your browser settings.");
+        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+             alert("No microphone found, or the selected microphone is unavailable. Please check your hardware and browser settings.");
+             // Clear preference if specific device failed
              if (preferredInputDeviceId) {
-                 console.warn(`Failed to get stream for preferred device ${preferredInputDeviceId}. Clearing preference.`);
+                 console.warn(`Failed to find preferred device ${preferredInputDeviceId}. Clearing preference.`);
                  preferredInputDeviceId = null;
              }
+        } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+             alert("Could not read from the microphone. It might be in use by another application or there could be a hardware issue.");
+        } else if (error.name === 'OverconstrainedError') {
+             alert(`Could not satisfy microphone requirements (e.g., sample rate ${constraints?.audio?.sampleRate}). Try default settings.`);
+             console.error("OverconstrainedError details:", error.constraint);
+        } else if (error.message.includes("addModule")) {
+             alert("Failed to load audio processing module. Please check console for details.");
+        } else {
+             alert(`An unexpected error occurred while starting the microphone: ${error.message}`);
         }
+
         // Clean up any resources that might have been partially created
-        stopMicrophoneCapture();
-        // Update UI to reflect failure
+        stopMicrophoneCapture(); // stopMicrophoneCapture should also post UI update
+
+        // Ensure state reflects failure and trigger UI update via postMessage
         isMicrophoneActive = false;
-        updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+        // *** MODIFICATION: Replace direct UI update with postMessage ***
+        // REMOVED: updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+        postSidebarButtonUpdate(); // Post message to update UI to reflect failure
+        // *** END MODIFICATION ***
     }
 }
 
-// --- Stop Microphone Capture ---
 function stopMicrophoneCapture() {
+    // Only proceed if the microphone is actually active
     if (!isMicrophoneActive) {
+        console.log('Stop capture called, but microphone is not active.');
+        // Optionally ensure UI is correct if called erroneously while inactive
+        // postSidebarButtonUpdate(); // Uncomment if you want to ensure UI updates even if called redundantly
         return;
     }
 
@@ -3655,43 +3770,67 @@ function stopMicrophoneCapture() {
 
     // 1. Stop MediaStream Tracks
     if (micStream) {
-        micStream.getTracks().forEach(track => track.stop());
-        console.log('Microphone MediaStream tracks stopped.');
-        micStream = null;
+        micStream.getTracks().forEach(track => {
+            track.stop();
+            console.log(`Microphone track stopped: ${track.kind} (${track.label})`);
+        });
+        micStream = null; // Clear the reference
+    } else {
+        console.log('No active microphone stream (micStream) found to stop tracks for.');
     }
 
-    // 2. Disconnect Nodes
-    if (micSourceNode) {
-        micSourceNode.disconnect();
-        micSourceNode = null;
-        console.log('Microphone source node disconnected.');
-    }
+    // 2. Disconnect Nodes (Disconnect in reverse order: worklet first)
     if (micWorkletNode) {
-        micWorkletNode.port.onmessage = null; // Remove listener
+        // Remove listeners first to prevent potential errors during/after disconnect
+        micWorkletNode.port.onmessage = null;
         micWorkletNode.port.onmessageerror = null;
-        micWorkletNode.disconnect();
-        micWorkletNode = null;
-        console.log('Microphone worklet node disconnected.');
+        try {
+            micWorkletNode.disconnect();
+            console.log('Microphone worklet node disconnected.');
+        } catch (e) { console.warn("Error disconnecting worklet node (already disconnected?):", e); }
+        micWorkletNode = null; // Clear reference
+    } else {
+        console.log('No microphone worklet node (micWorkletNode) found to disconnect.');
     }
+
+    if (micSourceNode) {
+        try {
+            micSourceNode.disconnect();
+            console.log('Microphone source node disconnected.');
+        } catch (e) { console.warn("Error disconnecting source node (already disconnected?):", e); }
+        micSourceNode = null; // Clear reference
+    } else {
+        console.log('No microphone source node (micSourceNode) found to disconnect.');
+    }
+
 
     // 3. Close Microphone AudioContext
     if (micAudioContext) {
         if (micAudioContext.state !== 'closed') {
+            console.log(`Closing microphone AudioContext (State: ${micAudioContext.state})...`);
             micAudioContext.close().then(() => {
-                console.log('Microphone AudioContext closed.');
+                console.log('Microphone AudioContext closed successfully.');
+                micAudioContext = null; // Clear reference after successful close
             }).catch(e => {
                 console.error('Error closing microphone AudioContext:', e);
+                micAudioContext = null; // Clear reference even on error to prevent reuse attempts
             });
+        } else {
+             console.log('Microphone AudioContext already closed.');
+             micAudioContext = null; // Ensure reference is cleared
         }
-        micAudioContext = null;
+    } else {
+        console.log('No microphone AudioContext (micAudioContext) found to close.');
     }
 
-    // 4. Update State and UI
+    // 4. Update State and Trigger UI Update via postMessage
     isMicrophoneActive = false;
-    updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
-    console.log('Microphone capture stopped.');
+    // *** MODIFICATION: Replace direct UI update with postMessage ***
+    // REMOVED: updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+    postSidebarButtonUpdate(); // Post message to update UI
+    // *** END MODIFICATION ***
+    console.log('Microphone capture stopped state updated and UI update posted.');
 }
-
 
 function cleanup() {
   if (metricsIntervalId) {
