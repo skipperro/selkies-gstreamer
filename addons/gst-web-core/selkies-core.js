@@ -1865,6 +1865,13 @@ function receiveMessage(event) {
     // console.log(`Message Receiver: Processing type '${message.type}'`, message); // Optional verbose log
 
     switch (message.type) {
+        case 'clipboardContentUpdate':
+            if (dev_mode) {
+                serverClipboardContent = message.text;
+                serverClipboardTextareaElement.value = message.text;
+                console.log('Updated dev sidebar clipboard textarea from server.');
+             }
+             break;
         case 'settings':
             console.log('Received settings message:', message.settings);
             handleSettingsMessage(message.settings);
@@ -2651,10 +2658,6 @@ document.addEventListener('DOMContentLoaded', () => {
           if (webrtc)
             webrtc._setStatus(`Could not copy text to clipboard: ${err}`);
         });
-       if (dev_mode && serverClipboardTextareaElement) {
-           serverClipboardContent = content;
-           serverClipboardTextareaElement.value = content;
-       }
     };
 
     webrtc.oncursorchange = (handle, curdata, hotspot, override) => {
@@ -3383,11 +3386,7 @@ document.addEventListener('DOMContentLoaded', () => {
              navigator.clipboard.writeText(clipboardData).catch((err) => {
                console.error('Could not copy text to clipboard: ' + err);
              });
-             if (dev_mode && serverClipboardTextareaElement) {
-                 serverClipboardContent = clipboardData;
-                 serverClipboardTextareaElement.value = clipboardData;
-                 console.log('Updated dev sidebar clipboard textarea from server.');
-             }
+             window.postMessage({ type: 'clipboardContentUpdate', text: clipboardData }, window.location.origin);
            } catch (e) {
              console.error('Error processing clipboard data:', e);
            }

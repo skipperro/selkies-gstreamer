@@ -543,3 +543,60 @@ body {
     padding: 5px 0 0 0; /* Adjust padding if necessary */
     margin-bottom: 0;
 }
+
+/* Container for the clipboard label and textarea */
+.dashboard-clipboard-item {
+    margin-bottom: 15px; /* Consistent spacing like other items */
+    display: flex;
+    flex-direction: column;
+    gap: 5px; /* Space between label and textarea */
+    background-color: transparent; /* Inherit from section background */
+}
+
+/* Label for the clipboard textarea */
+.dashboard-clipboard-item label {
+    font-weight: bold;
+    font-size: 0.9em; /* Match other labels */
+    color: var(--sidebar-text);
+}
+
+/* The clipboard textarea itself */
+.dashboard-clipboard-item textarea {
+    width: 100%;
+    box-sizing: border-box; /* Include padding and border in width */
+    padding: 8px; /* Consistent padding */
+    border: 1px solid var(--input-border);
+    border-radius: 8px; /* Consistent border radius */
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    font-size: 0.9em; /* Slightly smaller font for content */
+    font-family: monospace; /* Use monospace for clipboard content, like core */
+    resize: vertical; /* Allow vertical resizing */
+    min-height: 80px; /* Give it a decent minimum height */
+    transition: border-color 0.2s ease, background-color 0.2s ease; /* Smooth transitions */
+}
+
+/* Hover state for the textarea */
+.dashboard-clipboard-item textarea:hover {
+    border-color: var(--sidebar-header-color); /* Highlight border on hover */
+}
+
+/* Focus state for the textarea */
+.dashboard-clipboard-item textarea:focus {
+   outline: none; /* Remove default browser outline */
+   border-color: var(--sidebar-header-color); /* Highlight border on focus */
+   /* Optional: Add a subtle box-shadow on focus if desired */
+   /* box-shadow: 0 0 0 2px rgba(var(--sidebar-header-color-rgb), 0.2); */ /* Needs --sidebar-header-color-rgb variable */
+}
+
+/* Placeholder text styling (optional, but good for themes) */
+.dashboard-clipboard-item textarea::placeholder {
+    color: var(--sidebar-text);
+    opacity: 0.6; /* Make placeholder less prominent */
+}
+
+/* Specific placeholder styles for light theme if needed */
+.theme-light .dashboard-clipboard-item textarea::placeholder {
+    color: var(--sidebar-text);
+    opacity: 0.6;
+}

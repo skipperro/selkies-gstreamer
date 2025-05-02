@@ -138,14 +138,17 @@ function Sidebar({ isOpen }) {
   const [isMicrophoneActive, setIsMicrophoneActive] = useState(false); // Assume starts false
   const [isGamepadEnabled, setIsGamepadEnabled] = useState(true); // Assume starts true
 
-  // ADDED: State for collapsible sections (default collapsed)
+  // *** ADDED: State for clipboard content in the dashboard ***
+  const [dashboardClipboardContent, setDashboardClipboardContent] = useState('');
+
+  // State for collapsible sections (default collapsed)
   const [sectionsOpen, setSectionsOpen] = useState({
     settings: false,
     stats: false,
-    // Add more keys here for future sections
+    clipboard: false, // *** ADDED Clipboard Section ***
   });
 
-  // ADDED: Handler to toggle section visibility
+  // Handler to toggle section visibility
   const toggleSection = (sectionKey) => {
     setSectionsOpen(prev => ({
       ...prev,
@@ -254,6 +257,20 @@ function Sidebar({ isOpen }) {
       console.log("Dashboard: Sending postMessage: { type: 'requestFullscreen' }");
       window.postMessage({ type: 'requestFullscreen' }, window.location.origin);
   };
+
+  // *** ADDED: Event Handlers for Clipboard Textarea ***
+  const handleClipboardChange = (event) => {
+      // Update the local state as the user types
+      setDashboardClipboardContent(event.target.value);
+  };
+
+  const handleClipboardBlur = (event) => {
+      // Send the update to the core application when the user clicks away
+      const currentText = event.target.value; // Or use dashboardClipboardContent state
+      console.log(`Dashboard: Sending postMessage: { type: 'clipboardUpdateFromUI', text: ... } (on blur)`);
+      window.postMessage({ type: 'clipboardUpdateFromUI', text: currentText }, window.location.origin);
+  };
+  // *** END Clipboard Handlers ***
 
 
   // --- useEffect Hooks ---
@@ -365,7 +382,19 @@ function Sidebar({ isOpen }) {
           if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone);
           if (message.gamepad !== undefined) setIsGamepadEnabled(message.gamepad);
         }
-        // Potentially listen for other message types if needed later
+        // *** ADDED: Listen for clipboard updates FROM the core application ***
+        // NOTE: The core application needs to be modified to send this message type
+        //       whenever its server clipboard content is updated (e.g., from WebSocket or WebRTC).
+        else if (message.type === 'clipboardContentUpdate') {
+            console.log('Dashboard: Received clipboardContentUpdate', message);
+            if (typeof message.text === 'string') {
+                // Update the dashboard's local state, which will update the textarea value
+                setDashboardClipboardContent(message.text);
+            } else {
+                console.warn('Dashboard: Received clipboardContentUpdate without valid text property.');
+            }
+        }
+        // *** END Clipboard Update Listener ***
       }
     };
     window.addEventListener('message', handleWindowMessage);
@@ -473,7 +502,7 @@ function Sidebar({ isOpen }) {
             </button>
         </div>
 
-        {/* Stream Settings Section - MODIFIED for Collapsible */}
+        {/* Stream Settings Section */}
         <div className="sidebar-section">
             <div
               className="sidebar-section-header"
@@ -522,7 +551,7 @@ function Sidebar({ isOpen }) {
             )}
         </div>
 
-        {/* Stats Section - Gauges - MODIFIED for Collapsible */}
+        {/* Stats Section - Gauges */}
         <div className="sidebar-section">
             <div
               className="sidebar-section-header"
@@ -601,6 +630,46 @@ function Sidebar({ isOpen }) {
               </div>
             )}
         </div>
+
+        {/* *** ADDED: Clipboard Section *** */}
+        <div className="sidebar-section">
+            <div
+              className="sidebar-section-header"
+              onClick={() => toggleSection('clipboard')}
+              role="button"
+              aria-expanded={sectionsOpen.clipboard}
+              aria-controls="clipboard-content"
+              tabIndex="0" // Make it focusable
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('clipboard')} // Allow keyboard activation
+            >
+              <h3>Clipboard</h3>
+              <span className="section-toggle-icon" aria-hidden="true">
+                {sectionsOpen.clipboard ? <CaretUpIcon /> : <CaretDownIcon />}
+              </span>
+            </div>
+
+            {/* Conditionally rendered content */}
+            {sectionsOpen.clipboard && (
+              <div className="sidebar-section-content" id="clipboard-content">
+                {/* Use a class similar to core dev sidebar for potential styling reuse, or create a new one */}
+                <div className="dashboard-clipboard-item">
+                  <label htmlFor="dashboardClipboardTextarea">Server Clipboard:</label>
+                  <textarea
+                    id="dashboardClipboardTextarea"
+                    value={dashboardClipboardContent}
+                    onChange={handleClipboardChange}
+                    onBlur={handleClipboardBlur}
+                    rows="5" // Give it some default height
+                    placeholder="Clipboard content from server..."
+                    // Add appropriate className for styling if needed
+                    // className="dashboard-textarea"
+                  />
+                </div>
+              </div>
+            )}
+        </div>
+        {/* *** END Clipboard Section *** */}
+
       </div>
 
       {/* Tooltip */}
