@@ -506,14 +506,11 @@ class WebRTCInput:
         self.js_map[js_num] = js
     async def __js_disconnect(self, js_num=None):
         if js_num is None:
-            for js in self.js_map.values():
-                await asyncio.to_thread(js.stop_server)
             self.js_map = {}
             return
         js = await asyncio.to_thread(self.js_map.get, js_num, None)
         if js is not None:
             logger_webrtc_input.info("stopping gamepad %d" % js_num)
-            await asyncio.to_thread(js.stop_server)
             del self.js_map[js_num]
     def __js_emit_btn(self, js_num, btn_num, btn_val):
         js = self.js_map.get(js_num, None)

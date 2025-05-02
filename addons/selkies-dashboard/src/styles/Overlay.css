@@ -102,6 +102,34 @@
     border-bottom: 1px solid var(--sidebar-border);
 }
 
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.header-action-button {
+    background: none;
+    border: none;
+    padding: 4px;
+    margin: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text);
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+.header-action-button:hover {
+    background-color: rgba(128, 128, 128, 0.2);
+}
+
+.header-action-button svg {
+    fill: currentColor;
+    display: block;
+}
+
 .sidebar h2 {
     margin: 0;
     font-size: 1.5em;
@@ -129,6 +157,56 @@
     padding: 0 2px;
     box-sizing: border-box;
     overflow: hidden;
+}
+
+.sidebar-action-buttons {
+    display: flex;
+    justify-content: space-around; /* Distribute buttons evenly */
+    align-items: center;
+    margin-bottom: 20px; /* Space before the next section */
+    padding: 10px 0; /* Some vertical padding */
+    border-bottom: 1px solid var(--sidebar-border); /* Optional separator */
+}
+
+.action-button {
+    display: flex; /* Center icon inside */
+    align-items: center;
+    justify-content: center;
+    width: 40px; /* Square-ish */
+    height: 40px;
+    padding: 0; /* Remove default padding */
+    border: 1px solid var(--item-border);
+    border-radius: 8px; /* Rounded corners */
+    background-color: var(--input-bg); /* Default OFF background (grayish) */
+    color: var(--sidebar-text); /* Default icon color */
+    cursor: pointer;
+    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    outline: none;
+}
+
+.action-button svg {
+    /* SVG is controlled by parent's color property */
+    fill: currentColor;
+    width: 60%; /* Adjust icon size within button */
+    height: 60%;
+    pointer-events: none; /* Prevent SVG from capturing clicks */
+}
+
+.action-button:hover {
+    border-color: var(--sidebar-header-color); /* Highlight border on hover */
+    background-color: var(--section-bg); /* Slightly different background on hover */
+}
+
+.action-button.active {
+    background-color: var(--sidebar-header-color); /* ON background (blueish) */
+    color: var(--button-text); /* Icon color when ON (often contrast like white/black) */
+    border-color: var(--sidebar-header-color);
+}
+
+/* Ensure active hover is distinct if needed */
+.action-button.active:hover {
+     background-color: var(--button-hover-bg); /* Use button hover color */
+     border-color: var(--button-hover-bg);
 }
 
 /* Style for the icons inside the toggle */
@@ -403,4 +481,65 @@ body {
 /* Ensure the #dashboard-root element created in main.jsx has a high z-index */
 #dashboard-root {
     z-index: 1000;
+}
+
+.sidebar-section {
+    margin-bottom: 10px; /* Slightly reduce margin between collapsed sections */
+    padding: 0; /* Remove padding from the main section container */
+    border-radius: 8px;
+    background-color: var(--section-bg);
+    border: 1px solid var(--item-border);
+    overflow: hidden; /* Needed if using transitions later, good practice */
+}
+
+.sidebar-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px; /* Add padding here instead of the parent */
+    cursor: pointer;
+    user-select: none; /* Prevent text selection on click */
+    transition: background-color 0.2s ease;
+}
+
+.sidebar-section-header:hover {
+    background-color: rgba(128, 128, 128, 0.1); /* Subtle hover effect */
+}
+
+.sidebar-section-header h3 {
+    margin: 0; /* Remove default h3 margins */
+    font-size: 1.2em;
+    color: var(--sidebar-header-color);
+}
+
+.section-toggle-icon {
+    display: flex; /* Helps align the SVG */
+    align-items: center;
+    color: var(--sidebar-text); /* Make caret color match text */
+    margin-left: 10px; /* Space between title and caret */
+}
+
+.sidebar-section-content {
+    padding: 15px; /* Add padding to the content area */
+    padding-top: 10px; /* Add a bit of space below the header */
+    /* Optional: Add transition for smooth open/close */
+    /* transition: max-height 0.3s ease-out, opacity 0.3s ease-out; */
+    /* max-height: 1000px; set high enough */
+    /* opacity: 1; */
+    /* Note: Conditional rendering is used, so transitions aren't strictly necessary */
+    /* but could be added if desired (requires adjusting JSX slightly) */
+}
+
+/* --- Ensure existing styles work with new structure --- */
+/* Adjust padding/margin for items inside the content if needed */
+.sidebar-section-content .dev-setting-item {
+    /* Reset margin if needed, but looks okay with current structure */
+    /* margin-bottom: 15px; */
+    background-color: transparent; /* Inherit from section */
+}
+
+.sidebar-section-content .stats-gauges {
+    background-color: transparent; /* Inherit from section */
+    padding: 5px 0 0 0; /* Adjust padding if necessary */
+    margin-bottom: 0;
 }

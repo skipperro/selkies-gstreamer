@@ -21,7 +21,7 @@
  */
 
 // Set this to true to enable the dev dashboard layout
-var dev_mode = true;
+var dev_mode = false;
 
 /**
  * @typedef {Object} WebRTCDemoSignalling
