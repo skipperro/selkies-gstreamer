@@ -600,3 +600,78 @@ body {
     color: var(--sidebar-text);
     opacity: 0.6;
 }
+
+.gamepad-visualizer-instance {
+    margin-bottom: 20px; /* Space between multiple gamepads */
+    padding-bottom: 15px;
+    border-bottom: 1px dashed var(--item-border); /* Separator */
+}
+.gamepad-visualizer-instance:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none; /* No border for the last one */
+}
+
+.gamepad-visualizer-instance h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1em;
+    color: var(--sidebar-text);
+    font-weight: normal;
+}
+
+/* The main SVG container */
+.gamepad-svg-vis {
+    background-color: var(--input-bg); /* Use input background for contrast */
+    border-radius: 5px;
+    display: block; /* Prevent extra space below */
+    border: 1px solid var(--item-border);
+}
+
+/* SVG Element Styles (Copied and adapted from original core script) */
+.gp-vis-base {
+    fill: #555; /* Keep original colors for now, can be themed later */
+    stroke: #888;
+    stroke-width: 0.5;
+}
+.gp-vis-button,
+.gp-vis-dpad,
+.gp-vis-bumper {
+    fill: #8ecae6;
+    stroke: #a1d8f0;
+    stroke-width: 0.5;
+    transition: fill 0.05s linear;
+}
+.gp-vis-stick-base {
+    fill: #2a527a;
+}
+.gp-vis-stick-top {
+    fill: #6699cc;
+    stroke: #8cb3d9;
+    stroke-width: 0.5;
+    transition: transform 0.05s linear;
+}
+.gp-vis-trigger {
+    fill: #8ecae6;
+    stroke: #a1d8f0;
+    stroke-width: 0.5;
+    transition: opacity 0.05s linear;
+    opacity: 0.5; /* Default low opacity for triggers */
+}
+
+/* Pressed States */
+.gp-vis-button-pressed,
+.gp-vis-dpad-pressed,
+.gp-vis-bumper-pressed {
+    fill: #4a90e2; /* Active/pressed color */
+}
+
+/* Message when no gamepads are detected yet */
+.no-gamepads-message {
+    font-style: italic;
+    color: var(--sidebar-text);
+    opacity: 0.7;
+    text-align: center;
+    margin-top: 10px;
+}
+

@@ -1,5 +1,6 @@
 // src/components/Sidebar.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import GamepadVisualizer from './GamepadVisualizer';
 
 // Define the options for the dropdowns/sliders
 const encoderOptions = [
@@ -53,7 +54,6 @@ const calculateGaugeOffset = (percentage, radius, circumference) => {
     return circumference * (1 - clampedPercentage / 100);
 };
 
-// --- SVG Icons ---
 const ScreenIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
         <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
@@ -78,15 +78,12 @@ const GamepadIcon = () => (
     </svg>
 );
 
-// ADDED: Fullscreen Icon
 const FullscreenIcon = () => (
-    // Using a standard Material Design fullscreen icon path
-    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"> {/* Adjusted size to match theme toggle */}
+    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
         <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
     </svg>
 );
 
-// ADDED: Caret Icons for Collapsible Sections
 const CaretDownIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ display: 'block' }}>
         <path d="M7 10l5 5 5-5H7z"/>
@@ -98,63 +95,151 @@ const CaretUpIcon = () => (
         <path d="M7 14l5-5 5 5H7z"/>
     </svg>
 );
-// --- End SVG Icons ---
+
+const SpinnerIcon = () => (
+    <svg width="18" height="18" viewBox="0 0 38 38" xmlns="http://www.w3.org/2000/svg" stroke="currentColor">
+        <g fill="none" fillRule="evenodd">
+            <g transform="translate(1 1)" strokeWidth="3">
+                <circle strokeOpacity=".3" cx="18" cy="18" r="18"/>
+                <path d="M36 18c0-9.94-8.06-18-18-18">
+                    <animateTransform
+                        attributeName="transform"
+                        type="rotate"
+                        from="0 18 18"
+                        to="360 18 18"
+                        dur="0.8s"
+                        repeatCount="indefinite"/>
+                </path>
+            </g>
+        </g>
+    </svg>
+);
 
 
 function Sidebar({ isOpen }) {
-  // Read theme from localStorage, default to 'dark'
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
 
-  // Initialize settings by reading from localStorage if available, otherwise use defaults
   const [encoder, setEncoder] = useState(localStorage.getItem('encoder') || DEFAULT_ENCODER);
   const [framerate, setFramerate] = useState(parseInt(localStorage.getItem('videoFramerate'), 10) || DEFAULT_FRAMERATE);
   const [videoBitRate, setVideoBitRate] = useState(parseInt(localStorage.getItem('videoBitRate'), 10) || DEFAULT_VIDEO_BITRATE);
   const [audioBitRate, setAudioBitRate] = useState(parseInt(localStorage.getItem('audioBitRate'), 10) || DEFAULT_AUDIO_BITRATE);
   const [videoBufferSize, setVideoBufferSize] = useState(parseInt(localStorage.getItem('videoBufferSize'), 10) || DEFAULT_VIDEO_BUFFER_SIZE);
 
-  // State variables for specific stats needed for display (Gauges and Text)
   const [clientFps, setClientFps] = useState(0);
   const [audioBuffer, setAudioBuffer] = useState(0);
 
-  // State variables for gauge percentages
   const [cpuPercent, setCpuPercent] = useState(0);
   const [gpuPercent, setGpuPercent] = useState(0);
   const [sysMemPercent, setSysMemPercent] = useState(0);
   const [gpuMemPercent, setGpuMemPercent] = useState(0);
 
-  // State variables for raw memory values (for Tooltips)
   const [sysMemUsed, setSysMemUsed] = useState(null);
   const [sysMemTotal, setSysMemTotal] = useState(null);
   const [gpuMemUsed, setGpuMemUsed] = useState(null);
   const [gpuMemTotal, setGpuMemTotal] = useState(null);
 
-  // Tooltip state
   const [hoveredItem, setHoveredItem] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
 
-  // State for the toggle buttons (Defaults match core code initial state / dev sidebar)
-  const [isVideoActive, setIsVideoActive] = useState(true); // Assume starts true
-  const [isAudioActive, setIsAudioActive] = useState(true); // Assume starts true
-  const [isMicrophoneActive, setIsMicrophoneActive] = useState(false); // Assume starts false
-  const [isGamepadEnabled, setIsGamepadEnabled] = useState(true); // Assume starts true
+  const [isVideoActive, setIsVideoActive] = useState(true);
+  const [isAudioActive, setIsAudioActive] = useState(true);
+  const [isMicrophoneActive, setIsMicrophoneActive] = useState(false);
+  const [isGamepadEnabled, setIsGamepadEnabled] = useState(true);
 
-  // *** ADDED: State for clipboard content in the dashboard ***
   const [dashboardClipboardContent, setDashboardClipboardContent] = useState('');
 
-  // State for collapsible sections (default collapsed)
+  const [audioInputDevices, setAudioInputDevices] = useState([]);
+  const [audioOutputDevices, setAudioOutputDevices] = useState([]);
+  const [selectedInputDeviceId, setSelectedInputDeviceId] = useState('default');
+  const [selectedOutputDeviceId, setSelectedOutputDeviceId] = useState('default');
+  const [isOutputSelectionSupported, setIsOutputSelectionSupported] = useState(false);
+  const [audioDeviceError, setAudioDeviceError] = useState(null);
+  const [isLoadingAudioDevices, setIsLoadingAudioDevices] = useState(false);
+
+  const [gamepadStates, setGamepadStates] = useState({}); // Stores state like { 0: { buttons: {}, axes: {} }, 1: ... }
+  const [hasReceivedGamepadData, setHasReceivedGamepadData] = useState(false); // Flag to show section header
+
   const [sectionsOpen, setSectionsOpen] = useState({
     settings: false,
     stats: false,
-    clipboard: false, // *** ADDED Clipboard Section ***
+    clipboard: false,
+    audioSettings: false,
+    gamepads: false,
   });
 
-  // Handler to toggle section visibility
-  const toggleSection = (sectionKey) => {
+  const populateAudioDevices = useCallback(async () => {
+    console.log("Dashboard: Attempting to populate audio devices...");
+    setIsLoadingAudioDevices(true);
+    setAudioDeviceError(null);
+    setAudioInputDevices([]);
+    setAudioOutputDevices([]);
+
+    const supportsSinkId = 'setSinkId' in HTMLMediaElement.prototype;
+    setIsOutputSelectionSupported(supportsSinkId);
+    console.log("Dashboard: Output device selection supported:", supportsSinkId);
+
+    try {
+      console.log("Dashboard: Requesting temporary microphone permission for device listing...");
+      const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      tempStream.getTracks().forEach(track => track.stop());
+      console.log("Dashboard: Temporary permission granted/available.");
+
+      console.log("Dashboard: Enumerating media devices...");
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      console.log("Dashboard: Devices found:", devices);
+
+      const inputs = [];
+      const outputs = [];
+
+      devices.forEach(device => {
+        if (!device.deviceId) {
+          console.warn("Dashboard: Skipping device with missing deviceId:", device);
+          return; // Skip device if ID is missing (e.g., communications device placeholder)
+        }
+        // Use label only if provided, otherwise generate one
+        const label = device.label || (device.kind === 'audioinput' ? `Microphone ${inputs.length}` : `Speaker ${outputs.length}`);
+
+        if (device.kind === 'audioinput') {
+          inputs.push({ deviceId: device.deviceId, label: label });
+        } else if (device.kind === 'audiooutput' && supportsSinkId) {
+          outputs.push({ deviceId: device.deviceId, label: label });
+        }
+      });
+
+      setAudioInputDevices(inputs);
+      setAudioOutputDevices(outputs);
+
+      setSelectedInputDeviceId('default');
+      setSelectedOutputDeviceId('default');
+
+      console.log(`Dashboard: Populated ${inputs.length -1} specific inputs, ${outputs.length -1} specific outputs.`);
+
+    } catch (err) {
+      console.error('Dashboard: Error getting media devices or permissions:', err);
+      let userMessage = `Error listing audio devices: ${err.name || 'Unknown error'}`;
+      if (err.name === 'NotAllowedError') {
+        userMessage = "Permission denied. Please allow microphone access in browser settings to select devices.";
+      } else if (err.name === 'NotFoundError') {
+        userMessage = "No audio devices found.";
+      }
+      setAudioDeviceError(userMessage);
+    } finally {
+      setIsLoadingAudioDevices(false);
+    }
+  }, []);
+
+  const toggleSection = useCallback((sectionKey) => {
+    const isOpening = !sectionsOpen[sectionKey];
+
     setSectionsOpen(prev => ({
       ...prev,
       [sectionKey]: !prev[sectionKey]
     }));
-  };
+
+    if (sectionKey === 'audioSettings' && isOpening) {
+      populateAudioDevices();
+    }
+  }, [sectionsOpen, populateAudioDevices]);
 
 
   // --- Event Handlers for Settings ---
@@ -205,9 +290,6 @@ function Sidebar({ isOpen }) {
      if (selectedSize !== undefined) {
        setVideoBufferSize(selectedSize);
        localStorage.setItem('videoBufferSize', selectedSize.toString());
-       // NOTE: Dev sidebar uses setIntParam, not postMessage for this.
-       // We send a postMessage here as requested for React component,
-       // assuming core *might* handle it or it's needed elsewhere.
        console.log(`Dashboard: Sending postMessage: { type: 'settings', settings: { videoBufferSize: ${selectedSize} } }`);
        window.postMessage({ type: 'settings', settings: { videoBufferSize: selectedSize } }, window.location.origin);
      }
@@ -219,115 +301,100 @@ function Sidebar({ isOpen }) {
     localStorage.setItem('theme', newTheme);
   };
 
-  // --- Event Handlers for Action Buttons (Matching Dev Sidebar Methods) ---
+  // --- Event Handlers for Action Buttons ---
   const handleVideoToggle = () => {
-      // Send the 'pipelineControl' message via postMessage for video.
       const newState = !isVideoActive;
       console.log(`Dashboard: Sending postMessage: { type: 'pipelineControl', pipeline: 'video', enabled: ${newState} }`);
       window.postMessage({ type: 'pipelineControl', pipeline: 'video', enabled: newState }, window.location.origin);
-      // DO NOT update local state here - wait for 'pipelineStatusUpdate' or 'sidebarButtonStatusUpdate' message from core.
   };
 
   const handleAudioToggle = () => {
-      // Send the 'pipelineControl' message via postMessage for audio.
       const newState = !isAudioActive;
       console.log(`Dashboard: Sending postMessage: { type: 'pipelineControl', pipeline: 'audio', enabled: ${newState} }`);
       window.postMessage({ type: 'pipelineControl', pipeline: 'audio', enabled: newState }, window.location.origin);
-      // DO NOT update local state here - wait for 'pipelineStatusUpdate' or 'sidebarButtonStatusUpdate' message from core.
   };
 
   const handleMicrophoneToggle = () => {
-      // Send the 'pipelineControl' message via postMessage for microphone.
       const newState = !isMicrophoneActive;
       console.log(`Dashboard: Sending postMessage: { type: 'pipelineControl', pipeline: 'microphone', enabled: ${newState} }`);
       window.postMessage({ type: 'pipelineControl', pipeline: 'microphone', enabled: newState }, window.location.origin);
-      // DO NOT update local state here - wait for 'pipelineStatusUpdate' or 'sidebarButtonStatusUpdate' message from core.
   };
 
   const handleGamepadToggle = () => {
-      // Send the 'gamepadControl' message via postMessage for gamepad.
       const newState = !isGamepadEnabled;
       console.log(`Dashboard: Sending postMessage: { type: 'gamepadControl', enabled: ${newState} }`);
       window.postMessage({ type: 'gamepadControl', enabled: newState }, window.location.origin);
-      // DO NOT update local state here - wait for 'gamepadControl' or 'sidebarButtonStatusUpdate' confirmation/status message from core.
   };
 
-  // ADDED: Handler for Fullscreen Button
   const handleFullscreenRequest = () => {
       console.log("Dashboard: Sending postMessage: { type: 'requestFullscreen' }");
       window.postMessage({ type: 'requestFullscreen' }, window.location.origin);
   };
 
-  // *** ADDED: Event Handlers for Clipboard Textarea ***
+  // --- Event Handlers for Clipboard ---
   const handleClipboardChange = (event) => {
-      // Update the local state as the user types
       setDashboardClipboardContent(event.target.value);
   };
 
   const handleClipboardBlur = (event) => {
-      // Send the update to the core application when the user clicks away
-      const currentText = event.target.value; // Or use dashboardClipboardContent state
+      const currentText = event.target.value;
       console.log(`Dashboard: Sending postMessage: { type: 'clipboardUpdateFromUI', text: ... } (on blur)`);
       window.postMessage({ type: 'clipboardUpdateFromUI', text: currentText }, window.location.origin);
   };
-  // *** END Clipboard Handlers ***
+
+  // --- Event Handlers for Audio Device Dropdowns ---
+  const handleAudioInputChange = (event) => {
+      const deviceId = event.target.value;
+      setSelectedInputDeviceId(deviceId);
+      console.log(`Dashboard: Sending postMessage: { type: 'audioDeviceSelected', context: 'input', deviceId: ${deviceId} }`);
+      window.postMessage({ type: 'audioDeviceSelected', context: 'input', deviceId: deviceId }, window.location.origin);
+  };
+
+  const handleAudioOutputChange = (event) => {
+      const deviceId = event.target.value;
+      setSelectedOutputDeviceId(deviceId);
+      console.log(`Dashboard: Sending postMessage: { type: 'audioDeviceSelected', context: 'output', deviceId: ${deviceId} }`);
+      window.postMessage({ type: 'audioDeviceSelected', context: 'output', deviceId: deviceId }, window.location.origin);
+  };
 
 
   // --- useEffect Hooks ---
-
-  // Effect for syncing initial settings from localStorage & setting defaults if needed
   useEffect(() => {
     const savedEncoder = localStorage.getItem('encoder');
     if (savedEncoder && encoderOptions.includes(savedEncoder)) {
       setEncoder(savedEncoder);
     } else {
-      setEncoder(DEFAULT_ENCODER); // Set default if invalid/missing
-      localStorage.setItem('encoder', DEFAULT_ENCODER); // Save default
+      setEncoder(DEFAULT_ENCODER); localStorage.setItem('encoder', DEFAULT_ENCODER);
     }
-
     const savedFramerate = parseInt(localStorage.getItem('videoFramerate'), 10);
     if (!isNaN(savedFramerate) && framerateOptions.includes(savedFramerate)) {
       setFramerate(savedFramerate);
     } else {
-      setFramerate(DEFAULT_FRAMERATE); // Set default
-      localStorage.setItem('videoFramerate', DEFAULT_FRAMERATE.toString()); // Save default
+      setFramerate(DEFAULT_FRAMERATE); localStorage.setItem('videoFramerate', DEFAULT_FRAMERATE.toString());
     }
-
     const savedVideoBitRate = parseInt(localStorage.getItem('videoBitRate'), 10);
      if (!isNaN(savedVideoBitRate) && videoBitrateOptions.includes(savedVideoBitRate)) {
        setVideoBitRate(savedVideoBitRate);
      } else {
-       setVideoBitRate(DEFAULT_VIDEO_BITRATE); // Set default
-       localStorage.setItem('videoBitRate', DEFAULT_VIDEO_BITRATE.toString()); // Save default
+       setVideoBitRate(DEFAULT_VIDEO_BITRATE); localStorage.setItem('videoBitRate', DEFAULT_VIDEO_BITRATE.toString());
      }
-
     const savedAudioBitRate = parseInt(localStorage.getItem('audioBitRate'), 10);
      if (!isNaN(savedAudioBitRate) && audioBitrateOptions.includes(savedAudioBitRate)) {
        setAudioBitRate(savedAudioBitRate);
      } else {
-       setAudioBitRate(DEFAULT_AUDIO_BITRATE); // Set default
-       localStorage.setItem('audioBitRate', DEFAULT_AUDIO_BITRATE.toString()); // Save default
+       setAudioBitRate(DEFAULT_AUDIO_BITRATE); localStorage.setItem('audioBitRate', DEFAULT_AUDIO_BITRATE.toString());
      }
-
     const savedVideoBufferSize = parseInt(localStorage.getItem('videoBufferSize'), 10);
      if (!isNaN(savedVideoBufferSize) && videoBufferOptions.includes(savedVideoBufferSize)) {
        setVideoBufferSize(savedVideoBufferSize);
      } else {
-       setVideoBufferSize(DEFAULT_VIDEO_BUFFER_SIZE); // Set default
-       localStorage.setItem('videoBufferSize', DEFAULT_VIDEO_BUFFER_SIZE.toString()); // Save default
+       setVideoBufferSize(DEFAULT_VIDEO_BUFFER_SIZE); localStorage.setItem('videoBufferSize', DEFAULT_VIDEO_BUFFER_SIZE.toString());
      }
-  }, []); // Runs once on mount
+  }, []);
 
 
-  // Effect for periodically reading stats from window globals
   useEffect(() => {
     const readStats = () => {
-        // Only read if the stats section is open OR if other components might need this data
-        // For now, let's keep reading regardless, as the performance impact is likely minimal
-        // and other components might rely on these window globals implicitly.
-        // If performance becomes an issue, we could conditionally run this based on sectionsOpen.stats
-        // if (!sectionsOpen.stats && !someOtherComponentNeedsStats) return;
-
         const currentSystemStats = window.system_stats;
         const sysMemUsed = currentSystemStats?.mem_used ?? null;
         const sysMemTotal = currentSystemStats?.mem_total ?? null;
@@ -348,33 +415,26 @@ function Sidebar({ isOpen }) {
     };
     const intervalId = setInterval(readStats, STATS_READ_INTERVAL_MS);
     return () => clearInterval(intervalId);
-  }, []); // Runs once on mount - dependencies could include sectionsOpen.stats if optimization needed
+  }, []);
 
 
-  // Effect for listening to messages from the core code to update UI state
   useEffect(() => {
     const handleWindowMessage = (event) => {
-      // Basic security check
       if (event.origin !== window.location.origin) return;
-
       const message = event.data;
       if (typeof message === 'object' && message !== null) {
-        // Listen for status updates for Video, Audio, Microphone
         if (message.type === 'pipelineStatusUpdate') {
           console.log('Dashboard: Received pipelineStatusUpdate', message);
           if (message.video !== undefined) setIsVideoActive(message.video);
           if (message.audio !== undefined) setIsAudioActive(message.audio);
           if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone);
         }
-        // Listen for gamepad status updates/confirmations
         else if (message.type === 'gamepadControl') {
-            // Check if it's a confirmation/status update (might just echo the command)
             if (message.enabled !== undefined) {
                 console.log('Dashboard: Received gamepadControl status/confirmation', message);
                 setIsGamepadEnabled(message.enabled);
             }
         }
-        // Listen for sidebarButtonStatusUpdate which contains all states
         else if (message.type === 'sidebarButtonStatusUpdate') {
           console.log('Dashboard: Received sidebarButtonStatusUpdate', message);
           if (message.video !== undefined) setIsVideoActive(message.video);
@@ -382,31 +442,69 @@ function Sidebar({ isOpen }) {
           if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone);
           if (message.gamepad !== undefined) setIsGamepadEnabled(message.gamepad);
         }
-        // *** ADDED: Listen for clipboard updates FROM the core application ***
-        // NOTE: The core application needs to be modified to send this message type
-        //       whenever its server clipboard content is updated (e.g., from WebSocket or WebRTC).
         else if (message.type === 'clipboardContentUpdate') {
             console.log('Dashboard: Received clipboardContentUpdate', message);
             if (typeof message.text === 'string') {
-                // Update the dashboard's local state, which will update the textarea value
                 setDashboardClipboardContent(message.text);
             } else {
                 console.warn('Dashboard: Received clipboardContentUpdate without valid text property.');
             }
         }
-        // *** END Clipboard Update Listener ***
+        else if (message.type === 'audioDeviceStatusUpdate') {
+             console.log('Dashboard: Received audioDeviceStatusUpdate', message);
+             if (message.inputDeviceId !== undefined) {
+                 setSelectedInputDeviceId(message.inputDeviceId || 'default');
+             }
+             if (message.outputDeviceId !== undefined) {
+                 setSelectedOutputDeviceId(message.outputDeviceId || 'default');
+             }
+        }
+        else if (message.type === 'gamepadButtonUpdate' || message.type === 'gamepadAxisUpdate') {
+            if (!hasReceivedGamepadData) {
+                setHasReceivedGamepadData(true); // Show the section header now
+                console.log("Dashboard: First gamepad message received, enabling section header.");
+            }
+
+            const gpIndex = message.gamepadIndex;
+            if (gpIndex === undefined || gpIndex === null) return; // Ignore if no index
+
+            setGamepadStates(prevStates => {
+                const newState = { ...prevStates }; // Shallow copy gamepad map
+
+                // Ensure gamepad object exists and deep copy its state
+                if (!newState[gpIndex]) {
+                    newState[gpIndex] = { buttons: {}, axes: {} };
+                } else {
+                    newState[gpIndex] = {
+                        buttons: { ...(newState[gpIndex].buttons || {}) },
+                        axes: { ...(newState[gpIndex].axes || {}) }
+                    };
+                }
+
+                if (message.type === 'gamepadButtonUpdate') {
+                    const buttonIndex = message.buttonIndex;
+                    if (buttonIndex !== undefined) {
+                        newState[gpIndex].buttons[buttonIndex] = message.value || 0;
+                    }
+                } else { // gamepadAxisUpdate
+                    const axisIndex = message.axisIndex;
+                    if (axisIndex !== undefined) {
+                        const clampedValue = Math.max(-1, Math.min(1, message.value || 0));
+                        newState[gpIndex].axes[axisIndex] = clampedValue;
+                    }
+                }
+                return newState; // Return the updated state object
+            });
+        }
       }
     };
     window.addEventListener('message', handleWindowMessage);
-    console.log("Dashboard: Added window message listener for UI updates.");
-    // Request initial status on mount? Might be useful.
-    // window.postMessage({ type: 'requestStatus' }, window.location.origin); // Optional: Ask core for current state
-
+    console.log("Dashboard: Added window message listener for UI and Gamepad updates.");
     return () => {
       window.removeEventListener('message', handleWindowMessage);
       console.log("Dashboard: Removed window message listener.");
     };
-  }, []); // Runs once on mount
+  }, [hasReceivedGamepadData]); // Add hasReceivedGamepadData dependency
 
 
   // --- Tooltip Handlers ---
@@ -444,7 +542,6 @@ function Sidebar({ isOpen }) {
   const gpuOffset = calculateGaugeOffset(gpuPercent, gaugeRadius, gaugeCircumference);
   const sysMemOffset = calculateGaugeOffset(sysMemPercent, gaugeRadius, gaugeCircumference);
   const gpuMemOffset = calculateGaugeOffset(gpuMemPercent, gaugeRadius, gaugeCircumference);
-  // Use target framerate from state for FPS gauge scaling
   const fpsPercent = Math.min(100, (clientFps / (framerate || DEFAULT_FRAMERATE)) * 100);
   const fpsOffset = calculateGaugeOffset(fpsPercent, gaugeRadius, gaugeCircumference);
   const audioBufferPercent = Math.min(100, (audioBuffer / MAX_AUDIO_BUFFER) * 100);
@@ -457,18 +554,12 @@ function Sidebar({ isOpen }) {
         {/* Header */}
         <div className="sidebar-header">
            <h2>Selkies</h2>
-           {/* Wrapper for right-aligned controls */}
            <div className="header-controls">
              <div className={`theme-toggle ${theme}`} onClick={toggleTheme} title="Toggle Theme">
                <svg className="icon moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
                <svg className="icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
              </div>
-             {/* ADDED: Fullscreen Button */}
-             <button
-               className="header-action-button fullscreen-button" // Added a class for potential styling
-               onClick={handleFullscreenRequest}
-               title="Enter Fullscreen"
-             >
+             <button className="header-action-button fullscreen-button" onClick={handleFullscreenRequest} title="Enter Fullscreen">
                <FullscreenIcon />
              </button>
            </div>
@@ -476,33 +567,13 @@ function Sidebar({ isOpen }) {
 
         {/* Action Buttons Section */}
         <div className="sidebar-action-buttons">
-            <button
-                className={`action-button ${isVideoActive ? 'active' : ''}`}
-                onClick={handleVideoToggle}
-                title={isVideoActive ? "Disable Video Stream (Sends postMessage)" : "Enable Video Stream (Sends postMessage)"}>
-                <ScreenIcon />
-            </button>
-            <button
-                className={`action-button ${isAudioActive ? 'active' : ''}`}
-                onClick={handleAudioToggle}
-                title={isAudioActive ? "Disable Audio Stream (Sends postMessage)" : "Enable Audio Stream (Sends postMessage)"}>
-                <SpeakerIcon />
-            </button>
-            <button
-                className={`action-button ${isMicrophoneActive ? 'active' : ''}`}
-                onClick={handleMicrophoneToggle}
-                title={isMicrophoneActive ? "Disable Microphone (Sends postMessage)" : "Enable Microphone (Sends postMessage)"}>
-                <MicrophoneIcon />
-            </button>
-            <button
-                className={`action-button ${isGamepadEnabled ? 'active' : ''}`}
-                onClick={handleGamepadToggle}
-                title={isGamepadEnabled ? "Disable Gamepad Input (Sends postMessage)" : "Enable Gamepad Input (Sends postMessage)"}>
-                <GamepadIcon />
-            </button>
+            <button className={`action-button ${isVideoActive ? 'active' : ''}`} onClick={handleVideoToggle} title={isVideoActive ? "Disable Video Stream" : "Enable Video Stream"}> <ScreenIcon /> </button>
+            <button className={`action-button ${isAudioActive ? 'active' : ''}`} onClick={handleAudioToggle} title={isAudioActive ? "Disable Audio Stream" : "Enable Audio Stream"}> <SpeakerIcon /> </button>
+            <button className={`action-button ${isMicrophoneActive ? 'active' : ''}`} onClick={handleMicrophoneToggle} title={isMicrophoneActive ? "Disable Microphone" : "Enable Microphone"}> <MicrophoneIcon /> </button>
+            <button className={`action-button ${isGamepadEnabled ? 'active' : ''}`} onClick={handleGamepadToggle} title={isGamepadEnabled ? "Disable Gamepad Input" : "Enable Gamepad Input"}> <GamepadIcon /> </button>
         </div>
 
-        {/* Stream Settings Section */}
+        {/* Video Settings Section */}
         <div className="sidebar-section">
             <div
               className="sidebar-section-header"
@@ -510,16 +581,15 @@ function Sidebar({ isOpen }) {
               role="button"
               aria-expanded={sectionsOpen.settings}
               aria-controls="settings-content"
-              tabIndex="0" // Make it focusable
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('settings')} // Allow keyboard activation
+              tabIndex="0"
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('settings')}
             >
-              <h3>Stream Settings</h3>
+              <h3>Video Settings</h3>
               <span className="section-toggle-icon" aria-hidden="true">
                 {sectionsOpen.settings ? <CaretUpIcon /> : <CaretDownIcon />}
               </span>
             </div>
 
-            {/* Conditionally rendered content */}
             {sectionsOpen.settings && (
               <div className="sidebar-section-content" id="settings-content">
                 {/* Encoder Dropdown */}
@@ -534,13 +604,8 @@ function Sidebar({ isOpen }) {
                 </div>
                 {/* Video Bitrate Slider */}
                 <div className="dev-setting-item">
-                  <label htmlFor="videoBitrateSlider">Video Bitrate ({videoBitRate / 1000} Mbps):</label> {/* Display in Mbps */}
+                  <label htmlFor="videoBitrateSlider">Video Bitrate ({videoBitRate / 1000} Mbps):</label>
                   <input type="range" id="videoBitrateSlider" min="0" max={videoBitrateOptions.length - 1} step="1" value={videoBitrateOptions.indexOf(videoBitRate)} onChange={handleVideoBitrateChange} />
-                </div>
-                {/* Audio Bitrate Slider */}
-                <div className="dev-setting-item">
-                  <label htmlFor="audioBitrateSlider">Audio Bitrate ({audioBitRate / 1000} kbps):</label> {/* Display in kbps */}
-                  <input type="range" id="audioBitrateSlider" min="0" max={audioBitrateOptions.length - 1} step="1" value={audioBitrateOptions.indexOf(audioBitRate)} onChange={handleAudioBitrateChange} />
                 </div>
                 {/* Video Buffer Size Slider */}
                  <div className="dev-setting-item">
@@ -551,7 +616,85 @@ function Sidebar({ isOpen }) {
             )}
         </div>
 
-        {/* Stats Section - Gauges */}
+        {/* Audio Settings Section */}
+        <div className="sidebar-section">
+            <div
+              className="sidebar-section-header"
+              onClick={() => toggleSection('audioSettings')}
+              role="button"
+              aria-expanded={sectionsOpen.audioSettings}
+              aria-controls="audio-settings-content"
+              tabIndex="0"
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('audioSettings')}
+            >
+              <h3>Audio Settings</h3>
+              <span className="section-toggle-icon" aria-hidden="true">
+                 {isLoadingAudioDevices ? <SpinnerIcon /> : (sectionsOpen.audioSettings ? <CaretUpIcon /> : <CaretDownIcon />)}
+              </span>
+            </div>
+
+            {sectionsOpen.audioSettings && (
+              <div className="sidebar-section-content" id="audio-settings-content">
+                {/* Audio Bitrate Slider */}
+                <div className="dev-setting-item">
+                  <label htmlFor="audioBitrateSlider">Audio Bitrate ({audioBitRate / 1000} kbps):</label>
+                  <input type="range" id="audioBitrateSlider" min="0" max={audioBitrateOptions.length - 1} step="1" value={audioBitrateOptions.indexOf(audioBitRate)} onChange={handleAudioBitrateChange} />
+                </div>
+
+                {/* Divider */}
+                <hr className="section-divider" />
+
+                {/* Error Display */}
+                {audioDeviceError && (
+                    <div className="error-message" style={{color: 'var(--error-color, red)', marginBottom: '10px', fontSize: '0.9em'}}>
+                        {audioDeviceError}
+                    </div>
+                )}
+
+                {/* Input Device Dropdown */}
+                <div className="dev-setting-item">
+                  <label htmlFor="audioInputSelect">Input (Microphone):</label>
+                  <select
+                    id="audioInputSelect"
+                    value={selectedInputDeviceId}
+                    onChange={handleAudioInputChange}
+                    disabled={isLoadingAudioDevices || !!audioDeviceError}
+                    className="audio-device-select" /* Add class for specific styling */
+                  >
+                    {audioInputDevices.map(device => (
+                      <option key={device.deviceId} value={device.deviceId}>
+                        {device.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {isOutputSelectionSupported && (
+                  <div className="dev-setting-item">
+                    <label htmlFor="audioOutputSelect">Output (Speaker):</label>
+                    <select
+                      id="audioOutputSelect"
+                      value={selectedOutputDeviceId}
+                      onChange={handleAudioOutputChange}
+                      disabled={isLoadingAudioDevices || !!audioDeviceError}
+                      className="audio-device-select" /* Add class for specific styling */
+                    >
+                      {audioOutputDevices.map(device => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                 {!isOutputSelectionSupported && !isLoadingAudioDevices && !audioDeviceError && (
+                    <p style={{ fontSize: '0.8em', color: 'var(--sidebar-text-secondary)', marginTop: '5px' }}>
+                        Output device selection not supported by this browser.
+                    </p>
+                 )}
+              </div>
+            )}
+        </div>
         <div className="sidebar-section">
             <div
               className="sidebar-section-header"
@@ -559,8 +702,8 @@ function Sidebar({ isOpen }) {
               role="button"
               aria-expanded={sectionsOpen.stats}
               aria-controls="stats-content"
-              tabIndex="0" // Make it focusable
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('stats')} // Allow keyboard activation
+              tabIndex="0"
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('stats')}
             >
               <h3>Stats</h3>
               <span className="section-toggle-icon" aria-hidden="true">
@@ -568,7 +711,6 @@ function Sidebar({ isOpen }) {
               </span>
             </div>
 
-            {/* Conditionally rendered content */}
             {sectionsOpen.stats && (
               <div className="sidebar-section-content" id="stats-content">
                 <div className="stats-gauges">
@@ -631,7 +773,6 @@ function Sidebar({ isOpen }) {
             )}
         </div>
 
-        {/* *** ADDED: Clipboard Section *** */}
         <div className="sidebar-section">
             <div
               className="sidebar-section-header"
@@ -639,8 +780,8 @@ function Sidebar({ isOpen }) {
               role="button"
               aria-expanded={sectionsOpen.clipboard}
               aria-controls="clipboard-content"
-              tabIndex="0" // Make it focusable
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('clipboard')} // Allow keyboard activation
+              tabIndex="0"
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('clipboard')}
             >
               <h3>Clipboard</h3>
               <span className="section-toggle-icon" aria-hidden="true">
@@ -648,10 +789,8 @@ function Sidebar({ isOpen }) {
               </span>
             </div>
 
-            {/* Conditionally rendered content */}
             {sectionsOpen.clipboard && (
               <div className="sidebar-section-content" id="clipboard-content">
-                {/* Use a class similar to core dev sidebar for potential styling reuse, or create a new one */}
                 <div className="dashboard-clipboard-item">
                   <label htmlFor="dashboardClipboardTextarea">Server Clipboard:</label>
                   <textarea
@@ -659,20 +798,53 @@ function Sidebar({ isOpen }) {
                     value={dashboardClipboardContent}
                     onChange={handleClipboardChange}
                     onBlur={handleClipboardBlur}
-                    rows="5" // Give it some default height
+                    rows="5"
                     placeholder="Clipboard content from server..."
-                    // Add appropriate className for styling if needed
-                    // className="dashboard-textarea"
                   />
                 </div>
               </div>
             )}
         </div>
-        {/* *** END Clipboard Section *** */}
+        {hasReceivedGamepadData && ( // Only render header if data ever received
+          <div className="sidebar-section">
+              <div
+                className="sidebar-section-header"
+                onClick={() => toggleSection('gamepads')}
+                role="button"
+                aria-expanded={sectionsOpen.gamepads}
+                aria-controls="gamepads-content"
+                tabIndex="0"
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('gamepads')}
+              >
+                <h3>Gamepads</h3>
+                <span className="section-toggle-icon" aria-hidden="true">
+                  {sectionsOpen.gamepads ? <CaretUpIcon /> : <CaretDownIcon />}
+                </span>
+              </div>
 
+              {sectionsOpen.gamepads && (
+                <div className="sidebar-section-content" id="gamepads-content">
+                  {Object.keys(gamepadStates).length === 0 ? (
+                    <p className="no-gamepads-message">No gamepad activity detected yet...</p>
+                  ) : (
+                    Object.keys(gamepadStates)
+                      .sort((a, b) => parseInt(a, 10) - parseInt(b, 10)) // Sort by index
+                      .map(gpIndexStr => {
+                        const gpIndex = parseInt(gpIndexStr, 10);
+                        return (
+                          <GamepadVisualizer
+                            key={gpIndex}
+                            gamepadIndex={gpIndex}
+                            gamepadState={gamepadStates[gpIndex]}
+                          />
+                        );
+                      })
+                  )}
+                </div>
+              )}
+          </div>
+        )}
       </div>
-
-      {/* Tooltip */}
       {hoveredItem && (
           <div className="gauge-tooltip" style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}>
               {getTooltipContent(hoveredItem)}
