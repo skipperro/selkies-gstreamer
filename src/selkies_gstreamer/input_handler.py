@@ -837,7 +837,14 @@ class WebRTCInput:
         elif toks[0] == "js":
             if toks[1] == "c":
                 js_num = int(toks[2])
-                name = base64.b64decode(toks[3]).decode()[:255]
+                try:
+                    # 1. Decode Base64 to bytes
+                    decoded_bytes = base64.b64decode(toks[3])
+                    # 2. Decode bytes to string using an appropriate encoding
+                    name = decoded_bytes.decode('latin-1')[:255]
+                except (base64.binascii.Error, UnicodeDecodeError) as e:
+                    print(f"Error decoding joystick name: {e}")
+                    name = f"Joystick {js_num} (Decoding Error)"
                 num_axes = int(toks[4])
                 num_btns = int(toks[5])
                 self.__js_connect(js_num, name, num_axes, num_btns)
