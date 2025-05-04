@@ -414,6 +414,19 @@ const MAX_SIDEBAR_UPLOADS = 3;
 let uploadProgressContainerElement;
 let activeUploads = {};
 
+// Elements for resolution controls
+let manualWidthInput;
+let manualHeightInput;
+let scaleLocallyCheckbox;
+let setResolutionButton;
+let resetResolutionButton;
+window.isManualResolutionMode = false;
+let manualWidth = null;
+let manualHeight = null;
+let autoResizeHandler = null;
+let debouncedAutoResizeHandler = null;
+let originalWindowResizeHandler = null;
+
 window.onload = () => {
   'use strict';
 };
@@ -468,7 +481,6 @@ const cpuStat = {
 };
 let serverLatency = 0;
 let resizeRemote = true;
-let scaleLocal = false;
 let debug = false;
 let turnSwitch = false;
 let publishingAllowed = false;
@@ -543,6 +555,7 @@ const setStringParam = (key, value) => {
   window.localStorage.setItem(prefixedKey, value.toString());
 };
 
+let scaleLocallyManual = getBoolParam('scaleLocallyManual', true);
 
 const getUsername = () => getCookieValue(`broker_${appName}`)?.split('#')[0] || 'webrtc';
 
@@ -1000,6 +1013,142 @@ function updateToggleButtonAppearance(buttonElement, isActive) {
     }
 }
 
+/** NEW HELPER FUNCTION
+ * Sends the current resolution (manual or container-based) and pixel ratio to the server.
+ * @param {number} width - The width to send.
+ * @param {number} height - The height to send.
+ */
+function sendResolutionToServer(width, height) {
+    const pixelRatio = window.devicePixelRatio;
+    const resString = `${width}x${height}`;
+
+    console.log(`Sending resolution to server: ${resString}, Pixel Ratio: ${pixelRatio}`);
+
+    if (clientMode === 'webrtc') {
+        if (webrtc && webrtc.sendDataChannelMessage) {
+            webrtc.sendDataChannelMessage(`r,${resString}`);
+            webrtc.sendDataChannelMessage(`s,${pixelRatio}`);
+        } else {
+            console.warn("Cannot send resolution via WebRTC: Data channel not ready.");
+        }
+    } else if (clientMode === 'websockets') {
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+            // Assuming WebSocket messages 'r,' and 's,' are handled similarly
+            websocket.send(`r,${resString}`);
+            websocket.send(`s,${pixelRatio}`);
+        } else {
+            console.warn("Cannot send resolution via WebSocket: Connection not open.");
+        }
+    }
+}
+
+/** NEW HELPER FUNCTION
+ * Applies CSS styles to the canvas based on manual resolution settings and scaling preference.
+ * @param {number} targetWidth - The desired internal width of the stream.
+ * @param {number} targetHeight - The desired internal height of the stream.
+ * @param {boolean} scaleToFit - If true, scale visually while maintaining aspect ratio.
+ */
+function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
+    if (!canvas || !canvas.parentElement) {
+        console.error("Cannot apply manual canvas style: Canvas or parent container not found.");
+        return;
+    }
+
+    const container = canvas.parentElement; // Assumes canvas is directly in the video-container
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+
+    // Always ensure canvas buffer matches target resolution (or incoming frame size handled by paintVideoFrame)
+    // Note: paintVideoFrame might override this if frame dimensions differ, which is usually desired.
+    // canvas.width = targetWidth;
+    // canvas.height = targetHeight;
+
+    if (scaleToFit) {
+        // Scale Locally (Maintain Aspect Ratio) - Checked
+        const targetAspectRatio = targetWidth / targetHeight;
+        const containerAspectRatio = containerWidth / containerHeight;
+
+        let cssWidth, cssHeight;
+
+        if (targetAspectRatio > containerAspectRatio) {
+            // Target is wider than container (letterbox)
+            cssWidth = containerWidth;
+            cssHeight = containerWidth / targetAspectRatio;
+        } else {
+            // Target is taller than or same as container (pillarbox)
+            cssHeight = containerHeight;
+            cssWidth = containerHeight * targetAspectRatio;
+        }
+
+        const topOffset = (containerHeight - cssHeight) / 2;
+        const leftOffset = (containerWidth - cssWidth) / 2;
+
+        canvas.style.position = 'absolute';
+        canvas.style.width = `${cssWidth}px`;
+        canvas.style.height = `${cssHeight}px`;
+        canvas.style.top = `${topOffset}px`;
+        canvas.style.left = `${leftOffset}px`;
+        canvas.style.objectFit = 'contain'; // Explicitly set object-fit for clarity
+        console.log(`Applied manual style (Scaled): CSS ${cssWidth}x${cssHeight}, Pos ${leftOffset},${topOffset}`);
+
+    } else {
+        // Scale Locally - Unchecked (Exact resolution, top-left, overflow)
+        canvas.style.position = 'absolute';
+        canvas.style.width = `${targetWidth}px`;
+        canvas.style.height = `${targetHeight}px`;
+        canvas.style.top = '0px';
+        canvas.style.left = '0px';
+        canvas.style.objectFit = 'fill'; // Or 'none', depending on desired overflow behavior
+        console.log(`Applied manual style (Exact): CSS ${targetWidth}x${targetHeight}, Pos 0,0`);
+    }
+    // Make canvas visible if it wasn't
+    canvas.style.display = 'block';
+}
+
+/** NEW HELPER FUNCTION
+ * Resets the canvas CSS styles to default (fill container).
+ */
+function resetCanvasStyle() {
+    if (!canvas) return;
+    canvas.style.position = 'absolute';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.top = '0px';
+    canvas.style.left = '0px';
+    canvas.style.objectFit = 'contain'; // Reset to default behavior
+    console.log("Reset canvas style to default (100% width/height)");
+}
+
+/** NEW HELPER FUNCTION
+ * Enables the automatic resizing behavior based on window/container size.
+ */
+function enableAutoResize() {
+    if (originalWindowResizeHandler && !window.onresize) { // Check if it's not already added
+        console.log("Re-enabling auto-resize listener.");
+        window.addEventListener('resize', originalWindowResizeHandler);
+        // Trigger an immediate resize calculation after enabling
+        originalWindowResizeHandler();
+    } else if (window.onresize) {
+         console.log("Auto-resize listener already enabled.");
+    } else {
+        console.warn("Cannot enable auto-resize: Original handler not found.");
+    }
+}
+
+/** NEW HELPER FUNCTION
+ * Disables the automatic resizing behavior.
+ */
+function disableAutoResize() {
+    if (originalWindowResizeHandler) {
+        console.log("Disabling auto-resize listener.");
+        window.removeEventListener('resize', originalWindowResizeHandler);
+        // Setting window.onresize = null might be needed if it was set directly
+        // window.onresize = null;
+    } else {
+        console.warn("Cannot disable auto-resize: Original handler not found.");
+    }
+}
+
 const initializeUI = () => {
   injectCSS();
   document.title = `Selkies - ${appName}`;
@@ -1038,6 +1187,8 @@ const initializeUI = () => {
     canvas.id = 'videoCanvas';
   }
   videoContainer.appendChild(canvas);
+  // Apply default style initially
+  resetCanvasStyle();
   canvasContext = canvas.getContext('2d');
   if (!canvasContext) {
     console.error('Failed to get 2D rendering context');
@@ -1067,16 +1218,16 @@ const initializeUI = () => {
   hiddenFileInput.style.display = 'none';
   document.body.appendChild(hiddenFileInput);
   hiddenFileInput.addEventListener('change', handleFileInputChange);
+
   if (dev_mode) {
+    // --- Existing Dev Sidebar Elements ---
     videoToggleButtonElement = document.createElement('button');
     videoToggleButtonElement.id = 'videoToggleBtn';
     videoToggleButtonElement.className = 'toggle-button';
     updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
     sidebarDiv.appendChild(videoToggleButtonElement);
     videoToggleButtonElement.addEventListener('click', () => {
-        // Determine the desired state based on the current state
         const newState = !isVideoPipelineActive;
-        // Post a message requesting the control action
         window.postMessage({ type: 'pipelineControl', pipeline: 'video', enabled: newState }, window.location.origin);
     });
     audioToggleButtonElement = document.createElement('button');
@@ -1085,9 +1236,7 @@ const initializeUI = () => {
     updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
     sidebarDiv.appendChild(audioToggleButtonElement);
     audioToggleButtonElement.addEventListener('click', () => {
-        // Determine the desired state based on the current state
         const newState = !isAudioPipelineActive;
-        // Post a message requesting the control action
         window.postMessage({ type: 'pipelineControl', pipeline: 'audio', enabled: newState }, window.location.origin);
     });
     micToggleButtonElement = document.createElement('button');
@@ -1097,7 +1246,6 @@ const initializeUI = () => {
     sidebarDiv.appendChild(micToggleButtonElement);
     micToggleButtonElement.addEventListener('click', () => {
         const newState = !isMicrophoneActive;
-        console.log(`Dev Sidebar: Toggling microphone ${newState ? 'ON' : 'OFF'}. Sending via window.postMessage.`);
         window.postMessage({ type: 'pipelineControl', pipeline: 'microphone', enabled: newState }, window.location.origin);
     });
     const fullscreenButton = document.createElement('button');
@@ -1105,7 +1253,6 @@ const initializeUI = () => {
     fullscreenButton.textContent = 'Enter Fullscreen';
     sidebarDiv.appendChild(fullscreenButton);
     fullscreenButton.addEventListener('click', () => {
-        console.log('Dev Sidebar: Fullscreen button clicked. Posting message.');
         window.postMessage({ type: 'requestFullscreen' }, window.location.origin);
     });
     gamepadToggleButtonElement = document.createElement('button');
@@ -1205,6 +1352,193 @@ const initializeUI = () => {
     audioOutputSelectElement.id = 'audioOutputSelect';
     audioDeviceSettingsDivElement.appendChild(audioOutputSelectElement);
     audioOutputSelectElement.addEventListener('change', handleAudioDeviceChange);
+
+    const resolutionContainer = document.createElement('div');
+    resolutionContainer.className = 'dev-setting-item';
+    resolutionContainer.style.borderTop = '1px solid #555';
+    resolutionContainer.style.paddingTop = '10px';
+    resolutionContainer.style.marginTop = '10px';
+
+    const resLabel = document.createElement('label');
+    resLabel.textContent = 'Manual Resolution Control:';
+    resolutionContainer.appendChild(resLabel);
+
+    const widthContainer = document.createElement('div');
+    widthContainer.style.display = 'flex';
+    widthContainer.style.alignItems = 'center';
+    widthContainer.style.marginBottom = '5px';
+    const widthLabel = document.createElement('label');
+    widthLabel.textContent = 'Width:';
+    widthLabel.style.marginRight = '5px';
+    widthLabel.style.width = '50px'; // Align labels
+    manualWidthInput = document.createElement('input');
+    manualWidthInput.type = 'number';
+    manualWidthInput.id = 'manualWidthInput';
+    manualWidthInput.min = '1';
+    manualWidthInput.step = '2'; // Encourage even numbers
+    manualWidthInput.placeholder = 'e.g., 1920';
+    manualWidthInput.style.flexGrow = '1';
+    manualWidthInput.style.padding = '4px';
+    manualWidthInput.style.backgroundColor = '#333';
+    manualWidthInput.style.color = '#eee';
+    manualWidthInput.style.border = '1px solid #555';
+    widthContainer.appendChild(widthLabel);
+    widthContainer.appendChild(manualWidthInput);
+    resolutionContainer.appendChild(widthContainer);
+
+    const heightContainer = document.createElement('div');
+    heightContainer.style.display = 'flex';
+    heightContainer.style.alignItems = 'center';
+    heightContainer.style.marginBottom = '5px';
+    const heightLabel = document.createElement('label');
+    heightLabel.textContent = 'Height:';
+    heightLabel.style.marginRight = '5px';
+    heightLabel.style.width = '50px'; // Align labels
+    manualHeightInput = document.createElement('input');
+    manualHeightInput.type = 'number';
+    manualHeightInput.id = 'manualHeightInput';
+    manualHeightInput.min = '1';
+    manualHeightInput.step = '2'; // Encourage even numbers
+    manualHeightInput.placeholder = 'e.g., 1080';
+    manualHeightInput.style.flexGrow = '1';
+    manualHeightInput.style.padding = '4px';
+    manualHeightInput.style.backgroundColor = '#333';
+    manualHeightInput.style.color = '#eee';
+    manualHeightInput.style.border = '1px solid #555';
+    heightContainer.appendChild(heightLabel);
+    heightContainer.appendChild(manualHeightInput);
+    resolutionContainer.appendChild(heightContainer);
+    const presetContainer = document.createElement('div');
+    presetContainer.className = 'dev-setting-item'; // Use existing class for spacing/style
+    presetContainer.style.marginBottom = '10px'; // Add some space before manual inputs
+
+    const presetLabel = document.createElement('label');
+    presetLabel.textContent = 'Preset:';
+    presetLabel.htmlFor = 'resolutionPresetSelect';
+    presetContainer.appendChild(presetLabel);
+
+    const resolutionPresetSelect = document.createElement('select');
+    resolutionPresetSelect.id = 'resolutionPresetSelect';
+    resolutionPresetSelect.style.width = '100%'; // Make it full width like other selects
+    resolutionPresetSelect.style.padding = '5px';
+    resolutionPresetSelect.style.backgroundColor = '#333';
+    resolutionPresetSelect.style.color = '#eee';
+    resolutionPresetSelect.style.border = '1px solid #555';
+    resolutionPresetSelect.style.marginTop = '3px'; // Small space below label
+
+    // Define common resolutions [width, height, label]
+    const commonResolutions = [
+        { value: "", text: "-- Select Preset --" }, // Default option
+        { value: "1920x1080", text: "1920 x 1080 (FHD)" },
+        { value: "1280x720", text: "1280 x 720 (HD)" },
+        { value: "1366x768", text: "1366 x 768 (Laptop)" },
+        { value: "1920x1200", text: "1920 x 1200 (16:10)" },
+        { value: "2560x1440", text: "2560 x 1440 (QHD)" },
+        { value: "3840x2160", text: "3840 x 2160 (4K UHD)" },
+        { value: "1024x768", text: "1024 x 768 (XGA 4:3)" },
+        { value: "800x600", text: "800 x 600 (SVGA 4:3)" },
+        { value: "640x480", text: "640 x 480 (VGA 4:3)" },
+        { value: "320x240", text: "320 x 240 (QVGA 4:3)" },
+    ];
+
+    // Populate the dropdown
+    commonResolutions.forEach((res, index) => {
+        const option = document.createElement('option');
+        option.value = res.value;
+        option.textContent = res.text;
+        if (index === 0) {
+            option.disabled = true; // Disable the placeholder
+            option.selected = true; // Make it selected by default
+        }
+        resolutionPresetSelect.appendChild(option);
+    });
+
+    // Add event listener for the dropdown
+    resolutionPresetSelect.addEventListener('change', (event) => {
+        const selectedValue = event.target.value;
+        if (!selectedValue) {
+            return;
+        }
+
+        const parts = selectedValue.split('x');
+        if (parts.length === 2) {
+            const width = parseInt(parts[0], 10);
+            const height = parseInt(parts[1], 10);
+
+            if (!isNaN(width) && width > 0 && !isNaN(height) && height > 0) {
+                console.log(`Dev Sidebar: Preset selected: ${width}x${height}. Updating inputs and posting message.`);
+
+                // Update the manual input boxes visually
+                manualWidthInput.value = width;
+                manualHeightInput.value = height;
+
+                // Post the message to trigger the same logic as the button
+                window.postMessage({ type: 'setManualResolution', width: width, height: height }, window.location.origin);
+
+            } else {
+                console.error("Error parsing selected resolution preset:", selectedValue);
+            }
+        }
+    });
+
+    presetContainer.appendChild(resolutionPresetSelect);
+    resolutionContainer.insertBefore(presetContainer, widthContainer);
+    const scaleContainer = document.createElement('div');
+    scaleContainer.style.display = 'flex';
+    scaleContainer.style.alignItems = 'center';
+    scaleContainer.style.marginBottom = '10px';
+    scaleLocallyCheckbox = document.createElement('input');
+    scaleLocallyCheckbox.type = 'checkbox';
+    scaleLocallyCheckbox.id = 'scaleLocallyCheckbox';
+    scaleLocallyCheckbox.checked = scaleLocallyManual; // Set initial state from persisted value
+    scaleLocallyCheckbox.style.marginRight = '8px';
+    const scaleLabel = document.createElement('label');
+    scaleLabel.textContent = 'Scale Locally (Maintain Aspect Ratio)';
+    scaleLabel.htmlFor = 'scaleLocallyCheckbox';
+    scaleContainer.appendChild(scaleLocallyCheckbox);
+    scaleContainer.appendChild(scaleLabel);
+    resolutionContainer.appendChild(scaleContainer);
+
+    setResolutionButton = document.createElement('button');
+    setResolutionButton.id = 'setResolutionBtn';
+    setResolutionButton.textContent = 'Set Manual Resolution';
+    resolutionContainer.appendChild(setResolutionButton);
+
+    resetResolutionButton = document.createElement('button');
+    resetResolutionButton.id = 'resetResolutionBtn';
+    resetResolutionButton.textContent = 'Reset to Window Size';
+    resolutionContainer.appendChild(resetResolutionButton);
+
+    sidebarDiv.appendChild(resolutionContainer);
+
+    scaleLocallyCheckbox.addEventListener('change', (event) => {
+        const isChecked = event.target.checked;
+        console.log(`Dev Sidebar: Scale Locally checkbox changed to ${isChecked}. Posting message.`);
+        window.postMessage({ type: 'setScaleLocally', value: isChecked }, window.location.origin);
+    });
+
+    setResolutionButton.addEventListener('click', () => {
+        const widthVal = manualWidthInput.value.trim();
+        const heightVal = manualHeightInput.value.trim();
+        const width = parseInt(widthVal, 10);
+        const height = parseInt(heightVal, 10);
+
+        if (isNaN(width) || width <= 0 || isNaN(height) || height <= 0) {
+            alert('Please enter valid positive integers for Width and Height.');
+            console.error('Invalid manual resolution input:', { widthVal, heightVal });
+            return;
+        }
+
+        console.log(`Dev Sidebar: Set Resolution button clicked. Width: ${width}, Height: ${height}. Posting message.`);
+        window.postMessage({ type: 'setManualResolution', width: width, height: height }, window.location.origin);
+    });
+
+    resetResolutionButton.addEventListener('click', () => {
+        console.log('Dev Sidebar: Reset Resolution button clicked. Posting message.');
+        window.postMessage({ type: 'resetResolutionToWindow' }, window.location.origin);
+        manualWidthInput.value = '';
+        manualHeightInput.value = '';
+    });
     const encoderContainer = document.createElement('div');
     encoderContainer.className = 'dev-setting-item';
     const encoderLabel = document.createElement('label');
@@ -1403,20 +1737,29 @@ const initializeUI = () => {
         window.dispatchEvent(new CustomEvent('requestFileUpload'));
     });
     sidebarDiv.appendChild(uploadButton);
-  }
+
+
+  } // End if(dev_mode)
+
   appDiv.appendChild(videoContainer);
   if (dev_mode) {
     appDiv.appendChild(sidebarDiv);
   }
+
   videoBitRate = getIntParam('videoBitRate', videoBitRate);
   videoFramerate = getIntParam('videoFramerate', videoFramerate);
   audioBitRate = getIntParam('audioBitRate', audioBitRate);
   resizeRemote = getBoolParam('resizeRemote', resizeRemote);
-  scaleLocal = getBoolParam('scaleLocal', scaleLocal);
   debug = getBoolParam('debug', debug);
   turnSwitch = getBoolParam('turnSwitch', turnSwitch);
   videoBufferSize = getIntParam('videoBufferSize', 0);
-  videoElement.classList.toggle('scale', scaleLocal);
+
+  scaleLocallyManual = getBoolParam('scaleLocallyManual', true);
+  if (dev_mode && scaleLocallyCheckbox) {
+      scaleLocallyCheckbox.checked = scaleLocallyManual;
+  }
+
+
   updateStatusDisplay();
   updateLogOutput();
   updateDebugOutput();
@@ -1616,25 +1959,23 @@ const initializeInput = () => {
 
   inputInstance = new Input(overlayInput, sendInputFunction);
 
+  // This function now calculates the container size for auto-resize purposes
   inputInstance.getWindowResolution = () => {
      const videoContainer = document.querySelector('.video-container');
      if (!videoContainer) {
           console.warn('video-container not found, using window size for resolution.');
-          return [roundDownToEven(window.innerWidth), roundDownToEven(window.innerHeight)];
+          // Return raw window size, let the caller handle rounding if needed
+          return [window.innerWidth, window.innerHeight];
      }
      const videoContainerRect = videoContainer.getBoundingClientRect();
-     const evenWidth = roundDownToEven(videoContainerRect.width);
-     const evenHeight = roundDownToEven(videoContainerRect.height);
-     return [evenWidth, evenHeight];
+     // Return raw container size, let the caller handle rounding if needed
+     return [videoContainerRect.width, videoContainerRect.height];
   };
 
 
   inputInstance.ongamepadconnected = (gamepad_id) => {
-    // Update global state for display/stats
     gamepad.gamepadState = 'connected';
     gamepad.gamepadName = gamepad_id;
-
-    // Enforce the current desired enable/disable state on the newly created manager instance
     if (window.webrtcInput && window.webrtcInput.gamepadManager) {
         if (!isGamepadEnabled) {
             window.webrtcInput.gamepadManager.disable();
@@ -1650,22 +1991,34 @@ const initializeInput = () => {
   };
   inputInstance.attach();
 
+  // Define the actual resize logic
   const handleResizeUI = () => {
-    const windowResolution = inputInstance.getWindowResolution();
-    const newRes = `${windowResolution[0]}x${windowResolution[1]}`;
-    if (clientMode === 'webrtc') {
-      webrtcSendInput(`r,${newRes}`);
-      webrtcSendInput(`s,${window.devicePixelRatio}`);
-    } else if (clientMode === 'websockets') {
-      websocketSendInput(`r,${newRes}`);
-      websocketSendInput(`s,${window.devicePixelRatio}`);
+    if (window.isManualResolutionMode) {
+        console.log("Auto-resize skipped: Manual resolution mode active.");
+        return;
     }
+    console.log("Auto-resize triggered.");
+    const windowResolution = inputInstance.getWindowResolution();
+    // Ensure resolution sent to server is even
+    const evenWidth = roundDownToEven(windowResolution[0]);
+    const evenHeight = roundDownToEven(windowResolution[1]);
+
+    // Send the calculated resolution to the server
+    sendResolutionToServer(evenWidth, evenHeight);
+
+    // Reset canvas style to fill container when auto-resizing
+    resetCanvasStyle();
   };
 
-  const debouncedHandleResizeUI = debounce(handleResizeUI, 1000);
-  window.addEventListener('resize', debouncedHandleResizeUI);
+  originalWindowResizeHandler = debounce(handleResizeUI, 500);
 
-  handleResizeUI();
+  // Add the listener initially
+  window.addEventListener('resize', originalWindowResizeHandler);
+
+  // Trigger initial resize calculation if not in manual mode
+  if (!window.isManualResolutionMode) {
+    handleResizeUI();
+  }
 
   if (clientMode === 'webrtc') {
     if (webrtc) {
@@ -1673,10 +2026,8 @@ const initializeInput = () => {
     }
   }
 
-  // Add drag and drop listeners
   overlayInput.addEventListener('dragover', handleDragOver);
   overlayInput.addEventListener('drop', handleDrop);
-
 
   window.webrtcInput = inputInstance;
 };
@@ -1712,7 +2063,6 @@ async function applyOutputDevice() {
                 console.log(`Playback AudioContext output set to device: ${preferredOutputDeviceId}`);
             } catch (err) {
                 console.error(`Error setting sinkId on Playback AudioContext (ID: ${preferredOutputDeviceId}): ${err.name}`, err);
-                // Optionally: Fallback or notify user
             }
         } else {
              console.warn(`Playback AudioContext not running (state: ${audioContext.state}), cannot set sinkId yet.`);
@@ -1862,13 +2212,69 @@ function receiveMessage(event) {
     }
 
     // 3. Message Handling based on type
-    // console.log(`Message Receiver: Processing type '${message.type}'`, message); // Optional verbose log
 
     switch (message.type) {
+        case 'setScaleLocally':
+            if (typeof message.value === 'boolean') {
+                scaleLocallyManual = message.value;
+                setBoolParam('scaleLocallyManual', scaleLocallyManual); // Persist the setting
+                console.log(`Set scaleLocallyManual to ${scaleLocallyManual} and persisted.`);
+                // If we are currently in manual mode, re-apply the style immediately
+                if (window.isManualResolutionMode && manualWidth !== null && manualHeight !== null) {
+                    console.log("Applying new scaling style in manual mode.");
+                    applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
+                }
+                // Update checkbox UI element if it exists (safety check)
+                if (dev_mode && scaleLocallyCheckbox && scaleLocallyCheckbox.checked !== scaleLocallyManual) {
+                    scaleLocallyCheckbox.checked = scaleLocallyManual;
+                }
+            } else {
+                console.warn("Invalid value received for setScaleLocally:", message.value);
+            }
+            break;
+
+        case 'setManualResolution':
+            // Validation already happened in the UI event listener, but double-check here
+            const width = parseInt(message.width, 10);
+            const height = parseInt(message.height, 10);
+
+            if (isNaN(width) || width <= 0 || isNaN(height) || height <= 0) {
+                console.error('Received invalid width/height for setManualResolution:', message);
+                break;
+            }
+
+            console.log(`Setting manual resolution: ${width}x${height}`);
+            window.isManualResolutionMode = true;
+            manualWidth = roundDownToEven(width);
+            manualHeight = roundDownToEven(height);
+            console.log(`Rounded resolution to even numbers: ${manualWidth}x${manualHeight}`);
+
+            disableAutoResize(); // Stop listening to window resize
+            sendResolutionToServer(manualWidth, manualHeight); // Send new res to server
+            applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual); // Apply local styling
+
+            // Visually update input fields if they differ from rounded values
+            if (dev_mode) {
+                if (manualWidthInput.value !== manualWidth.toString()) manualWidthInput.value = manualWidth;
+                if (manualHeightInput.value !== manualHeight.toString()) manualHeightInput.value = manualHeight;
+            }
+            break;
+
+        case 'resetResolutionToWindow':
+            console.log("Resetting resolution to window size.");
+            window.isManualResolutionMode = false;
+            manualWidth = null;
+            manualHeight = null;
+
+            resetCanvasStyle(); // Reset local canvas styling first
+            enableAutoResize(); // Re-enable listener and trigger immediate resize
+
+            break;
+
         case 'clipboardContentUpdate':
             if (dev_mode) {
                 serverClipboardContent = message.text;
-                serverClipboardTextareaElement.value = message.text;
+                 if(serverClipboardTextareaElement) serverClipboardTextareaElement.value = message.text;
                 console.log('Updated dev sidebar clipboard textarea from server.');
              }
              break;
@@ -1894,17 +2300,24 @@ function receiveMessage(event) {
                 } catch (e) {
                     console.error('Failed to encode or send clipboard text from UI:', e);
                 }
-            } else {
-                console.warn('Cannot send clipboard update from UI: Not in websockets mode or websocket not open.');
+            } else if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+                try {
+                    const encodedText = btoa(newClipboardText); // Base64 encode
+                    const clipboardMessage = `cw,${encodedText}`; // Prepend type
+                    webrtc.sendDataChannelMessage(clipboardMessage);
+                    console.log(`Sent clipboard update from UI to server via WebRTC: cw,...`);
+                } catch (e) {
+                    console.error('Failed to encode or send clipboard text from UI via WebRTC:', e);
+                }
+            }
+             else {
+                console.warn('Cannot send clipboard update from UI: Not connected.');
             }
             break;
 
         case 'pipelineStatusUpdate':
-            // Handles status updates potentially coming FROM the server or other logic
             console.log('Received pipelineStatusUpdate message:', message);
             let stateChangedFromStatus = false;
-
-            // Update state variables based on the message content IF they differ
             if (message.video !== undefined && isVideoPipelineActive !== message.video) {
                 console.log(`pipelineStatusUpdate: Updating isVideoPipelineActive to ${message.video}`);
                 isVideoPipelineActive = message.video;
@@ -1920,11 +2333,15 @@ function receiveMessage(event) {
                 isMicrophoneActive = message.microphone;
                 stateChangedFromStatus = true;
             }
+            if (message.gamepad !== undefined && isGamepadEnabled !== message.gamepad) {
+                console.log(`pipelineStatusUpdate: Updating isGamepadEnabled to ${message.gamepad}`);
+                isGamepadEnabled = message.gamepad;
+                stateChangedFromStatus = true;
+            }
 
-            // If any relevant state changed, trigger the sidebar UI update message
             if (stateChangedFromStatus) {
                 console.log("pipelineStatusUpdate: State changed, posting sidebar button update.");
-                postSidebarButtonUpdate(); // Trigger UI update via separate message
+                postSidebarButtonUpdate();
             } else {
                  console.log("pipelineStatusUpdate: No relevant state change detected.");
             }
@@ -1932,50 +2349,44 @@ function receiveMessage(event) {
 
         case 'fileUpload':
             console.log('Received fileUpload message:', message.payload);
-            updateSidebarUploadProgress(message.payload); // Update the sidebar display
+            updateSidebarUploadProgress(message.payload);
             break;
 
         case 'pipelineControl':
-            // Handles clicks from the dev sidebar buttons
             console.log(`Received pipeline control message: pipeline=${message.pipeline}, enabled=${message.enabled}`);
             const pipeline = message.pipeline;
             const desiredState = message.enabled;
             let stateChangedFromControl = false;
 
             if (pipeline === 'video' || pipeline === 'audio') {
+                let wsMessage = '';
                 if (pipeline === 'video') {
                     if (isVideoPipelineActive !== desiredState) {
                         isVideoPipelineActive = desiredState;
                         console.log(`pipelineControl: Immediately updating isVideoPipelineActive to ${isVideoPipelineActive}`);
                         stateChangedFromControl = true;
-                        if (!isVideoPipelineActive) { cleanupVideoBuffer(); } // Cleanup if stopping
+                        if (!isVideoPipelineActive) { cleanupVideoBuffer(); }
+                        wsMessage = desiredState ? 'START_VIDEO' : 'STOP_VIDEO';
                     }
                 } else if (pipeline === 'audio') {
                      if (isAudioPipelineActive !== desiredState) {
                         isAudioPipelineActive = desiredState;
                         console.log(`pipelineControl: Immediately updating isAudioPipelineActive to ${isAudioPipelineActive}`);
                         stateChangedFromControl = true;
+                        wsMessage = desiredState ? 'START_AUDIO' : 'STOP_AUDIO';
                      }
                 }
                 if (stateChangedFromControl) {
-                    postSidebarButtonUpdate(); // Trigger UI update via separate message
+                    postSidebarButtonUpdate();
                 }
-                // --- Send WebSocket Command ---
-                if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-                    let wsMessage = '';
-                    if (pipeline === 'video') { wsMessage = desiredState ? 'START_VIDEO' : 'STOP_VIDEO'; }
-                    else if (pipeline === 'audio') { wsMessage = desiredState ? 'START_AUDIO' : 'STOP_AUDIO'; }
-
-                    if (wsMessage) {
-                        console.log(`pipelineControl: Sending ${wsMessage} via websocket.`);
-                        websocket.send(wsMessage);
-                    }
-                } else {
+                if (wsMessage && clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+                    console.log(`pipelineControl: Sending ${wsMessage} via websocket.`);
+                    websocket.send(wsMessage);
+                } else if (wsMessage) {
                      console.warn(`Cannot send ${pipeline} pipelineControl command: Not in websockets mode or websocket not open.`);
                 }
 
             } else if (pipeline === 'microphone') {
-                // Microphone state/UI update is handled within start/stop functions
                 if (desiredState) {
                     startMicrophoneCapture();
                 } else {
@@ -1987,12 +2398,9 @@ function receiveMessage(event) {
             break;
 
         case 'sidebarButtonStatusUpdate':
-            // Handles the message posted by postSidebarButtonUpdate() to update the actual UI
             console.log('Received sidebarButtonStatusUpdate:', message);
-            // Only update the dev sidebar UI elements if dev_mode is enabled
             if (dev_mode) {
                 console.log('Dev mode enabled, updating sidebar button appearances.');
-                // Update buttons based on the state provided in the message
                 if (message.video !== undefined && videoToggleButtonElement) {
                      updateToggleButtonAppearance(videoToggleButtonElement, message.video);
                 }
@@ -2001,6 +2409,9 @@ function receiveMessage(event) {
                 }
                  if (message.microphone !== undefined && micToggleButtonElement) {
                     updateToggleButtonAppearance(micToggleButtonElement, message.microphone);
+                }
+                 if (message.gamepad !== undefined && gamepadToggleButtonElement) {
+                    updateToggleButtonAppearance(gamepadToggleButtonElement, message.gamepad);
                 }
             } else {
                  console.log('Dev mode not enabled, skipping sidebar button UI update.');
@@ -2012,30 +2423,29 @@ function receiveMessage(event) {
             const { context, deviceId } = message;
             if (!deviceId) {
                 console.warn("Received audioDeviceSelected message without a deviceId.");
-                break; // Exit case
+                break;
             }
             if (context === 'input') {
                 console.log(`Setting preferred input device to: ${deviceId}`);
                 if (dev_mode && audioInputSelectElement && audioInputSelectElement.value !== deviceId) {
-                    audioInputSelectElement.value = deviceId; // Update dropdown UI
+                    audioInputSelectElement.value = deviceId;
                 }
                 if (preferredInputDeviceId !== deviceId) {
                      preferredInputDeviceId = deviceId;
-                     if (isMicrophoneActive) { // Restart mic if active to apply change
+                     if (isMicrophoneActive) {
                          console.log("Microphone is active, restarting to apply new input device...");
                          stopMicrophoneCapture();
-                         // Add a small delay before restarting
                          setTimeout(startMicrophoneCapture, 150);
                      }
                 }
             } else if (context === 'output') {
                  console.log(`Setting preferred output device to: ${deviceId}`);
                  if (dev_mode && audioOutputSelectElement && audioOutputSelectElement.value !== deviceId) {
-                     audioOutputSelectElement.value = deviceId; // Update dropdown UI
+                     audioOutputSelectElement.value = deviceId;
                  }
                  if (preferredOutputDeviceId !== deviceId) {
                      preferredOutputDeviceId = deviceId;
-                     applyOutputDevice(); // Apply change to audio elements
+                     applyOutputDevice();
                  }
             } else {
                 console.warn(`Unknown context in audioDeviceSelected message: ${context}`);
@@ -2044,38 +2454,40 @@ function receiveMessage(event) {
 
         case 'gamepadControl':
             console.log(`Received gamepad control message: enabled=${message.enabled}`);
-            isGamepadEnabled = message.enabled;
-            if (dev_mode && gamepadToggleButtonElement) { // Update sidebar UI if exists
-                updateToggleButtonAppearance(gamepadToggleButtonElement, isGamepadEnabled);
-            }
-            // Enable/disable actual gamepad input handling
-            if (window.webrtcInput && window.webrtcInput.gamepadManager) {
-                if (isGamepadEnabled) {
-                    window.webrtcInput.gamepadManager.enable();
+            const newGamepadState = message.enabled;
+            if (isGamepadEnabled !== newGamepadState) {
+                isGamepadEnabled = newGamepadState;
+                postSidebarButtonUpdate(); // Post update for UI consistency
+
+                if (window.webrtcInput && window.webrtcInput.gamepadManager) {
+                    if (isGamepadEnabled) {
+                        window.webrtcInput.gamepadManager.enable();
+                        console.log("Gamepad input enabled.");
+                    } else {
+                        window.webrtcInput.gamepadManager.disable();
+                        console.log("Gamepad input disabled.");
+                    }
                 } else {
-                    window.webrtcInput.gamepadManager.disable();
+                    console.warn("Could not toggle gamepad state: window.webrtcInput or gamepadManager not found.");
                 }
-            } else {
-                console.warn("Could not toggle gamepad state: window.webrtcInput or gamepadManager not found.");
             }
             break;
 
         case 'gamepadButtonUpdate':
         case 'gamepadAxisUpdate':
-             // Handle gamepad viz updates if needed (kept separate from main button updates for now)
-             if (message.gamepadIndex === 0) { // Assuming only first gamepad for viz
+             if (message.gamepadIndex === 0) {
                  if (!gamepadStates[0]) gamepadStates[0] = { buttons: {}, axes: {} };
                  if (message.type === 'gamepadButtonUpdate') {
                      const { buttonIndex, value } = message;
                      if (!gamepadStates[0].buttons) gamepadStates[0].buttons = {};
                      gamepadStates[0].buttons[buttonIndex] = value;
-                 } else { // gamepadAxisUpdate
+                 } else {
                      const { axisIndex, value } = message;
                      if (!gamepadStates[0].axes) gamepadStates[0].axes = {};
-                     const clampedValue = Math.max(-1, Math.min(1, value)); // Clamp axis value
+                     const clampedValue = Math.max(-1, Math.min(1, value));
                      gamepadStates[0].axes[axisIndex] = clampedValue;
                  }
-                 updateGamepadVisuals(0); // Update the sidebar visualizer
+                 updateGamepadVisuals(0);
              }
             break;
 
@@ -2251,8 +2663,6 @@ function handleSettingsMessage(settings) {
        webrtc.sendDataChannelMessage(`_arg_resize,${resizeRemote},${res}`);
        console.log(`Sent resizeRemote ${resizeRemote} with resolution ${res} to server via DataChannel.`);
     } else if (clientMode === 'websockets') {
-       // Note: Original code didn't send resize via websocket. Keep this behavior?
-       // If needed, add websocket send logic here.
        console.warn("ResizeRemote setting received, but not sending to server in websockets mode (not implemented).");
     }
   }
@@ -2859,48 +3269,63 @@ document.addEventListener('DOMContentLoaded', () => {
    * Runs on a requestAnimationFrame loop.
    */
   function paintVideoFrame() {
-      if (canvasContext && !document.hidden && isVideoPipelineActive && videoFrameBuffer.length > videoBufferSize) {
-          const frameToPaint = videoFrameBuffer.shift();
+    // Check if canvas exists and context is available
+    if (!canvas || !canvasContext) {
+        requestAnimationFrame(paintVideoFrame); // Still request next frame
+        return;
+    }
 
-          if (frameToPaint) {
-              if (canvas.width !== frameToPaint.codedWidth || canvas.height !== frameToPaint.codedHeight) {
-                   canvas.width = frameToPaint.codedWidth;
-                   canvas.height = frameToPaint.codedHeight;
-                   console.log(`Canvas resized to ${canvas.width}x${canvas.height}`);
-              }
+    // Only paint if the tab is visible, the video pipeline is active,
+    if (!document.hidden && isVideoPipelineActive && videoFrameBuffer.length > videoBufferSize) {
+        const frameToPaint = videoFrameBuffer.shift();
 
-              canvasContext.drawImage(frameToPaint, 0, 0);
+        if (frameToPaint) {
+            if (canvas.width !== frameToPaint.codedWidth || canvas.height !== frameToPaint.codedHeight) {
+                 canvas.width = frameToPaint.codedWidth;
+                 canvas.height = frameToPaint.codedHeight;
+                 console.log(`Canvas internal buffer resized to ${canvas.width}x${canvas.height} to match video frame`);
+            }
 
-              frameToPaint.close();
+            // Draw the frame to the canvas buffer
+            canvasContext.drawImage(frameToPaint, 0, 0, canvas.width, canvas.height);
 
-              frameCount++;
-              const now = performance.now();
-              const elapsed = now - lastFpsUpdateTime;
+            // Close the frame to release resources
+            frameToPaint.close();
 
-              if (elapsed >= 1000) {
-                  const currentFps = (frameCount * 1000) / elapsed;
-                  window.fps = Math.round(currentFps);
-                  frameCount = 0;
-                  lastFpsUpdateTime = now;
-              }
+            // FPS calculation logic
+            frameCount++;
+            const now = performance.now();
+            const elapsed = now - lastFpsUpdateTime;
+            if (elapsed >= 1000) {
+                const currentFps = (frameCount * 1000) / elapsed;
+                window.fps = Math.round(currentFps);
+                frameCount = 0;
+                lastFpsUpdateTime = now;
+            }
 
-              if (!streamStarted) {
-                  startStream();
-                  initializeInput();
-              }
-          }
-      } else {
-           if (dev_mode && videoBufferDivElement) {
-               videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
-           }
-           if (canvasContext && (document.hidden || !isVideoPipelineActive)) {
-               canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-           }
-      }
+            // Start stream / initialize input if this is the first frame
+            if (!streamStarted) {
+                startStream();
+                initializeInput(); // Input init depends on stream starting/overlay being ready
+            }
+        }
+    } else {
+         // If not painting, still update the buffer display in dev mode
+         if (dev_mode && videoBufferDivElement) {
+             let reason = "";
+             if(document.hidden) reason = "(Tab Hidden)";
+             else if (!isVideoPipelineActive) reason = "(Pipeline Inactive)";
+             else if (videoFrameBuffer.length <= videoBufferSize) reason = `(Buffering ${videoFrameBuffer.length}/${videoBufferSize+1})`;
+             videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames ${reason}`;
+         }
+         if (canvasContext && (document.hidden || !isVideoPipelineActive)) {
+             canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+         }
+    }
 
-      requestAnimationFrame(paintVideoFrame);
+    // Request the next frame unconditionally
+    requestAnimationFrame(paintVideoFrame);
   }
-
 
   async function initializeAudio() {
     if (!audioContext) {
@@ -3204,26 +3629,43 @@ document.addEventListener('DOMContentLoaded', () => {
       }
   };
 
-  websocket.onopen = () => {
+websocket.onopen = () => {
     console.log('[websockets] Connection opened!');
-    isVideoPipelineActive = true;
+    isVideoPipelineActive = true; // Assume pipelines start active on new connection
     isAudioPipelineActive = true;
     window.postMessage({ type: 'pipelineStatusUpdate', video: true, audio: true }, window.location.origin);
-    isMicrophoneActive = false;
+    isMicrophoneActive = false; // Mic should always start off
     updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
-
 
     if (metricsIntervalId === null) {
         metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
         console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
     }
-     if (window.webrtcInput) {
-         const windowResolution = window.webrtcInput.getWindowResolution();
-         const newRes = `${windowResolution[0]}x${windowResolution[1]}`;
-         const sendInputFunc = window.webrtcInput.sendInputFunction || websocketSendInput;
-         sendInputFunc(`r,${newRes}`);
-         sendInputFunc(`s,${window.devicePixelRatio}`);
+
+     // Send initial resolution *after* connection is open and *if not* in manual mode.
+     if (!window.isManualResolutionMode) {
+        const videoContainer = document.querySelector('.video-container');
+        let initialWidth, initialHeight;
+        if (videoContainer) {
+            const rect = videoContainer.getBoundingClientRect();
+            initialWidth = roundDownToEven(rect.width);
+            initialHeight = roundDownToEven(rect.height);
+        } else {
+            console.warn("Websocket Open: video-container not found for initial resolution, using window.");
+            initialWidth = roundDownToEven(window.innerWidth);
+            initialHeight = roundDownToEven(window.innerHeight);
+        }
+        sendResolutionToServer(initialWidth, initialHeight);
+     } else {
+        // If somehow manual mode is active on connect (e.g., after quick refresh?), send the manual res
+        console.log("[websockets] Manual mode active on connect, sending manual resolution.");
+        sendResolutionToServer(manualWidth, manualHeight);
      }
+
+     // Request clipboard content
+     websocket.send('cr');
+     console.log('[websockets] Sent clipboard request (cr) to server.');
+
   };
 
   websocket.onmessage = (event) => {
@@ -3590,8 +4032,7 @@ async function startMicrophoneCapture() {
              postSidebarButtonUpdate(); // Post update even on failure to start due to lack of support
         } else {
             console.warn('Microphone already active.');
-            // Ensure button reflects the active state via postMessage if start is called again redundantly
-            postSidebarButtonUpdate(); // Post update to ensure UI consistency
+            postSidebarButtonUpdate();
         }
         return; // Exit if already active or not supported
     }
@@ -3605,7 +4046,7 @@ async function startMicrophoneCapture() {
         constraints = { // Assign to the outer scope variable
             audio: {
                 deviceId: preferredInputDeviceId ? { exact: preferredInputDeviceId } : undefined,
-                sampleRate: 24000, // Request specific rate
+                sampleRate: 24000,
                 channelCount: 1,
                 echoCancellation: true,
                 noiseSuppression: true,
@@ -3625,9 +4066,6 @@ async function startMicrophoneCapture() {
              if (!preferredInputDeviceId && settings.deviceId) {
                   console.log(`Default input device resolved to: ${settings.deviceId} (${settings.label || 'No Label'})`);
                   preferredInputDeviceId = settings.deviceId;
-                  // Post a message to update the UI dropdown if needed (handled by 'audioDeviceSelected' logic elsewhere potentially)
-                  // Or, if dev_mode is known here, update directly or post a specific dropdown update message.
-                  // For now, just update the variable. The sidebar can query/update on its own schedule or via a refresh.
              }
              // Log if the requested sample rate was achieved
              if (settings.sampleRate && settings.sampleRate !== 24000) {
@@ -3636,7 +4074,6 @@ async function startMicrophoneCapture() {
         }
 
         // 2. Create *separate* AudioContext for Microphone
-        // Ensure any existing context is closed first if reusing variable
         if (micAudioContext && micAudioContext.state !== 'closed') {
             console.warn("Closing existing micAudioContext before creating a new one.");
             await micAudioContext.close();
@@ -3675,12 +4112,11 @@ async function startMicrophoneCapture() {
 
         // 5. Set up WebSocket message handler for processed audio
         micWorkletNode.port.onmessage = (event) => {
-            const pcm16Buffer = event.data; // This should be the ArrayBuffer from the worklet
+            const pcm16Buffer = event.data;
             const wsState = websocket ? websocket.readyState : 'No WebSocket';
 
             if (websocket && websocket.readyState === WebSocket.OPEN && isMicrophoneActive) {
                 if (!pcm16Buffer || !(pcm16Buffer instanceof ArrayBuffer) || pcm16Buffer.byteLength === 0) {
-                    // console.warn("Received empty or invalid buffer from mic worklet. Skipping send.");
                     return;
                 }
 
@@ -3694,11 +4130,9 @@ async function startMicrophoneCapture() {
                     websocket.send(messageBuffer);
                 } catch (e) {
                     console.error("Error sending microphone data via websocket:", e);
-                    // Consider stopping mic capture if send fails repeatedly?
                 }
             } else if (!isMicrophoneActive) {
-                // If mic stopped while worklet was processing, just drop the message
-                // console.log("Microphone inactive, dropping message from worklet.");
+                console.log("Microphone inactive, dropping message from worklet.");
             } else {
                 console.warn("WebSocket not open or null, cannot send microphone data. State:", wsState);
             }
@@ -3713,10 +4147,7 @@ async function startMicrophoneCapture() {
 
         // 7. Update State and Trigger UI Update via postMessage
         isMicrophoneActive = true;
-        // *** MODIFICATION: Replace direct UI update with postMessage ***
-        // REMOVED: updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
         postSidebarButtonUpdate(); // Post message to update UI
-        // *** END MODIFICATION ***
         console.log('Microphone capture started successfully.');
 
     } catch (error) {
@@ -3745,14 +4176,11 @@ async function startMicrophoneCapture() {
         }
 
         // Clean up any resources that might have been partially created
-        stopMicrophoneCapture(); // stopMicrophoneCapture should also post UI update
+        stopMicrophoneCapture();
 
         // Ensure state reflects failure and trigger UI update via postMessage
         isMicrophoneActive = false;
-        // *** MODIFICATION: Replace direct UI update with postMessage ***
-        // REMOVED: updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
         postSidebarButtonUpdate(); // Post message to update UI to reflect failure
-        // *** END MODIFICATION ***
     }
 }
 
@@ -3760,8 +4188,6 @@ function stopMicrophoneCapture() {
     // Only proceed if the microphone is actually active
     if (!isMicrophoneActive) {
         console.log('Stop capture called, but microphone is not active.');
-        // Optionally ensure UI is correct if called erroneously while inactive
-        // postSidebarButtonUpdate(); // Uncomment if you want to ensure UI updates even if called redundantly
         return;
     }
 
@@ -3824,10 +4250,7 @@ function stopMicrophoneCapture() {
 
     // 4. Update State and Trigger UI Update via postMessage
     isMicrophoneActive = false;
-    // *** MODIFICATION: Replace direct UI update with postMessage ***
-    // REMOVED: updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
     postSidebarButtonUpdate(); // Post message to update UI
-    // *** END MODIFICATION ***
     console.log('Microphone capture stopped state updated and UI update posted.');
 }
 

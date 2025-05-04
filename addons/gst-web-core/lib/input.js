@@ -467,40 +467,95 @@ export class Input {
      */
     _mouseButtonMovement(event) {
         const down = (event.type === 'mousedown' ? 1 : 0);
-        var mtype = "m";
-
-        if (event.type === 'mousemove' && !this.m) return;
-
-        if (!document.pointerLockElement) {
-            if (this.mouseRelative) {
-                event.target.requestPointerLock().then(
-                ).catch(
-                );
-            }
-        }
-
-        // Hotkey to enable pointer lock, Ctrl-Shift-LeftClick
-        if (down && event.button === 0 && event.ctrlKey && event.shiftKey) {
-            event.target.requestPointerLock().then(
-            ).catch(
-            );
+        var mtype = "m"; // Default message type for absolute coordinates
+        let canvas = document.getElementById('videoCanvas');
+        // --- Pointer Lock Handling (largely unchanged) ---
+        if (event.type === 'mousemove' && !this.m && !document.pointerLockElement) {
+             // If not locked and no initial math calculated yet, ignore move events
+             // This prevents sending coordinates before _windowMath runs at least once.
+             // In manual mode, we rely on canvas existing, so this check might be less critical,
+             // but keeping it doesn't hurt.
             return;
         }
 
-        if (document.pointerLockElement) {
-            mtype = "m2";
-            if (this.cursorScaleFactor != null) {
-                this.x = Math.trunc(event.movementX * this.cursorScaleFactor);
-                this.y = Math.trunc(event.movementY * this.cursorScaleFactor);
-            } else {
-                this.x = event.movementX;
-                this.y = event.movementY;
-            }
-        } else if (event.type === 'mousemove') {
-            this.x = this._clientToServerX(event.clientX);
-            this.y = this._clientToServerY(event.clientY);
+        // Hotkey to enable pointer lock (unchanged)
+        if (down && event.button === 0 && event.ctrlKey && event.shiftKey) {
+            event.target.requestPointerLock().catch(console.error);
+            return; // Don't process the click itself as movement
         }
 
+        // --- Coordinate Calculation ---
+        if (document.pointerLockElement) {
+            mtype = "m2"; // Message type for relative coordinates
+
+            // --- Relative Movement Calculation ---
+            if (window.isManualResolutionMode && canvas) {
+                // MANUAL MODE + POINTER LOCK: Scale relative movement based on canvas visual vs internal size
+                const canvasRect = canvas.getBoundingClientRect();
+                // Check if canvas has valid dimensions to avoid division by zero
+                if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
+                    const scaleX = canvas.width / canvasRect.width;
+                    const scaleY = canvas.height / canvasRect.height;
+                    // Apply scaling to the movement delta
+                    this.x = Math.round(event.movementX * scaleX);
+                    this.y = Math.round(event.movementY * scaleY);
+                } else {
+                    // Fallback if canvas has no size
+                    this.x = event.movementX;
+                    this.y = event.movementY;
+                    console.warn("Manual Pointer Lock: Canvas has zero dimensions, using unscaled movement.");
+                }
+            } else {
+                // AUTO-RESIZE MODE + POINTER LOCK
+                if (this.cursorScaleFactor != null) {
+                    this.x = Math.trunc(event.movementX * this.cursorScaleFactor);
+                    this.y = Math.trunc(event.movementY * this.cursorScaleFactor);
+                } else {
+                    this.x = event.movementX;
+                    this.y = event.movementY;
+                }
+            }
+        } else if (event.type === 'mousemove') {
+            // --- Absolute Position Calculation ---
+            if (window.isManualResolutionMode && canvas) {
+                // MANUAL MODE + ABSOLUTE: Calculate based on canvas position and size
+                const canvasRect = canvas.getBoundingClientRect();
+                 // Check if canvas has valid dimensions
+                if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
+                    const mouseX_on_canvas = event.clientX - canvasRect.left;
+                    const mouseY_on_canvas = event.clientY - canvasRect.top;
+
+                    const scaleX = canvas.width / canvasRect.width;
+                    const scaleY = canvas.height / canvasRect.height;
+
+                    let serverX = mouseX_on_canvas * scaleX;
+                    let serverY = mouseY_on_canvas * scaleY;
+
+                    // Clamp to canvas internal bounds and round
+                    this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX)));
+                    this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY)));
+
+                } else {
+                    // Fallback if canvas has no size (treat as 0,0)
+                    this.x = 0;
+                    this.y = 0;
+                     console.warn("Manual Abs Move: Canvas has zero dimensions, sending (0,0).");
+                }
+            } else {
+                // AUTO-RESIZE MODE + ABSOLUTE: Use original logic based on this.m calculated by _windowMath
+                if (this.m) { // Ensure _windowMath has run
+                    this.x = this._clientToServerX(event.clientX);
+                    this.y = this._clientToServerY(event.clientY);
+                } else {
+                    // Should not happen if initial check passed, but as a fallback:
+                    this.x = 0;
+                    this.y = 0;
+                    console.warn("Auto Abs Move: this.m not initialized, sending (0,0).");
+                }
+            }
+        }
+
+        // --- Button Mask Update ---
         if (event.type === 'mousedown' || event.type === 'mouseup') {
             var mask = 1 << event.button;
             if (down) {
@@ -510,12 +565,14 @@ export class Input {
             }
         }
 
+        // --- Send Message (unchanged structure) ---
+        // Note: The 5th element (wheel delta) is 0 for non-wheel events.
         var toks = [
             mtype,
             this.x,
             this.y,
             this.buttonMask,
-            0
+            0 // Wheel delta is 0 here
         ];
 
         this.send(toks.join(","));
@@ -528,26 +585,64 @@ export class Input {
      * @param {TouchEvent} event
      */
     _touch(event) {
-        var mtype = "m";
-        var mask = 1;
+        var mtype = "m"; // Touch events are always absolute position
+        var mask = 1; // Simulate left mouse button for touch
 
         if (event.type === 'touchstart') {
             this.buttonMask |= mask;
         } else if (event.type === 'touchend') {
             this.buttonMask &= ~mask;
         } else if (event.type === 'touchmove') {
-            event.preventDefault();
+            event.preventDefault(); // Prevent scrolling page on touch drag
         }
 
-        this.x = this._clientToServerX(event.changedTouches[0].clientX);
-        this.y = this._clientToServerY(event.changedTouches[0].clientY);
+        // Get coordinates from the first changed touch point
+        const touchPoint = event.changedTouches[0];
 
+        // --- Coordinate Calculation ---
+        if (window.isManualResolutionMode && canvas) {
+            // MANUAL MODE: Calculate based on canvas position and size
+            const canvasRect = canvas.getBoundingClientRect();
+             // Check if canvas has valid dimensions
+            if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
+                const touchX_on_canvas = touchPoint.clientX - canvasRect.left;
+                const touchY_on_canvas = touchPoint.clientY - canvasRect.top;
+
+                const scaleX = canvas.width / canvasRect.width;
+                const scaleY = canvas.height / canvasRect.height;
+
+                let serverX = touchX_on_canvas * scaleX;
+                let serverY = touchY_on_canvas * scaleY;
+
+                // Clamp to canvas internal bounds and round
+                this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX)));
+                this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY)));
+            } else {
+                // Fallback
+                this.x = 0;
+                this.y = 0;
+                console.warn("Manual Touch: Canvas has zero dimensions, sending (0,0).");
+            }
+        } else {
+            // AUTO-RESIZE MODE
+            if (this.m) { // Ensure _windowMath has run
+                this.x = this._clientToServerX(touchPoint.clientX);
+                this.y = this._clientToServerY(touchPoint.clientY);
+            } else {
+                 // Fallback
+                this.x = 0;
+                this.y = 0;
+                console.warn("Auto Touch: this.m not initialized, sending (0,0).");
+            }
+        }
+
+        // --- Send Message (structure) ---
         var toks = [
             mtype,
             this.x,
             this.y,
             this.buttonMask,
-            0
+            0 // Wheel delta is 0 here
         ];
 
         this.send(toks.join(","));
@@ -788,57 +883,95 @@ export class Input {
      * This should be fired whenever the window size changes.
      */
     _windowMath() {
-        const windowW = this.element.offsetWidth;
-        const windowH = this.element.offsetHeight;
+        // Use the overlayInput element (this.element) for calculations, as it defines the interactive area boundary.
+        const elementRect = this.element.getBoundingClientRect();
+        const windowW = elementRect.width; // Use element's actual rendered width
+        const windowH = elementRect.height; // Use element's actual rendered height
+
+        // Determine the "frame" size.
         const frameW = this.element.offsetWidth;
         const frameH = this.element.offsetHeight;
 
-        const multi = Math.min(windowW / frameW, windowH / frameH);
-        const vpWidth = frameW * multi;
-        const vpHeight = (frameH * multi);
+        // Prevent division by zero if element hasn't rendered fully
+        if (windowW <= 0 || windowH <= 0 || frameW <= 0 || frameH <= 0) {
+            console.warn("_windowMath: Element dimensions are zero or invalid, skipping calculation.");
+            this.m = null; // Ensure m is null if calculation fails
+            return;
+        }
+
+        // Calculate scaling factor to fit the frame within the window/element bounds
+        const multiX = windowW / frameW;
+        const multiY = windowH / frameH;
+        const multi = Math.min(multiX, multiY); // Fit factor (aspect ratio handling)
+
+        const vpWidth = frameW * multi;  // Visual viewport width within the element
+        const vpHeight = frameH * multi; // Visual viewport height within the element
+
+        // Calculate offsets to center the visual viewport within the element
+        const offsetX = (windowW - vpWidth) / 2.0;
+        const offsetY = (windowH - vpHeight) / 2.0;
+
+        // Calculate multipliers to convert element-relative coords to frame-relative coords
+        // Prevent division by zero if visual viewport size is zero
+        const mouseMultiX = (vpWidth > 0) ? frameW / vpWidth : 1;
+        const mouseMultiY = (vpHeight > 0) ? frameH / vpHeight : 1;
 
         this.m = {
-            mouseMultiX: frameW / vpWidth,
-            mouseMultiY: frameH / vpHeight,
-            mouseOffsetX: Math.max((windowW - vpWidth) / 2.0, 0),
-            mouseOffsetY: Math.max((windowH - vpHeight) / 2.0, 0),
-            centerOffsetX: 0,
-            centerOffsetY: 0,
-            scrollX: window.scrollX,
-            scrollY: window.scrollY,
-            frameW,
-            frameH,
+            mouseMultiX: mouseMultiX,
+            mouseMultiY: mouseMultiY,
+            mouseOffsetX: offsetX,
+            mouseOffsetY: offsetY,
+            // Store element's position relative to viewport for coordinate translation
+            elementClientX: elementRect.left,
+            elementClientY: elementRect.top,
+            frameW: frameW,
+            frameH: frameH,
         };
     }
-
     /**
      * Translates pointer position X based on current window math.
      * @param {Integer} clientX
      */
     _clientToServerX(clientX) {
-        let serverX = Math.round((clientX - this.m.mouseOffsetX - this.m.centerOffsetX + this.m.scrollX) * this.m.mouseMultiX);
+        // This logic assumes this.m is calculated correctly for AUTO-RESIZE mode.
+        if (!this.m) return 0; // Guard against uninitialized this.m
 
-        if (serverX === this.m.frameW - 1) serverX = this.m.frameW;
-        if (serverX > this.m.frameW) serverX = this.m.frameW;
-        if (serverX < 0) serverX = 0;
+        // Calculate mouse position relative to the element's top-left corner
+        const elementRelativeX = clientX - this.m.elementClientX;
+
+        // Calculate position relative to the *centered visual viewport* within the element
+        const viewportRelativeX = elementRelativeX - this.m.mouseOffsetX;
+
+        // Scale to frame coordinates
+        let serverX = viewportRelativeX * this.m.mouseMultiX;
+
+        // Clamp to frame bounds
+        serverX = Math.max(0, Math.min(this.m.frameW, Math.round(serverX)));
 
         return serverX;
     }
-
     /**
      * Translates pointer position Y based on current window math.
      * @param {Integer} clientY
      */
     _clientToServerY(clientY) {
-        let serverY = Math.round((clientY - this.m.mouseOffsetY - this.m.centerOffsetY + this.m.scrollY) * this.m.mouseMultiY);
+        // This logic assumes this.m is calculated correctly for AUTO-RESIZE mode.
+        if (!this.m) return 0; // Guard against uninitialized this.m
 
-        if (serverY === this.m.frameH - 1) serverY = this.m.frameH;
-        if (serverY > this.m.frameH) serverY = this.m.frameH;
-        if (serverY < 0) serverY = 0;
+        // Calculate mouse position relative to the element's top-left corner
+        const elementRelativeY = clientY - this.m.elementClientY;
+
+         // Calculate position relative to the *centered visual viewport* within the element
+        const viewportRelativeY = elementRelativeY - this.m.mouseOffsetY;
+
+        // Scale to frame coordinates
+        let serverY = viewportRelativeY * this.m.mouseMultiY;
+
+        // Clamp to frame bounds
+        serverY = Math.max(0, Math.min(this.m.frameH, Math.round(serverY)));
 
         return serverY;
     }
-
     /**
      * Sends command to WebRTC app to connect virtual joystick and initializes the local GamepadManger.
      * @param {GamepadEvent} event

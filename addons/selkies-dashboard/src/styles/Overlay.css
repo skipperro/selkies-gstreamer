@@ -484,19 +484,19 @@ body {
 }
 
 .sidebar-section {
-    margin-bottom: 10px; /* Slightly reduce margin between collapsed sections */
-    padding: 0; /* Remove padding from the main section container */
+    margin-bottom: 10px;
+    padding: 0;
     border-radius: 8px;
     background-color: var(--section-bg);
     border: 1px solid var(--item-border);
-    overflow: hidden; /* Needed if using transitions later, good practice */
+    overflow: hidden;
 }
 
 .sidebar-section-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 15px; /* Add padding here instead of the parent */
+    padding: 10px 15px;
     cursor: pointer;
     user-select: none; /* Prevent text selection on click */
     transition: background-color 0.2s ease;
@@ -522,25 +522,17 @@ body {
 .sidebar-section-content {
     padding: 15px; /* Add padding to the content area */
     padding-top: 10px; /* Add a bit of space below the header */
-    /* Optional: Add transition for smooth open/close */
-    /* transition: max-height 0.3s ease-out, opacity 0.3s ease-out; */
-    /* max-height: 1000px; set high enough */
-    /* opacity: 1; */
-    /* Note: Conditional rendering is used, so transitions aren't strictly necessary */
-    /* but could be added if desired (requires adjusting JSX slightly) */
 }
 
 /* --- Ensure existing styles work with new structure --- */
 /* Adjust padding/margin for items inside the content if needed */
 .sidebar-section-content .dev-setting-item {
-    /* Reset margin if needed, but looks okay with current structure */
-    /* margin-bottom: 15px; */
     background-color: transparent; /* Inherit from section */
 }
 
 .sidebar-section-content .stats-gauges {
     background-color: transparent; /* Inherit from section */
-    padding: 5px 0 0 0; /* Adjust padding if necessary */
+    padding: 5px 0 0 0;
     margin-bottom: 0;
 }
 
@@ -569,8 +561,8 @@ body {
     border-radius: 8px; /* Consistent border radius */
     background-color: var(--input-bg);
     color: var(--input-text);
-    font-size: 0.9em; /* Slightly smaller font for content */
-    font-family: monospace; /* Use monospace for clipboard content, like core */
+    font-size: 0.9em;
+    font-family: monospace;
     resize: vertical; /* Allow vertical resizing */
     min-height: 80px; /* Give it a decent minimum height */
     transition: border-color 0.2s ease, background-color 0.2s ease; /* Smooth transitions */
@@ -585,8 +577,6 @@ body {
 .dashboard-clipboard-item textarea:focus {
    outline: none; /* Remove default browser outline */
    border-color: var(--sidebar-header-color); /* Highlight border on focus */
-   /* Optional: Add a subtle box-shadow on focus if desired */
-   /* box-shadow: 0 0 0 2px rgba(var(--sidebar-header-color-rgb), 0.2); */ /* Needs --sidebar-header-color-rgb variable */
 }
 
 /* Placeholder text styling (optional, but good for themes) */
@@ -630,7 +620,7 @@ body {
 
 /* SVG Element Styles (Copied and adapted from original core script) */
 .gp-vis-base {
-    fill: #555; /* Keep original colors for now, can be themed later */
+    fill: #555;
     stroke: #888;
     stroke-width: 0.5;
 }
@@ -675,3 +665,201 @@ body {
     margin-top: 10px;
 }
 
+/* Style for preset and audio device dropdowns */
+.dev-setting-item #resolutionPresetSelect,
+.dev-setting-item .audio-device-select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    font-size: 1em;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    /* Custom arrow SVG for dark theme */
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23abb2bf%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
+    background-repeat: no-repeat;
+    background-position: right 8px top 50%;
+    background-size: 12px auto;
+    transition: border-color 0.2s ease;
+}
+
+/* Custom arrow color and explicit colors for light theme select */
+.theme-light .dev-setting-item #resolutionPresetSelect,
+.theme-light .dev-setting-item .audio-device-select {
+    /* Custom arrow SVG for light theme */
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%22292.4%22%3E%3Cpath%20fill%3D%22%23333%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
+    background-color: var(--input-bg);
+    color: var(--input-text);
+}
+
+/* Hover state for select */
+.dev-setting-item #resolutionPresetSelect:hover,
+.dev-setting-item .audio-device-select:hover {
+    border-color: var(--sidebar-header-color);
+}
+
+/* Focus state for select */
+.dev-setting-item #resolutionPresetSelect:focus,
+.dev-setting-item .audio-device-select:focus {
+   outline: none;
+   border-color: var(--sidebar-header-color);
+   box-shadow: none;
+}
+
+/* Disabled state for audio device selects */
+.dev-setting-item .audio-device-select:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* Container for manual width/height inputs */
+.resolution-manual-inputs {
+    display: flex;
+    gap: 10px; /* Space between width and height inputs */
+    margin-bottom: 15px; /* Space below the inputs */
+}
+
+/* Individual manual input item (label + input) */
+.manual-input-item {
+    flex: 1; /* Each takes half the space */
+    margin-bottom: 0; /* Remove bottom margin from individual items */
+}
+
+/* Manual width/height number inputs */
+.manual-input-item input[type="number"] {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    font-size: 1em;
+    box-sizing: border-box;
+    -moz-appearance: textfield; /* Firefox */
+}
+
+/* Remove spinners for number input in Webkit */
+.manual-input-item input[type="number"]::-webkit-outer-spin-button,
+.manual-input-item input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* Hover/Focus for number inputs */
+.manual-input-item input[type="number"]:hover {
+    border-color: var(--sidebar-header-color);
+}
+.manual-input-item input[type="number"]:focus {
+    outline: none;
+    border-color: var(--sidebar-header-color);
+}
+
+/* Container for scale locally checkbox and label */
+.scale-locally-item {
+    display: flex;
+    align-items: center;
+    gap: 8px; /* Space between checkbox and label */
+    margin-bottom: 15px;
+}
+
+.scale-locally-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--sidebar-header-color); /* Color the checkbox */
+    cursor: pointer;
+    margin: 0; /* Reset margin */
+}
+
+.scale-locally-item label {
+    font-weight: normal; /* Make label less prominent than section headers */
+    font-size: 0.9em;
+    cursor: pointer; /* Allow clicking label to toggle */
+    margin: 0; /* Reset margin */
+}
+
+/* Container for the resolution action buttons */
+.resolution-action-buttons {
+    display: flex;
+    gap: 10px; /* Space between buttons */
+    margin-top: 5px; /* Space above the buttons */
+}
+
+/* Styling for Set/Reset buttons */
+.resolution-button {
+    flex: 1;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border: 1px solid var(--item-border);
+    border-radius: 8px;
+    background-color: var(--input-bg);
+    color: var(--sidebar-text);
+    font-size: 0.9em;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    text-align: center;
+}
+
+.resolution-button:hover {
+    background-color: var(--section-bg);
+    border-color: var(--sidebar-header-color);
+}
+
+/* Divider style used in Audio Settings */
+.section-divider {
+    border: none;
+    border-top: 1px solid var(--item-border);
+    margin: 15px 0;
+}
+
+/* Error message style used in Audio Settings */
+.error-message {
+    color: var(--error-color, #e74c3c);
+    background-color: rgba(231, 76, 60, 0.1);
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+    border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+/* Notice style used in Audio Settings */
+.device-support-notice {
+    font-size: 0.8em;
+    color: var(--sidebar-text-secondary, #888);
+    margin-top: 5px;
+    margin-bottom: 0;
+    text-align: center;
+}
+
+.toggle-button {
+    /* Inherits base styles from .resolution-button */
+    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    background-color: var(--input-bg);
+    color: var(--sidebar-text);
+    border-color: var(--item-border);
+}
+
+.toggle-button:hover {
+    /* Slightly more prominent hover */
+    border-color: var(--sidebar-header-color);
+    background-color: var(--section-bg);
+}
+
+/* Active state for toggle buttons */
+.toggle-button.active {
+    background-color: var(--sidebar-header-color); /* Highlight color */
+    color: var(--button-text); /* Contrast text color */
+    border-color: var(--sidebar-header-color); /* Match background border */
+}
+
+/* Hover state when active */
+.toggle-button.active:hover {
+     background-color: var(--button-hover-bg); /* Use theme's button hover */
+     border-color: var(--button-hover-bg);
+}

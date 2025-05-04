@@ -27,6 +27,21 @@ const audioBitrateOptions = [
 // Video buffer size goes from 0 to 15
 const videoBufferOptions = Array.from({ length: 16 }, (_, i) => i);
 
+// Resolution Presets
+const commonResolutions = [
+    { value: "", text: "-- Select Preset --" }, // Default option
+    { value: "1920x1080", text: "1920 x 1080 (FHD)" },
+    { value: "1280x720", text: "1280 x 720 (HD)" },
+    { value: "1366x768", text: "1366 x 768 (Laptop)" },
+    { value: "1920x1200", text: "1920 x 1200 (16:10)" },
+    { value: "2560x1440", text: "2560 x 1440 (QHD)" },
+    { value: "3840x2160", text: "3840 x 2160 (4K UHD)" },
+    { value: "1024x768", text: "1024 x 768 (XGA 4:3)" },
+    { value: "800x600", text: "800 x 600 (SVGA 4:3)" },
+    { value: "640x480", text: "640 x 480 (VGA 4:3)" },
+    { value: "320x240", text: "320 x 240 (QVGA 4:3)" },
+];
+
 const STATS_READ_INTERVAL_MS = 100;
 
 const MAX_AUDIO_BUFFER = 10; // Max value for the Audio Buffer gauge
@@ -37,6 +52,7 @@ const DEFAULT_VIDEO_BITRATE = 8000;
 const DEFAULT_AUDIO_BITRATE = 320000;
 const DEFAULT_VIDEO_BUFFER_SIZE = 0;
 const DEFAULT_ENCODER = encoderOptions[0];
+const DEFAULT_SCALE_LOCALLY = true;
 
 // Helper function to format bytes into a human-readable string (e.g., GB, MB)
 function formatBytes(bytes, decimals = 2) {
@@ -54,48 +70,49 @@ const calculateGaugeOffset = (percentage, radius, circumference) => {
     return circumference * (1 - clampedPercentage / 100);
 };
 
+const roundDownToEven = (num) => {
+    const n = parseInt(num, 10); // Ensure it's an integer
+    if (isNaN(n)) return 0; // Handle non-numeric input gracefully
+    return Math.floor(n / 2) * 2;
+};
+
+
+// --- Icons ---
 const ScreenIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
         <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
     </svg>
 );
-
 const SpeakerIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
         <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
     </svg>
 );
-
 const MicrophoneIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
         <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
     </svg>
 );
-
 const GamepadIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
         <path d="M15 7.5V2H9v5.5l3 3 3-3zM7.5 9H2v6h5.5l3-3-3-3zM9 16.5V22h6v-5.5l-3-3-3 3zM16.5 9l-3 3 3 3H22V9h-5.5z"/>
     </svg>
 );
-
 const FullscreenIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
         <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
     </svg>
 );
-
 const CaretDownIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ display: 'block' }}>
         <path d="M7 10l5 5 5-5H7z"/>
     </svg>
 );
-
 const CaretUpIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ display: 'block' }}>
         <path d="M7 14l5-5 5 5H7z"/>
     </svg>
 );
-
 const SpinnerIcon = () => (
     <svg width="18" height="18" viewBox="0 0 38 38" xmlns="http://www.w3.org/2000/svg" stroke="currentColor">
         <g fill="none" fillRule="evenodd">
@@ -114,40 +131,53 @@ const SpinnerIcon = () => (
         </g>
     </svg>
 );
+// --- End Icons ---
 
 
 function Sidebar({ isOpen }) {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
 
+  // Settings State
   const [encoder, setEncoder] = useState(localStorage.getItem('encoder') || DEFAULT_ENCODER);
   const [framerate, setFramerate] = useState(parseInt(localStorage.getItem('videoFramerate'), 10) || DEFAULT_FRAMERATE);
   const [videoBitRate, setVideoBitRate] = useState(parseInt(localStorage.getItem('videoBitRate'), 10) || DEFAULT_VIDEO_BITRATE);
   const [audioBitRate, setAudioBitRate] = useState(parseInt(localStorage.getItem('audioBitRate'), 10) || DEFAULT_AUDIO_BITRATE);
   const [videoBufferSize, setVideoBufferSize] = useState(parseInt(localStorage.getItem('videoBufferSize'), 10) || DEFAULT_VIDEO_BUFFER_SIZE);
 
+  const [manualWidth, setManualWidth] = useState('');
+  const [manualHeight, setManualHeight] = useState('');
+  const [scaleLocally, setScaleLocally] = useState(() => {
+      const saved = localStorage.getItem('scaleLocallyManual');
+      return saved !== null ? saved === 'true' : DEFAULT_SCALE_LOCALLY;
+  });
+  const [presetValue, setPresetValue] = useState(""); // State to control the preset dropdown selection
+
+  // Stats State
   const [clientFps, setClientFps] = useState(0);
   const [audioBuffer, setAudioBuffer] = useState(0);
-
   const [cpuPercent, setCpuPercent] = useState(0);
   const [gpuPercent, setGpuPercent] = useState(0);
   const [sysMemPercent, setSysMemPercent] = useState(0);
   const [gpuMemPercent, setGpuMemPercent] = useState(0);
-
   const [sysMemUsed, setSysMemUsed] = useState(null);
   const [sysMemTotal, setSysMemTotal] = useState(null);
   const [gpuMemUsed, setGpuMemUsed] = useState(null);
   const [gpuMemTotal, setGpuMemTotal] = useState(null);
 
+  // Tooltip State
   const [hoveredItem, setHoveredItem] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
 
+  // Action Button State
   const [isVideoActive, setIsVideoActive] = useState(true);
   const [isAudioActive, setIsAudioActive] = useState(true);
   const [isMicrophoneActive, setIsMicrophoneActive] = useState(false);
   const [isGamepadEnabled, setIsGamepadEnabled] = useState(true);
 
+  // Clipboard State
   const [dashboardClipboardContent, setDashboardClipboardContent] = useState('');
 
+  // Audio Devices State
   const [audioInputDevices, setAudioInputDevices] = useState([]);
   const [audioOutputDevices, setAudioOutputDevices] = useState([]);
   const [selectedInputDeviceId, setSelectedInputDeviceId] = useState('default');
@@ -156,18 +186,24 @@ function Sidebar({ isOpen }) {
   const [audioDeviceError, setAudioDeviceError] = useState(null);
   const [isLoadingAudioDevices, setIsLoadingAudioDevices] = useState(false);
 
-  const [gamepadStates, setGamepadStates] = useState({}); // Stores state like { 0: { buttons: {}, axes: {} }, 1: ... }
-  const [hasReceivedGamepadData, setHasReceivedGamepadData] = useState(false); // Flag to show section header
+  // Gamepad State
+  const [gamepadStates, setGamepadStates] = useState({});
+  const [hasReceivedGamepadData, setHasReceivedGamepadData] = useState(false);
 
+  // Section Open State
   const [sectionsOpen, setSectionsOpen] = useState({
     settings: false,
+    audioSettings: false,
+    screenSettings: false, // <-- Add new section state
     stats: false,
     clipboard: false,
-    audioSettings: false,
     gamepads: false,
   });
 
+  // --- Callbacks and Handlers ---
+
   const populateAudioDevices = useCallback(async () => {
+    // ... (no changes needed here)
     console.log("Dashboard: Attempting to populate audio devices...");
     setIsLoadingAudioDevices(true);
     setAudioDeviceError(null);
@@ -194,9 +230,8 @@ function Sidebar({ isOpen }) {
       devices.forEach(device => {
         if (!device.deviceId) {
           console.warn("Dashboard: Skipping device with missing deviceId:", device);
-          return; // Skip device if ID is missing (e.g., communications device placeholder)
+          return; // Skip device if ID is missing
         }
-        // Use label only if provided, otherwise generate one
         const label = device.label || (device.kind === 'audioinput' ? `Microphone ${inputs.length}` : `Speaker ${outputs.length}`);
 
         if (device.kind === 'audioinput') {
@@ -209,6 +244,7 @@ function Sidebar({ isOpen }) {
       setAudioInputDevices(inputs);
       setAudioOutputDevices(outputs);
 
+      // Keep selection on 'default' unless a specific one is received from main app later
       setSelectedInputDeviceId('default');
       setSelectedOutputDeviceId('default');
 
@@ -230,19 +266,13 @@ function Sidebar({ isOpen }) {
 
   const toggleSection = useCallback((sectionKey) => {
     const isOpening = !sectionsOpen[sectionKey];
-
-    setSectionsOpen(prev => ({
-      ...prev,
-      [sectionKey]: !prev[sectionKey]
-    }));
-
+    setSectionsOpen(prev => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
     if (sectionKey === 'audioSettings' && isOpening) {
       populateAudioDevices();
     }
   }, [sectionsOpen, populateAudioDevices]);
 
-
-  // --- Event Handlers for Settings ---
+  // Video Settings Handlers
   const handleEncoderChange = (event) => {
     const selectedEncoder = event.target.value;
     setEncoder(selectedEncoder);
@@ -250,7 +280,6 @@ function Sidebar({ isOpen }) {
     console.log(`Dashboard: Sending postMessage: { type: 'settings', settings: { encoder: ${selectedEncoder} } }`);
     window.postMessage({ type: 'settings', settings: { encoder: selectedEncoder } }, window.location.origin);
   };
-
   const handleFramerateChange = (event) => {
     const index = parseInt(event.target.value, 10);
     const selectedFramerate = framerateOptions[index];
@@ -261,7 +290,6 @@ function Sidebar({ isOpen }) {
       window.postMessage({ type: 'settings', settings: { videoFramerate: selectedFramerate } }, window.location.origin);
     }
   };
-
   const handleVideoBitrateChange = (event) => {
      const index = parseInt(event.target.value, 10);
      const selectedBitrate = videoBitrateOptions[index];
@@ -272,18 +300,6 @@ function Sidebar({ isOpen }) {
        window.postMessage({ type: 'settings', settings: { videoBitRate: selectedBitrate } }, window.location.origin);
      }
   };
-
-  const handleAudioBitrateChange = (event) => {
-     const index = parseInt(event.target.value, 10);
-     const selectedBitrate = audioBitrateOptions[index];
-     if (selectedBitrate !== undefined) {
-       setAudioBitRate(selectedBitrate);
-       localStorage.setItem('audioBitRate', selectedBitrate.toString());
-       console.log(`Dashboard: Sending postMessage: { type: 'settings', settings: { audioBitRate: ${selectedBitrate} } }`);
-       window.postMessage({ type: 'settings', settings: { audioBitRate: selectedBitrate } }, window.location.origin);
-     }
-  };
-
   const handleVideoBufferSizeChange = (event) => {
      const index = parseInt(event.target.value, 10);
      const selectedSize = videoBufferOptions[index];
@@ -295,61 +311,23 @@ function Sidebar({ isOpen }) {
      }
   };
 
-  const toggleTheme = () => {
-    const newTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
+  // Audio Settings Handlers
+  const handleAudioBitrateChange = (event) => {
+     const index = parseInt(event.target.value, 10);
+     const selectedBitrate = audioBitrateOptions[index];
+     if (selectedBitrate !== undefined) {
+       setAudioBitRate(selectedBitrate);
+       localStorage.setItem('audioBitRate', selectedBitrate.toString());
+       console.log(`Dashboard: Sending postMessage: { type: 'settings', settings: { audioBitRate: ${selectedBitrate} } }`);
+       window.postMessage({ type: 'settings', settings: { audioBitRate: selectedBitrate } }, window.location.origin);
+     }
   };
-
-  // --- Event Handlers for Action Buttons ---
-  const handleVideoToggle = () => {
-      const newState = !isVideoActive;
-      console.log(`Dashboard: Sending postMessage: { type: 'pipelineControl', pipeline: 'video', enabled: ${newState} }`);
-      window.postMessage({ type: 'pipelineControl', pipeline: 'video', enabled: newState }, window.location.origin);
-  };
-
-  const handleAudioToggle = () => {
-      const newState = !isAudioActive;
-      console.log(`Dashboard: Sending postMessage: { type: 'pipelineControl', pipeline: 'audio', enabled: ${newState} }`);
-      window.postMessage({ type: 'pipelineControl', pipeline: 'audio', enabled: newState }, window.location.origin);
-  };
-
-  const handleMicrophoneToggle = () => {
-      const newState = !isMicrophoneActive;
-      console.log(`Dashboard: Sending postMessage: { type: 'pipelineControl', pipeline: 'microphone', enabled: ${newState} }`);
-      window.postMessage({ type: 'pipelineControl', pipeline: 'microphone', enabled: newState }, window.location.origin);
-  };
-
-  const handleGamepadToggle = () => {
-      const newState = !isGamepadEnabled;
-      console.log(`Dashboard: Sending postMessage: { type: 'gamepadControl', enabled: ${newState} }`);
-      window.postMessage({ type: 'gamepadControl', enabled: newState }, window.location.origin);
-  };
-
-  const handleFullscreenRequest = () => {
-      console.log("Dashboard: Sending postMessage: { type: 'requestFullscreen' }");
-      window.postMessage({ type: 'requestFullscreen' }, window.location.origin);
-  };
-
-  // --- Event Handlers for Clipboard ---
-  const handleClipboardChange = (event) => {
-      setDashboardClipboardContent(event.target.value);
-  };
-
-  const handleClipboardBlur = (event) => {
-      const currentText = event.target.value;
-      console.log(`Dashboard: Sending postMessage: { type: 'clipboardUpdateFromUI', text: ... } (on blur)`);
-      window.postMessage({ type: 'clipboardUpdateFromUI', text: currentText }, window.location.origin);
-  };
-
-  // --- Event Handlers for Audio Device Dropdowns ---
   const handleAudioInputChange = (event) => {
       const deviceId = event.target.value;
       setSelectedInputDeviceId(deviceId);
       console.log(`Dashboard: Sending postMessage: { type: 'audioDeviceSelected', context: 'input', deviceId: ${deviceId} }`);
       window.postMessage({ type: 'audioDeviceSelected', context: 'input', deviceId: deviceId }, window.location.origin);
   };
-
   const handleAudioOutputChange = (event) => {
       const deviceId = event.target.value;
       setSelectedOutputDeviceId(deviceId);
@@ -357,42 +335,182 @@ function Sidebar({ isOpen }) {
       window.postMessage({ type: 'audioDeviceSelected', context: 'output', deviceId: deviceId }, window.location.origin);
   };
 
+  // --- NEW: Screen Settings Handlers ---
+  const handlePresetChange = (event) => {
+      const selectedValue = event.target.value;
+      setPresetValue(selectedValue); // Update dropdown state
+
+      if (!selectedValue) {
+          return; // Ignore "-- Select Preset --"
+      }
+
+      const parts = selectedValue.split('x');
+      if (parts.length === 2) {
+          const width = parseInt(parts[0], 10);
+          const height = parseInt(parts[1], 10);
+
+          if (!isNaN(width) && width > 0 && !isNaN(height) && height > 0) {
+              const evenWidth = roundDownToEven(width);
+              const evenHeight = roundDownToEven(height);
+
+              console.log(`Dashboard: Preset selected: ${width}x${height}. Rounded: ${evenWidth}x${evenHeight}. Posting message.`);
+
+              // Update manual input fields visually
+              setManualWidth(evenWidth.toString());
+              setManualHeight(evenHeight.toString());
+
+              // Post the message
+              window.postMessage({ type: 'setManualResolution', width: evenWidth, height: evenHeight }, window.location.origin);
+
+          } else {
+              console.error("Dashboard: Error parsing selected resolution preset:", selectedValue);
+          }
+      }
+  };
+
+  const handleManualWidthChange = (event) => {
+      setManualWidth(event.target.value);
+      setPresetValue(""); // Clear preset selection when manually typing
+  };
+
+  const handleManualHeightChange = (event) => {
+      setManualHeight(event.target.value);
+      setPresetValue(""); // Clear preset selection when manually typing
+  };
+
+  const handleScaleLocallyToggle = () => {
+      const newState = !scaleLocally;
+      setScaleLocally(newState);
+      localStorage.setItem('scaleLocallyManual', newState.toString());
+      console.log(`Dashboard: Scale Locally button toggled to ${newState}. Posting message.`);
+      window.postMessage({ type: 'setScaleLocally', value: newState }, window.location.origin);
+  };
+
+  const handleSetManualResolution = () => {
+      const widthVal = manualWidth.trim();
+      const heightVal = manualHeight.trim();
+      const width = parseInt(widthVal, 10);
+      const height = parseInt(heightVal, 10);
+
+      if (isNaN(width) || width <= 0 || isNaN(height) || height <= 0) {
+          alert('Please enter valid positive integers for Width and Height.');
+          console.error('Dashboard: Invalid manual resolution input:', { widthVal, heightVal });
+          return;
+      }
+
+      const evenWidth = roundDownToEven(width);
+      const evenHeight = roundDownToEven(height);
+
+      console.log(`Dashboard: Set Resolution button clicked. Width: ${width}, Height: ${height}. Rounded: ${evenWidth}x${evenHeight}. Posting message.`);
+
+      // Update state to reflect rounded values if they changed
+      setManualWidth(evenWidth.toString());
+      setManualHeight(evenHeight.toString());
+      setPresetValue(""); // Clear preset selection
+
+      window.postMessage({ type: 'setManualResolution', width: evenWidth, height: evenHeight }, window.location.origin);
+  };
+
+  const handleResetResolution = () => {
+      console.log('Dashboard: Reset Resolution button clicked. Posting message.');
+      setManualWidth('');
+      setManualHeight('');
+      setPresetValue(""); // Clear preset selection
+      window.postMessage({ type: 'resetResolutionToWindow' }, window.location.origin);
+  };
+
+
+  // Action Button Handlers
+  const handleVideoToggle = () => {
+      const newState = !isVideoActive;
+      console.log(`Dashboard: Sending postMessage: { type: 'pipelineControl', pipeline: 'video', enabled: ${newState} }`);
+      window.postMessage({ type: 'pipelineControl', pipeline: 'video', enabled: newState }, window.location.origin);
+  };
+  const handleAudioToggle = () => {
+      const newState = !isAudioActive;
+      console.log(`Dashboard: Sending postMessage: { type: 'pipelineControl', pipeline: 'audio', enabled: ${newState} }`);
+      window.postMessage({ type: 'pipelineControl', pipeline: 'audio', enabled: newState }, window.location.origin);
+  };
+  const handleMicrophoneToggle = () => {
+      const newState = !isMicrophoneActive;
+      console.log(`Dashboard: Sending postMessage: { type: 'pipelineControl', pipeline: 'microphone', enabled: ${newState} }`);
+      window.postMessage({ type: 'pipelineControl', pipeline: 'microphone', enabled: newState }, window.location.origin);
+  };
+  const handleGamepadToggle = () => {
+      const newState = !isGamepadEnabled;
+      console.log(`Dashboard: Sending postMessage: { type: 'gamepadControl', enabled: ${newState} }`);
+      window.postMessage({ type: 'gamepadControl', enabled: newState }, window.location.origin);
+  };
+  const handleFullscreenRequest = () => {
+      console.log("Dashboard: Sending postMessage: { type: 'requestFullscreen' }");
+      window.postMessage({ type: 'requestFullscreen' }, window.location.origin);
+  };
+
+  // Clipboard Handlers
+  const handleClipboardChange = (event) => {
+      setDashboardClipboardContent(event.target.value);
+  };
+  const handleClipboardBlur = (event) => {
+      const currentText = event.target.value;
+      console.log(`Dashboard: Sending postMessage: { type: 'clipboardUpdateFromUI', text: ... } (on blur)`);
+      window.postMessage({ type: 'clipboardUpdateFromUI', text: currentText }, window.location.origin);
+  };
+
+  // Theme Handler
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+  };
+
+  // Tooltip Handlers
+  const handleMouseEnter = (e, itemKey) => {
+      setHoveredItem(itemKey);
+      setTooltipPosition({ x: e.clientX + 10, y: e.clientY + 10 });
+  };
+  const handleMouseLeave = () => {
+      setHoveredItem(null);
+  };
+  const getTooltipContent = (itemKey) => {
+      switch (itemKey) {
+          case 'cpu': return `CPU Usage: ${cpuPercent.toFixed(1)}%`;
+          case 'gpu': return `GPU Usage: ${gpuPercent.toFixed(1)}%`;
+          case 'sysmem': return `System Memory: ${sysMemUsed !== null && sysMemTotal !== null ? `${formatBytes(sysMemUsed)} / ${formatBytes(sysMemTotal)}` : 'N/A'}`;
+          case 'gpumem': return `GPU Memory: ${gpuMemUsed !== null && gpuMemTotal !== null ? `${formatBytes(gpuMemUsed)} / ${formatBytes(gpuMemTotal)}` : 'N/A'}`;
+          case 'fps': return `Client FPS: ${clientFps}`;
+          case 'audio': return `Audio Buffers: ${audioBuffer}`;
+          default: return '';
+      }
+  };
 
   // --- useEffect Hooks ---
+
+  // Load initial settings from localStorage
   useEffect(() => {
     const savedEncoder = localStorage.getItem('encoder');
-    if (savedEncoder && encoderOptions.includes(savedEncoder)) {
-      setEncoder(savedEncoder);
-    } else {
-      setEncoder(DEFAULT_ENCODER); localStorage.setItem('encoder', DEFAULT_ENCODER);
-    }
+    if (savedEncoder && encoderOptions.includes(savedEncoder)) setEncoder(savedEncoder);
+    else { setEncoder(DEFAULT_ENCODER); localStorage.setItem('encoder', DEFAULT_ENCODER); }
+
     const savedFramerate = parseInt(localStorage.getItem('videoFramerate'), 10);
-    if (!isNaN(savedFramerate) && framerateOptions.includes(savedFramerate)) {
-      setFramerate(savedFramerate);
-    } else {
-      setFramerate(DEFAULT_FRAMERATE); localStorage.setItem('videoFramerate', DEFAULT_FRAMERATE.toString());
-    }
+    if (!isNaN(savedFramerate) && framerateOptions.includes(savedFramerate)) setFramerate(savedFramerate);
+    else { setFramerate(DEFAULT_FRAMERATE); localStorage.setItem('videoFramerate', DEFAULT_FRAMERATE.toString()); }
+
     const savedVideoBitRate = parseInt(localStorage.getItem('videoBitRate'), 10);
-     if (!isNaN(savedVideoBitRate) && videoBitrateOptions.includes(savedVideoBitRate)) {
-       setVideoBitRate(savedVideoBitRate);
-     } else {
-       setVideoBitRate(DEFAULT_VIDEO_BITRATE); localStorage.setItem('videoBitRate', DEFAULT_VIDEO_BITRATE.toString());
-     }
+     if (!isNaN(savedVideoBitRate) && videoBitrateOptions.includes(savedVideoBitRate)) setVideoBitRate(savedVideoBitRate);
+     else { setVideoBitRate(DEFAULT_VIDEO_BITRATE); localStorage.setItem('videoBitRate', DEFAULT_VIDEO_BITRATE.toString()); }
+
     const savedAudioBitRate = parseInt(localStorage.getItem('audioBitRate'), 10);
-     if (!isNaN(savedAudioBitRate) && audioBitrateOptions.includes(savedAudioBitRate)) {
-       setAudioBitRate(savedAudioBitRate);
-     } else {
-       setAudioBitRate(DEFAULT_AUDIO_BITRATE); localStorage.setItem('audioBitRate', DEFAULT_AUDIO_BITRATE.toString());
-     }
+     if (!isNaN(savedAudioBitRate) && audioBitrateOptions.includes(savedAudioBitRate)) setAudioBitRate(savedAudioBitRate);
+     else { setAudioBitRate(DEFAULT_AUDIO_BITRATE); localStorage.setItem('audioBitRate', DEFAULT_AUDIO_BITRATE.toString()); }
+
     const savedVideoBufferSize = parseInt(localStorage.getItem('videoBufferSize'), 10);
-     if (!isNaN(savedVideoBufferSize) && videoBufferOptions.includes(savedVideoBufferSize)) {
-       setVideoBufferSize(savedVideoBufferSize);
-     } else {
-       setVideoBufferSize(DEFAULT_VIDEO_BUFFER_SIZE); localStorage.setItem('videoBufferSize', DEFAULT_VIDEO_BUFFER_SIZE.toString());
-     }
+     if (!isNaN(savedVideoBufferSize) && videoBufferOptions.includes(savedVideoBufferSize)) setVideoBufferSize(savedVideoBufferSize);
+     else { setVideoBufferSize(DEFAULT_VIDEO_BUFFER_SIZE); localStorage.setItem('videoBufferSize', DEFAULT_VIDEO_BUFFER_SIZE.toString()); }
+
+     // Load scaleLocally state (already handled in useState initializer)
   }, []);
 
-
+  // Read stats periodically
   useEffect(() => {
     const readStats = () => {
         const currentSystemStats = window.system_stats;
@@ -417,12 +535,13 @@ function Sidebar({ isOpen }) {
     return () => clearInterval(intervalId);
   }, []);
 
-
+  // Listen for messages from the main application
   useEffect(() => {
     const handleWindowMessage = (event) => {
       if (event.origin !== window.location.origin) return;
       const message = event.data;
       if (typeof message === 'object' && message !== null) {
+        // --- Existing message handlers ---
         if (message.type === 'pipelineStatusUpdate') {
           console.log('Dashboard: Received pipelineStatusUpdate', message);
           if (message.video !== undefined) setIsVideoActive(message.video);
@@ -461,73 +580,34 @@ function Sidebar({ isOpen }) {
         }
         else if (message.type === 'gamepadButtonUpdate' || message.type === 'gamepadAxisUpdate') {
             if (!hasReceivedGamepadData) {
-                setHasReceivedGamepadData(true); // Show the section header now
+                setHasReceivedGamepadData(true);
                 console.log("Dashboard: First gamepad message received, enabling section header.");
             }
-
             const gpIndex = message.gamepadIndex;
-            if (gpIndex === undefined || gpIndex === null) return; // Ignore if no index
-
+            if (gpIndex === undefined || gpIndex === null) return;
             setGamepadStates(prevStates => {
-                const newState = { ...prevStates }; // Shallow copy gamepad map
-
-                // Ensure gamepad object exists and deep copy its state
-                if (!newState[gpIndex]) {
-                    newState[gpIndex] = { buttons: {}, axes: {} };
-                } else {
-                    newState[gpIndex] = {
-                        buttons: { ...(newState[gpIndex].buttons || {}) },
-                        axes: { ...(newState[gpIndex].axes || {}) }
-                    };
-                }
-
+                const newState = { ...prevStates };
+                if (!newState[gpIndex]) newState[gpIndex] = { buttons: {}, axes: {} };
+                else newState[gpIndex] = { buttons: { ...(newState[gpIndex].buttons || {}) }, axes: { ...(newState[gpIndex].axes || {}) } };
                 if (message.type === 'gamepadButtonUpdate') {
                     const buttonIndex = message.buttonIndex;
-                    if (buttonIndex !== undefined) {
-                        newState[gpIndex].buttons[buttonIndex] = message.value || 0;
-                    }
-                } else { // gamepadAxisUpdate
+                    if (buttonIndex !== undefined) newState[gpIndex].buttons[buttonIndex] = message.value || 0;
+                } else {
                     const axisIndex = message.axisIndex;
-                    if (axisIndex !== undefined) {
-                        const clampedValue = Math.max(-1, Math.min(1, message.value || 0));
-                        newState[gpIndex].axes[axisIndex] = clampedValue;
-                    }
+                    if (axisIndex !== undefined) newState[gpIndex].axes[axisIndex] = Math.max(-1, Math.min(1, message.value || 0));
                 }
-                return newState; // Return the updated state object
+                return newState;
             });
         }
       }
     };
     window.addEventListener('message', handleWindowMessage);
-    console.log("Dashboard: Added window message listener for UI and Gamepad updates.");
+    console.log("Dashboard: Added window message listener.");
     return () => {
       window.removeEventListener('message', handleWindowMessage);
       console.log("Dashboard: Removed window message listener.");
     };
   }, [hasReceivedGamepadData]); // Add hasReceivedGamepadData dependency
-
-
-  // --- Tooltip Handlers ---
-  const handleMouseEnter = (e, itemKey) => {
-      setHoveredItem(itemKey);
-      setTooltipPosition({ x: e.clientX + 10, y: e.clientY + 10 });
-  };
-
-  const handleMouseLeave = () => {
-      setHoveredItem(null);
-  };
-
-  const getTooltipContent = (itemKey) => {
-      switch (itemKey) {
-          case 'cpu': return `CPU Usage: ${cpuPercent.toFixed(1)}%`;
-          case 'gpu': return `GPU Usage: ${gpuPercent.toFixed(1)}%`;
-          case 'sysmem': return `System Memory: ${sysMemUsed !== null && sysMemTotal !== null ? `${formatBytes(sysMemUsed)} / ${formatBytes(sysMemTotal)}` : 'N/A'}`;
-          case 'gpumem': return `GPU Memory: ${gpuMemUsed !== null && gpuMemTotal !== null ? `${formatBytes(gpuMemUsed)} / ${formatBytes(gpuMemTotal)}` : 'N/A'}`;
-          case 'fps': return `Client FPS: ${clientFps}`;
-          case 'audio': return `Audio Buffers: ${audioBuffer}`;
-          default: return '';
-      }
-  };
 
 
   // --- Component Rendering ---
@@ -575,276 +655,144 @@ function Sidebar({ isOpen }) {
 
         {/* Video Settings Section */}
         <div className="sidebar-section">
-            <div
-              className="sidebar-section-header"
-              onClick={() => toggleSection('settings')}
-              role="button"
-              aria-expanded={sectionsOpen.settings}
-              aria-controls="settings-content"
-              tabIndex="0"
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('settings')}
-            >
+            <div className="sidebar-section-header" onClick={() => toggleSection('settings')} role="button" aria-expanded={sectionsOpen.settings} aria-controls="settings-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('settings')}>
               <h3>Video Settings</h3>
-              <span className="section-toggle-icon" aria-hidden="true">
-                {sectionsOpen.settings ? <CaretUpIcon /> : <CaretDownIcon />}
-              </span>
+              <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.settings ? <CaretUpIcon /> : <CaretDownIcon />}</span>
             </div>
-
             {sectionsOpen.settings && (
               <div className="sidebar-section-content" id="settings-content">
-                {/* Encoder Dropdown */}
-                <div className="dev-setting-item">
-                  <label htmlFor="encoderSelect">Encoder:</label>
-                  <select id="encoderSelect" value={encoder} onChange={handleEncoderChange}> {encoderOptions.map(enc => (<option key={enc} value={enc}>{enc}</option>))} </select>
-                </div>
-                {/* Framerate Slider */}
-                 <div className="dev-setting-item">
-                  <label htmlFor="framerateSlider">Frames per second ({framerate} FPS):</label>
-                  <input type="range" id="framerateSlider" min="0" max={framerateOptions.length - 1} step="1" value={framerateOptions.indexOf(framerate)} onChange={handleFramerateChange} />
-                </div>
-                {/* Video Bitrate Slider */}
-                <div className="dev-setting-item">
-                  <label htmlFor="videoBitrateSlider">Video Bitrate ({videoBitRate / 1000} Mbps):</label>
-                  <input type="range" id="videoBitrateSlider" min="0" max={videoBitrateOptions.length - 1} step="1" value={videoBitrateOptions.indexOf(videoBitRate)} onChange={handleVideoBitrateChange} />
-                </div>
-                {/* Video Buffer Size Slider */}
-                 <div className="dev-setting-item">
-                  <label htmlFor="videoBufferSizeSlider"> Video Buffer Size ({videoBufferSize === 0 ? '0 (Immediate)' : `${videoBufferSize} frames`}): </label>
-                  <input type="range" id="videoBufferSizeSlider" min="0" max={videoBufferOptions.length - 1} step="1" value={videoBufferOptions.indexOf(videoBufferSize)} onChange={handleVideoBufferSizeChange} />
-                </div>
+                <div className="dev-setting-item"> <label htmlFor="encoderSelect">Encoder:</label> <select id="encoderSelect" value={encoder} onChange={handleEncoderChange}> {encoderOptions.map(enc => (<option key={enc} value={enc}>{enc}</option>))} </select> </div>
+                <div className="dev-setting-item"> <label htmlFor="framerateSlider">Frames per second ({framerate} FPS):</label> <input type="range" id="framerateSlider" min="0" max={framerateOptions.length - 1} step="1" value={framerateOptions.indexOf(framerate)} onChange={handleFramerateChange} /> </div>
+                <div className="dev-setting-item"> <label htmlFor="videoBitrateSlider">Video Bitrate ({videoBitRate / 1000} Mbps):</label> <input type="range" id="videoBitrateSlider" min="0" max={videoBitrateOptions.length - 1} step="1" value={videoBitrateOptions.indexOf(videoBitRate)} onChange={handleVideoBitrateChange} /> </div>
+                <div className="dev-setting-item"> <label htmlFor="videoBufferSizeSlider"> Video Buffer Size ({videoBufferSize === 0 ? '0 (Immediate)' : `${videoBufferSize} frames`}): </label> <input type="range" id="videoBufferSizeSlider" min="0" max={videoBufferOptions.length - 1} step="1" value={videoBufferOptions.indexOf(videoBufferSize)} onChange={handleVideoBufferSizeChange} /> </div>
               </div>
             )}
         </div>
 
         {/* Audio Settings Section */}
         <div className="sidebar-section">
-            <div
-              className="sidebar-section-header"
-              onClick={() => toggleSection('audioSettings')}
-              role="button"
-              aria-expanded={sectionsOpen.audioSettings}
-              aria-controls="audio-settings-content"
-              tabIndex="0"
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('audioSettings')}
-            >
+            <div className="sidebar-section-header" onClick={() => toggleSection('audioSettings')} role="button" aria-expanded={sectionsOpen.audioSettings} aria-controls="audio-settings-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('audioSettings')}>
               <h3>Audio Settings</h3>
-              <span className="section-toggle-icon" aria-hidden="true">
-                 {isLoadingAudioDevices ? <SpinnerIcon /> : (sectionsOpen.audioSettings ? <CaretUpIcon /> : <CaretDownIcon />)}
-              </span>
+              <span className="section-toggle-icon" aria-hidden="true">{isLoadingAudioDevices ? <SpinnerIcon /> : (sectionsOpen.audioSettings ? <CaretUpIcon /> : <CaretDownIcon />)}</span>
             </div>
-
             {sectionsOpen.audioSettings && (
               <div className="sidebar-section-content" id="audio-settings-content">
-                {/* Audio Bitrate Slider */}
-                <div className="dev-setting-item">
-                  <label htmlFor="audioBitrateSlider">Audio Bitrate ({audioBitRate / 1000} kbps):</label>
-                  <input type="range" id="audioBitrateSlider" min="0" max={audioBitrateOptions.length - 1} step="1" value={audioBitrateOptions.indexOf(audioBitRate)} onChange={handleAudioBitrateChange} />
-                </div>
-
-                {/* Divider */}
+                <div className="dev-setting-item"> <label htmlFor="audioBitrateSlider">Audio Bitrate ({audioBitRate / 1000} kbps):</label> <input type="range" id="audioBitrateSlider" min="0" max={audioBitrateOptions.length - 1} step="1" value={audioBitrateOptions.indexOf(audioBitRate)} onChange={handleAudioBitrateChange} /> </div>
                 <hr className="section-divider" />
+                {audioDeviceError && (<div className="error-message">{audioDeviceError}</div>)}
+                <div className="dev-setting-item"> <label htmlFor="audioInputSelect">Input (Microphone):</label> <select id="audioInputSelect" value={selectedInputDeviceId} onChange={handleAudioInputChange} disabled={isLoadingAudioDevices || !!audioDeviceError} className="audio-device-select"> {audioInputDevices.map(device => (<option key={device.deviceId} value={device.deviceId}>{device.label}</option>))} </select> </div>
+                {isOutputSelectionSupported && (<div className="dev-setting-item"> <label htmlFor="audioOutputSelect">Output (Speaker):</label> <select id="audioOutputSelect" value={selectedOutputDeviceId} onChange={handleAudioOutputChange} disabled={isLoadingAudioDevices || !!audioDeviceError} className="audio-device-select"> {audioOutputDevices.map(device => (<option key={device.deviceId} value={device.deviceId}>{device.label}</option>))} </select> </div>)}
+                {!isOutputSelectionSupported && !isLoadingAudioDevices && !audioDeviceError && (<p className="device-support-notice">Output device selection not supported by this browser.</p>)}
+              </div>
+            )}
+        </div>
 
-                {/* Error Display */}
-                {audioDeviceError && (
-                    <div className="error-message" style={{color: 'var(--error-color, red)', marginBottom: '10px', fontSize: '0.9em'}}>
-                        {audioDeviceError}
-                    </div>
-                )}
-
-                {/* Input Device Dropdown */}
+        {/* --- NEW: Screen Settings Section --- */}
+        <div className="sidebar-section">
+            <div className="sidebar-section-header" onClick={() => toggleSection('screenSettings')} role="button" aria-expanded={sectionsOpen.screenSettings} aria-controls="screen-settings-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('screenSettings')}>
+              <h3>Screen Settings</h3>
+              <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.screenSettings ? <CaretUpIcon /> : <CaretDownIcon />}</span>
+            </div>
+            {sectionsOpen.screenSettings && (
+              <div className="sidebar-section-content" id="screen-settings-content">
+                {/* Preset Dropdown */}
                 <div className="dev-setting-item">
-                  <label htmlFor="audioInputSelect">Input (Microphone):</label>
-                  <select
-                    id="audioInputSelect"
-                    value={selectedInputDeviceId}
-                    onChange={handleAudioInputChange}
-                    disabled={isLoadingAudioDevices || !!audioDeviceError}
-                    className="audio-device-select" /* Add class for specific styling */
-                  >
-                    {audioInputDevices.map(device => (
-                      <option key={device.deviceId} value={device.deviceId}>
-                        {device.label}
+                  <label htmlFor="resolutionPresetSelect">Preset:</label>
+                  <select id="resolutionPresetSelect" value={presetValue} onChange={handlePresetChange}>
+                    {commonResolutions.map((res, index) => (
+                      <option key={index} value={res.value} disabled={index === 0}>
+                        {res.text}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                {isOutputSelectionSupported && (
-                  <div className="dev-setting-item">
-                    <label htmlFor="audioOutputSelect">Output (Speaker):</label>
-                    <select
-                      id="audioOutputSelect"
-                      value={selectedOutputDeviceId}
-                      onChange={handleAudioOutputChange}
-                      disabled={isLoadingAudioDevices || !!audioDeviceError}
-                      className="audio-device-select" /* Add class for specific styling */
-                    >
-                      {audioOutputDevices.map(device => (
-                        <option key={device.deviceId} value={device.deviceId}>
-                          {device.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                 {!isOutputSelectionSupported && !isLoadingAudioDevices && !audioDeviceError && (
-                    <p style={{ fontSize: '0.8em', color: 'var(--sidebar-text-secondary)', marginTop: '5px' }}>
-                        Output device selection not supported by this browser.
-                    </p>
-                 )}
+                {/* Manual Width/Height Inputs */}
+                <div className="resolution-manual-inputs">
+                   <div className="dev-setting-item manual-input-item">
+                     <label htmlFor="manualWidthInput">Width:</label>
+                     <input type="number" id="manualWidthInput" min="1" step="2" placeholder="e.g., 1920" value={manualWidth} onChange={handleManualWidthChange} />
+                   </div>
+                   <div className="dev-setting-item manual-input-item">
+                     <label htmlFor="manualHeightInput">Height:</label>
+                     <input type="number" id="manualHeightInput" min="1" step="2" placeholder="e.g., 1080" value={manualHeight} onChange={handleManualHeightChange} />
+                   </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="resolution-action-buttons">
+                    <button className="resolution-button" onClick={handleSetManualResolution}> Set Manual Resolution </button>
+                    <button className="resolution-button reset-button" onClick={handleResetResolution}> Reset to Window </button>
+                </div>
+                {/* Scale Button */}
+                <button
+                    className={`resolution-button toggle-button ${scaleLocally ? 'active' : ''}`}
+                    onClick={handleScaleLocallyToggle}
+                    style={{ marginTop: '10px' }} // Add space above this button
+                    title={scaleLocally ? "Disable Local Scaling (Use Exact Resolution)" : "Enable Local Scaling (Maintain Aspect Ratio)"}
+                >
+                    Scale Locally: {scaleLocally ? 'ON' : 'OFF'}
+                </button>
               </div>
             )}
         </div>
-        <div className="sidebar-section">
-            <div
-              className="sidebar-section-header"
-              onClick={() => toggleSection('stats')}
-              role="button"
-              aria-expanded={sectionsOpen.stats}
-              aria-controls="stats-content"
-              tabIndex="0"
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('stats')}
-            >
-              <h3>Stats</h3>
-              <span className="section-toggle-icon" aria-hidden="true">
-                {sectionsOpen.stats ? <CaretUpIcon /> : <CaretDownIcon />}
-              </span>
-            </div>
 
+
+        {/* Stats Section */}
+        <div className="sidebar-section">
+            <div className="sidebar-section-header" onClick={() => toggleSection('stats')} role="button" aria-expanded={sectionsOpen.stats} aria-controls="stats-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('stats')}>
+              <h3>Stats</h3>
+              <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.stats ? <CaretUpIcon /> : <CaretDownIcon />}</span>
+            </div>
             {sectionsOpen.stats && (
               <div className="sidebar-section-content" id="stats-content">
                 <div className="stats-gauges">
-                   {/* CPU Gauge */}
-                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'cpu')} onMouseLeave={handleMouseLeave}>
-                       <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}>
-                           <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} />
-                           <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: cpuOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} />
-                           <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, cpuPercent || 0)))}% </text>
-                       </svg>
-                       <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>CPU</div>
-                   </div>
-                   {/* GPU Usage Gauge */}
-                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'gpu')} onMouseLeave={handleMouseLeave}>
-                       <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}>
-                           <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} />
-                           <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: gpuOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} />
-                           <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, gpuPercent || 0)))}% </text>
-                       </svg>
-                       <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>GPU Usage</div>
-                   </div>
-                   {/* System Memory Gauge */}
-                    <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'sysmem')} onMouseLeave={handleMouseLeave}>
-                       <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}>
-                           <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} />
-                           <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: sysMemOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} />
-                           <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, sysMemPercent || 0)))}% </text>
-                       </svg>
-                       <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>Sys Mem</div>
-                   </div>
-                   {/* GPU Memory Gauge */}
-                    <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'gpumem')} onMouseLeave={handleMouseLeave}>
-                       <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}>
-                           <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} />
-                           <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: gpuMemOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} />
-                           <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, gpuMemPercent || 0)))}% </text>
-                       </svg>
-                       <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>GPU Mem</div>
-                   </div>
-                   {/* Client FPS Gauge */}
-                    <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'fps')} onMouseLeave={handleMouseLeave}>
-                       <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}>
-                           <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} />
-                           <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: fpsOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} />
-                           <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {clientFps} </text>
-                       </svg>
-                       <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>FPS</div>
-                   </div>
-                   {/* Audio Buffer Gauge */}
-                    <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'audio')} onMouseLeave={handleMouseLeave}>
-                       <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}>
-                           <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} />
-                           <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: audioBufferOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} />
-                           <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {audioBuffer} </text>
-                       </svg>
-                       <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>Audio</div>
-                   </div>
+                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'cpu')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: cpuOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, cpuPercent || 0)))}% </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>CPU</div> </div>
+                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'gpu')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: gpuOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, gpuPercent || 0)))}% </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>GPU Usage</div> </div>
+                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'sysmem')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: sysMemOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, sysMemPercent || 0)))}% </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>Sys Mem</div> </div>
+                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'gpumem')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: gpuMemOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, gpuMemPercent || 0)))}% </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>GPU Mem</div> </div>
+                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'fps')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: fpsOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {clientFps} </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>FPS</div> </div>
+                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'audio')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: audioBufferOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {audioBuffer} </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>Audio</div> </div>
                 </div>
               </div>
             )}
         </div>
 
+        {/* Clipboard Section */}
         <div className="sidebar-section">
-            <div
-              className="sidebar-section-header"
-              onClick={() => toggleSection('clipboard')}
-              role="button"
-              aria-expanded={sectionsOpen.clipboard}
-              aria-controls="clipboard-content"
-              tabIndex="0"
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('clipboard')}
-            >
+            <div className="sidebar-section-header" onClick={() => toggleSection('clipboard')} role="button" aria-expanded={sectionsOpen.clipboard} aria-controls="clipboard-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('clipboard')}>
               <h3>Clipboard</h3>
-              <span className="section-toggle-icon" aria-hidden="true">
-                {sectionsOpen.clipboard ? <CaretUpIcon /> : <CaretDownIcon />}
-              </span>
+              <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.clipboard ? <CaretUpIcon /> : <CaretDownIcon />}</span>
             </div>
-
             {sectionsOpen.clipboard && (
               <div className="sidebar-section-content" id="clipboard-content">
-                <div className="dashboard-clipboard-item">
-                  <label htmlFor="dashboardClipboardTextarea">Server Clipboard:</label>
-                  <textarea
-                    id="dashboardClipboardTextarea"
-                    value={dashboardClipboardContent}
-                    onChange={handleClipboardChange}
-                    onBlur={handleClipboardBlur}
-                    rows="5"
-                    placeholder="Clipboard content from server..."
-                  />
-                </div>
+                <div className="dashboard-clipboard-item"> <label htmlFor="dashboardClipboardTextarea">Server Clipboard:</label> <textarea id="dashboardClipboardTextarea" value={dashboardClipboardContent} onChange={handleClipboardChange} onBlur={handleClipboardBlur} rows="5" placeholder="Clipboard content from server..." /> </div>
               </div>
             )}
         </div>
-        {hasReceivedGamepadData && ( // Only render header if data ever received
-          <div className="sidebar-section">
-              <div
-                className="sidebar-section-header"
-                onClick={() => toggleSection('gamepads')}
-                role="button"
-                aria-expanded={sectionsOpen.gamepads}
-                aria-controls="gamepads-content"
-                tabIndex="0"
-                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('gamepads')}
-              >
-                <h3>Gamepads</h3>
-                <span className="section-toggle-icon" aria-hidden="true">
-                  {sectionsOpen.gamepads ? <CaretUpIcon /> : <CaretDownIcon />}
-                </span>
-              </div>
 
+        {/* Gamepads Section */}
+        {hasReceivedGamepadData && (
+          <div className="sidebar-section">
+              <div className="sidebar-section-header" onClick={() => toggleSection('gamepads')} role="button" aria-expanded={sectionsOpen.gamepads} aria-controls="gamepads-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('gamepads')}>
+                <h3>Gamepads</h3>
+                <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.gamepads ? <CaretUpIcon /> : <CaretDownIcon />}</span>
+              </div>
               {sectionsOpen.gamepads && (
                 <div className="sidebar-section-content" id="gamepads-content">
-                  {Object.keys(gamepadStates).length === 0 ? (
-                    <p className="no-gamepads-message">No gamepad activity detected yet...</p>
-                  ) : (
-                    Object.keys(gamepadStates)
-                      .sort((a, b) => parseInt(a, 10) - parseInt(b, 10)) // Sort by index
-                      .map(gpIndexStr => {
+                  {Object.keys(gamepadStates).length === 0 ? (<p className="no-gamepads-message">No gamepad activity detected yet...</p>) : (
+                    Object.keys(gamepadStates).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)).map(gpIndexStr => {
                         const gpIndex = parseInt(gpIndexStr, 10);
-                        return (
-                          <GamepadVisualizer
-                            key={gpIndex}
-                            gamepadIndex={gpIndex}
-                            gamepadState={gamepadStates[gpIndex]}
-                          />
-                        );
-                      })
+                        return (<GamepadVisualizer key={gpIndex} gamepadIndex={gpIndex} gamepadState={gamepadStates[gpIndex]} />);
+                    })
                   )}
                 </div>
               )}
           </div>
         )}
       </div>
+
+      {/* Tooltip Display */}
       {hoveredItem && (
           <div className="gauge-tooltip" style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}>
               {getTooltipContent(hoveredItem)}
