@@ -182,9 +182,10 @@ function Sidebar({ isOpen }) {
     stats: false,
     clipboard: false,
     gamepads: false,
+    files: false,
   });
 
-  // --- NEW Notification State ---
+  // --- Notification State ---
   const [notifications, setNotifications] = useState([]);
   const notificationTimeouts = useRef({}); // Store timeout IDs
 
@@ -500,7 +501,11 @@ function Sidebar({ isOpen }) {
     notificationTimeouts.current[id] = { fadeTimer, removeTimer };
   }, [removeNotification]);
 
-
+  const handleUploadClick = () => {
+    console.log("Dashboard: Upload Files button clicked. Dispatching 'requestFileUpload' event.");
+    // This event should be listened for by the main application script (where the hidden input lives)
+    window.dispatchEvent(new CustomEvent('requestFileUpload'));
+  };
   // --- useEffect Hooks ---
 
   // Load initial settings from localStorage
@@ -865,7 +870,35 @@ function Sidebar({ isOpen }) {
               </div>
             )}
         </div>
-
+        {/* --- Files Section --- */}
+        <div className="sidebar-section">
+            <div
+                className="sidebar-section-header"
+                onClick={() => toggleSection('files')}
+                role="button"
+                aria-expanded={sectionsOpen.files}
+                aria-controls="files-content"
+                tabIndex="0"
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('files')}
+            >
+              <h3>Files</h3>
+              <span className="section-toggle-icon" aria-hidden="true">
+                {sectionsOpen.files ? <CaretUpIcon /> : <CaretDownIcon />}
+              </span>
+            </div>
+            {sectionsOpen.files && (
+              <div className="sidebar-section-content" id="files-content">
+                <button
+                    className="resolution-button" // Re-using class for similar full-width style
+                    onClick={handleUploadClick}
+                    style={{ marginTop: '5px', marginBottom: '5px' }} // Add some spacing
+                    title="Upload files to the remote session"
+                >
+                    Upload Files
+                </button>
+              </div>
+            )}
+        </div>
         {/* Gamepads Section */}
         {hasReceivedGamepadData && (
           <div className="sidebar-section">
