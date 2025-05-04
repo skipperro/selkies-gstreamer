@@ -1,8 +1,8 @@
 // src/components/Sidebar.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react'; // Added useRef
 import GamepadVisualizer from './GamepadVisualizer';
 
-// Define the options for the dropdowns/sliders
+// --- Constants ---
 const encoderOptions = [
     'x264enc',
     'nvh264enc',
@@ -24,12 +24,10 @@ const audioBitrateOptions = [
     32000, 64000, 96000, 128000, 192000, 256000, 320000, 512000
 ];
 
-// Video buffer size goes from 0 to 15
 const videoBufferOptions = Array.from({ length: 16 }, (_, i) => i);
 
-// Resolution Presets
 const commonResolutions = [
-    { value: "", text: "-- Select Preset --" }, // Default option
+    { value: "", text: "-- Select Preset --" },
     { value: "1920x1080", text: "1920 x 1080 (FHD)" },
     { value: "1280x720", text: "1280 x 720 (HD)" },
     { value: "1366x768", text: "1366 x 768 (Laptop)" },
@@ -43,10 +41,7 @@ const commonResolutions = [
 ];
 
 const STATS_READ_INTERVAL_MS = 100;
-
-const MAX_AUDIO_BUFFER = 10; // Max value for the Audio Buffer gauge
-
-// --- Default Settings Values ---
+const MAX_AUDIO_BUFFER = 10;
 const DEFAULT_FRAMERATE = 60;
 const DEFAULT_VIDEO_BITRATE = 8000;
 const DEFAULT_AUDIO_BITRATE = 320000;
@@ -54,7 +49,13 @@ const DEFAULT_VIDEO_BUFFER_SIZE = 0;
 const DEFAULT_ENCODER = encoderOptions[0];
 const DEFAULT_SCALE_LOCALLY = true;
 
-// Helper function to format bytes into a human-readable string (e.g., GB, MB)
+// --- NEW Notification Constants ---
+const MAX_NOTIFICATIONS = 3;
+const NOTIFICATION_TIMEOUT_SUCCESS = 5000; // 5 seconds
+const NOTIFICATION_TIMEOUT_ERROR = 8000; // 8 seconds
+const NOTIFICATION_FADE_DURATION = 500; // 0.5 seconds (must match CSS)
+
+// --- Helper Functions ---
 function formatBytes(bytes, decimals = 2) {
     if (bytes === null || bytes === undefined || bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -64,7 +65,6 @@ function formatBytes(bytes, decimals = 2) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-// Helper function to calculate gauge stroke offset based on percentage
 const calculateGaugeOffset = (percentage, radius, circumference) => {
     const clampedPercentage = Math.max(0, Math.min(100, percentage || 0));
     return circumference * (1 - clampedPercentage / 100);
@@ -75,7 +75,6 @@ const roundDownToEven = (num) => {
     if (isNaN(n)) return 0; // Handle non-numeric input gracefully
     return Math.floor(n / 2) * 2;
 };
-
 
 // --- Icons ---
 const ScreenIcon = () => (
@@ -137,22 +136,19 @@ const SpinnerIcon = () => (
 function Sidebar({ isOpen }) {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
 
-  // Settings State
+  // --- Existing State ---
   const [encoder, setEncoder] = useState(localStorage.getItem('encoder') || DEFAULT_ENCODER);
   const [framerate, setFramerate] = useState(parseInt(localStorage.getItem('videoFramerate'), 10) || DEFAULT_FRAMERATE);
   const [videoBitRate, setVideoBitRate] = useState(parseInt(localStorage.getItem('videoBitRate'), 10) || DEFAULT_VIDEO_BITRATE);
   const [audioBitRate, setAudioBitRate] = useState(parseInt(localStorage.getItem('audioBitRate'), 10) || DEFAULT_AUDIO_BITRATE);
   const [videoBufferSize, setVideoBufferSize] = useState(parseInt(localStorage.getItem('videoBufferSize'), 10) || DEFAULT_VIDEO_BUFFER_SIZE);
-
   const [manualWidth, setManualWidth] = useState('');
   const [manualHeight, setManualHeight] = useState('');
   const [scaleLocally, setScaleLocally] = useState(() => {
       const saved = localStorage.getItem('scaleLocallyManual');
       return saved !== null ? saved === 'true' : DEFAULT_SCALE_LOCALLY;
   });
-  const [presetValue, setPresetValue] = useState(""); // State to control the preset dropdown selection
-
-  // Stats State
+  const [presetValue, setPresetValue] = useState("");
   const [clientFps, setClientFps] = useState(0);
   const [audioBuffer, setAudioBuffer] = useState(0);
   const [cpuPercent, setCpuPercent] = useState(0);
@@ -163,21 +159,13 @@ function Sidebar({ isOpen }) {
   const [sysMemTotal, setSysMemTotal] = useState(null);
   const [gpuMemUsed, setGpuMemUsed] = useState(null);
   const [gpuMemTotal, setGpuMemTotal] = useState(null);
-
-  // Tooltip State
   const [hoveredItem, setHoveredItem] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
-
-  // Action Button State
   const [isVideoActive, setIsVideoActive] = useState(true);
   const [isAudioActive, setIsAudioActive] = useState(true);
   const [isMicrophoneActive, setIsMicrophoneActive] = useState(false);
   const [isGamepadEnabled, setIsGamepadEnabled] = useState(true);
-
-  // Clipboard State
   const [dashboardClipboardContent, setDashboardClipboardContent] = useState('');
-
-  // Audio Devices State
   const [audioInputDevices, setAudioInputDevices] = useState([]);
   const [audioOutputDevices, setAudioOutputDevices] = useState([]);
   const [selectedInputDeviceId, setSelectedInputDeviceId] = useState('default');
@@ -185,25 +173,24 @@ function Sidebar({ isOpen }) {
   const [isOutputSelectionSupported, setIsOutputSelectionSupported] = useState(false);
   const [audioDeviceError, setAudioDeviceError] = useState(null);
   const [isLoadingAudioDevices, setIsLoadingAudioDevices] = useState(false);
-
-  // Gamepad State
   const [gamepadStates, setGamepadStates] = useState({});
   const [hasReceivedGamepadData, setHasReceivedGamepadData] = useState(false);
-
-  // Section Open State
   const [sectionsOpen, setSectionsOpen] = useState({
     settings: false,
     audioSettings: false,
-    screenSettings: false, // <-- Add new section state
+    screenSettings: false,
     stats: false,
     clipboard: false,
     gamepads: false,
   });
 
+  // --- NEW Notification State ---
+  const [notifications, setNotifications] = useState([]);
+  const notificationTimeouts = useRef({}); // Store timeout IDs
+
   // --- Callbacks and Handlers ---
 
   const populateAudioDevices = useCallback(async () => {
-    // ... (no changes needed here)
     console.log("Dashboard: Attempting to populate audio devices...");
     setIsLoadingAudioDevices(true);
     setAudioDeviceError(null);
@@ -230,7 +217,7 @@ function Sidebar({ isOpen }) {
       devices.forEach(device => {
         if (!device.deviceId) {
           console.warn("Dashboard: Skipping device with missing deviceId:", device);
-          return; // Skip device if ID is missing
+          return;
         }
         const label = device.label || (device.kind === 'audioinput' ? `Microphone ${inputs.length}` : `Speaker ${outputs.length}`);
 
@@ -335,7 +322,7 @@ function Sidebar({ isOpen }) {
       window.postMessage({ type: 'audioDeviceSelected', context: 'output', deviceId: deviceId }, window.location.origin);
   };
 
-  // --- NEW: Screen Settings Handlers ---
+  // Screen Settings Handlers
   const handlePresetChange = (event) => {
       const selectedValue = event.target.value;
       setPresetValue(selectedValue); // Update dropdown state
@@ -483,6 +470,37 @@ function Sidebar({ isOpen }) {
       }
   };
 
+  // --- NEW Notification Handler ---
+  const removeNotification = useCallback((id) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+    if (notificationTimeouts.current[id]) {
+        clearTimeout(notificationTimeouts.current[id].fadeTimer);
+        clearTimeout(notificationTimeouts.current[id].removeTimer);
+        delete notificationTimeouts.current[id];
+    }
+  }, []);
+
+  const scheduleNotificationRemoval = useCallback((id, delay) => {
+    // Clear existing timers for this ID
+    if (notificationTimeouts.current[id]) {
+        clearTimeout(notificationTimeouts.current[id].fadeTimer);
+        clearTimeout(notificationTimeouts.current[id].removeTimer);
+    }
+
+    // Timer to start fading out
+    const fadeTimer = setTimeout(() => {
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, fadingOut: true } : n));
+    }, delay - NOTIFICATION_FADE_DURATION);
+
+    // Timer to actually remove from state after fade
+    const removeTimer = setTimeout(() => {
+        removeNotification(id);
+    }, delay);
+
+    notificationTimeouts.current[id] = { fadeTimer, removeTimer };
+  }, [removeNotification]);
+
+
   // --- useEffect Hooks ---
 
   // Load initial settings from localStorage
@@ -506,8 +524,6 @@ function Sidebar({ isOpen }) {
     const savedVideoBufferSize = parseInt(localStorage.getItem('videoBufferSize'), 10);
      if (!isNaN(savedVideoBufferSize) && videoBufferOptions.includes(savedVideoBufferSize)) setVideoBufferSize(savedVideoBufferSize);
      else { setVideoBufferSize(DEFAULT_VIDEO_BUFFER_SIZE); localStorage.setItem('videoBufferSize', DEFAULT_VIDEO_BUFFER_SIZE.toString()); }
-
-     // Load scaleLocally state (already handled in useState initializer)
   }, []);
 
   // Read stats periodically
@@ -599,15 +615,100 @@ function Sidebar({ isOpen }) {
                 return newState;
             });
         }
+
+        // --- NEW: Handle File Upload Messages ---
+        else if (message.type === 'fileUpload') {
+            const { status, fileName, progress, fileSize, message: errorMessage } = message.payload;
+            const id = fileName; // Use filename as ID
+
+            setNotifications(prevNotifications => {
+                const existingIndex = prevNotifications.findIndex(n => n.id === id);
+
+                if (status === 'start') {
+                    // Only add if below max limit and not already present
+                    if (prevNotifications.length < MAX_NOTIFICATIONS && existingIndex === -1) {
+                        const newNotification = {
+                            id: id,
+                            fileName: fileName,
+                            status: 'progress', // Start immediately shows progress
+                            progress: 0,
+                            fileSize: fileSize,
+                            message: null,
+                            timestamp: Date.now(),
+                            fadingOut: false,
+                        };
+                        return [...prevNotifications, newNotification];
+                    } else {
+                        console.warn(`Dashboard: Max notifications (${MAX_NOTIFICATIONS}) reached or duplicate start for ${fileName}. Ignoring.`);
+                        return prevNotifications; // Return unchanged state
+                    }
+                } else if (existingIndex !== -1) {
+                    const updatedNotifications = [...prevNotifications];
+                    const currentNotification = updatedNotifications[existingIndex];
+
+                    // Clear any existing removal timers if it updates again
+                     if (notificationTimeouts.current[id]) {
+                         clearTimeout(notificationTimeouts.current[id].fadeTimer);
+                         clearTimeout(notificationTimeouts.current[id].removeTimer);
+                         delete notificationTimeouts.current[id];
+                     }
+
+                    if (status === 'progress') {
+                        updatedNotifications[existingIndex] = {
+                            ...currentNotification,
+                            status: 'progress',
+                            progress: progress,
+                            timestamp: Date.now(),
+                            fadingOut: false, // Ensure it's not fading if progress comes in
+                        };
+                    } else if (status === 'end') {
+                        updatedNotifications[existingIndex] = {
+                            ...currentNotification,
+                            status: 'end',
+                            progress: 100,
+                            message: null,
+                            timestamp: Date.now(),
+                            fadingOut: false, // Reset fading initially
+                        };
+                        // Schedule removal
+                        scheduleNotificationRemoval(id, NOTIFICATION_TIMEOUT_SUCCESS);
+
+                    } else if (status === 'error') {
+                        updatedNotifications[existingIndex] = {
+                            ...currentNotification,
+                            status: 'error',
+                            progress: 100, // Show full bar usually for error
+                            message: errorMessage || 'An unknown error occurred.',
+                            timestamp: Date.now(),
+                            fadingOut: false, // Reset fading initially
+                        };
+                         // Schedule removal
+                         scheduleNotificationRemoval(id, NOTIFICATION_TIMEOUT_ERROR);
+                    }
+                    return updatedNotifications;
+                } else {
+                     // Received progress/end/error for a notification not tracked (maybe ignored at start?)
+                     console.warn(`Dashboard: Received '${status}' for untracked notification: ${fileName}`);
+                     return prevNotifications; // Return unchanged state
+                }
+            });
+        }
       }
     };
     window.addEventListener('message', handleWindowMessage);
-    console.log("Dashboard: Added window message listener.");
+    console.log("Dashboard: Added window message listener (including fileUpload).");
+
+    // Cleanup timeouts on component unmount
     return () => {
       window.removeEventListener('message', handleWindowMessage);
       console.log("Dashboard: Removed window message listener.");
+      Object.values(notificationTimeouts.current).forEach(timers => {
+          clearTimeout(timers.fadeTimer);
+          clearTimeout(timers.removeTimer);
+      });
+      notificationTimeouts.current = {};
     };
-  }, [hasReceivedGamepadData]); // Add hasReceivedGamepadData dependency
+  }, [hasReceivedGamepadData, scheduleNotificationRemoval, removeNotification]); // Add dependencies
 
 
   // --- Component Rendering ---
@@ -687,7 +788,7 @@ function Sidebar({ isOpen }) {
             )}
         </div>
 
-        {/* --- NEW: Screen Settings Section --- */}
+        {/* Screen Settings Section */}
         <div className="sidebar-section">
             <div className="sidebar-section-header" onClick={() => toggleSection('screenSettings')} role="button" aria-expanded={sectionsOpen.screenSettings} aria-controls="screen-settings-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('screenSettings')}>
               <h3>Screen Settings</h3>
@@ -695,7 +796,6 @@ function Sidebar({ isOpen }) {
             </div>
             {sectionsOpen.screenSettings && (
               <div className="sidebar-section-content" id="screen-settings-content">
-                {/* Preset Dropdown */}
                 <div className="dev-setting-item">
                   <label htmlFor="resolutionPresetSelect">Preset:</label>
                   <select id="resolutionPresetSelect" value={presetValue} onChange={handlePresetChange}>
@@ -706,8 +806,6 @@ function Sidebar({ isOpen }) {
                     ))}
                   </select>
                 </div>
-
-                {/* Manual Width/Height Inputs */}
                 <div className="resolution-manual-inputs">
                    <div className="dev-setting-item manual-input-item">
                      <label htmlFor="manualWidthInput">Width:</label>
@@ -718,17 +816,14 @@ function Sidebar({ isOpen }) {
                      <input type="number" id="manualHeightInput" min="1" step="2" placeholder="e.g., 1080" value={manualHeight} onChange={handleManualHeightChange} />
                    </div>
                 </div>
-
-                {/* Action Buttons */}
                 <div className="resolution-action-buttons">
                     <button className="resolution-button" onClick={handleSetManualResolution}> Set Manual Resolution </button>
                     <button className="resolution-button reset-button" onClick={handleResetResolution}> Reset to Window </button>
                 </div>
-                {/* Scale Button */}
                 <button
                     className={`resolution-button toggle-button ${scaleLocally ? 'active' : ''}`}
                     onClick={handleScaleLocallyToggle}
-                    style={{ marginTop: '10px' }} // Add space above this button
+                    style={{ marginTop: '10px' }}
                     title={scaleLocally ? "Disable Local Scaling (Use Exact Resolution)" : "Enable Local Scaling (Maintain Aspect Ratio)"}
                 >
                     Scale Locally: {scaleLocally ? 'ON' : 'OFF'}
@@ -790,7 +885,7 @@ function Sidebar({ isOpen }) {
               )}
           </div>
         )}
-      </div>
+      </div> {/* End of sidebar div */}
 
       {/* Tooltip Display */}
       {hoveredItem && (
@@ -798,6 +893,61 @@ function Sidebar({ isOpen }) {
               {getTooltipContent(hoveredItem)}
           </div>
       )}
+
+      {/* --- NEW Notification Container --- */}
+      <div className={`notification-container theme-${theme}`}>
+        {notifications.map(notification => (
+          <div
+            key={notification.id}
+            className={`notification-item ${notification.status} ${notification.fadingOut ? 'fade-out' : ''}`}
+            role="alert"
+            aria-live="polite"
+          >
+            <div className="notification-header">
+                <span className="notification-filename" title={notification.fileName}>
+                    {notification.fileName}
+                </span>
+                <button
+                    className="notification-close-button"
+                    onClick={() => removeNotification(notification.id)}
+                    aria-label={`Close notification for ${notification.fileName}`}
+                >
+                    &times; {/* Simple close icon */}
+                </button>
+            </div>
+            <div className="notification-body">
+                {notification.status === 'progress' && (
+                    <>
+                        <span className="notification-status-text">Uploading... {notification.progress}%</span>
+                        <div className="notification-progress-bar-outer">
+                            <div
+                                className="notification-progress-bar-inner"
+                                style={{ width: `${notification.progress}%` }}
+                            />
+                        </div>
+                    </>
+                )}
+                {notification.status === 'end' && (
+                     <>
+                        <span className="notification-status-text">Upload Complete</span>
+                        <div className="notification-progress-bar-outer">
+                            <div className="notification-progress-bar-inner" style={{ width: `100%` }} />
+                        </div>
+                     </>
+                )}
+                {notification.status === 'error' && (
+                    <>
+                        <span className="notification-status-text error-text">Upload Failed</span>
+                        <div className="notification-progress-bar-outer">
+                            <div className="notification-progress-bar-inner" style={{ width: `100%` }} />
+                        </div>
+                        {notification.message && <p className="notification-error-message">{notification.message}</p>}
+                    </>
+                )}
+            </div>
+          </div>
+        ))}
+      </div>
     </>
   );
 }

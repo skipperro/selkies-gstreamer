@@ -36,6 +36,14 @@
     /* Slider specific variables */
     --slider-track-color: var(--input-bg);
     --slider-thumb-color: var(--sidebar-header-color);
+
+    /* Notification specific */
+    --notification-progress-bg: #5a606b;
+    --notification-progress-fill: var(--sidebar-header-color);
+    --notification-success-color: #2ecc71; /* Green */
+    --notification-error-color: #e74c3c; /* Red */
+    --notification-shadow: rgba(0, 0, 0, 0.3);
+    --notification-close-hover-bg: rgba(255, 255, 255, 0.1);
 }
 
 /* Light Theme */
@@ -64,6 +72,14 @@
      /* Slider specific variables */
     --slider-track-color: var(--item-border);
     --slider-thumb-color: var(--sidebar-header-color);
+
+    /* Notification specific */
+    --notification-progress-bg: #e0e0e0;
+    --notification-progress-fill: var(--sidebar-header-color);
+    --notification-success-color: #27ae60; /* Slightly darker green */
+    --notification-error-color: #c0392b; /* Slightly darker red */
+    --notification-shadow: rgba(0, 0, 0, 0.15);
+    --notification-close-hover-bg: rgba(0, 0, 0, 0.08);
 }
 
 
@@ -862,4 +878,120 @@ body {
 .toggle-button.active:hover {
      background-color: var(--button-hover-bg); /* Use theme's button hover */
      border-color: var(--button-hover-bg);
+}
+
+.notification-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 320px; /* Adjust width as needed */
+    z-index: 1050; /* Ensure it's above other elements like sidebar */
+    display: flex;
+    flex-direction: column;
+    gap: 10px; /* Space between notifications */
+    pointer-events: none; /* Allow clicks to pass through container */
+}
+
+.notification-item {
+    background-color: var(--section-bg);
+    color: var(--sidebar-text);
+    border: 1px solid var(--item-border);
+    border-radius: 8px;
+    padding: 10px 15px;
+    box-shadow: 0 2px 10px var(--notification-shadow);
+    opacity: 1;
+    transition: opacity 0.5s ease-out, transform 0.3s ease-out; /* Match FADE_DURATION */
+    transform: translateX(0);
+    pointer-events: auto; /* Re-enable pointer events for items */
+    overflow: hidden; /* Prevent content overflow */
+}
+
+.notification-item.fade-out {
+    opacity: 0;
+    transform: translateX(20px); /* Optional: slide out effect */
+}
+
+.notification-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.notification-filename {
+    font-weight: bold;
+    font-size: 0.9em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-grow: 1;
+    margin-right: 10px; /* Space before close button */
+}
+
+.notification-close-button {
+    background: none;
+    border: none;
+    color: var(--sidebar-text);
+    font-size: 1.2em;
+    line-height: 1;
+    padding: 2px 5px;
+    margin: -2px -5px; /* Make clickable area slightly larger */
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+    border-radius: 4px;
+}
+
+.notification-close-button:hover {
+    opacity: 1;
+    background-color: var(--notification-close-hover-bg);
+}
+
+.notification-body {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.notification-status-text {
+    font-size: 0.85em;
+    opacity: 0.9;
+}
+
+.notification-progress-bar-outer {
+    width: 100%;
+    height: 6px;
+    background-color: var(--notification-progress-bg);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.notification-progress-bar-inner {
+    height: 100%;
+    width: 0%; /* Start at 0% */
+    background-color: var(--notification-progress-fill);
+    border-radius: 3px;
+    transition: width 0.1s linear; /* Smooth progress updates */
+}
+
+/* Status-specific styling */
+.notification-item.end .notification-progress-bar-inner {
+    background-color: var(--notification-success-color);
+}
+
+.notification-item.error .notification-progress-bar-inner {
+    background-color: var(--notification-error-color);
+}
+
+.notification-item.error .notification-status-text.error-text {
+    color: var(--notification-error-color);
+    font-weight: bold;
+}
+
+.notification-error-message {
+    font-size: 0.8em;
+    color: var(--notification-error-color);
+    margin: 5px 0 0 0;
+    padding: 0;
+    word-break: break-word; /* Wrap long error messages */
 }
