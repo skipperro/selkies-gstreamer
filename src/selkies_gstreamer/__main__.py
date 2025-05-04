@@ -65,12 +65,14 @@ from gstreamer_pipeline import (GSTWebRTCApp, GSTWebRTCAppError, fit_res,
 import psutil
 import GPUtil
 import traceback
+FPS_DIFFERENCE_THRESHOLD = 3
+BITRATE_DECREASE_STEP_KBPS = 2000
+BITRATE_INCREASE_STEP_KBPS = 1000
+BACKPRESSURE_CHECK_INTERVAL_SECONDS = 1.0
+RAMP_UP_STABILITY_SECONDS = 20.0
+MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE = 1000
 TARGET_FRAMERATE = 60
 TARGET_VIDEO_BITRATE_KBPS = 16000
-FPS_ADJUST_THRESHOLD = 3
-FPS_ADJUST_STEP = 10
-MIN_FRAMERATE = 8
-BITRATE_ADJUST_STEP_KBPS = 8000
 MIN_VIDEO_BITRATE_KBPS = 500
 DEFAULT_RTC_CONFIG = """{
   "lifetimeDuration": "86400s",
@@ -595,10 +597,6 @@ async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5
 
 class DataStreamingServer:
     """Handles the data WebSocket connection for input, stats, and control messages."""
-    # Cooldown period after making an FPS/bitrate adjustment
-    ADJUSTMENT_COOL_DOWN_SECONDS = 8.0
-    # Duration the low FPS condition must persist before triggering adjustment
-    DEBOUNCE_DURATION_SECONDS = 2.0
 
     def __init__(self, port, mode, app, uinput_mouse_socket, js_socket_path,
                  enable_clipboard, enable_cursors, cursor_size, cursor_scale,
@@ -610,6 +608,16 @@ class DataStreamingServer:
         self.stop_server = None
         self.data_ws = None
         self.app = app
+
+        # Backpressure state (initialized in ws_handler when connection starts)
+        self._initial_target_bitrate_kbps = TARGET_VIDEO_BITRATE_KBPS
+        self._current_target_bitrate_kbps = TARGET_VIDEO_BITRATE_KBPS
+        self._min_bitrate_kbps = max(MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE, MIN_VIDEO_BITRATE_KBPS) # Use specific or global min
+        self._latest_client_render_fps = 0.0
+        self._last_backpressure_check_time = 0.0
+        self._last_bitrate_adjustment_time = 0.0
+        self._last_time_client_ok = 0.0
+        self._backpressure_task = None
 
         # State for Websockets mode stats collection/sending
         self._system_monitor_task_ws = None
@@ -647,6 +655,14 @@ class DataStreamingServer:
              return
 
         self.data_ws = websocket
+        # --- Initialize Backpressure State for this connection ---
+        self._initial_target_bitrate_kbps = TARGET_VIDEO_BITRATE_KBPS # Use current global target as initial
+        self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
+        self._min_bitrate_kbps = max(MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE, MIN_VIDEO_BITRATE_KBPS)
+        self._latest_client_render_fps = 0.0 # Reset client FPS
+        self._last_bitrate_adjustment_time = time.monotonic() # Initialize to now
+        self._last_time_client_ok = time.monotonic()          # Initialize to now
+        self._backpressure_task = None                       # Reset task handle
 
         # Maps final server file path -> file handle for ongoing uploads for this connection
         active_uploads_by_path = {}
@@ -731,6 +747,9 @@ class DataStreamingServer:
             data_logger.info(
                 "System/GPU monitor and sender tasks started for websockets mode."
             )
+
+            data_logger.info("Starting WebSocket backpressure adjustment task.")
+            self._backpressure_task = asyncio.create_task(self._run_backpressure_logic())
 
             try:
                  await self.webrtc_input.connect()
@@ -1172,77 +1191,22 @@ class DataStreamingServer:
                             except ValueError:
                                 data_logger.error(f"Invalid scale value received: {scale}")
                         elif message.startswith("cfps,"):
-                          # Handle client FPS report and potentially adjust server settings
+                          # Handle client FPS report for backpressure logic
                           try:
                               parts = message.split(",")
                               if len(parts) != 2:
                                   data_logger.error(f"Invalid cfps message format: {message}")
                                   continue
                               current_cfps_str = parts[1]
-                              current_cfps = int(float(current_cfps_str))
-                              now = time.monotonic()
-
-                              # Check if adjustment is currently cooling down
-                              if now - self._last_adjustment_timestamp < self.ADJUSTMENT_COOL_DOWN_SECONDS:
-                                  self._low_fps_condition_start_timestamp = None # Reset timer if cooling down
-                                  continue # Skip adjustment logic
-
-                              # Check if current client FPS is significantly below target
-                              is_low_fps_condition_met = (
-                                  current_cfps != 0 and
-                                  current_cfps < TARGET_FRAMERATE - FPS_ADJUST_THRESHOLD
-                              )
-
-                              if is_low_fps_condition_met:
-                                  if self._low_fps_condition_start_timestamp is None:
-                                      # Start the timer if condition met for the first time
-                                      self._low_fps_condition_start_timestamp = now
-                                  # Check if the condition has persisted long enough (debounce)
-                                  elif now - self._low_fps_condition_start_timestamp >= self.DEBOUNCE_DURATION_SECONDS:
-                                      # Calculate new target values, ensuring they don't go below minimums
-                                      new_framerate = max(MIN_FRAMERATE, TARGET_FRAMERATE - FPS_ADJUST_STEP)
-                                      new_bitrate_kbps = max(MIN_VIDEO_BITRATE_KBPS, TARGET_VIDEO_BITRATE_KBPS - BITRATE_ADJUST_STEP_KBPS)
-
-                                      # Only adjust if there's actually a change needed
-                                      if new_framerate < TARGET_FRAMERATE or new_bitrate_kbps < TARGET_VIDEO_BITRATE_KBPS:
-                                          data_logger.warning(
-                                              f"Client FPS ({current_cfps}) persistently low "
-                                              f"(>{FPS_ADJUST_THRESHOLD} below target {TARGET_FRAMERATE}) for "
-                                              f"{self.DEBOUNCE_DURATION_SECONDS}s. Adjusting server: "
-                                              f"FPS -> {new_framerate}, Bitrate -> {new_bitrate_kbps}kbps."
-                                          )
-
-                                          # Stop pipelines before changing settings
-                                          if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
-                                          if hasattr(self.app, 'stop_websocket_audio_pipeline'): await self.app.stop_websocket_audio_pipeline()
-
-                                          # Update global/target values
-                                          TARGET_FRAMERATE = new_framerate
-                                          TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps
-
-                                          # Update app instance attributes if they exist
-                                          if hasattr(self.app, 'framerate'): self.app.framerate = TARGET_FRAMERATE
-                                          if hasattr(self.app, 'video_bitrate'): self.app.video_bitrate = TARGET_VIDEO_BITRATE_KBPS
-
-                                          # Record adjustment time to start cool-down
-                                          self._last_adjustment_timestamp = time.monotonic()
-
-                                          # Restart pipelines with new settings
-                                          if hasattr(self.app, 'start_websocket_video_pipeline'): await self.app.start_websocket_video_pipeline()
-                                          if hasattr(self.app, 'start_websocket_audio_pipeline'): await self.app.start_websocket_audio_pipeline()
-
-                                          data_logger.info("Pipelines restarted with adjusted settings. Starting cool-down.")
-
-                                      # Reset the timer regardless of whether an adjustment was made
-                                      self._low_fps_condition_start_timestamp = None
-                              else:
-                                  # Condition not met, reset the timer
-                                  self._low_fps_condition_start_timestamp = None
+                              # Store the reported FPS for the backpressure logic
+                              self._latest_client_render_fps = float(current_cfps_str)
 
                           except ValueError:
                               data_logger.error(f"Error: Invalid cfps value received (not a number): {message}")
+                              self._latest_client_render_fps = 0.0 # Reset on error
                           except Exception as e:
                               data_logger.error(f"Error processing cfps message: {e}", exc_info=True)
+                              self._latest_client_render_fps = 0.0 # Reset on error
 
                         elif message.startswith("SET_VIDEO_BITRATE,"):
                             # Handle request to change video bitrate
@@ -1380,6 +1344,19 @@ class DataStreamingServer:
 
         finally:
             data_logger.info(f"Cleaning up Data WebSocket handler for {raddr} (including PulseAudio)...")
+            if self._backpressure_task and not self._backpressure_task.done():
+                data_logger.info("Cancelling WebSocket backpressure task...")
+                self._backpressure_task.cancel()
+                try:
+                    # Wait for the task to acknowledge cancellation
+                    await asyncio.wait_for(asyncio.shield(self._backpressure_task), timeout=1.0)
+                except asyncio.CancelledError:
+                    data_logger.info("WebSocket backpressure task cancellation confirmed.")
+                except asyncio.TimeoutError:
+                    data_logger.warning("Timeout waiting for backpressure task cancellation.")
+                except Exception as e:
+                    data_logger.error(f"Error during backpressure task cleanup: {e}")
+                self._backpressure_task = None
             if pa_stream:
                 data_logger.info(f"Closing pasimple stream connected to '{sink_name}'.")
                 try:
@@ -1479,6 +1456,119 @@ class DataStreamingServer:
 
             self.data_ws = None # Clear the reference to the closed websocket
             data_logger.info(f"Data WebSocket handler finished for {raddr}")
+
+    async def _run_backpressure_logic(self):
+        """Periodically checks FPS and adjusts video bitrate for WebSocket mode by restarting the pipeline."""
+        data_logger.info("Backpressure logic task started (pipeline restart mode).")
+        try:
+            while True:
+                await asyncio.sleep(BACKPRESSURE_CHECK_INTERVAL_SECONDS)
+                now = time.monotonic()
+                self._last_backpressure_check_time = now
+
+                # Ensure app exists and we are still in the correct mode
+                if not self.app or self.mode != 'websockets':
+                    data_logger.warning("Backpressure check skipped: App not available or not in websockets mode.")
+                    continue
+
+                # Check if the video pipeline is actually running before trying to adjust
+                # Use the pipeline_running flag set by start/stop helpers
+                if not getattr(self.app, 'pipeline_running', False):
+                    # data_logger.debug("Backpressure check skipped: WS Video pipeline is not running.")
+                    continue
+
+                # Get Server FPS (from WS pipeline measurement)
+                server_fps = 0.0
+                try:
+                    server_fps = self.app.get_current_server_fps()
+                except Exception as e:
+                    data_logger.error(f"Backpressure: Error getting server FPS: {e}")
+                    continue # Skip check if server FPS unavailable
+
+                # Get Client FPS (value updated by ws_handler)
+                client_fps = self._latest_client_render_fps
+
+                # Initial check / Skip if values are invalid or too early
+                if server_fps <= 0 or client_fps <= 0:
+                    # data_logger.debug(f"Backpressure check skipped: Server FPS ({server_fps:.1f}) or Client FPS ({client_fps:.1f}) not valid yet.")
+                    continue
+
+                # --- Comparison and Action ---
+                is_client_lagging = client_fps < (server_fps - FPS_DIFFERENCE_THRESHOLD)
+
+                if is_client_lagging:
+                    # --- Bitrate Reduction ---
+                    self._last_time_client_ok = 0 # Reset OK timer as client is lagging
+
+                    new_bitrate = self._current_target_bitrate_kbps - BITRATE_DECREASE_STEP_KBPS
+                    new_bitrate = max(self._min_bitrate_kbps, new_bitrate) # Clamp to minimum
+
+                    if new_bitrate < self._current_target_bitrate_kbps:
+                        data_logger.warning(
+                            f"Backpressure Triggered: Client FPS ({client_fps:.1f}) < Server FPS ({server_fps:.1f}) - Threshold ({FPS_DIFFERENCE_THRESHOLD}). "
+                            f"Reducing bitrate from {self._current_target_bitrate_kbps}kbps -> {new_bitrate}kbps by restarting pipeline."
+                        )
+                        try:
+                            # Stop existing pipeline
+                            await self.app.stop_websocket_video_pipeline()
+                            # Update the bitrate that the start method will use
+                            self.app.video_bitrate = new_bitrate
+                            # Start new pipeline with updated bitrate
+                            await self.app.start_websocket_video_pipeline()
+                            # Update internal tracking state *after* successful restart
+                            self._current_target_bitrate_kbps = new_bitrate
+                            self._last_bitrate_adjustment_time = now
+                            data_logger.info(f"Backpressure: Pipeline restarted with bitrate {new_bitrate}kbps.")
+                        except Exception as e:
+                            data_logger.error(f"Backpressure: Error restarting pipeline for bitrate reduction to {new_bitrate}kbps: {e}", exc_info=True)
+                            # Attempt to revert app bitrate if start failed? Or leave it for next cycle?
+                            # For simplicity, leave it; the next check might try again or ramp up later.
+                    # else:
+                    #     data_logger.debug("Backpressure: Client lagging but bitrate already at minimum.")
+
+                else:
+                    # --- Bitrate Ramp-Up ---
+                    if self._last_time_client_ok == 0: # Record first time client seems OK
+                        self._last_time_client_ok = now
+
+                    # Check if client has been OK for the stability period
+                    is_stable = (now - self._last_time_client_ok) >= RAMP_UP_STABILITY_SECONDS
+                    # Check if bitrate is below the initial target
+                    is_below_initial = self._current_target_bitrate_kbps < self._initial_target_bitrate_kbps
+                    # Check if enough time has passed since the *last adjustment* (up or down)
+                    is_cooled_down = (now - self._last_bitrate_adjustment_time) >= RAMP_UP_STABILITY_SECONDS # Use stability duration as cooldown
+
+                    if is_stable and is_below_initial and is_cooled_down:
+                        new_bitrate = self._current_target_bitrate_kbps + BITRATE_INCREASE_STEP_KBPS
+                        new_bitrate = min(self._initial_target_bitrate_kbps, new_bitrate) # Clamp to initial target
+
+                        if new_bitrate > self._current_target_bitrate_kbps:
+                             data_logger.info(
+                                 f"Backpressure Ramp-Up: Client stable ({client_fps:.1f} >= {server_fps:.1f} - {FPS_DIFFERENCE_THRESHOLD}). "
+                                 f"Increasing bitrate from {self._current_target_bitrate_kbps}kbps -> {new_bitrate}kbps by restarting pipeline."
+                             )
+                             try:
+                                # Stop existing pipeline
+                                await self.app.stop_websocket_video_pipeline()
+                                # Update the bitrate that the start method will use
+                                self.app.video_bitrate = new_bitrate
+                                # Start new pipeline with updated bitrate
+                                await self.app.start_websocket_video_pipeline()
+                                # Update internal tracking state *after* successful restart
+                                self._current_target_bitrate_kbps = new_bitrate
+                                self._last_bitrate_adjustment_time = now
+                                # Reset client OK timer after ramp-up step to ensure stability period restarts for next potential ramp-up
+                                self._last_time_client_ok = now
+                                data_logger.info(f"Backpressure: Pipeline restarted with bitrate {new_bitrate}kbps.")
+                             except Exception as e:
+                                 data_logger.error(f"Backpressure: Error restarting pipeline for bitrate ramp-up to {new_bitrate}kbps: {e}", exc_info=True)
+
+        except asyncio.CancelledError:
+            data_logger.info("Backpressure logic task cancelled.")
+        except Exception as e:
+             data_logger.error(f"Backpressure logic task error: {e}", exc_info=True)
+        finally:
+             data_logger.info("Backpressure logic task finished.")
 
     async def run_server(self):
         """Starts the data WebSocket server."""

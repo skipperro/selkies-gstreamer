@@ -123,6 +123,11 @@ class GSTWebRTCApp:
         self.ximagesrc_caps = None
         self.last_cursor_sent = None
         self.data_streaming_server = data_streaming_server
+        # State for WS FPS calculation
+        self._current_server_fps = 0.0 # Stores the latest calculated WS FPS
+        self._ws_frame_count = 0
+        self._ws_fps_last_calc_time = time.monotonic()
+        self._fps_interval_sec = 2.0 # Calculate FPS every 2 seconds
 
     def build_audio_ws_pipeline(self):
         logger_gstwebrtc_app.info("starting websocket audio pipeline using Gst.parse_launch()")
@@ -993,6 +998,14 @@ class GSTWebRTCApp:
         def on_new_sample(sink):
             sample = sink.emit("pull-sample")
             if sample:
+                self._ws_frame_count += 1
+                now = time.monotonic()
+                elapsed = now - self._ws_fps_last_calc_time
+                if elapsed >= self._fps_interval_sec:
+                    calculated_fps = self._ws_frame_count / elapsed
+                    self._current_server_fps = calculated_fps # Update FPS value
+                    self._ws_frame_count = 0
+                    self._ws_fps_last_calc_time = now
                 buffer = sample.get_buffer()
                 if buffer:
                     is_delta_frame = bool(buffer.get_flags() & Gst.BufferFlags.DELTA_UNIT)
@@ -1071,6 +1084,11 @@ class GSTWebRTCApp:
         logger_gstwebrtc_app.info("pipeline stopped")
 
     stop_ws_pipeline = stop_pipeline
+
+    def get_current_server_fps(self):
+        """Returns the most recently calculated server output FPS for the WebSocket pipeline."""
+        # This value is only updated by the on_new_sample callback in start_ws_pipeline
+        return self._current_server_fps
 
     async def start_websocket_video_pipeline(self):
         if self.mode == 'websockets':
