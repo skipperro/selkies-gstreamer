@@ -3492,8 +3492,9 @@ document.addEventListener('DOMContentLoaded', () => {
       console.warn('Playback AudioContext state is:', audioContext.state, '. Attempting resume...');
       try {
           await audioContext.resume();
-          console.log('Playback AudioContext resumed successfully.');
           await applyOutputDevice();
+          frame.close();
+          return;
       } catch (resumeError) {
            console.error('Failed to resume Playback AudioContext:', resumeError, ' Dropping audio frame.');
            frame.close();
