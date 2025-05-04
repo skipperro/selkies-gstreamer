@@ -995,3 +995,19 @@ body {
     padding: 0;
     word-break: break-word; /* Wrap long error messages */
 }
+
+a:link {
+  text-decoration: none;
+}
+
+a:visited {
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: none;
+}
+
+a:active {
+  text-decoration: none;
+}
