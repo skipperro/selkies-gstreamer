@@ -1,6 +1,7 @@
 // src/components/Sidebar.jsx
-import React, { useState, useEffect, useCallback, useRef } from 'react'; // Added useRef
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import GamepadVisualizer from './GamepadVisualizer';
+import { getTranslator } from '../translations'; // Import the translator factory
 
 // --- Constants ---
 const encoderOptions = [
@@ -26,18 +27,10 @@ const audioBitrateOptions = [
 
 const videoBufferOptions = Array.from({ length: 16 }, (_, i) => i);
 
-const commonResolutions = [
-    { value: "", text: "-- Select Preset --" },
-    { value: "1920x1080", text: "1920 x 1080 (FHD)" },
-    { value: "1280x720", text: "1280 x 720 (HD)" },
-    { value: "1366x768", text: "1366 x 768 (Laptop)" },
-    { value: "1920x1200", text: "1920 x 1200 (16:10)" },
-    { value: "2560x1440", text: "2560 x 1440 (QHD)" },
-    { value: "3840x2160", text: "3840 x 2160 (4K UHD)" },
-    { value: "1024x768", text: "1024 x 768 (XGA 4:3)" },
-    { value: "800x600", text: "800 x 600 (SVGA 4:3)" },
-    { value: "640x480", text: "640 x 480 (VGA 4:3)" },
-    { value: "320x240", text: "320 x 240 (QVGA 4:3)" },
+// --- Resolution Values (Text will be translated) ---
+const commonResolutionValues = [
+    "", "1920x1080", "1280x720", "1366x768", "1920x1200", "2560x1440",
+    "3840x2160", "1024x768", "800x600", "640x480", "320x240"
 ];
 
 const STATS_READ_INTERVAL_MS = 100;
@@ -49,20 +42,23 @@ const DEFAULT_VIDEO_BUFFER_SIZE = 0;
 const DEFAULT_ENCODER = encoderOptions[0];
 const DEFAULT_SCALE_LOCALLY = true;
 
-// --- NEW Notification Constants ---
+// --- Notification Constants ---
 const MAX_NOTIFICATIONS = 3;
 const NOTIFICATION_TIMEOUT_SUCCESS = 5000; // 5 seconds
 const NOTIFICATION_TIMEOUT_ERROR = 8000; // 8 seconds
 const NOTIFICATION_FADE_DURATION = 500; // 0.5 seconds (must match CSS)
 
 // --- Helper Functions ---
-function formatBytes(bytes, decimals = 2) {
-    if (bytes === null || bytes === undefined || bytes === 0) return '0 Bytes';
+// Updated formatBytes to use translated units from 'raw' dictionary
+function formatBytes(bytes, decimals = 2, rawDict) {
+    const zeroBytesText = rawDict?.zeroBytes || '0 Bytes'; // Use translated '0 Bytes'
+    if (bytes === null || bytes === undefined || bytes === 0) return zeroBytesText;
     const k = 1024;
     const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    const sizes = rawDict?.byteUnits || ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']; // Use translated units
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    const unitIndex = Math.min(i, sizes.length - 1);
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[unitIndex];
 }
 
 const calculateGaugeOffset = (percentage, radius, circumference) => {
@@ -71,12 +67,12 @@ const calculateGaugeOffset = (percentage, radius, circumference) => {
 };
 
 const roundDownToEven = (num) => {
-    const n = parseInt(num, 10); // Ensure it's an integer
-    if (isNaN(n)) return 0; // Handle non-numeric input gracefully
+    const n = parseInt(num, 10);
+    if (isNaN(n)) return 0;
     return Math.floor(n / 2) * 2;
 };
 
-// --- Icons ---
+// --- Icons --- (Remain unchanged)
 const ScreenIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
         <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
@@ -132,11 +128,56 @@ const SpinnerIcon = () => (
 );
 // --- End Icons ---
 
+// --- Logo Component with translatable aria-label ---
+const SelkiesLogo = ({ width = 30, height = 30, className, t, ...props }) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 200 200"
+      width={width}
+      height={height}
+      className={className}
+      role="img"
+      aria-label={t('selkiesLogoAlt')} // Use translation function
+      {...props}
+    >
+      {/* SVG paths remain the same */}
+       <path fill="#61dafb" d="M156.825 120.999H5.273l-.271-1.13 87.336-43.332-7.278 17.696c4 1.628 6.179.541 7.907-2.974l26.873-53.575c1.198-2.319 3.879-4.593 6.358-5.401 9.959-3.249 20.065-6.091 30.229-8.634 1.9-.475 4.981.461 6.368 1.873 4.067 4.142 7.32 9.082 11.379 13.233 1.719 1.758 4.572 2.964 7.058 3.29 4.094.536 8.311.046 12.471.183 5.2.171 6.765 2.967 4.229 7.607-2.154 3.942-4.258 7.97-6.94 11.542-1.264 1.684-3.789 3.274-5.82 3.377-7.701.391-15.434.158-23.409 1.265 2.214 1.33 4.301 2.981 6.67 3.919 4.287 1.698 5.76 4.897 6.346 9.162 1.063 7.741 2.609 15.417 3.623 23.164.22 1.677-.464 3.971-1.579 5.233-3.521 3.987-7.156 7.989-11.332 11.232-2.069 1.607-5.418 1.565-8.664 2.27m-3.804-69.578c5.601.881 6.567-5.024 11.089-6.722l-9.884-7.716-11.299 9.983 10.094 4.455z"/>
+      <path fill="#61dafb" d="M86 131.92c7.491 0 14.495.261 21.467-.1 4.011-.208 6.165 1.249 7.532 4.832 1.103 2.889 2.605 5.626 4.397 9.419h-93.41l5.163 24.027-1.01.859c-3.291-2.273-6.357-5.009-9.914-6.733-11.515-5.581-17.057-14.489-16.403-27.286.073-1.423-.287-2.869-.525-5.019H86z"/>
+      <path fill="#61dafb" d="M129.004 164.999l1.179-1.424c9.132-10.114 9.127-10.11 2.877-22.425l-4.552-9.232c4.752 0 8.69.546 12.42-.101 11.96-2.075 20.504 1.972 25.74 13.014.826 1.743 2.245 3.205 3.797 5.361-9.923 7.274-19.044 15.174-29.357 20.945-4.365 2.443-11.236.407-17.714.407l5.611-6.545z"/>
+      <path fill="#FFFFFF" d="M152.672 51.269l-9.745-4.303 11.299-9.983 9.884 7.716c-4.522 1.698-5.488 7.602-11.439 6.57z"/>
+    </svg>
+  );
+
 
 function Sidebar({ isOpen }) {
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
+  // --- Language State & Setup ---
+  const [langCode, setLangCode] = useState('en'); // Default to English
+  const [translator, setTranslator] = useState(() => getTranslator('en')); // Initial translator
+
+  useEffect(() => {
+    // Detect browser language on initial load
+    const browserLang = navigator.language || navigator.userLanguage || 'en';
+    const primaryLang = browserLang.split('-')[0].toLowerCase();
+    console.log(`Dashboard: Detected browser language: ${browserLang}, using primary: ${primaryLang}`);
+    // Optional: Check if primaryLang is supported in translations.js, otherwise keep 'en'
+    setLangCode(primaryLang);
+    setTranslator(getTranslator(primaryLang));
+
+    // Optional: Add listener for language changes if needed (rarely needed)
+    // const handleLanguageChange = () => {
+    //     const newLang = navigator.language.split('-')[0].toLowerCase();
+    //     setLangCode(newLang);
+    //     setTranslator(getTranslator(newLang));
+    // };
+    // window.addEventListener('languagechange', handleLanguageChange);
+    // return () => window.removeEventListener('languagechange', handleLanguageChange);
+  }, []); // Run only on mount
+
+  // Get the translation function 't' and raw dictionary 'raw'
+  const { t, raw } = translator;
 
   // --- Existing State ---
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [encoder, setEncoder] = useState(localStorage.getItem('encoder') || DEFAULT_ENCODER);
   const [framerate, setFramerate] = useState(parseInt(localStorage.getItem('videoFramerate'), 10) || DEFAULT_FRAMERATE);
   const [videoBitRate, setVideoBitRate] = useState(parseInt(localStorage.getItem('videoBitRate'), 10) || DEFAULT_VIDEO_BITRATE);
@@ -171,7 +212,7 @@ function Sidebar({ isOpen }) {
   const [selectedInputDeviceId, setSelectedInputDeviceId] = useState('default');
   const [selectedOutputDeviceId, setSelectedOutputDeviceId] = useState('default');
   const [isOutputSelectionSupported, setIsOutputSelectionSupported] = useState(false);
-  const [audioDeviceError, setAudioDeviceError] = useState(null);
+  const [audioDeviceError, setAudioDeviceError] = useState(null); // Store the translated error message
   const [isLoadingAudioDevices, setIsLoadingAudioDevices] = useState(false);
   const [gamepadStates, setGamepadStates] = useState({});
   const [hasReceivedGamepadData, setHasReceivedGamepadData] = useState(false);
@@ -184,17 +225,17 @@ function Sidebar({ isOpen }) {
     gamepads: false,
     files: false,
   });
-
-  // --- Notification State ---
   const [notifications, setNotifications] = useState([]);
-  const notificationTimeouts = useRef({}); // Store timeout IDs
+  const notificationTimeouts = useRef({});
+
 
   // --- Callbacks and Handlers ---
 
+  // --- Updated populateAudioDevices with translated error messages ---
   const populateAudioDevices = useCallback(async () => {
     console.log("Dashboard: Attempting to populate audio devices...");
     setIsLoadingAudioDevices(true);
-    setAudioDeviceError(null);
+    setAudioDeviceError(null); // Clear previous error text
     setAudioInputDevices([]);
     setAudioOutputDevices([]);
 
@@ -215,12 +256,13 @@ function Sidebar({ isOpen }) {
       const inputs = [];
       const outputs = [];
 
-      devices.forEach(device => {
+      devices.forEach((device, index) => { // Added index for potential fallback label
         if (!device.deviceId) {
           console.warn("Dashboard: Skipping device with missing deviceId:", device);
           return;
         }
-        const label = device.label || (device.kind === 'audioinput' ? `Microphone ${inputs.length}` : `Speaker ${outputs.length}`);
+        // Use browser label first, then potentially a translated fallback if needed
+        const label = device.label || (device.kind === 'audioinput' ? inputFallbackLabel : outputFallbackLabel);
 
         if (device.kind === 'audioinput') {
           inputs.push({ deviceId: device.deviceId, label: label });
@@ -231,35 +273,38 @@ function Sidebar({ isOpen }) {
 
       setAudioInputDevices(inputs);
       setAudioOutputDevices(outputs);
-
-      // Keep selection on 'default' unless a specific one is received from main app later
       setSelectedInputDeviceId('default');
       setSelectedOutputDeviceId('default');
-
-      console.log(`Dashboard: Populated ${inputs.length -1} specific inputs, ${outputs.length -1} specific outputs.`);
+      console.log(`Dashboard: Populated ${inputs.length} inputs, ${outputs.length} outputs.`);
 
     } catch (err) {
       console.error('Dashboard: Error getting media devices or permissions:', err);
-      let userMessage = `Error listing audio devices: ${err.name || 'Unknown error'}`;
+      let userMessageKey = 'sections.audio.deviceErrorDefault';
+      let errorVars = { errorName: err.name || 'Unknown error' };
+
       if (err.name === 'NotAllowedError') {
-        userMessage = "Permission denied. Please allow microphone access in browser settings to select devices.";
+          userMessageKey = 'sections.audio.deviceErrorPermission';
+          errorVars = {};
       } else if (err.name === 'NotFoundError') {
-        userMessage = "No audio devices found.";
+          userMessageKey = 'sections.audio.deviceErrorNotFound';
+          errorVars = {};
       }
-      setAudioDeviceError(userMessage);
+      // Use the 't' function to get the translated error message
+      setAudioDeviceError(t(userMessageKey, errorVars));
     } finally {
       setIsLoadingAudioDevices(false);
     }
-  }, []);
+  }, [t]); // Add `t` to dependency array
+
 
   const toggleSection = useCallback((sectionKey) => {
     const isOpening = !sectionsOpen[sectionKey];
     setSectionsOpen(prev => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
+    // Use the latest populateAudioDevices which depends on `t`
     if (sectionKey === 'audioSettings' && isOpening) {
       populateAudioDevices();
     }
-  }, [sectionsOpen, populateAudioDevices]);
-
+  }, [sectionsOpen, populateAudioDevices]); // populateAudioDevices now includes t
   // Video Settings Handlers
   const handleEncoderChange = (event) => {
     const selectedEncoder = event.target.value;
@@ -381,32 +426,19 @@ function Sidebar({ isOpen }) {
       const height = parseInt(heightVal, 10);
 
       if (isNaN(width) || width <= 0 || isNaN(height) || height <= 0) {
-          alert('Please enter valid positive integers for Width and Height.');
+          alert(t('alerts.invalidResolution'));
           console.error('Dashboard: Invalid manual resolution input:', { widthVal, heightVal });
           return;
       }
-
       const evenWidth = roundDownToEven(width);
       const evenHeight = roundDownToEven(height);
-
-      console.log(`Dashboard: Set Resolution button clicked. Width: ${width}, Height: ${height}. Rounded: ${evenWidth}x${evenHeight}. Posting message.`);
-
-      // Update state to reflect rounded values if they changed
       setManualWidth(evenWidth.toString());
       setManualHeight(evenHeight.toString());
-      setPresetValue(""); // Clear preset selection
-
+      setPresetValue("");
       window.postMessage({ type: 'setManualResolution', width: evenWidth, height: evenHeight }, window.location.origin);
   };
 
-  const handleResetResolution = () => {
-      console.log('Dashboard: Reset Resolution button clicked. Posting message.');
-      setManualWidth('');
-      setManualHeight('');
-      setPresetValue(""); // Clear preset selection
-      window.postMessage({ type: 'resetResolutionToWindow' }, window.location.origin);
-  };
-
+  const handleResetResolution = () => { setManualWidth(''); setManualHeight(''); setPresetValue(""); window.postMessage({ type: 'resetResolutionToWindow' }, window.location.origin); };
 
   // Action Button Handlers
   const handleVideoToggle = () => {
@@ -459,19 +491,36 @@ function Sidebar({ isOpen }) {
   const handleMouseLeave = () => {
       setHoveredItem(null);
   };
-  const getTooltipContent = (itemKey) => {
+
+  // --- Updated getTooltipContent ---
+  const getTooltipContent = useCallback((itemKey) => {
+      const memNA = t('sections.stats.tooltipMemoryNA');
       switch (itemKey) {
-          case 'cpu': return `CPU Usage: ${cpuPercent.toFixed(1)}%`;
-          case 'gpu': return `GPU Usage: ${gpuPercent.toFixed(1)}%`;
-          case 'sysmem': return `System Memory: ${sysMemUsed !== null && sysMemTotal !== null ? `${formatBytes(sysMemUsed)} / ${formatBytes(sysMemTotal)}` : 'N/A'}`;
-          case 'gpumem': return `GPU Memory: ${gpuMemUsed !== null && gpuMemTotal !== null ? `${formatBytes(gpuMemUsed)} / ${formatBytes(gpuMemTotal)}` : 'N/A'}`;
-          case 'fps': return `Client FPS: ${clientFps}`;
-          case 'audio': return `Audio Buffers: ${audioBuffer}`;
+          case 'cpu':
+              return t('sections.stats.tooltipCpu', { value: cpuPercent.toFixed(1) });
+          case 'gpu':
+              return t('sections.stats.tooltipGpu', { value: gpuPercent.toFixed(1) });
+          case 'sysmem':
+              const formattedSysUsed = sysMemUsed !== null ? formatBytes(sysMemUsed, 2, raw) : memNA;
+              const formattedSysTotal = sysMemTotal !== null ? formatBytes(sysMemTotal, 2, raw) : memNA;
+              return (formattedSysUsed !== memNA && formattedSysTotal !== memNA)
+                  ? t('sections.stats.tooltipSysMem', { used: formattedSysUsed, total: formattedSysTotal })
+                  : `${t('sections.stats.sysMemLabel')}: ${memNA}`; // Provide context if N/A
+          case 'gpumem':
+              const formattedGpuUsed = gpuMemUsed !== null ? formatBytes(gpuMemUsed, 2, raw) : memNA;
+              const formattedGpuTotal = gpuMemTotal !== null ? formatBytes(gpuMemTotal, 2, raw) : memNA;
+              return (formattedGpuUsed !== memNA && formattedGpuTotal !== memNA)
+                  ? t('sections.stats.tooltipGpuMem', { used: formattedGpuUsed, total: formattedGpuTotal })
+                  : `${t('sections.stats.gpuMemLabel')}: ${memNA}`; // Provide context if N/A
+          case 'fps':
+              return t('sections.stats.tooltipFps', { value: clientFps });
+          case 'audio':
+              return t('sections.stats.tooltipAudio', { value: audioBuffer });
           default: return '';
       }
-  };
+  }, [t, raw, cpuPercent, gpuPercent, sysMemUsed, sysMemTotal, gpuMemUsed, gpuMemTotal, clientFps, audioBuffer]); // Add t and raw dependencies
 
-  // --- NEW Notification Handler ---
+  // --- Notification Handler ---
   const removeNotification = useCallback((id) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
     if (notificationTimeouts.current[id]) {
@@ -556,164 +605,61 @@ function Sidebar({ isOpen }) {
     return () => clearInterval(intervalId);
   }, []);
 
-  // Listen for messages from the main application
+  // --- Update message handling useEffect for notifications ---
   useEffect(() => {
     const handleWindowMessage = (event) => {
-      if (event.origin !== window.location.origin) return;
-      const message = event.data;
-      if (typeof message === 'object' && message !== null) {
-        // --- Existing message handlers ---
-        if (message.type === 'pipelineStatusUpdate') {
-          console.log('Dashboard: Received pipelineStatusUpdate', message);
-          if (message.video !== undefined) setIsVideoActive(message.video);
-          if (message.audio !== undefined) setIsAudioActive(message.audio);
-          if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone);
-        }
-        else if (message.type === 'gamepadControl') {
-            if (message.enabled !== undefined) {
-                console.log('Dashboard: Received gamepadControl status/confirmation', message);
-                setIsGamepadEnabled(message.enabled);
+        if (event.origin !== window.location.origin) return;
+        const message = event.data;
+        if (typeof message === 'object' && message !== null) {
+            // --- Existing handlers ---
+            if (message.type === 'pipelineStatusUpdate') { if (message.video !== undefined) setIsVideoActive(message.video); if (message.audio !== undefined) setIsAudioActive(message.audio); if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone); }
+            else if (message.type === 'gamepadControl') { if (message.enabled !== undefined) setIsGamepadEnabled(message.enabled); }
+            else if (message.type === 'sidebarButtonStatusUpdate') { if (message.video !== undefined) setIsVideoActive(message.video); if (message.audio !== undefined) setIsAudioActive(message.audio); if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone); if (message.gamepad !== undefined) setIsGamepadEnabled(message.gamepad); }
+            else if (message.type === 'clipboardContentUpdate') { if (typeof message.text === 'string') setDashboardClipboardContent(message.text); else console.warn('Dashboard: Received clipboardContentUpdate without valid text property.'); }
+            else if (message.type === 'audioDeviceStatusUpdate') { if (message.inputDeviceId !== undefined) setSelectedInputDeviceId(message.inputDeviceId || 'default'); if (message.outputDeviceId !== undefined) setSelectedOutputDeviceId(message.outputDeviceId || 'default'); }
+            else if (message.type === 'gamepadButtonUpdate' || message.type === 'gamepadAxisUpdate') { if (!hasReceivedGamepadData) setHasReceivedGamepadData(true); /* ... update gamepadStates ... */ }
+
+            // --- Updated File Upload Message Handler ---
+            else if (message.type === 'fileUpload') {
+                const { status, fileName, progress, fileSize, message: errorMessage } = message.payload;
+                const id = fileName;
+
+                setNotifications(prevNotifications => {
+                    const existingIndex = prevNotifications.findIndex(n => n.id === id);
+
+                    if (status === 'start') {
+                        if (prevNotifications.length < MAX_NOTIFICATIONS && existingIndex === -1) {
+                            const newNotification = { id, fileName, status: 'progress', progress: 0, fileSize, message: null, timestamp: Date.now(), fadingOut: false };
+                            return [...prevNotifications, newNotification];
+                        } else { return prevNotifications; }
+                    } else if (existingIndex !== -1) {
+                        const updatedNotifications = [...prevNotifications];
+                        const currentNotification = updatedNotifications[existingIndex];
+                        if (notificationTimeouts.current[id]) { clearTimeout(notificationTimeouts.current[id].fadeTimer); clearTimeout(notificationTimeouts.current[id].removeTimer); delete notificationTimeouts.current[id]; }
+
+                        if (status === 'progress') {
+                            updatedNotifications[existingIndex] = { ...currentNotification, status: 'progress', progress, timestamp: Date.now(), fadingOut: false };
+                        } else if (status === 'end') {
+                            updatedNotifications[existingIndex] = { ...currentNotification, status: 'end', progress: 100, message: null, timestamp: Date.now(), fadingOut: false };
+                            scheduleNotificationRemoval(id, NOTIFICATION_TIMEOUT_SUCCESS);
+                        } else if (status === 'error') {
+                            const translatedError = errorMessage ? `${t('notifications.errorPrefix')} ${errorMessage}` : t('notifications.unknownError');
+                            updatedNotifications[existingIndex] = { ...currentNotification, status: 'error', progress: 100, message: translatedError, timestamp: Date.now(), fadingOut: false };
+                            scheduleNotificationRemoval(id, NOTIFICATION_TIMEOUT_ERROR);
+                        }
+                        return updatedNotifications;
+                    } else { return prevNotifications; }
+                });
             }
         }
-        else if (message.type === 'sidebarButtonStatusUpdate') {
-          console.log('Dashboard: Received sidebarButtonStatusUpdate', message);
-          if (message.video !== undefined) setIsVideoActive(message.video);
-          if (message.audio !== undefined) setIsAudioActive(message.audio);
-          if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone);
-          if (message.gamepad !== undefined) setIsGamepadEnabled(message.gamepad);
-        }
-        else if (message.type === 'clipboardContentUpdate') {
-            console.log('Dashboard: Received clipboardContentUpdate', message);
-            if (typeof message.text === 'string') {
-                setDashboardClipboardContent(message.text);
-            } else {
-                console.warn('Dashboard: Received clipboardContentUpdate without valid text property.');
-            }
-        }
-        else if (message.type === 'audioDeviceStatusUpdate') {
-             console.log('Dashboard: Received audioDeviceStatusUpdate', message);
-             if (message.inputDeviceId !== undefined) {
-                 setSelectedInputDeviceId(message.inputDeviceId || 'default');
-             }
-             if (message.outputDeviceId !== undefined) {
-                 setSelectedOutputDeviceId(message.outputDeviceId || 'default');
-             }
-        }
-        else if (message.type === 'gamepadButtonUpdate' || message.type === 'gamepadAxisUpdate') {
-            if (!hasReceivedGamepadData) {
-                setHasReceivedGamepadData(true);
-                console.log("Dashboard: First gamepad message received, enabling section header.");
-            }
-            const gpIndex = message.gamepadIndex;
-            if (gpIndex === undefined || gpIndex === null) return;
-            setGamepadStates(prevStates => {
-                const newState = { ...prevStates };
-                if (!newState[gpIndex]) newState[gpIndex] = { buttons: {}, axes: {} };
-                else newState[gpIndex] = { buttons: { ...(newState[gpIndex].buttons || {}) }, axes: { ...(newState[gpIndex].axes || {}) } };
-                if (message.type === 'gamepadButtonUpdate') {
-                    const buttonIndex = message.buttonIndex;
-                    if (buttonIndex !== undefined) newState[gpIndex].buttons[buttonIndex] = message.value || 0;
-                } else {
-                    const axisIndex = message.axisIndex;
-                    if (axisIndex !== undefined) newState[gpIndex].axes[axisIndex] = Math.max(-1, Math.min(1, message.value || 0));
-                }
-                return newState;
-            });
-        }
-
-        // --- NEW: Handle File Upload Messages ---
-        else if (message.type === 'fileUpload') {
-            const { status, fileName, progress, fileSize, message: errorMessage } = message.payload;
-            const id = fileName; // Use filename as ID
-
-            setNotifications(prevNotifications => {
-                const existingIndex = prevNotifications.findIndex(n => n.id === id);
-
-                if (status === 'start') {
-                    // Only add if below max limit and not already present
-                    if (prevNotifications.length < MAX_NOTIFICATIONS && existingIndex === -1) {
-                        const newNotification = {
-                            id: id,
-                            fileName: fileName,
-                            status: 'progress', // Start immediately shows progress
-                            progress: 0,
-                            fileSize: fileSize,
-                            message: null,
-                            timestamp: Date.now(),
-                            fadingOut: false,
-                        };
-                        return [...prevNotifications, newNotification];
-                    } else {
-                        console.warn(`Dashboard: Max notifications (${MAX_NOTIFICATIONS}) reached or duplicate start for ${fileName}. Ignoring.`);
-                        return prevNotifications; // Return unchanged state
-                    }
-                } else if (existingIndex !== -1) {
-                    const updatedNotifications = [...prevNotifications];
-                    const currentNotification = updatedNotifications[existingIndex];
-
-                    // Clear any existing removal timers if it updates again
-                     if (notificationTimeouts.current[id]) {
-                         clearTimeout(notificationTimeouts.current[id].fadeTimer);
-                         clearTimeout(notificationTimeouts.current[id].removeTimer);
-                         delete notificationTimeouts.current[id];
-                     }
-
-                    if (status === 'progress') {
-                        updatedNotifications[existingIndex] = {
-                            ...currentNotification,
-                            status: 'progress',
-                            progress: progress,
-                            timestamp: Date.now(),
-                            fadingOut: false, // Ensure it's not fading if progress comes in
-                        };
-                    } else if (status === 'end') {
-                        updatedNotifications[existingIndex] = {
-                            ...currentNotification,
-                            status: 'end',
-                            progress: 100,
-                            message: null,
-                            timestamp: Date.now(),
-                            fadingOut: false, // Reset fading initially
-                        };
-                        // Schedule removal
-                        scheduleNotificationRemoval(id, NOTIFICATION_TIMEOUT_SUCCESS);
-
-                    } else if (status === 'error') {
-                        updatedNotifications[existingIndex] = {
-                            ...currentNotification,
-                            status: 'error',
-                            progress: 100, // Show full bar usually for error
-                            message: errorMessage || 'An unknown error occurred.',
-                            timestamp: Date.now(),
-                            fadingOut: false, // Reset fading initially
-                        };
-                         // Schedule removal
-                         scheduleNotificationRemoval(id, NOTIFICATION_TIMEOUT_ERROR);
-                    }
-                    return updatedNotifications;
-                } else {
-                     // Received progress/end/error for a notification not tracked (maybe ignored at start?)
-                     console.warn(`Dashboard: Received '${status}' for untracked notification: ${fileName}`);
-                     return prevNotifications; // Return unchanged state
-                }
-            });
-        }
-      }
     };
     window.addEventListener('message', handleWindowMessage);
-    console.log("Dashboard: Added window message listener (including fileUpload).");
-
-    // Cleanup timeouts on component unmount
     return () => {
-      window.removeEventListener('message', handleWindowMessage);
-      console.log("Dashboard: Removed window message listener.");
-      Object.values(notificationTimeouts.current).forEach(timers => {
-          clearTimeout(timers.fadeTimer);
-          clearTimeout(timers.removeTimer);
-      });
-      notificationTimeouts.current = {};
+        window.removeEventListener('message', handleWindowMessage);
+        Object.values(notificationTimeouts.current).forEach(timers => { clearTimeout(timers.fadeTimer); clearTimeout(timers.removeTimer); });
+        notificationTimeouts.current = {};
     };
-  }, [hasReceivedGamepadData, scheduleNotificationRemoval, removeNotification]); // Add dependencies
+  }, [hasReceivedGamepadData, scheduleNotificationRemoval, removeNotification, t]); // <-- Add t here
 
 
   // --- Component Rendering ---
@@ -732,42 +678,35 @@ function Sidebar({ isOpen }) {
   const fpsOffset = calculateGaugeOffset(fpsPercent, gaugeRadius, gaugeCircumference);
   const audioBufferPercent = Math.min(100, (audioBuffer / MAX_AUDIO_BUFFER) * 100);
   const audioBufferOffset = calculateGaugeOffset(audioBufferPercent, gaugeRadius, gaugeCircumference);
-  const SelkiesLogo = ({ width = 30, height = 30, className, ...props }) => (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 200 200" // Keep viewBox for scaling
-      width={width}        // Control width with props
-      height={height}      // Control height with props
-      className={className} // Allow passing a className
-      role="img"           // Accessibility
-      aria-label="Selkies Logo" // Accessibility
-      {...props}           // Pass any other SVG props
-    >
-      <path fill="#61dafb" d="M156.825 120.999H5.273l-.271-1.13 87.336-43.332-7.278 17.696c4 1.628 6.179.541 7.907-2.974l26.873-53.575c1.198-2.319 3.879-4.593 6.358-5.401 9.959-3.249 20.065-6.091 30.229-8.634 1.9-.475 4.981.461 6.368 1.873 4.067 4.142 7.32 9.082 11.379 13.233 1.719 1.758 4.572 2.964 7.058 3.29 4.094.536 8.311.046 12.471.183 5.2.171 6.765 2.967 4.229 7.607-2.154 3.942-4.258 7.97-6.94 11.542-1.264 1.684-3.789 3.274-5.82 3.377-7.701.391-15.434.158-23.409 1.265 2.214 1.33 4.301 2.981 6.67 3.919 4.287 1.698 5.76 4.897 6.346 9.162 1.063 7.741 2.609 15.417 3.623 23.164.22 1.677-.464 3.971-1.579 5.233-3.521 3.987-7.156 7.989-11.332 11.232-2.069 1.607-5.418 1.565-8.664 2.27m-3.804-69.578c5.601.881 6.567-5.024 11.089-6.722l-9.884-7.716-11.299 9.983 10.094 4.455z"/>
-      <path fill="#61dafb" d="M86 131.92c7.491 0 14.495.261 21.467-.1 4.011-.208 6.165 1.249 7.532 4.832 1.103 2.889 2.605 5.626 4.397 9.419h-93.41l5.163 24.027-1.01.859c-3.291-2.273-6.357-5.009-9.914-6.733-11.515-5.581-17.057-14.489-16.403-27.286.073-1.423-.287-2.869-.525-5.019H86z"/>
-      <path fill="#61dafb" d="M129.004 164.999l1.179-1.424c9.132-10.114 9.127-10.11 2.877-22.425l-4.552-9.232c4.752 0 8.69.546 12.42-.101 11.96-2.075 20.504 1.972 25.74 13.014.826 1.743 2.245 3.205 3.797 5.361-9.923 7.274-19.044 15.174-29.357 20.945-4.365 2.443-11.236.407-17.714.407l5.611-6.545z"/>
-      <path fill="#FFFFFF" d="M152.672 51.269l-9.745-4.303 11.299-9.983 9.884 7.716c-4.522 1.698-5.488 7.602-11.439 6.57z"/>
-    </svg>
-  );
+
+  // --- Generate translated commonResolutions ---
+  const translatedCommonResolutions = commonResolutionValues.map((value, index) => {
+      if (index === 0) {
+          return { value: "", text: t('sections.screen.resolutionPresetSelect') };
+      }
+      // Look up the text using the value as part of the key in the 'raw' dictionary
+      const translatedText = raw?.resolutionPresets?.[value] || value; // Fallback to value itself
+      return { value: value, text: translatedText };
+  });
 
   return (
     <>
       <div className={sidebarClasses}>
         {/* Header */}
-        {/* Apply flex display to align items horizontally and center vertically */}
         <div className="sidebar-header">
-           <a href="https://github.com/selkies-project/selkies" target="_blank">
-             <SelkiesLogo width={30} height={30} />
+           <a href="https://github.com/selkies-project/selkies" target="_blank" rel="noopener noreferrer">
+             {/* Pass t function to logo */}
+             <SelkiesLogo width={30} height={30} t={t} />
            </a>
-           <a href="https://github.com/selkies-project/selkies" target="_blank">
-             <h2>Selkies</h2>
+           <a href="https://github.com/selkies-project/selkies" target="_blank" rel="noopener noreferrer">
+             <h2>{t('selkiesTitle')}</h2>
            </a>
            <div className="header-controls">
-             <div className={`theme-toggle ${theme}`} onClick={toggleTheme} title="Toggle Theme">
+             <div className={`theme-toggle ${theme}`} onClick={toggleTheme} title={t('toggleThemeTitle')}>
                <svg className="icon moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
                <svg className="icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
              </div>
-             <button className="header-action-button fullscreen-button" onClick={handleFullscreenRequest} title="Enter Fullscreen">
+             <button className="header-action-button fullscreen-button" onClick={handleFullscreenRequest} title={t('fullscreenTitle')}>
                <FullscreenIcon />
              </button>
            </div>
@@ -775,165 +714,195 @@ function Sidebar({ isOpen }) {
 
         {/* Action Buttons Section */}
         <div className="sidebar-action-buttons">
-            <button className={`action-button ${isVideoActive ? 'active' : ''}`} onClick={handleVideoToggle} title={isVideoActive ? "Disable Video Stream" : "Enable Video Stream"}> <ScreenIcon /> </button>
-            <button className={`action-button ${isAudioActive ? 'active' : ''}`} onClick={handleAudioToggle} title={isAudioActive ? "Disable Audio Stream" : "Enable Audio Stream"}> <SpeakerIcon /> </button>
-            <button className={`action-button ${isMicrophoneActive ? 'active' : ''}`} onClick={handleMicrophoneToggle} title={isMicrophoneActive ? "Disable Microphone" : "Enable Microphone"}> <MicrophoneIcon /> </button>
-            <button className={`action-button ${isGamepadEnabled ? 'active' : ''}`} onClick={handleGamepadToggle} title={isGamepadEnabled ? "Disable Gamepad Input" : "Enable Gamepad Input"}> <GamepadIcon /> </button>
+            <button className={`action-button ${isVideoActive ? 'active' : ''}`} onClick={handleVideoToggle} title={t(isVideoActive ? 'buttons.videoStreamDisableTitle' : 'buttons.videoStreamEnableTitle')}> <ScreenIcon /> </button>
+            <button className={`action-button ${isAudioActive ? 'active' : ''}`} onClick={handleAudioToggle} title={t(isAudioActive ? 'buttons.audioStreamDisableTitle' : 'buttons.audioStreamEnableTitle')}> <SpeakerIcon /> </button>
+            <button className={`action-button ${isMicrophoneActive ? 'active' : ''}`} onClick={handleMicrophoneToggle} title={t(isMicrophoneActive ? 'buttons.microphoneDisableTitle' : 'buttons.microphoneEnableTitle')}> <MicrophoneIcon /> </button>
+            <button className={`action-button ${isGamepadEnabled ? 'active' : ''}`} onClick={handleGamepadToggle} title={t(isGamepadEnabled ? 'buttons.gamepadDisableTitle' : 'buttons.gamepadEnableTitle')}> <GamepadIcon /> </button>
         </div>
 
         {/* Video Settings Section */}
         <div className="sidebar-section">
             <div className="sidebar-section-header" onClick={() => toggleSection('settings')} role="button" aria-expanded={sectionsOpen.settings} aria-controls="settings-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('settings')}>
-              <h3>Video Settings</h3>
+              <h3>{t('sections.video.title')}</h3>
               <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.settings ? <CaretUpIcon /> : <CaretDownIcon />}</span>
             </div>
             {sectionsOpen.settings && (
               <div className="sidebar-section-content" id="settings-content">
-                <div className="dev-setting-item"> <label htmlFor="encoderSelect">Encoder:</label> <select id="encoderSelect" value={encoder} onChange={handleEncoderChange}> {encoderOptions.map(enc => (<option key={enc} value={enc}>{enc}</option>))} </select> </div>
-                <div className="dev-setting-item"> <label htmlFor="framerateSlider">Frames per second ({framerate} FPS):</label> <input type="range" id="framerateSlider" min="0" max={framerateOptions.length - 1} step="1" value={framerateOptions.indexOf(framerate)} onChange={handleFramerateChange} /> </div>
-                <div className="dev-setting-item"> <label htmlFor="videoBitrateSlider">Video Bitrate ({videoBitRate / 1000} Mbps):</label> <input type="range" id="videoBitrateSlider" min="0" max={videoBitrateOptions.length - 1} step="1" value={videoBitrateOptions.indexOf(videoBitRate)} onChange={handleVideoBitrateChange} /> </div>
-                <div className="dev-setting-item"> <label htmlFor="videoBufferSizeSlider"> Video Buffer Size ({videoBufferSize === 0 ? '0 (Immediate)' : `${videoBufferSize} frames`}): </label> <input type="range" id="videoBufferSizeSlider" min="0" max={videoBufferOptions.length - 1} step="1" value={videoBufferOptions.indexOf(videoBufferSize)} onChange={handleVideoBufferSizeChange} /> </div>
+                <div className="dev-setting-item"> <label htmlFor="encoderSelect">{t('sections.video.encoderLabel')}</label> <select id="encoderSelect" value={encoder} onChange={handleEncoderChange}> {encoderOptions.map(enc => (<option key={enc} value={enc}>{enc}</option>))} </select> </div>
+                <div className="dev-setting-item"> <label htmlFor="framerateSlider">{t('sections.video.framerateLabel', { framerate: framerate })}</label> <input type="range" id="framerateSlider" min="0" max={framerateOptions.length - 1} step="1" value={framerateOptions.indexOf(framerate)} onChange={handleFramerateChange} /> </div>
+                <div className="dev-setting-item"> <label htmlFor="videoBitrateSlider">{t('sections.video.bitrateLabel', { bitrate: videoBitRate / 1000 })}</label> <input type="range" id="videoBitrateSlider" min="0" max={videoBitrateOptions.length - 1} step="1" value={videoBitrateOptions.indexOf(videoBitRate)} onChange={handleVideoBitrateChange} /> </div>
+                <div className="dev-setting-item">
+                    <label htmlFor="videoBufferSizeSlider">
+                        {videoBufferSize === 0
+                            ? t('sections.video.bufferLabelImmediate')
+                            : t('sections.video.bufferLabelFrames', { videoBufferSize: videoBufferSize })
+                        }
+                    </label>
+                    <input type="range" id="videoBufferSizeSlider" min="0" max={videoBufferOptions.length - 1} step="1" value={videoBufferOptions.indexOf(videoBufferSize)} onChange={handleVideoBufferSizeChange} />
+                </div>
               </div>
             )}
         </div>
 
         {/* Audio Settings Section */}
         <div className="sidebar-section">
-            <div className="sidebar-section-header" onClick={() => toggleSection('audioSettings')} role="button" aria-expanded={sectionsOpen.audioSettings} aria-controls="audio-settings-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('audioSettings')}>
-              <h3>Audio Settings</h3>
-              <span className="section-toggle-icon" aria-hidden="true">{isLoadingAudioDevices ? <SpinnerIcon /> : (sectionsOpen.audioSettings ? <CaretUpIcon /> : <CaretDownIcon />)}</span>
-            </div>
-            {sectionsOpen.audioSettings && (
-              <div className="sidebar-section-content" id="audio-settings-content">
-                <div className="dev-setting-item"> <label htmlFor="audioBitrateSlider">Audio Bitrate ({audioBitRate / 1000} kbps):</label> <input type="range" id="audioBitrateSlider" min="0" max={audioBitrateOptions.length - 1} step="1" value={audioBitrateOptions.indexOf(audioBitRate)} onChange={handleAudioBitrateChange} /> </div>
-                <hr className="section-divider" />
-                {audioDeviceError && (<div className="error-message">{audioDeviceError}</div>)}
-                <div className="dev-setting-item"> <label htmlFor="audioInputSelect">Input (Microphone):</label> <select id="audioInputSelect" value={selectedInputDeviceId} onChange={handleAudioInputChange} disabled={isLoadingAudioDevices || !!audioDeviceError} className="audio-device-select"> {audioInputDevices.map(device => (<option key={device.deviceId} value={device.deviceId}>{device.label}</option>))} </select> </div>
-                {isOutputSelectionSupported && (<div className="dev-setting-item"> <label htmlFor="audioOutputSelect">Output (Speaker):</label> <select id="audioOutputSelect" value={selectedOutputDeviceId} onChange={handleAudioOutputChange} disabled={isLoadingAudioDevices || !!audioDeviceError} className="audio-device-select"> {audioOutputDevices.map(device => (<option key={device.deviceId} value={device.deviceId}>{device.label}</option>))} </select> </div>)}
-                {!isOutputSelectionSupported && !isLoadingAudioDevices && !audioDeviceError && (<p className="device-support-notice">Output device selection not supported by this browser.</p>)}
-              </div>
-            )}
+             <div className="sidebar-section-header" onClick={() => toggleSection('audioSettings')} role="button" aria-expanded={sectionsOpen.audioSettings} aria-controls="audio-settings-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('audioSettings')}>
+               <h3>{t('sections.audio.title')}</h3>
+               <span className="section-toggle-icon" aria-hidden="true">{isLoadingAudioDevices ? <SpinnerIcon /> : (sectionsOpen.audioSettings ? <CaretUpIcon /> : <CaretDownIcon />)}</span>
+             </div>
+             {sectionsOpen.audioSettings && (
+               <div className="sidebar-section-content" id="audio-settings-content">
+                 <div className="dev-setting-item"> <label htmlFor="audioBitrateSlider">{t('sections.audio.bitrateLabel', { bitrate: audioBitRate / 1000 })}</label> <input type="range" id="audioBitrateSlider" min="0" max={audioBitrateOptions.length - 1} step="1" value={audioBitrateOptions.indexOf(audioBitRate)} onChange={handleAudioBitrateChange} /> </div>
+                 <hr className="section-divider" />
+                 {/* Display translated error */}
+                 {audioDeviceError && (<div className="error-message">{audioDeviceError}</div>)}
+                 <div className="dev-setting-item"> <label htmlFor="audioInputSelect">{t('sections.audio.inputLabel')}</label> <select id="audioInputSelect" value={selectedInputDeviceId} onChange={handleAudioInputChange} disabled={isLoadingAudioDevices || !!audioDeviceError} className="audio-device-select"> {audioInputDevices.map(device => (<option key={device.deviceId} value={device.deviceId}>{device.label}</option>))} </select> </div>
+                 {isOutputSelectionSupported && (<div className="dev-setting-item"> <label htmlFor="audioOutputSelect">{t('sections.audio.outputLabel')}</label> <select id="audioOutputSelect" value={selectedOutputDeviceId} onChange={handleAudioOutputChange} disabled={isLoadingAudioDevices || !!audioDeviceError} className="audio-device-select"> {audioOutputDevices.map(device => (<option key={device.deviceId} value={device.deviceId}>{device.label}</option>))} </select> </div>)}
+                 {!isOutputSelectionSupported && !isLoadingAudioDevices && !audioDeviceError && (<p className="device-support-notice">{t('sections.audio.outputNotSupported')}</p>)}
+               </div>
+             )}
         </div>
 
         {/* Screen Settings Section */}
         <div className="sidebar-section">
-            <div className="sidebar-section-header" onClick={() => toggleSection('screenSettings')} role="button" aria-expanded={sectionsOpen.screenSettings} aria-controls="screen-settings-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('screenSettings')}>
-              <h3>Screen Settings</h3>
-              <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.screenSettings ? <CaretUpIcon /> : <CaretDownIcon />}</span>
-            </div>
-            {sectionsOpen.screenSettings && (
-              <div className="sidebar-section-content" id="screen-settings-content">
-                <div className="dev-setting-item">
-                  <label htmlFor="resolutionPresetSelect">Preset:</label>
-                  <select id="resolutionPresetSelect" value={presetValue} onChange={handlePresetChange}>
-                    {commonResolutions.map((res, index) => (
-                      <option key={index} value={res.value} disabled={index === 0}>
-                        {res.text}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="resolution-manual-inputs">
-                   <div className="dev-setting-item manual-input-item">
-                     <label htmlFor="manualWidthInput">Width:</label>
-                     <input type="number" id="manualWidthInput" min="1" step="2" placeholder="e.g., 1920" value={manualWidth} onChange={handleManualWidthChange} />
-                   </div>
-                   <div className="dev-setting-item manual-input-item">
-                     <label htmlFor="manualHeightInput">Height:</label>
-                     <input type="number" id="manualHeightInput" min="1" step="2" placeholder="e.g., 1080" value={manualHeight} onChange={handleManualHeightChange} />
-                   </div>
-                </div>
-                <div className="resolution-action-buttons">
-                    <button className="resolution-button" onClick={handleSetManualResolution}> Set Manual Resolution </button>
-                    <button className="resolution-button reset-button" onClick={handleResetResolution}> Reset to Window </button>
-                </div>
-                <button
-                    className={`resolution-button toggle-button ${scaleLocally ? 'active' : ''}`}
-                    onClick={handleScaleLocallyToggle}
-                    style={{ marginTop: '10px' }}
-                    title={scaleLocally ? "Disable Local Scaling (Use Exact Resolution)" : "Enable Local Scaling (Maintain Aspect Ratio)"}
-                >
-                    Scale Locally: {scaleLocally ? 'ON' : 'OFF'}
-                </button>
-              </div>
-            )}
+             <div className="sidebar-section-header" onClick={() => toggleSection('screenSettings')} role="button" aria-expanded={sectionsOpen.screenSettings} aria-controls="screen-settings-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('screenSettings')}>
+               <h3>{t('sections.screen.title')}</h3>
+               <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.screenSettings ? <CaretUpIcon /> : <CaretDownIcon />}</span>
+             </div>
+             {sectionsOpen.screenSettings && (
+               <div className="sidebar-section-content" id="screen-settings-content">
+                 <div className="dev-setting-item">
+                   <label htmlFor="resolutionPresetSelect">{t('sections.screen.presetLabel')}</label>
+                   <select id="resolutionPresetSelect" value={presetValue} onChange={handlePresetChange}>
+                     {translatedCommonResolutions.map((res, index) => (
+                       <option key={index} value={res.value} disabled={index === 0}>
+                         {res.text}
+                       </option>
+                     ))}
+                   </select>
+                 </div>
+                 <div className="resolution-manual-inputs">
+                    <div className="dev-setting-item manual-input-item">
+                      <label htmlFor="manualWidthInput">{t('sections.screen.widthLabel')}</label>
+                      <input type="number" id="manualWidthInput" min="1" step="2" placeholder={t('sections.screen.widthPlaceholder')} value={manualWidth} onChange={handleManualWidthChange} />
+                    </div>
+                    <div className="dev-setting-item manual-input-item">
+                      <label htmlFor="manualHeightInput">{t('sections.screen.heightLabel')}</label>
+                      <input type="number" id="manualHeightInput" min="1" step="2" placeholder={t('sections.screen.heightPlaceholder')} value={manualHeight} onChange={handleManualHeightChange} />
+                    </div>
+                 </div>
+                 <div className="resolution-action-buttons">
+                     <button className="resolution-button" onClick={handleSetManualResolution}>{t('sections.screen.setManualButton')}</button>
+                     <button className="resolution-button reset-button" onClick={handleResetResolution}>{t('sections.screen.resetButton')}</button>
+                 </div>
+                 <button
+                     className={`resolution-button toggle-button ${scaleLocally ? 'active' : ''}`}
+                     onClick={handleScaleLocallyToggle}
+                     style={{ marginTop: '10px' }}
+                     title={t(scaleLocally ? 'sections.screen.scaleLocallyTitleDisable' : 'sections.screen.scaleLocallyTitleEnable')}
+                 >
+                     {t('sections.screen.scaleLocallyLabel')} {t(scaleLocally ? 'sections.screen.scaleLocallyOn' : 'sections.screen.scaleLocallyOff')}
+                 </button>
+               </div>
+             )}
         </div>
-
 
         {/* Stats Section */}
         <div className="sidebar-section">
-            <div className="sidebar-section-header" onClick={() => toggleSection('stats')} role="button" aria-expanded={sectionsOpen.stats} aria-controls="stats-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('stats')}>
-              <h3>Stats</h3>
-              <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.stats ? <CaretUpIcon /> : <CaretDownIcon />}</span>
-            </div>
-            {sectionsOpen.stats && (
-              <div className="sidebar-section-content" id="stats-content">
-                <div className="stats-gauges">
-                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'cpu')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: cpuOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, cpuPercent || 0)))}% </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>CPU</div> </div>
-                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'gpu')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: gpuOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, gpuPercent || 0)))}% </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>GPU Usage</div> </div>
-                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'sysmem')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: sysMemOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, sysMemPercent || 0)))}% </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>Sys Mem</div> </div>
-                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'gpumem')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: gpuMemOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, gpuMemPercent || 0)))}% </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>GPU Mem</div> </div>
-                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'fps')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: fpsOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {clientFps} </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>FPS</div> </div>
-                   <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'audio')} onMouseLeave={handleMouseLeave}> <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: audioBufferOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {audioBuffer} </text> </svg> <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>Audio</div> </div>
-                </div>
-              </div>
-            )}
+             <div className="sidebar-section-header" onClick={() => toggleSection('stats')} role="button" aria-expanded={sectionsOpen.stats} aria-controls="stats-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('stats')}>
+               <h3>{t('sections.stats.title')}</h3>
+               <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.stats ? <CaretUpIcon /> : <CaretDownIcon />}</span>
+             </div>
+             {sectionsOpen.stats && (
+               <div className="sidebar-section-content" id="stats-content">
+                 <div className="stats-gauges">
+                    {/* CPU Gauge */}
+                    <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'cpu')} onMouseLeave={handleMouseLeave}>
+                        <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: cpuOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, cpuPercent || 0)))}% </text> </svg>
+                        <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>{t('sections.stats.cpuLabel')}</div>
+                    </div>
+                    {/* GPU Gauge */}
+                    <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'gpu')} onMouseLeave={handleMouseLeave}>
+                         <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: gpuOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, gpuPercent || 0)))}% </text> </svg>
+                         <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>{t('sections.stats.gpuLabel')}</div>
+                    </div>
+                    {/* Sys Mem Gauge */}
+                     <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'sysmem')} onMouseLeave={handleMouseLeave}>
+                          <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: sysMemOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, sysMemPercent || 0)))}% </text> </svg>
+                          <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>{t('sections.stats.sysMemLabel')}</div>
+                     </div>
+                    {/* GPU Mem Gauge */}
+                    <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'gpumem')} onMouseLeave={handleMouseLeave}>
+                         <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: gpuMemOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {Math.round(Math.max(0, Math.min(100, gpuMemPercent || 0)))}% </text> </svg>
+                         <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>{t('sections.stats.gpuMemLabel')}</div>
+                    </div>
+                    {/* FPS Gauge */}
+                    <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'fps')} onMouseLeave={handleMouseLeave}>
+                         <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: fpsOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {clientFps} </text> </svg>
+                         <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>{t('sections.stats.fpsLabel')}</div>
+                    </div>
+                    {/* Audio Gauge */}
+                    <div className="gauge-container" onMouseEnter={(e) => handleMouseEnter(e, 'audio')} onMouseLeave={handleMouseLeave}>
+                         <svg width={gaugeSize} height={gaugeSize} viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}> <circle stroke="var(--item-border)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} /> <circle stroke="var(--sidebar-header-color)" fill="transparent" strokeWidth={gaugeStrokeWidth} r={gaugeRadius} cx={gaugeCenter} cy={gaugeCenter} transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`} style={{ strokeDasharray: gaugeCircumference, strokeDashoffset: audioBufferOffset, transition: 'stroke-dashoffset 0.3s ease-in-out', strokeLinecap: 'round' }} /> <text x={gaugeCenter} y={gaugeCenter} textAnchor="middle" dominantBaseline="central" fontSize={`${gaugeSize / 5}px`} fill="var(--sidebar-text)" fontWeight="bold"> {audioBuffer} </text> </svg>
+                         <div className="gauge-label" style={{ fontSize: `${gaugeSize / 8}px` }}>{t('sections.stats.audioLabel')}</div>
+                    </div>
+                 </div>
+               </div>
+             )}
         </div>
 
         {/* Clipboard Section */}
         <div className="sidebar-section">
-            <div className="sidebar-section-header" onClick={() => toggleSection('clipboard')} role="button" aria-expanded={sectionsOpen.clipboard} aria-controls="clipboard-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('clipboard')}>
-              <h3>Clipboard</h3>
-              <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.clipboard ? <CaretUpIcon /> : <CaretDownIcon />}</span>
-            </div>
-            {sectionsOpen.clipboard && (
-              <div className="sidebar-section-content" id="clipboard-content">
-                <div className="dashboard-clipboard-item"> <label htmlFor="dashboardClipboardTextarea">Server Clipboard:</label> <textarea id="dashboardClipboardTextarea" value={dashboardClipboardContent} onChange={handleClipboardChange} onBlur={handleClipboardBlur} rows="5" placeholder="Clipboard content from server..." /> </div>
-              </div>
-            )}
+             <div className="sidebar-section-header" onClick={() => toggleSection('clipboard')} role="button" aria-expanded={sectionsOpen.clipboard} aria-controls="clipboard-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('clipboard')}>
+               <h3>{t('sections.clipboard.title')}</h3>
+               <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.clipboard ? <CaretUpIcon /> : <CaretDownIcon />}</span>
+             </div>
+             {sectionsOpen.clipboard && (
+               <div className="sidebar-section-content" id="clipboard-content">
+                 <div className="dashboard-clipboard-item">
+                    <label htmlFor="dashboardClipboardTextarea">{t('sections.clipboard.label')}</label>
+                    <textarea id="dashboardClipboardTextarea" value={dashboardClipboardContent} onChange={handleClipboardChange} onBlur={handleClipboardBlur} rows="5" placeholder={t('sections.clipboard.placeholder')} />
+                 </div>
+               </div>
+             )}
         </div>
-        {/* --- Files Section --- */}
+
+        {/* Files Section */}
         <div className="sidebar-section">
-            <div
-                className="sidebar-section-header"
-                onClick={() => toggleSection('files')}
-                role="button"
-                aria-expanded={sectionsOpen.files}
-                aria-controls="files-content"
-                tabIndex="0"
-                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('files')}
-            >
-              <h3>Files</h3>
-              <span className="section-toggle-icon" aria-hidden="true">
-                {sectionsOpen.files ? <CaretUpIcon /> : <CaretDownIcon />}
-              </span>
-            </div>
-            {sectionsOpen.files && (
-              <div className="sidebar-section-content" id="files-content">
-                <button
-                    className="resolution-button" // Re-using class for similar full-width style
-                    onClick={handleUploadClick}
-                    style={{ marginTop: '5px', marginBottom: '5px' }} // Add some spacing
-                    title="Upload files to the remote session"
-                >
-                    Upload Files
-                </button>
-              </div>
-            )}
+             <div className="sidebar-section-header" onClick={() => toggleSection('files')} role="button" aria-expanded={sectionsOpen.files} aria-controls="files-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('files')}>
+               <h3>{t('sections.files.title')}</h3>
+               <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.files ? <CaretUpIcon /> : <CaretDownIcon />}</span>
+             </div>
+             {sectionsOpen.files && (
+               <div className="sidebar-section-content" id="files-content">
+                 <button
+                     className="resolution-button"
+                     onClick={handleUploadClick}
+                     style={{ marginTop: '5px', marginBottom: '5px' }}
+                     title={t('sections.files.uploadButtonTitle')}
+                 >
+                     {t('sections.files.uploadButton')}
+                 </button>
+               </div>
+             )}
         </div>
+
         {/* Gamepads Section */}
         {hasReceivedGamepadData && (
           <div className="sidebar-section">
               <div className="sidebar-section-header" onClick={() => toggleSection('gamepads')} role="button" aria-expanded={sectionsOpen.gamepads} aria-controls="gamepads-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('gamepads')}>
-                <h3>Gamepads</h3>
+                <h3>{t('sections.gamepads.title')}</h3>
                 <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.gamepads ? <CaretUpIcon /> : <CaretDownIcon />}</span>
               </div>
               {sectionsOpen.gamepads && (
                 <div className="sidebar-section-content" id="gamepads-content">
-                  {Object.keys(gamepadStates).length === 0 ? (<p className="no-gamepads-message">No gamepad activity detected yet...</p>) : (
+                  {Object.keys(gamepadStates).length === 0 ? (
+                    <p className="no-gamepads-message">{t('sections.gamepads.noActivity')}</p>
+                  ) : (
                     Object.keys(gamepadStates).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)).map(gpIndexStr => {
                         const gpIndex = parseInt(gpIndexStr, 10);
-                        return (<GamepadVisualizer key={gpIndex} gamepadIndex={gpIndex} gamepadState={gamepadStates[gpIndex]} />);
+                        // Pass t down if GamepadVisualizer needs translated text in the future
+                        return (<GamepadVisualizer key={gpIndex} gamepadIndex={gpIndex} gamepadState={gamepadStates[gpIndex]} /* t={t} */ />);
                     })
                   )}
                 </div>
@@ -945,57 +914,50 @@ function Sidebar({ isOpen }) {
       {/* Tooltip Display */}
       {hoveredItem && (
           <div className="gauge-tooltip" style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}>
+              {/* getTooltipContent already uses t() */}
               {getTooltipContent(hoveredItem)}
           </div>
       )}
 
-      {/* --- NEW Notification Container --- */}
+      {/* Notification Container */}
       <div className={`notification-container theme-${theme}`}>
         {notifications.map(notification => (
           <div
             key={notification.id}
             className={`notification-item ${notification.status} ${notification.fadingOut ? 'fade-out' : ''}`}
-            role="alert"
-            aria-live="polite"
+            role="alert" aria-live="polite"
           >
             <div className="notification-header">
                 <span className="notification-filename" title={notification.fileName}>
-                    {notification.fileName}
+                    {notification.fileName} {/* Filename is usually not translated */}
                 </span>
                 <button
                     className="notification-close-button"
                     onClick={() => removeNotification(notification.id)}
-                    aria-label={`Close notification for ${notification.fileName}`}
+                    // Use translated aria-label
+                    aria-label={t('notifications.closeButtonAlt', { fileName: notification.fileName })}
                 >
-                    &times; {/* Simple close icon */}
+                    &times;
                 </button>
             </div>
             <div className="notification-body">
                 {notification.status === 'progress' && (
                     <>
-                        <span className="notification-status-text">Uploading... {notification.progress}%</span>
-                        <div className="notification-progress-bar-outer">
-                            <div
-                                className="notification-progress-bar-inner"
-                                style={{ width: `${notification.progress}%` }}
-                            />
-                        </div>
+                        <span className="notification-status-text">{t('notifications.uploading', { progress: notification.progress })}</span>
+                        <div className="notification-progress-bar-outer"><div className="notification-progress-bar-inner" style={{ width: `${notification.progress}%` }} /></div>
                     </>
                 )}
                 {notification.status === 'end' && (
                      <>
-                        <span className="notification-status-text">Upload Complete</span>
-                        <div className="notification-progress-bar-outer">
-                            <div className="notification-progress-bar-inner" style={{ width: `100%` }} />
-                        </div>
+                        <span className="notification-status-text">{t('notifications.uploadComplete')}</span>
+                        <div className="notification-progress-bar-outer"><div className="notification-progress-bar-inner" style={{ width: `100%` }} /></div>
                      </>
                 )}
                 {notification.status === 'error' && (
                     <>
-                        <span className="notification-status-text error-text">Upload Failed</span>
-                        <div className="notification-progress-bar-outer">
-                            <div className="notification-progress-bar-inner" style={{ width: `100%` }} />
-                        </div>
+                        <span className="notification-status-text error-text">{t('notifications.uploadFailed')}</span>
+                        <div className="notification-progress-bar-outer"><div className="notification-progress-bar-inner" style={{ width: `100%` }} /></div>
+                        {/* Display the potentially translated error message from state */}
                         {notification.message && <p className="notification-error-message">{notification.message}</p>}
                     </>
                 )}
