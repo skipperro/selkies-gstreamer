@@ -1338,6 +1338,11 @@ export class Input {
 
     /** @private Called when pointer lock status changes */
     _pointerLock() {
+        if (document.pointerLockElement === this.element) {
+            this.send("p,1");
+        } else {
+            this.send("p,0");
+        }
         const FAKE_CURSOR_ID = 'poc-dynamic-cursor-final';
         const fullscreenParent = this.element.parentElement; // Get the parent we fullscreen
 
