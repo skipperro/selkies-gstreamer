@@ -443,20 +443,49 @@ export class Input {
 
         // --- Touch State ---
         /**
-         * The identifier of the touch currently acting as the simulated
-         * left mouse button. Null if no touch is active.
+         * Map tracking currently active touches and their start data.
+         * Key: touch identifier, Value: {startX, startY, startTime, identifier}
+         * @private
+         * @type {Map<number, Object>}
+         */
+        this._activeTouches = new Map();
+
+        /**
+         * Identifier of the touch acting as the simulated left mouse button (single touch only).
+         * Null if no touch is active or if multi-touch gesture is in progress.
          * @private
          * @type {?number}
          */
         this._activeTouchIdentifier = null;
+        /**
+         * Flag indicating if a two-finger gesture (potential swipe) is currently active.
+         * @private
+         * @type {boolean}
+         */
+        this._isTwoFingerGesture = false;
+
+        /** @private @const @type {number} Minimum vertical distance in pixels for a swipe. */
+        this._MIN_SWIPE_DISTANCE = 30; // Reduced slightly for responsiveness
+        /** @private @const @type {number} Maximum duration in milliseconds for a swipe. */
+        this._MAX_SWIPE_DURATION = 600; // Increased slightly
+        /** @private @const @type {number} Ratio deltaY must exceed deltaX for vertical swipe. */
+        this._VERTICAL_SWIPE_RATIO = 1.5; // Adjusted slightly
+        /** @private @const @type {number} Pixels of vertical swipe per scroll tick magnitude. */
+        this._SCROLL_PIXELS_PER_TICK = 40; // Tune this value for desired sensitivity
+        /** @private @const @type {number} Maximum scroll magnitude per swipe. */
+        this._MAX_SCROLL_MAGNITUDE = 8; // Prevents excessive scrolling
+
+        /** @private @const @type {number} Max distance finger can move to be considered a tap. */
+        this._TAP_THRESHOLD_DISTANCE_SQ = 10*10; // Check squared distance (faster)
+        /** @private @const @type {number} Max duration for a tap. */
+        this._TAP_MAX_DURATION = 250;
     }
 
     /** @private @type {number} */
     static _nextGuacID = 0;
 
     // --- Guacamole Internal Event Representation ---
-
-    /** @private Base class for internal key events. */
+    // ... (Guacamole keyboard logic remains unchanged) ...
     _KeyEvent(orig) {
         const now = new Date().getTime();
         return {
@@ -472,217 +501,131 @@ export class Input {
             getAge: () => new Date().getTime() - now,
         };
     }
-
-    /** @private Represents a keydown event. */
     _KeydownEvent(orig) {
         const keyEvent = this._KeyEvent(orig);
         keyEvent._internalType = 'keydown';
-
-        // Determine initial keysym guess (prefer standard 'key' if available)
-        keyEvent.keysym = keysym_from_key_identifier(keyEvent.key, keyEvent.location) // Try standard 'key' first
+        keyEvent.keysym = keysym_from_key_identifier(keyEvent.key, keyEvent.location)
                        || keysym_from_keycode(keyEvent.keyCode, keyEvent.location);
-
         keyEvent.keyupReliable = !this._quirks.keyupUnreliable;
-
-        // DOM3 'key' and keyCode are reliable sources if the corresponding key is not printable
         if (keyEvent.keysym && !isPrintable(keyEvent.keysym)) {
             keyEvent.reliable = true;
         }
-
-        // Use legacy keyIdentifier as a last resort, if it looks sane
         if (!keyEvent.keysym && key_identifier_sane(keyEvent.keyCode, keyEvent.keyIdentifier)) {
             keyEvent.keysym = keysym_from_key_identifier(keyEvent.keyIdentifier, keyEvent.location, keyEvent.modifiers.shift);
         }
-
-        // Handle quirks affecting reliability and keyup
-        if (keyEvent.modifiers.meta && keyEvent.keysym !== 0xFFE7 && keyEvent.keysym !== 0xFFE8) { // Meta L/R
-             // Chrome Meta bug: keyup might not fire
+        if (keyEvent.modifiers.meta && keyEvent.keysym !== 0xFFE7 && keyEvent.keysym !== 0xFFE8) {
             keyEvent.keyupReliable = false;
-        } else if (keyEvent.keysym === 0xFFE5 && this._quirks.capsLockKeyupUnreliable) { // Caps Lock
+        } else if (keyEvent.keysym === 0xFFE5 && this._quirks.capsLockKeyupUnreliable) {
             keyEvent.keyupReliable = false;
         }
-
-        // Determine if AltGr might be in use (treat Alt on Mac as potentially AltGr)
-        if (this._quirks.altIsTypableOnly && (keyEvent.keysym === 0xFFE9 || keyEvent.keysym === 0xFFEA)) { // Alt L/R
-            keyEvent.keysym = 0xFE03; // AltGr
+        if (this._quirks.altIsTypableOnly && (keyEvent.keysym === 0xFFE9 || keyEvent.keysym === 0xFFEA)) {
+            keyEvent.keysym = 0xFE03;
         }
-
-        // Determine if default prevention might be needed (important for modifier combos)
         const prevent_alt = !keyEvent.modifiers.ctrl && !this._quirks.altIsTypableOnly;
         const prevent_ctrl = !keyEvent.modifiers.alt;
-
-        // If default prevention is important (modifier combos), treat the event as reliable enough to act on
         if ((prevent_ctrl && keyEvent.modifiers.ctrl)
          || (prevent_alt  && keyEvent.modifiers.alt)
          || keyEvent.modifiers.meta
          || keyEvent.modifiers.hyper) {
             keyEvent.reliable = true;
         }
-
-        // Record most recently known keysym by associated key code
         if (keyEvent.keysym !== null) {
              this._recentKeysym[keyEvent.keyCode] = keyEvent.keysym;
         }
-
         return keyEvent;
     }
-
-    /** @private Represents a keypress event. */
     _KeypressEvent(orig) {
         const keyEvent = this._KeyEvent(orig);
         keyEvent._internalType = 'keypress';
-        // Pull keysym from char code (keyCode holds charCode in keypress)
         keyEvent.keysym = keysym_from_charcode(keyEvent.keyCode);
-        keyEvent.reliable = true; // Keypress is considered reliable for character
+        keyEvent.reliable = true;
         return keyEvent;
     }
-
-    /** @private Represents a keyup event. */
     _KeyupEvent(orig) {
         const keyEvent = this._KeyEvent(orig);
         keyEvent._internalType = 'keyup';
-        // Determine keysym (prefer standard 'key', fallback to keyCode)
         keyEvent.keysym = keysym_from_key_identifier(keyEvent.key, keyEvent.location)
                        || keysym_from_keycode(keyEvent.keyCode, keyEvent.location);
-
-        // Fall back to the most recently pressed keysym associated with the
-        // keyCode if the inferred key doesn't seem to actually be pressed now
-        // or if the keysym is null.
         if (keyEvent.keysym === null || !this.pressed[keyEvent.keysym]) {
             const recent = this._recentKeysym[keyEvent.keyCode];
             if (recent !== undefined) {
                 keyEvent.keysym = recent;
             }
         }
-
-        keyEvent.reliable = true; // Keyup is as reliable as it gets for releasing
+        keyEvent.reliable = true;
         return keyEvent;
     }
-
-
-    /**
-     * Marks a key as pressed, sending the keydown event. Manages key repeat.
-     * Returns true if the event WAS sent (used for preventDefault logic), false otherwise.
-     * @private
-     */
     _guac_press(keysym) {
-        if (keysym === null) return false; // Cannot press null keysym
-
-        // Only press if released
+        if (keysym === null) return false;
         if (!this.pressed[keysym]) {
             this.pressed[keysym] = true;
-            delete this._implicitlyPressed[keysym]; // Explicit press overrides implicit
-
-            // --- Send key event ---
+            delete this._implicitlyPressed[keysym];
             this.send("kd," + keysym);
-            this._last_keydown_sent[keysym] = true; // Mark that we sent it
-
-            // --- Stop any current repeat ---
+            this._last_keydown_sent[keysym] = true;
             window.clearTimeout(this._key_repeat_timeout);
             window.clearInterval(this._key_repeat_interval);
-
-            // --- Start repeat after a delay if not a modifier/special key ---
             if (!no_repeat[keysym]) {
                 this._key_repeat_timeout = window.setTimeout(() => {
                     this._key_repeat_interval = window.setInterval(() => {
-                        // Simulate release and press for repeat
-                        if (this.pressed[keysym]) { // Check if still pressed
+                        if (this.pressed[keysym]) {
                             this.send("ku," + keysym);
-                            // Wait a tiny moment before resending keydown for repeat
                             window.setTimeout(() => {
-                                if (this.pressed[keysym]) { // Check again
+                                if (this.pressed[keysym]) {
                                     this.send("kd," + keysym);
                                 }
-                            }, 10); // Adjust delay if needed
+                            }, 10);
                         } else {
-                             window.clearInterval(this._key_repeat_interval); // Stop if released
+                             window.clearInterval(this._key_repeat_interval);
                         }
-                    }, 50); // Repeat interval
-                }, 500); // Initial repeat delay
+                    }, 50);
+                }, 500);
             }
-
-            return true; // Event was sent
+            return true;
         }
-
-        // Key already pressed, check if last keydown was sent (for preventDefault on repeats)
         return this._last_keydown_sent[keysym] || false;
     }
-
-    /**
-     * Marks a key as released, sending the keyup event. Stops key repeat.
-     * @private
-     */
     _guac_release(keysym) {
-        if (keysym === null) return; // Cannot release null
-
-        // Only release if pressed
+        if (keysym === null) return;
         if (this.pressed[keysym]) {
             delete this.pressed[keysym];
             delete this._implicitlyPressed[keysym];
-            delete this._last_keydown_sent[keysym]; // Clear sent status
-
-            // Stop repeat timers
+            delete this._last_keydown_sent[keysym];
             window.clearTimeout(this._key_repeat_timeout);
             window.clearInterval(this._key_repeat_interval);
             this._key_repeat_timeout = null;
             this._key_repeat_interval = null;
-
-
-            // --- Send key event ---
             this.send("ku," + keysym);
         }
     }
-
-    /**
-     * Resets the keyboard state, releasing all keys. (Adapted from Guacamole)
-     */
     resetKeyboard() {
-        // Release all pressed keys
         for (const keysymStr in this.pressed) {
-            // Prevent infinite loops if release causes issues
             if (this.pressed[keysymStr]) {
                 this._guac_release(parseInt(keysymStr, 10));
             }
         }
-
-        // Clear related state
         this.pressed = {};
         this._implicitlyPressed = {};
         this._last_keydown_sent = {};
         this._recentKeysym = {};
         this._eventLog = [];
         this.modifiers = new ModifierState();
-
-        // Stop any lingering repeat timers
         window.clearTimeout(this._key_repeat_timeout);
         window.clearInterval(this._key_repeat_interval);
         this._key_repeat_timeout = null;
         this._key_repeat_interval = null;
     }
-
-    /**
-     * Updates internal modifier state based on event flags, pressing/releasing
-     * modifier keys implicitly if needed.
-     * @private
-     */
     _guac_updateModifierState(modifierName, keysyms, keyEvent) {
         const localState = keyEvent.modifiers[modifierName];
         const remoteState = this.modifiers[modifierName];
-
-        // Don't trust changes for the key *causing* the event
         if (keysyms.indexOf(keyEvent.keysym) !== -1) {
             return;
         }
-
-        // Implicit release?
         if (remoteState && localState === false) {
             for (const keysym of keysyms) {
                 this._guac_release(keysym);
             }
         }
-        // Implicit press?
         else if (!remoteState && localState === true) {
-            // Check if *any* key for this modifier is already explicitly pressed
             let alreadyPressed = false;
             for (const keysym of keysyms) {
                 if (this.pressed[keysym] && !this._implicitlyPressed[keysym]) {
@@ -690,226 +633,133 @@ export class Input {
                      break;
                 }
             }
-            if (alreadyPressed) return; // Don't implicitly press if already down
-
-            // Press the primary keysym for the modifier
+            if (alreadyPressed) return;
             const primaryKeysym = keysyms[0];
-             // Mark as implicitly pressed only if the event wasn't *just* for the modifier itself
             if (keyEvent.keysym && keysyms.indexOf(keyEvent.keysym) === -1) {
                  this._implicitlyPressed[primaryKeysym] = true;
             }
-            this._guac_press(primaryKeysym); // This will send kd if not already pressed
+            this._guac_press(primaryKeysym);
         }
     }
-
-    /**
-     * Syncs all modifier states based on a key event.
-     * @private
-     */
     _guac_syncModifierStates(keyEvent) {
-        this._guac_updateModifierState('alt',   [0xFFE9, 0xFFEA, 0xFE03], keyEvent); // Alt, AltGr
-        this._guac_updateModifierState('shift', [0xFFE1, 0xFFE2], keyEvent);         // Shift
-        this._guac_updateModifierState('ctrl',  [0xFFE3, 0xFFE4], keyEvent);         // Ctrl
-        this._guac_updateModifierState('meta',  [0xFFE7, 0xFFE8], keyEvent);         // Meta (Cmd/Win)
-        this._guac_updateModifierState('hyper', [0xFFEB, 0xFFEC], keyEvent);         // Hyper/Super (Win)
-
-        // Update the canonical state *after* processing changes
+        this._guac_updateModifierState('alt',   [0xFFE9, 0xFFEA, 0xFE03], keyEvent);
+        this._guac_updateModifierState('shift', [0xFFE1, 0xFFE2], keyEvent);
+        this._guac_updateModifierState('ctrl',  [0xFFE3, 0xFFE4], keyEvent);
+        this._guac_updateModifierState('meta',  [0xFFE7, 0xFFE8], keyEvent);
+        this._guac_updateModifierState('hyper', [0xFFEB, 0xFFEC], keyEvent);
         this.modifiers = keyEvent.modifiers;
     }
-
-    /**
-     * Checks if all currently pressed keys were implicitly pressed.
-     * @private
-     */
     _guac_isStateImplicit() {
         for (const keysym in this.pressed) {
             if (!this._implicitlyPressed[keysym]) {
                 return false;
             }
         }
-        // Only return true if there *are* pressed keys, and all are implicit
         return Object.keys(this.pressed).length > 0;
     }
-
-
-    /**
-     * Releases Ctrl+Alt if they seem to be simulating AltGr.
-     * @private
-     */
     _guac_release_simulated_altgr(keysym) {
-        // Requires Ctrl+Alt to be down according to our *current* state
         if (!this.modifiers.ctrl || !this.modifiers.alt) return;
-
-        // Heuristic: Assume AltGr isn't needed for basic A-Z
         if ((keysym >= 0x0041 && keysym <= 0x005A) || (keysym >= 0x0061 && keysym <= 0x007A)) {
             return;
         }
-
-        // If the target keysym looks printable, release Ctrl/Alt
         if (isPrintable(keysym)) {
-            this._guac_release(0xFFE3); // Left ctrl
-            this._guac_release(0xFFE4); // Right ctrl
-            this._guac_release(0xFFE9); // Left alt
-            this._guac_release(0xFFEA); // Right alt
+            this._guac_release(0xFFE3);
+            this._guac_release(0xFFE4);
+            this._guac_release(0xFFE9);
+            this._guac_release(0xFFEA);
         }
     }
-
-    /**
-     * Interprets the next available event(s) in the log.
-     * Returns the processed event object (or null if none processed).
-     * The event object has `defaultPrevented` set based on processing outcome.
-     * @private
-     */
     _guac_interpret_event() {
         const first = this._eventLog[0];
         if (!first) return null;
-
         let accepted_events = [];
         let keysym = null;
-        let event_processed = null; // Keep track of the primary event processed
-
-        // --- Keydown Event ---
+        let event_processed = null;
         if (first._internalType === 'keydown') {
             event_processed = first;
-
-            // Defer handling of Meta until context is known (might be shortcut vs. modifier)
-            if (first.keysym === 0xFFE7 || first.keysym === 0xFFE8) { // Meta L/R
-                if (this._eventLog.length === 1) return null; // Need more context
-
+            if (first.keysym === 0xFFE7 || first.keysym === 0xFFE8) {
+                if (this._eventLog.length === 1) return null;
                 const next = this._eventLog[1];
-                // Corrected check: Use _internalType, not instanceof
-                if (next.keysym !== first.keysym) { // Meta followed by different key
-                    if (!next.modifiers.meta) { // If Meta flag isn't set on next event, drop this Meta press
-                        return this._eventLog.shift(); // Consume and discard
+                if (next.keysym !== first.keysym) {
+                    if (!next.modifiers.meta) {
+                        return this._eventLog.shift();
                     }
-                    // Otherwise (Meta flag IS set), treat Meta as a modifier - proceed below
-                } else if (next && next._internalType === 'keydown') { // Meta followed by another Meta keydown (repeat?) - drop this one
-                    return this._eventLog.shift(); // Consume and discard
+                } else if (next && next._internalType === 'keydown') {
+                    return this._eventLog.shift();
                 }
-                // Else (Meta followed by keypress/keyup) - proceed below
             }
-
-
-            // If event itself is reliable, use its keysym
             if (first.reliable) {
                 keysym = first.keysym;
                 accepted_events = this._eventLog.splice(0, 1);
             }
-            // If keydown followed by keypress, use keypress keysym (more reliable for chars)
             else if (this._eventLog[1] && this._eventLog[1]._internalType === 'keypress') {
                 keysym = this._eventLog[1].keysym;
-                accepted_events = this._eventLog.splice(0, 2); // Consume both
+                accepted_events = this._eventLog.splice(0, 2);
             }
-            // If keydown followed by something else (keyup, or another keydown),
-            // we must handle this keydown now with its best-guess keysym.
             else if (this._eventLog[1]) {
                 keysym = first.keysym;
                 accepted_events = this._eventLog.splice(0, 1);
             }
-            // Else: Only a single unreliable keydown event in the log. Wait for more.
             else {
                  return null;
             }
-
-            // Process the determined keysym if we consumed events
             if (accepted_events.length > 0) {
-                this._guac_syncModifierStates(first); // Sync modifiers based on the keydown event
-
+                this._guac_syncModifierStates(first);
                 if (keysym !== null) {
-                    this._guac_release_simulated_altgr(keysym); // Handle simulated AltGr case
-                    const sent = this._guac_press(keysym); // Press the key (sends kd)
-
-                    // Mark defaultPrevented based on whether we sent the key
-                    // Guacamole's logic returns !result_of_onkeydown. We return !sent.
+                    this._guac_release_simulated_altgr(keysym);
+                    const sent = this._guac_press(keysym);
                     event_processed.defaultPrevented = sent;
-
-                    // Update recent keysym mapping
                     this._recentKeysym[first.keyCode] = keysym;
-
-                    // Release immediately if keyup is unreliable
                     if (!first.keyupReliable) {
                         this._guac_release(keysym);
                     }
                 } else {
-                     // No valid keysym determined, but event was consumed. Don't prevent default.
                      event_processed.defaultPrevented = false;
                 }
-                return event_processed; // Return the processed keydown event
+                return event_processed;
             }
-        } // --- End Keydown ---
-
-        // --- Keyup Event ---
+        }
         else if (first._internalType === 'keyup') {
              event_processed = first;
              if (!this._quirks.keyupUnreliable) {
                  keysym = first.keysym;
                  if (keysym !== null) {
                      this._guac_release(keysym);
-                     delete this._recentKeysym[first.keyCode]; // Clear recent mapping on release
-                     // We generally prevent default on keyup if we handle it
+                     delete this._recentKeysym[first.keyCode];
                      event_processed.defaultPrevented = true;
                  } else {
-                     // Unknown keyup, reset state
                      this.resetKeyboard();
                      event_processed.defaultPrevented = true;
                  }
-                 this._guac_syncModifierStates(first); // Sync modifiers on keyup too
-                 this._eventLog.shift(); // Consume the event
+                 this._guac_syncModifierStates(first);
+                 this._eventLog.shift();
                  return event_processed;
              } else {
-                 // Unreliable keyup - just discard
                  this._eventLog.shift();
-                 return event_processed; // Return it, but defaultPrevented will be false
+                 return event_processed;
              }
-        } // --- End Keyup ---
-
-        // --- Other Events (like standalone Keypress) ---
+        }
         else {
-            // Ignore / discard other event types if they somehow end up at the front
              event_processed = this._eventLog.shift();
              if (event_processed) event_processed.defaultPrevented = false;
              return event_processed;
         }
-
-        // No event interpreted yet (likely waiting for more events)
         return null;
     }
-
-    /**
-     * Processes the event log, interpreting as many events as possible.
-     * Returns true if the default action of the *last* processed event
-     * should be prevented, false otherwise.
-     * @private
-     */
     _guac_interpret_events() {
         let last_event_processed = null;
         let current_event_processed;
-
         do {
-            // Need to pass `this` context if _Key*Event are not bound or arrow functions
-            // Binding them in the constructor or using arrow functions avoids this.
-            // Let's assume they are defined such that `this` works (e.g., within constructor scope).
             current_event_processed = this._guac_interpret_event();
             if (current_event_processed) {
                 last_event_processed = current_event_processed;
             }
         } while (current_event_processed !== null);
-
-        // Reset keyboard state if we cannot expect any further keyup events
-        // because all pressed keys were implicitly added by modifier sync.
         if (this._guac_isStateImplicit()) {
             this.resetKeyboard();
         }
-
-        // Return whether the last processed event should prevent default
         return last_event_processed ? last_event_processed.defaultPrevented : false;
     }
-
-    /**
-     * Marks an event as handled by this Input instance to prevent reprocessing.
-     * Returns true if marked successfully, false if already marked.
-     * @private
-     */
     _guac_markEvent(e) {
         if (e[this._EVENT_MARKER]) {
             return false;
@@ -917,210 +767,112 @@ export class Input {
         e[this._EVENT_MARKER] = true;
         return true;
     }
-
-
-    /**
-     * Handles keydown events using the Guacamole interpretation logic.
-     * @param {KeyboardEvent} event
-     * @private
-     */
     _handleKeyDown(event) {
         const keyboardInputAssist = document.getElementById('keyboard-input-assist');
         if (event.target === keyboardInputAssist) {
-            // Let the hidden input handle this event naturally
             console.log("Ignoring keydown event targeted at keyboard-input-assist.");
             return;
         }
-        // Ignore events if composing (handled by composition events)
         if (this.isComposing) return;
-
-        // Prevent double handling
         if (!this._guac_markEvent(event)) return;
-
-
-        // --- Menu/Fullscreen Hotkeys ---
-        // Handle these *before* sending keys if they match
         if (event.code === 'KeyM' && event.ctrlKey && event.shiftKey) {
             if (document.fullscreenElement === null && this.onmenuhotkey !== null) {
                 this.onmenuhotkey();
-                event.preventDefault(); // Prevent 'm' key press
-                return; // Stop further processing
+                event.preventDefault();
+                return;
             }
         }
         if (event.code === 'KeyF' && event.ctrlKey && event.shiftKey) {
             if (document.fullscreenElement === null && this.onfullscreenhotkey !== null) {
                 this.onfullscreenhotkey();
-                event.preventDefault(); // Prevent 'f' key press
-                return; // Stop further processing
+                event.preventDefault();
+                return;
             }
         }
-        // --- End Hotkey Handling ---
-
-        // Ignore the event if explicitly marked as composing (redundant check?)
-        // or when the "composition" keycode (229) is sent by some browsers during IME input.
         if (event.isComposing || event.keyCode === 229) {
-            return; // Don't log or process IME-related keydown noise
+            return;
         }
-
-        // Create internal event representation
-        const keydownEvent = this._KeydownEvent(event); // Use 'this' scope
-
-        // Log event
+        const keydownEvent = this._KeydownEvent(event);
         this._eventLog.push(keydownEvent);
-
-        // Interpret events and prevent default if interpretation indicates it
         if (this._guac_interpret_events()) {
             event.preventDefault();
         }
     }
-
-    /**
-     * Handles keypress events using the Guacamole interpretation logic.
-     * @param {KeyboardEvent} event
-     * @private
-     */
     _handleKeyPress(event) {
-        // Ignore events if composing
         if (this.isComposing) return;
-
-        // Prevent double handling
         if (!this._guac_markEvent(event)) return;
-
-        // Ignore composition keycode
         if (event.keyCode === 229) return;
-
-        // Create internal event representation
-        const keypressEvent = this._KeypressEvent(event); // Use 'this' scope
-
-        // Log event
+        const keypressEvent = this._KeypressEvent(event);
         this._eventLog.push(keypressEvent);
-
-        // Interpret events and prevent default if interpretation indicates it
         if (this._guac_interpret_events()) {
             event.preventDefault();
         }
     }
-
-    /**
-     * Handles keyup events using the Guacamole interpretation logic.
-     * @param {KeyboardEvent} event
-     * @private
-     */
     _handleKeyUp(event) {
-        // Ignore events if composing
         if (this.isComposing) return;
-
-        // Prevent double handling
         if (!this._guac_markEvent(event)) return;
-
-        // Ignore composition keycode
         if (event.keyCode === 229) return;
-
-        // Create internal event representation
-        const keyupEvent = this._KeyupEvent(event); // Use 'this' scope
-
-        // Log event
+        const keyupEvent = this._KeyupEvent(event);
         this._eventLog.push(keyupEvent);
-
-        // The interpret function returns true if the *last* event (which would be this keyup)
-        // decided to prevent default.
         if(this._guac_interpret_events()) {
              event.preventDefault();
         }
     }
-
-
     _compositionStart(event) {
-        // Prevent double handling
         if (!this._guac_markEvent(event)) return;
-
         this.isComposing = true;
         this.compositionString = "";
         this.send("co,start");
     }
-
     _compositionUpdate(event) {
-         // Prevent double handling
         if (!this._guac_markEvent(event)) return;
-
         if (!this.isComposing) return;
-
         if (event.data) {
             this.compositionString = event.data;
         }
         this.send("co,update," + this.compositionString);
     }
-
     _compositionEnd(event) {
-         // Prevent double handling
         if (!this._guac_markEvent(event)) return;
-
         this.isComposing = false;
         if (event.data) {
             this.compositionString = event.data;
         }
         this.send("co,end," + this.compositionString);
-
-        // if the server expects individual key presses for composed text.
-        // If the server handles the "co,end,text" message directly, remove this.
         if (this.compositionString) {
             this._typeString(this.compositionString);
         }
-
         this.compositionString = "";
     }
-
-    /**
-     * Presses and releases keys to type a string (e.g., from composition end).
-     * @param {string} str String to type.
-     * @private
-     */
     _typeString(str) {
         for (let i = 0; i < str.length; i++) {
-            // Use codePointAt for proper Unicode handling if needed
             const codepoint = str.codePointAt ? str.codePointAt(i) : str.charCodeAt(i);
             if (codepoint === undefined) continue;
-
             const keysym = keysym_from_charcode(codepoint);
-
             if (keysym !== null) {
-                 // Simulate press/release - use internal methods directly
                  const sent = this._guac_press(keysym);
-                 // We need a slight delay or a way to ensure release happens after press
                  if (sent) {
                      setTimeout(() => this._guac_release(keysym), 5);
                  }
             }
-            // Handle multi-byte characters from codePointAt if necessary
              if (codepoint > 0xFFFF) i++;
         }
     }
-
-
     _mouseButtonMovement(event) {
         const down = (event.type === 'mousedown' ? 1 : 0);
-        var mtype = "m"; // Default message type for absolute coordinates
-        let canvas = document.getElementById('videoCanvas'); // Assuming canvas ID
-
-        // Pointer Lock Hotkey
+        var mtype = "m";
+        let canvas = document.getElementById('videoCanvas');
         if (down && event.button === 0 && event.ctrlKey && event.shiftKey) {
-            // Check if target supports requestPointerLock (might be window/document)
             const targetElement = event.target.requestPointerLock ? event.target : this.element;
             targetElement.requestPointerLock().catch(err => console.error("Pointer lock failed:", err));
-            event.preventDefault(); // Prevent default action of the click
+            event.preventDefault();
             return;
         }
-
-        // --- Coordinate Calculation ---
         if (document.pointerLockElement === this.element || document.pointerLockElement === canvas) {
-            mtype = "m2"; // Relative coordinates
-
-            // Relative Movement Calculation
+            mtype = "m2";
             let movementX = event.movementX || 0;
             let movementY = event.movementY || 0;
-
             if (window.isManualResolutionMode && canvas) {
-                // Apply scaling if needed for manual mode
                 const canvasRect = canvas.getBoundingClientRect();
                 if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
                     const scaleX = canvas.width / canvasRect.width;
@@ -1128,11 +880,10 @@ export class Input {
                     this.x = Math.round(movementX * scaleX);
                     this.y = Math.round(movementY * scaleY);
                 } else {
-                    this.x = movementX; // Fallback
+                    this.x = movementX;
                     this.y = movementY;
                 }
             } else {
-                 // Auto-resize mode scaling
                 if (this.cursorScaleFactor != null) {
                     this.x = Math.trunc(movementX * this.cursorScaleFactor);
                     this.y = Math.trunc(movementY * this.cursorScaleFactor);
@@ -1141,9 +892,7 @@ export class Input {
                     this.y = movementY;
                 }
             }
-
         } else if (event.type === 'mousemove') {
-            // Absolute Position Calculation
              if (window.isManualResolutionMode && canvas) {
                 const canvasRect = canvas.getBoundingClientRect();
                 if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
@@ -1156,24 +905,20 @@ export class Input {
                     this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX)));
                     this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY)));
                 } else {
-                    this.x = 0; this.y = 0; // Fallback
+                    this.x = 0; this.y = 0;
                 }
             } else {
-                // Auto-resize mode absolute
                 if (!this.m && event.type === 'mousemove') {
-                    // Calculate math if needed and not yet done
                     this._windowMath();
                 }
                 if (this.m) {
                     this.x = this._clientToServerX(event.clientX);
                     this.y = this._clientToServerY(event.clientY);
                 } else {
-                    this.x = 0; this.y = 0; // Fallback if math failed
+                    this.x = 0; this.y = 0;
                 }
             }
         }
-
-        // Button Mask Update
         if (event.type === 'mousedown' || event.type === 'mouseup') {
             var mask = 1 << event.button;
             if (down) {
@@ -1182,20 +927,11 @@ export class Input {
                 this.buttonMask &= ~mask;
             }
         }
-
-        // Send Message
-        var toks = [ mtype, this.x, this.y, this.buttonMask, 0 ]; // Wheel delta is 0
+        var toks = [ mtype, this.x, this.y, this.buttonMask, 0 ];
         this.send(toks.join(","));
     }
-
-    /**
-     * Calculates the server coordinates based on client touch coordinates.
-     * Stores the result in `this.x` and `this.y`.
-     * @private
-     * @param {Touch} touchPoint - The browser Touch object.
-     */
     _calculateTouchCoordinates(touchPoint) {
-        let canvas = document.getElementById('videoCanvas'); // Assuming canvas ID
+        let canvas = document.getElementById('videoCanvas');
         if (window.isManualResolutionMode && canvas) {
             const canvasRect = canvas.getBoundingClientRect();
             if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
@@ -1208,113 +944,297 @@ export class Input {
                 this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX)));
                 this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY)));
             } else {
-                this.x = 0; this.y = 0; // Fallback
+                this.x = 0; this.y = 0;
             }
         } else {
-            // Auto-resize mode
-            if (!this.m) this._windowMath(); // Calculate math if needed
+            if (!this.m) this._windowMath();
             if (this.m) {
                 this.x = this._clientToServerX(touchPoint.clientX);
                 this.y = this._clientToServerY(touchPoint.clientY);
             } else {
-                this.x = 0; this.y = 0; // Fallback
+                this.x = 0; this.y = 0;
             }
         }
     }
-
-    /**
-     * Sends the current mouse state (coordinates and button mask).
-     * @private
-     */
     _sendMouseState() {
-        // Touch always uses absolute coordinates for mouse simulation
-        const mtype = "m";
-        const toks = [ mtype, this.x, this.y, this.buttonMask, 0 ]; // Wheel delta is 0
+        const mtype = (document.pointerLockElement === this.element || this.mouseRelative) ? "m2" : "m";
+        const toks = [ mtype, this.x, this.y, this.buttonMask, 0 ];
         this.send(toks.join(","));
     }
 
 
     /**
-     * Handles touch events, simulating a single left mouse button press/drag/release.
-     * Inspired by Guacamole.Touch's state management.
+     * Handles touch events, supporting single-touch mouse simulation (tap/drag)
+     * and two-finger vertical swipes for variable scrolling.
      * @param {TouchEvent} event
      * @private
      */
     _handleTouchEvent(event) {
-        // Prevent double handling (though unlikely for touch compared to keyboard)
+        // Prevent double handling
         if (!this._guac_markEvent(event)) return;
 
         const type = event.type;
+        const now = Date.now();
+        let preventDefault = false; // Track if we should prevent default action
 
-        // Iterate through touches that changed in this event
-        for (let i = 0; i < event.changedTouches.length; i++) {
-            const changedTouch = event.changedTouches[i];
-            const identifier = changedTouch.identifier;
-
-            if (type === 'touchstart') {
-                // If no touch is currently active, make this the active one
-                if (this._activeTouchIdentifier === null) {
-                    this._activeTouchIdentifier = identifier;
-
-                    // Calculate initial position
-                    this._calculateTouchCoordinates(changedTouch);
-
-                    // Simulate left mouse button down
-                    this.buttonMask |= 1;
-
-                    // Send initial mouse down state
-                    this._sendMouseState();
-
-                    // Prevent default actions like scrolling/zooming if the touch starts on our element
-                    if (this.element.contains(event.target)) {
-                        event.preventDefault();
-                    }
-
-                    // Only handle the first touch that starts
-                    break;
+        // --- Touch Start ---
+        if (type === 'touchstart') {
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                const touch = event.changedTouches[i];
+                if (!this._activeTouches.has(touch.identifier)) {
+                    // Calculate initial server coords here
+                    const serverX = this._clientToServerX(touch.clientX);
+                    const serverY = this._clientToServerY(touch.clientY);
+                    this._activeTouches.set(touch.identifier, {
+                        startX: touch.clientX,
+                        startY: touch.clientY,
+                        currentX: touch.clientX, // Initialize current position
+                        currentY: touch.clientY,
+                        startTime: now,
+                        identifier: touch.identifier,
+                        serverX: serverX, // Store initial server coords
+                        serverY: serverY
+                    });
+                    // Update this.x/y to the latest touch point for reference, but don't send yet
+                    this.x = serverX;
+                    this.y = serverY;
                 }
             }
-            else if (type === 'touchmove') {
-                // If this move event belongs to the currently active touch
-                if (identifier === this._activeTouchIdentifier) {
-                    // Calculate new position
-                    this._calculateTouchCoordinates(changedTouch);
 
-                    // Send updated mouse move state (button is already down)
-                    this._sendMouseState();
+            const touchCount = this._activeTouches.size;
 
-                    // Prevent scrolling page during drag
-                     event.preventDefault();
+            if (touchCount === 1) {
+                // Potential single touch (tap or drag start). DO NOTHING yet regarding mouse button.
+                this._isTwoFingerGesture = false;
+                // Don't set _activeTouchIdentifier yet.
+                preventDefault = true; // Prevent default for initial touch
 
-                    // Only handle the move of the active touch
-                    break;
-                }
-            }
-            else if (type === 'touchend' || type === 'touchcancel') {
-                // If this end/cancel event belongs to the currently active touch
-                if (identifier === this._activeTouchIdentifier) {
-                    // Calculate final position
-                    this._calculateTouchCoordinates(changedTouch);
+            } else if (touchCount === 2) {
+                // Definitively a two-finger gesture start.
+                this._isTwoFingerGesture = true;
+                // Cancel any potential single-touch drag state that might have been inferred briefly
+                this._activeTouchIdentifier = null;
+                this.buttonMask &= ~1; // Ensure button is up
+                preventDefault = true; // Prevent default for two-finger start (zoom/pan)
 
-                    // Simulate left mouse button up
+            } else {
+                // More than two fingers - cancel ongoing gestures.
+                 if (this._isTwoFingerGesture) {
+                     this._isTwoFingerGesture = false;
+                 }
+                 if (this._activeTouchIdentifier !== null) {
+                    // Release button if a drag was active
                     this.buttonMask &= ~1;
-
-                    // Send final mouse up state
-                    this._sendMouseState();
-
-                    // Stop tracking the active touch
+                    this._sendMouseState(); // Send mouse up for the cancelled drag
                     this._activeTouchIdentifier = null;
+                 }
+                 // Don't necessarily prevent default for >2 touches
+            }
+        }
 
-                     // Prevent default just in case (though less critical for touchend)
-                    // event.preventDefault();
+        // --- Touch Move ---
+        else if (type === 'touchmove') {
+            let activeTouchMoved = false;
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                const touch = event.changedTouches[i];
+                const touchData = this._activeTouches.get(touch.identifier);
+                if (touchData) {
+                    // Update current position for all moving touches
+                    touchData.currentX = touch.clientX;
+                    touchData.currentY = touch.clientY;
 
-                    // Only handle the end/cancel of the active touch
-                    break;
+                    if (this._isTwoFingerGesture) {
+                        // If two fingers are down, just prevent default scroll/zoom
+                        preventDefault = true;
+                    } else if (this._activeTouches.size === 1) {
+                        // Only one finger is down total
+                        if (this._activeTouchIdentifier === touch.identifier) {
+                             // This is the already active dragging finger
+                            this._calculateTouchCoordinates(touch); // Updates this.x, this.y
+                            this._sendMouseState(); // Send mouse move (button is already down)
+                            activeTouchMoved = true;
+                            preventDefault = true;
+                        } else if (this._activeTouchIdentifier === null) {
+                            // Single finger moving, but not yet designated as a drag
+                            // Check if it moved enough to start a drag
+                            const dx = touchData.currentX - touchData.startX;
+                            const dy = touchData.currentY - touchData.startY;
+                            const distSq = dx*dx + dy*dy;
+
+                            if (distSq >= this._TAP_THRESHOLD_DISTANCE_SQ) {
+                                // Moved enough: Start drag
+                                this._activeTouchIdentifier = touch.identifier;
+                                this._calculateTouchCoordinates(touch); // Set initial drag coords
+                                this.buttonMask |= 1; // <<<<<<<<<<<< MOUSE DOWN HERE
+                                this._sendMouseState(); // Send initial mouse down + position
+                                activeTouchMoved = true;
+                                preventDefault = true;
+                            } else {
+                                // Moved slightly, but not enough to be a drag yet. Prevent default.
+                                preventDefault = true;
+                            }
+                        }
+                    }
                 }
             }
-        } // End loop through changedTouches
+            // If the active dragging touch didn't move in *this* event, but others did,
+            // still prevent default to avoid interference.
+             if (this._activeTouchIdentifier !== null && !activeTouchMoved) {
+                  preventDefault = true;
+             }
+        }
+
+        // --- Touch End / Cancel ---
+        else if (type === 'touchend' || type === 'touchcancel') {
+            const endedTouches = event.changedTouches;
+            let swipeDetected = false;
+
+            for (let i = 0; i < endedTouches.length; i++) {
+                const endedTouch = endedTouches[i];
+                const identifier = endedTouch.identifier;
+                const startData = this._activeTouches.get(identifier);
+
+                if (!startData) continue; // Touch wasn't tracked? Ignore.
+
+                 // Update final position for calculations
+                startData.currentX = endedTouch.clientX;
+                startData.currentY = endedTouch.clientY;
+
+                const endTime = now;
+                const duration = endTime - startData.startTime;
+                const deltaX = startData.currentX - startData.startX;
+                const deltaY = startData.currentY - startData.startY;
+                const deltaDistSq = deltaX*deltaX + deltaY*deltaY;
+
+                // --- Check for Swipe ---
+                // Swipe check happens if _isTwoFingerGesture was true when this finger lifted
+                // OR if it was the *second* finger lifting very quickly after the first one.
+                if (this._isTwoFingerGesture) {
+                    // Check swipe criteria
+                    if (duration < this._MAX_SWIPE_DURATION &&
+                        Math.abs(deltaY) > this._MIN_SWIPE_DISTANCE &&
+                        Math.abs(deltaY) > Math.abs(deltaX) * this._VERTICAL_SWIPE_RATIO)
+                    {
+                        // Vertical Swipe Detected!
+                        const direction = (deltaY < 0) ? 'up' : 'down';
+                        // Calculate magnitude based on distance
+                        const magnitude = Math.max(1, Math.min(this._MAX_SCROLL_MAGNITUDE,
+                                               Math.ceil(Math.abs(deltaY) / this._SCROLL_PIXELS_PER_TICK)));
+
+                        this._triggerMouseWheel(direction, magnitude);
+                        swipeDetected = true;
+                        preventDefault = true;
+
+                        // Reset state immediately after successful swipe
+                        this._activeTouches.clear(); // Remove all touches
+                        this._isTwoFingerGesture = false;
+                        this._activeTouchIdentifier = null;
+                        this.buttonMask &= ~1; // Ensure button is up
+                        // No need to send state here, _triggerMouseWheel handles it
+
+                        break; // Gesture finished, stop processing ended touches for this event
+
+                    } else {
+                        // Two-finger gesture ended but wasn't a vertical swipe.
+                        // Just let it fall through to remove the touch.
+                    }
+                }
+
+                // --- Check for Tap ---
+                // Only consider tap if it wasn't part of a swipe and was a single touch action
+                else if (!swipeDetected && this._activeTouchIdentifier === null && this._activeTouches.size === 1) {
+                     if (duration < this._TAP_MAX_DURATION && deltaDistSq < this._TAP_THRESHOLD_DISTANCE_SQ) {
+                         // Tap detected! Simulate a quick click.
+                         this._calculateTouchCoordinates(endedTouch); // Set final coords
+                         this.buttonMask |= 1; // Press
+                         this._sendMouseState();
+                         preventDefault = true;
+                         // Use setTimeout to ensure release happens after press is processed
+                         setTimeout(() => {
+                             this.buttonMask &= ~1; // Release
+                             this._sendMouseState();
+                         }, 10); // Short delay for release
+                         // Note: We don't clear _activeTouches here yet, it happens below
+                     }
+                }
+
+                // --- Check for Drag End ---
+                else if (!swipeDetected && identifier === this._activeTouchIdentifier) {
+                    // End of a single-touch drag
+                    this._calculateTouchCoordinates(endedTouch); // Update final position
+                    this.buttonMask &= ~1; // Release button
+                    this._sendMouseState();
+                    this._activeTouchIdentifier = null; // Stop drag state
+                    preventDefault = true; // Prevent default for drag end
+                }
+
+                // --- Remove Ended Touch ---
+                this._activeTouches.delete(identifier);
+
+            } // End loop through changedTouches
+
+            // --- Post-End State Update ---
+            // Don't run this if a swipe cleared everything already
+            if (!swipeDetected) {
+                const remainingTouchCount = this._activeTouches.size;
+
+                // Reset two-finger flag if count drops below 2
+                if (this._isTwoFingerGesture && remainingTouchCount < 2) {
+                    this._isTwoFingerGesture = false;
+                }
+
+                // If all touches are gone, ensure state is clean
+                if (remainingTouchCount === 0) {
+                    this._activeTouchIdentifier = null;
+                    this._isTwoFingerGesture = false;
+                    // Ensure button is up if it wasn't handled by drag end/tap
+                    if ((this.buttonMask & 1) === 1) {
+                       this.buttonMask &= ~1;
+                       // Don't necessarily need to send state if nothing happened
+                    }
+                }
+                // Note: We don't automatically start a drag if one finger remains after
+                // a two-finger gesture ends without a swipe. User needs to move it.
+            }
+        } // End Touch End / Cancel
+
+        // Apply preventDefault if needed and touch is on our element
+        if (preventDefault && this.element.contains(event.target)) {
+            event.preventDefault();
+        }
     }
 
+   /**
+     * Simulates a mouse wheel scroll event with variable magnitude.
+     * @private
+     * @param {'up' | 'down'} direction - The direction of the scroll.
+     * @param {number} magnitude - The intensity of the scroll (number of ticks).
+     */
+    _triggerMouseWheel(direction, magnitude) {
+        // Ensure magnitude is at least 1
+        magnitude = Math.max(1, Math.round(magnitude));
+
+        // Determine mouse message type based on pointer lock state
+        const mtype = (document.pointerLockElement === this.element ? "m2" : "m");
+        const button = (direction === 'up') ? 4 : 3; // Wheel up: 4, Wheel down: 3
+        const mask = 1 << button;
+        let toks;
+
+        // Use the last known mouse coordinates (this.x, this.y) from the touch start/move
+        this.buttonMask |= mask;
+        toks = [ mtype, this.x, this.y, this.buttonMask, magnitude ];
+        this.send(toks.join(","));
+
+        // Ensure button release happens shortly after press
+        setTimeout(() => {
+             // Check if the button is still pressed before releasing
+             if ((this.buttonMask & mask) !== 0) {
+                this.buttonMask &= ~mask;
+                toks = [ mtype, this.x, this.y, this.buttonMask, magnitude ];
+                this.send(toks.join(","));
+             }
+        }, 10); // Small delay before sending release
+    }
 
     _dropThreshold() {
         var count = 0;
@@ -1534,11 +1454,12 @@ export class Input {
 
         if ('ontouchstart' in window) {
             // Attach touch listeners to the element to handle interactions within it
-            // Use the refactored handler
-            this.listeners_context.push(addListener(this.element, 'touchstart', this._handleTouchEvent, this));
-            this.listeners_context.push(addListener(this.element, 'touchend', this._handleTouchEvent, this));
-            this.listeners_context.push(addListener(this.element, 'touchmove', this._handleTouchEvent, this));
-            this.listeners_context.push(addListener(this.element, 'touchcancel', this._handleTouchEvent, this)); // Also handle cancel
+            // Use the refactored handler with multi-touch support
+            // Make touchstart/touchmove non-passive to allow preventDefault
+            this.listeners_context.push(addListener(this.element, 'touchstart', this._handleTouchEvent, this, false));
+            this.listeners_context.push(addListener(this.element, 'touchend', this._handleTouchEvent, this, false));
+            this.listeners_context.push(addListener(this.element, 'touchmove', this._handleTouchEvent, this, false));
+            this.listeners_context.push(addListener(this.element, 'touchcancel', this._handleTouchEvent, this, false));
         } else {
             // Attach mouse listeners to the element
             this.listeners_context.push(addListener(this.element, 'mousemove', this._mouseButtonMovement, this));
@@ -1583,7 +1504,9 @@ export class Input {
         this.resetKeyboard();
 
         // Reset touch state
+        this._activeTouches.clear();
         this._activeTouchIdentifier = null;
+        this._isTwoFingerGesture = false;
         if ((this.buttonMask & 1) === 1) { // If touch was active (left button down)
              this.buttonMask &= ~1; // Ensure button mask is cleared
              this._sendMouseState(); // Send final mouse up state
@@ -1653,9 +1576,9 @@ function addListener(obj, name, func, ctx, useCapture = false) {
     // Use options object for clarity, especially with capture/passive
     const options = {
         capture: useCapture,
-        // Default passive based on event type (heuristic)
         // Make touchstart/touchmove non-passive to allow preventDefault
-        passive: !useCapture && !['wheel', 'touchmove', 'touchstart', 'mousedown', 'click', 'mouseup', 'contextmenu'].includes(name)
+        // Make wheel non-passive too
+        passive: !useCapture && !['wheel', 'touchmove', 'touchstart', 'mousedown', 'mousemove', 'mouseup', 'contextmenu'].includes(name)
     };
     obj.addEventListener(name, newFunc, options);
     return [obj, name, newFunc, options]; // Store options for removal
