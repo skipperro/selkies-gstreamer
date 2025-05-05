@@ -1367,9 +1367,12 @@ export class Input {
                 fakeCursor.id = FAKE_CURSOR_ID;
 
                 fakeCursor.style.position = 'absolute';
-                fakeCursor.style.width = '4px';
-                fakeCursor.style.height = '4px';
+                fakeCursor.style.width = '10px';
+                fakeCursor.style.height = '10px';
                 fakeCursor.style.backgroundColor = 'lime';
+                fakeCursor.style.borderWidth = '1px';
+                fakeCursor.style.borderColor = 'black';
+                fakeCursor.style.borderStyle = 'solid';
                 fakeCursor.style.borderRadius = '50%';
                 fakeCursor.style.pointerEvents = 'none';
                 fakeCursor.style.zIndex = '10000';
