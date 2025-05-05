@@ -948,7 +948,7 @@ class DataStreamingServer:
                             continue
 
                         try:
-                            pcm_data = payload[4:]
+                            pcm_data = payload
                             # --- Manage pasimple Stream ---
                             if pa_stream is None:
                                 data_logger.info(f"Opening new pasimple playback stream to '{sink_name}' at 24000 Hz (s16le, mono).")
