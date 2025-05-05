@@ -858,38 +858,75 @@ export class Input {
              if (codepoint > 0xFFFF) i++;
         }
     }
+
     _mouseButtonMovement(event) {
         const down = (event.type === 'mousedown' ? 1 : 0);
         var mtype = "m";
         let canvas = document.getElementById('videoCanvas');
+
         if (down && event.button === 0 && event.ctrlKey && event.shiftKey) {
             const targetElement = event.target.requestPointerLock ? event.target : this.element;
             targetElement.requestPointerLock().catch(err => console.error("Pointer lock failed:", err));
             event.preventDefault();
             return;
         }
+
+        // Check if pointer is locked to either element
         if (document.pointerLockElement === this.element || document.pointerLockElement === canvas) {
             mtype = "m2";
-            let movementX = event.movementX || 0;
-            let movementY = event.movementY || 0;
+            let movementX = event.movementX || 0; // Raw movement X
+            let movementY = event.movementY || 0; // Raw movement Y
+
+            // Calculate this.x, this.y (scaled deltas for the server)
             if (window.isManualResolutionMode && canvas) {
                 const canvasRect = canvas.getBoundingClientRect();
                 if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
                     const scaleX = canvas.width / canvasRect.width;
                     const scaleY = canvas.height / canvasRect.height;
-                    this.x = Math.round(movementX * scaleX);
-                    this.y = Math.round(movementY * scaleY);
+                    this.x = Math.round(movementX * scaleX); // Assign scaled delta to this.x
+                    this.y = Math.round(movementY * scaleY); // Assign scaled delta to this.y
                 } else {
-                    this.x = movementX;
-                    this.y = movementY;
+                    this.x = movementX; // Fallback: Assign raw delta to this.x
+                    this.y = movementY; // Fallback: Assign raw delta to this.y
                 }
             } else {
                 if (this.cursorScaleFactor != null) {
-                    this.x = Math.trunc(movementX * this.cursorScaleFactor);
-                    this.y = Math.trunc(movementY * this.cursorScaleFactor);
+                    this.x = Math.trunc(movementX * this.cursorScaleFactor); // Assign scaled delta to this.x
+                    this.y = Math.trunc(movementY * this.cursorScaleFactor); // Assign scaled delta to this.y
                 } else {
-                    this.x = movementX;
-                    this.y = movementY;
+                    this.x = movementX; // Fallback: Assign raw delta to this.x
+                    this.y = movementY; // Fallback: Assign raw delta to this.y
+                }
+            }
+
+            const FAKE_CURSOR_ID = 'poc-dynamic-cursor-final';
+            const fullscreenParent = this.element.parentElement;
+
+            if (fullscreenParent) { // Only proceed if the parent exists
+                const fakeCursor = fullscreenParent.querySelector(`#${FAKE_CURSOR_ID}`); // Find the cursor element
+
+                if (fakeCursor) { // Only proceed if the cursor element exists
+                    // Get current visual position
+                    const currentX = parseFloat(fakeCursor.style.left || '0') || 0;
+                    const currentY = parseFloat(fakeCursor.style.top || '0') || 0;
+
+                    // Calculate new visual position using RAW movement deltas
+                    let newX = currentX + movementX; // Use raw movementX here
+                    let newY = currentY + movementY; // Use raw movementY here
+
+                    // Get parent bounds for clamping
+                    const containerWidth = fullscreenParent.clientWidth;
+                    const containerHeight = fullscreenParent.clientHeight;
+                    const cursorWidth = parseFloat(fakeCursor.style.width || '0') || 0;
+                    const cursorHeight = parseFloat(fakeCursor.style.height || '0') || 0;
+
+                    // Clamp visual position to parent bounds
+                    newX = Math.max(0, Math.min(containerWidth - cursorWidth, newX));
+                    newY = Math.max(0, Math.min(containerHeight - cursorHeight, newY));
+
+                    // Update visual cursor style
+                    fakeCursor.style.left = `${newX}px`;
+                    fakeCursor.style.top = `${newY}px`;
                 }
             }
         } else if (event.type === 'mousemove') {
@@ -902,23 +939,25 @@ export class Input {
                     const scaleY = canvas.height / canvasRect.height;
                     let serverX = mouseX_on_canvas * scaleX;
                     let serverY = mouseY_on_canvas * scaleY;
-                    this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX)));
-                    this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY)));
+                    this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX))); // Assign scaled absolute to this.x
+                    this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY))); // Assign scaled absolute to this.y
                 } else {
-                    this.x = 0; this.y = 0;
+                    this.x = 0; this.y = 0; // Fallback
                 }
             } else {
-                if (!this.m && event.type === 'mousemove') {
+                if (!this.m /*&& event.type === 'mousemove' - redundant check */ ) {
                     this._windowMath();
                 }
                 if (this.m) {
-                    this.x = this._clientToServerX(event.clientX);
-                    this.y = this._clientToServerY(event.clientY);
+                    this.x = this._clientToServerX(event.clientX); // Assign mapped absolute to this.x
+                    this.y = this._clientToServerY(event.clientY); // Assign mapped absolute to this.y
                 } else {
-                    this.x = 0; this.y = 0;
+                    this.x = 0; this.y = 0; // Fallback
                 }
             }
         }
+
+        // --- Original Button Mask Update ---
         if (event.type === 'mousedown' || event.type === 'mouseup') {
             var mask = 1 << event.button;
             if (down) {
@@ -927,9 +966,13 @@ export class Input {
                 this.buttonMask &= ~mask;
             }
         }
+
+        // --- Original Send Call ---
+        // Sends the mtype ('m' or 'm2') and the calculated this.x/this.y
         var toks = [ mtype, this.x, this.y, this.buttonMask, 0 ];
         this.send(toks.join(","));
     }
+
     _calculateTouchCoordinates(touchPoint) {
         let canvas = document.getElementById('videoCanvas');
         if (window.isManualResolutionMode && canvas) {
@@ -1293,22 +1336,67 @@ export class Input {
         }
     }
 
+    /** @private Called when pointer lock status changes */
     _pointerLock() {
-        // Check against our specific element
-        if (document.pointerLockElement === this.element) {
-            this.send("p,1"); // Show remote pointer
-        } else {
-            this.send("p,0"); // Hide remote pointer
-        }
-    }
+        const FAKE_CURSOR_ID = 'poc-dynamic-cursor-final';
+        const fullscreenParent = this.element.parentElement; // Get the parent we fullscreen
 
-    _exitPointerLock() {
-        // Check if lock is active *on our element* before trying to exit
-        if (document.pointerLockElement === this.element) {
-            document.exitPointerLock();
+        // Look inside the parent first, then fallback to document (less likely needed)
+        let fakeCursor = fullscreenParent ? fullscreenParent.querySelector(`#${FAKE_CURSOR_ID}`) : null;
+        if (!fakeCursor) {
+            fakeCursor = document.getElementById(FAKE_CURSOR_ID); // Fallback check
         }
-        // Always hide pointer after attempting exit
-        this.send("p,0");
+
+        const isLockedNow = (document.pointerLockElement === this.element);
+
+        if (isLockedNow) {
+            if (!fakeCursor) {
+                 // Ensure the parent element actually exists before trying to use it
+                 if (!fullscreenParent) {
+                     console.error("POC _pointerLock: Cannot create cursor - this.element has no parentElement!");
+                     return; // Cannot proceed without a parent to append to
+                 }
+
+                console.log("POC _pointerLock: Creating fake cursor inside parent element.");
+                fakeCursor = document.createElement('div');
+                fakeCursor.id = FAKE_CURSOR_ID;
+
+                fakeCursor.style.position = 'absolute';
+                fakeCursor.style.width = '4px';
+                fakeCursor.style.height = '4px';
+                fakeCursor.style.backgroundColor = 'lime';
+                fakeCursor.style.borderRadius = '50%';
+                fakeCursor.style.pointerEvents = 'none';
+                fakeCursor.style.zIndex = '10000';
+
+                // Initialize position relative to the fullscreen parent
+                fakeCursor.style.left = '0px';
+                fakeCursor.style.top = '0px';
+
+                fakeCursor.style.display = 'block';
+
+                // --- Append to the PARENT element ---
+                fullscreenParent.appendChild(fakeCursor);
+                console.log("POC _pointerLock: Appended fake cursor to parentElement:", fullscreenParent);
+
+            } else {
+                 console.log("POC _pointerLock: Fake cursor exists, ensuring display.");
+                 fakeCursor.style.display = 'block';
+                 // Ensure it's still inside the correct parent if something moved it
+                 if (fakeCursor.parentNode !== fullscreenParent) {
+                     console.log("POC _pointerLock: Re-appending cursor to parentElement.");
+                     fullscreenParent.appendChild(fakeCursor);
+                 }
+            }
+        } else {
+            // --- Pointer is UNLOCKED ---
+            if (fakeCursor) {
+                console.log("POC _pointerLock: Removing fake cursor.");
+                fakeCursor.remove();
+            } else {
+                 console.log("POC _pointerLock: Fake cursor already removed or not found.");
+            }
+        }
     }
 
     _windowMath() {
