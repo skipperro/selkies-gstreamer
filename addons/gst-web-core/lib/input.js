@@ -3,11 +3,9 @@
 import { GamepadManager } from './gamepad.js';
 import { Queue } from './util.js';
 
-// --- Guacamole Keyboard Constants and Helpers (Integrated/Adapted) ---
-
 /**
  * Map of known JavaScript keycodes which do not map to typable characters
- * to their X11 keysym equivalents. (Copied from Guacamole)
+ * to their X11 keysym equivalents.
  * @private
  */
 const keycodeKeysyms = {
@@ -442,6 +440,15 @@ export class Input {
         this.isComposing = false;
         /** @type {string} Stores the current composition string. */
         this.compositionString = "";
+
+        // --- Touch State ---
+        /**
+         * The identifier of the touch currently acting as the simulated
+         * left mouse button. Null if no touch is active.
+         * @private
+         * @type {?number}
+         */
+        this._activeTouchIdentifier = null;
     }
 
     /** @private @type {number} */
@@ -523,7 +530,7 @@ export class Input {
     /** @private Represents a keypress event. */
     _KeypressEvent(orig) {
         const keyEvent = this._KeyEvent(orig);
-        keyEvent._internalType = 'keypress'; 
+        keyEvent._internalType = 'keypress';
         // Pull keysym from char code (keyCode holds charCode in keypress)
         keyEvent.keysym = keysym_from_charcode(keyEvent.keyCode);
         keyEvent.reliable = true; // Keypress is considered reliable for character
@@ -533,7 +540,7 @@ export class Input {
     /** @private Represents a keyup event. */
     _KeyupEvent(orig) {
         const keyEvent = this._KeyEvent(orig);
-        keyEvent._internalType = 'keyup'; 
+        keyEvent._internalType = 'keyup';
         // Determine keysym (prefer standard 'key', fallback to keyCode)
         keyEvent.keysym = keysym_from_key_identifier(keyEvent.key, keyEvent.location)
                        || keysym_from_keycode(keyEvent.keyCode, keyEvent.location);
@@ -770,17 +777,18 @@ export class Input {
                 if (this._eventLog.length === 1) return null; // Need more context
 
                 const next = this._eventLog[1];
+                // Corrected check: Use _internalType, not instanceof
                 if (next.keysym !== first.keysym) { // Meta followed by different key
                     if (!next.modifiers.meta) { // If Meta flag isn't set on next event, drop this Meta press
                         return this._eventLog.shift(); // Consume and discard
                     }
                     // Otherwise (Meta flag IS set), treat Meta as a modifier - proceed below
-                } else if (next instanceof this._KeydownEvent) {
-                    // Meta followed by another Meta keydown (repeat?) - drop this one
+                } else if (next && next._internalType === 'keydown') { // Meta followed by another Meta keydown (repeat?) - drop this one
                     return this._eventLog.shift(); // Consume and discard
                 }
                 // Else (Meta followed by keypress/keyup) - proceed below
             }
+
 
             // If event itself is reliable, use its keysym
             if (first.reliable) {
@@ -1174,26 +1182,14 @@ export class Input {
         this.send(toks.join(","));
     }
 
-    _touch(event) {
-        var mtype = "m"; // Touch events are always absolute position
-        var mask = 1; // Simulate left mouse button for touch
+    /**
+     * Calculates the server coordinates based on client touch coordinates.
+     * Stores the result in `this.x` and `this.y`.
+     * @private
+     * @param {Touch} touchPoint - The browser Touch object.
+     */
+    _calculateTouchCoordinates(touchPoint) {
         let canvas = document.getElementById('videoCanvas'); // Assuming canvas ID
-
-        if (event.type === 'touchstart') {
-            this.buttonMask |= mask;
-        } else if (event.type === 'touchend') {
-            this.buttonMask &= ~mask;
-        } else if (event.type === 'touchmove') {
-            // Prevent scrolling page on touch drag ONLY if the touch started on our element
-            // Simple approach: always prevent if moving.
-            event.preventDefault();
-        }
-
-        // Use the first changed touch point for coordinates
-        if (event.changedTouches.length === 0) return;
-        const touchPoint = event.changedTouches[0];
-
-        // Coordinate Calculation
         if (window.isManualResolutionMode && canvas) {
             const canvasRect = canvas.getBoundingClientRect();
             if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
@@ -1218,19 +1214,101 @@ export class Input {
                 this.x = 0; this.y = 0; // Fallback
             }
         }
-
-        // Send Message
-        var toks = [ mtype, this.x, this.y, this.buttonMask, 0 ]; // Wheel delta is 0
-        this.send(toks.join(","));
-
-        // Prevent default touch actions like zoom/pan if needed, especially on touchstart/move
-        if (event.type === 'touchstart' || event.type === 'touchmove') {
-             // Check if the event target is within our element to be more specific
-             if (this.element.contains(event.target)) {
-                // event.preventDefault();
-             }
-        }
     }
+
+    /**
+     * Sends the current mouse state (coordinates and button mask).
+     * @private
+     */
+    _sendMouseState() {
+        // Touch always uses absolute coordinates for mouse simulation
+        const mtype = "m";
+        const toks = [ mtype, this.x, this.y, this.buttonMask, 0 ]; // Wheel delta is 0
+        this.send(toks.join(","));
+    }
+
+
+    /**
+     * Handles touch events, simulating a single left mouse button press/drag/release.
+     * Inspired by Guacamole.Touch's state management.
+     * @param {TouchEvent} event
+     * @private
+     */
+    _handleTouchEvent(event) {
+        // Prevent double handling (though unlikely for touch compared to keyboard)
+        if (!this._guac_markEvent(event)) return;
+
+        const type = event.type;
+
+        // Iterate through touches that changed in this event
+        for (let i = 0; i < event.changedTouches.length; i++) {
+            const changedTouch = event.changedTouches[i];
+            const identifier = changedTouch.identifier;
+
+            if (type === 'touchstart') {
+                // If no touch is currently active, make this the active one
+                if (this._activeTouchIdentifier === null) {
+                    this._activeTouchIdentifier = identifier;
+
+                    // Calculate initial position
+                    this._calculateTouchCoordinates(changedTouch);
+
+                    // Simulate left mouse button down
+                    this.buttonMask |= 1;
+
+                    // Send initial mouse down state
+                    this._sendMouseState();
+
+                    // Prevent default actions like scrolling/zooming if the touch starts on our element
+                    if (this.element.contains(event.target)) {
+                        event.preventDefault();
+                    }
+
+                    // Only handle the first touch that starts
+                    break;
+                }
+            }
+            else if (type === 'touchmove') {
+                // If this move event belongs to the currently active touch
+                if (identifier === this._activeTouchIdentifier) {
+                    // Calculate new position
+                    this._calculateTouchCoordinates(changedTouch);
+
+                    // Send updated mouse move state (button is already down)
+                    this._sendMouseState();
+
+                    // Prevent scrolling page during drag
+                     event.preventDefault();
+
+                    // Only handle the move of the active touch
+                    break;
+                }
+            }
+            else if (type === 'touchend' || type === 'touchcancel') {
+                // If this end/cancel event belongs to the currently active touch
+                if (identifier === this._activeTouchIdentifier) {
+                    // Calculate final position
+                    this._calculateTouchCoordinates(changedTouch);
+
+                    // Simulate left mouse button up
+                    this.buttonMask &= ~1;
+
+                    // Send final mouse up state
+                    this._sendMouseState();
+
+                    // Stop tracking the active touch
+                    this._activeTouchIdentifier = null;
+
+                     // Prevent default just in case (though less critical for touchend)
+                    // event.preventDefault();
+
+                    // Only handle the end/cancel of the active touch
+                    break;
+                }
+            }
+        } // End loop through changedTouches
+    }
+
 
     _dropThreshold() {
         var count = 0;
@@ -1450,9 +1528,11 @@ export class Input {
 
         if ('ontouchstart' in window) {
             // Attach touch listeners to the element to handle interactions within it
-            this.listeners_context.push(addListener(this.element, 'touchstart', this._touch, this));
-            this.listeners_context.push(addListener(this.element, 'touchend', this._touch, this));
-            this.listeners_context.push(addListener(this.element, 'touchmove', this._touch, this));
+            // Use the refactored handler
+            this.listeners_context.push(addListener(this.element, 'touchstart', this._handleTouchEvent, this));
+            this.listeners_context.push(addListener(this.element, 'touchend', this._handleTouchEvent, this));
+            this.listeners_context.push(addListener(this.element, 'touchmove', this._handleTouchEvent, this));
+            this.listeners_context.push(addListener(this.element, 'touchcancel', this._handleTouchEvent, this)); // Also handle cancel
         } else {
             // Attach mouse listeners to the element
             this.listeners_context.push(addListener(this.element, 'mousemove', this._mouseButtonMovement, this));
@@ -1495,6 +1575,14 @@ export class Input {
         // Reset keyboard state on server and locally
         this.send("kr");
         this.resetKeyboard();
+
+        // Reset touch state
+        this._activeTouchIdentifier = null;
+        if ((this.buttonMask & 1) === 1) { // If touch was active (left button down)
+             this.buttonMask &= ~1; // Ensure button mask is cleared
+             this._sendMouseState(); // Send final mouse up state
+        }
+
 
         // Attempt to exit pointer lock if active on our element
         this._exitPointerLock();
@@ -1560,7 +1648,8 @@ function addListener(obj, name, func, ctx, useCapture = false) {
     const options = {
         capture: useCapture,
         // Default passive based on event type (heuristic)
-        passive: !useCapture && !['wheel', 'touchmove', 'touchstart', 'mousedown', 'click', 'mouseup', 'contextmenu'].includes(name) // Non-passive for potential preventDefault events
+        // Make touchstart/touchmove non-passive to allow preventDefault
+        passive: !useCapture && !['wheel', 'touchmove', 'touchstart', 'mousedown', 'click', 'mouseup', 'contextmenu'].includes(name)
     };
     obj.addEventListener(name, newFunc, options);
     return [obj, name, newFunc, options]; // Store options for removal
