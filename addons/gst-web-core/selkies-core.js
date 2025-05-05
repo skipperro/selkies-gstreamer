@@ -21,7 +21,7 @@
  */
 
 // Set this to true to enable the dev dashboard layout
-var dev_mode = false;
+var dev_mode = true;
 
 /**
  * @typedef {Object} WebRTCDemoSignalling
@@ -1218,6 +1218,29 @@ const initializeUI = () => {
   hiddenFileInput.style.display = 'none';
   document.body.appendChild(hiddenFileInput);
   hiddenFileInput.addEventListener('change', handleFileInputChange);
+  if (!document.getElementById('keyboard-input-assist')) {
+      const keyboardInputAssist = document.createElement('input');
+      keyboardInputAssist.type = 'text';
+      keyboardInputAssist.id = 'keyboard-input-assist';
+      // Apply hiding styles directly
+      keyboardInputAssist.style.position = 'absolute';
+      keyboardInputAssist.style.left = '-9999px';
+      keyboardInputAssist.style.top = '-9999px';
+      keyboardInputAssist.style.width = '1px';
+      keyboardInputAssist.style.height = '1px';
+      keyboardInputAssist.style.opacity = '0';
+      keyboardInputAssist.style.border = '0';
+      keyboardInputAssist.style.padding = '0';
+      keyboardInputAssist.style.caretColor = 'transparent';
+      // Accessibility and browser hints
+      keyboardInputAssist.setAttribute('aria-hidden', 'true');
+      keyboardInputAssist.setAttribute('autocomplete', 'off');
+      keyboardInputAssist.setAttribute('autocorrect', 'off');
+      keyboardInputAssist.setAttribute('autocapitalize', 'off');
+      keyboardInputAssist.setAttribute('spellcheck', 'false');
+      document.body.appendChild(keyboardInputAssist); // Append to body
+      console.log("Dynamically added #keyboard-input-assist element.");
+  }
 
   if (dev_mode) {
     // --- Existing Dev Sidebar Elements ---
@@ -1425,7 +1448,15 @@ const initializeUI = () => {
     resolutionPresetSelect.style.color = '#eee';
     resolutionPresetSelect.style.border = '1px solid #555';
     resolutionPresetSelect.style.marginTop = '3px'; // Small space below label
-
+    const showKeyboardButton = document.createElement('button');
+    showKeyboardButton.id = 'devShowKeyboardButton';
+    showKeyboardButton.textContent = 'Show Virtual Keyboard';
+    showKeyboardButton.style.marginTop = '10px';
+    showKeyboardButton.addEventListener('click', () => {
+        console.log("Dev Sidebar: Show Keyboard button clicked. Posting 'showVirtualKeyboard' message.");
+        window.postMessage({ type: 'showVirtualKeyboard' }, window.location.origin);
+    });
+    sidebarDiv.appendChild(showKeyboardButton);
     // Define common resolutions [width, height, label]
     const commonResolutions = [
         { value: "", text: "-- Select Preset --" }, // Default option
@@ -2030,6 +2061,41 @@ const initializeInput = () => {
   overlayInput.addEventListener('drop', handleDrop);
 
   window.webrtcInput = inputInstance;
+  const keyboardInputAssist = document.getElementById('keyboard-input-assist');
+  if (keyboardInputAssist && inputInstance) { // Check if both exist
+      keyboardInputAssist.addEventListener('input', (event) => {
+          const typedString = keyboardInputAssist.value;
+          console.log(`Input event on assist: Value="${typedString}"`);
+
+          if (typedString) {
+              inputInstance._typeString(typedString);
+              keyboardInputAssist.value = ''; // Clear after processing
+          }
+      });
+
+      keyboardInputAssist.addEventListener('keydown', (event) => {
+           if (event.key === 'Enter' || event.keyCode === 13) {
+               console.log("Enter keydown detected on assist input.");
+               const enterKeysym = 0xFF0D;
+               inputInstance._guac_press(enterKeysym);
+               setTimeout(() => inputInstance._guac_release(enterKeysym), 5);
+               event.preventDefault();
+               keyboardInputAssist.value = '';
+           }
+           else if (event.key === 'Backspace' || event.keyCode === 8) {
+               console.log("Backspace keydown detected on assist input.");
+               const backspaceKeysym = 0xFF08;
+               inputInstance._guac_press(backspaceKeysym);
+               setTimeout(() => inputInstance._guac_release(backspaceKeysym), 5);
+               event.preventDefault();
+           }
+      });
+
+      console.log("Added 'input' and 'keydown' listeners to #keyboard-input-assist.");
+
+  } else {
+      console.error("Could not add listeners to keyboard assist: Element or Input handler instance not found inside initializeInput.");
+  }
 };
 
 /**
@@ -2230,6 +2296,18 @@ function receiveMessage(event) {
                 }
             } else {
                 console.warn("Invalid value received for setScaleLocally:", message.value);
+            }
+            break;
+
+        case 'showVirtualKeyboard':
+            console.log("Received 'showVirtualKeyboard' message.");
+            const kbdAssistInput = document.getElementById('keyboard-input-assist');
+            if (kbdAssistInput) {
+                kbdAssistInput.value = '';
+                kbdAssistInput.focus();
+                console.log("Focused #keyboard-input-assist element.");
+            } else {
+                console.error("Could not find #keyboard-input-assist element to focus.");
             }
             break;
 

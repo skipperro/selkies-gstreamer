@@ -925,6 +925,12 @@ export class Input {
      * @private
      */
     _handleKeyDown(event) {
+        const keyboardInputAssist = document.getElementById('keyboard-input-assist');
+        if (event.target === keyboardInputAssist) {
+            // Let the hidden input handle this event naturally
+            console.log("Ignoring keydown event targeted at keyboard-input-assist.");
+            return;
+        }
         // Ignore events if composing (handled by composition events)
         if (this.isComposing) return;
 
