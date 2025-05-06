@@ -1011,3 +1011,88 @@ a:hover {
 a:active {
   text-decoration: none;
 }
+
+/* Files Modal Styles */
+.files-modal {
+    position: fixed;
+    top: 10%;
+    left: 10%;
+    width: 80%;
+    height: 80%;
+    background-color: var(--sidebar-bg);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 15px; /* Rounded corners for the modal */
+    box-shadow: 0 5px 15px var(--sidebar-shadow);
+    z-index: 1060; /* Above notifications and sidebar */
+    padding: 20px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.files-modal-close {
+    position: absolute;
+    top: 10px; /* Position relative to modal padding */
+    right: 15px; /* Position relative to modal padding */
+    background: transparent;
+    border: none;
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    z-index: 1061; /* Ensure close button is above iframe */
+}
+
+.files-modal-close:hover {
+    color: var(--sidebar-header-color);
+}
+
+.files-modal iframe {
+    flex-grow: 1; /* Make iframe fill the available space in the modal */
+    width: 100%;
+    height: 100%; /* Fill the height of the flex container part */
+    border: none; /* No border for the iframe */
+    border-radius: 10px; /* Slightly rounded corners for the iframe content area */
+    background-color: var(--input-bg); /* Background for iframe area before content loads */
+}
+
+/* Virtual Keyboard Button */
+.virtual-keyboard-button {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  background-color: var(--button-bg); /* Uses theme variable for background */
+  color: var(--button-text); /* Uses theme variable for icon color */
+  border: 1px solid var(--item-border); /* Uses theme variable for border */
+  border-radius: 8px; /* Square with rounded corners, consistent with other elements */
+  box-shadow: 0 2px 8px var(--sidebar-shadow); /* Consistent shadow */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1040; /* Positioned above sidebar/tooltips, below modals/notifications */
+  padding: 0; /* Remove default padding */
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+
+.virtual-keyboard-button:hover {
+  background-color: var(--button-hover-bg); /* Uses theme variable */
+  border-color: var(--sidebar-header-color); /* Highlight similar to other interactive elements */
+  transform: translateY(-2px); /* Slight lift effect on hover */
+}
+
+.virtual-keyboard-button:active {
+  transform: translateY(0px) scale(0.98); /* Press down effect */
+  /* Optionally, use a slightly different background for active state if desired */
+  /* background-color: var(--button-active-bg, var(--button-hover-bg)); */
+}
+
+.virtual-keyboard-button svg {
+  width: 24px; /* Adjust icon size as needed */
+  height: 24px;
+  fill: currentColor; /* Icon color inherits from button's text color */
+}

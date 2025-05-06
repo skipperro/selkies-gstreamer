@@ -24,6 +24,7 @@ const en = {
         microphoneDisableTitle: "Disable Microphone",
         gamepadEnableTitle: "Enable Gamepad Input",
         gamepadDisableTitle: "Disable Gamepad Input",
+        virtualKeyboardButtonTitle: "Pop Keyboard",
     },
     sections: {
         video: {
@@ -85,6 +86,7 @@ const en = {
             title: "Files",
             uploadButton: "Upload Files",
             uploadButtonTitle: "Upload files to the remote session",
+            downloadButtonTitle: "Download Files",
         },
         gamepads: {
             title: "Gamepads",
@@ -133,6 +135,7 @@ const es = {
         microphoneDisableTitle: "Desactivar Micrófono",
         gamepadEnableTitle: "Activar Entrada de Mando",
         gamepadDisableTitle: "Desactivar Entrada de Mando",
+        virtualKeyboardButtonTitle: "Mostrar Teclado",
     },
     sections: {
         video: {
@@ -194,6 +197,7 @@ const es = {
              title: "Archivos",
              uploadButton: "Subir Archivos",
              uploadButtonTitle: "Subir archivos a la sesión remota",
+             downloadButtonTitle: "Descargar Archivos",
         },
         gamepads: {
              title: "Mandos",
@@ -242,6 +246,7 @@ const zh = {
         microphoneDisableTitle: "禁用麦克风",
         gamepadEnableTitle: "启用游戏手柄输入",
         gamepadDisableTitle: "禁用游戏手柄输入",
+        virtualKeyboardButtonTitle: "弹出键盘",
     },
     sections: {
         video: {
@@ -303,6 +308,7 @@ const zh = {
             title: "文件",
             uploadButton: "上传文件",
             uploadButtonTitle: "上传文件到远程会话",
+            downloadButtonTitle: "下载文件",
         },
         gamepads: {
             title: "游戏手柄",
@@ -351,6 +357,7 @@ const hi = {
         microphoneDisableTitle: "माइक्रोफ़ोन अक्षम करें",
         gamepadEnableTitle: "गेमपैड इनपुट सक्षम करें",
         gamepadDisableTitle: "गेमपैड इनपुट अक्षम करें",
+        virtualKeyboardButtonTitle: "कीबोर्ड दिखाएँ",
     },
     sections: {
         video: {
@@ -412,6 +419,7 @@ const hi = {
             title: "फ़ाइलें",
             uploadButton: "फ़ाइलें अपलोड करें",
             uploadButtonTitle: "रिमोट सेशन में फ़ाइलें अपलोड करें",
+            downloadButtonTitle: "फ़ाइलें डाउनलोड करें",
         },
         gamepads: {
             title: "गेमपैड",
@@ -460,6 +468,7 @@ const pt = {
         microphoneDisableTitle: "Desativar Microfone",
         gamepadEnableTitle: "Ativar Entrada de Gamepad",
         gamepadDisableTitle: "Desativar Entrada de Gamepad",
+        virtualKeyboardButtonTitle: "Exibir Teclado",
     },
     sections: {
         video: {
@@ -521,6 +530,7 @@ const pt = {
             title: "Arquivos",
             uploadButton: "Carregar Arquivos",
             uploadButtonTitle: "Carregar arquivos para a sessão remota",
+            downloadButtonTitle: "Baixar Arquivos",
         },
         gamepads: {
             title: "Gamepads",
@@ -569,6 +579,7 @@ const fr = {
         microphoneDisableTitle: "Désactiver le microphone",
         gamepadEnableTitle: "Activer l'entrée manette",
         gamepadDisableTitle: "Désactiver l'entrée manette",
+        virtualKeyboardButtonTitle: "Afficher le Clavier",
     },
     sections: {
         video: {
@@ -630,6 +641,7 @@ const fr = {
             title: "Fichiers",
             uploadButton: "Téléverser des fichiers",
             uploadButtonTitle: "Téléverser des fichiers vers la session distante",
+            downloadButtonTitle: "Télécharger les Fichiers",
         },
         gamepads: {
             title: "Manettes",
@@ -678,6 +690,7 @@ const ru = {
         microphoneDisableTitle: "Отключить микрофон",
         gamepadEnableTitle: "Включить ввод с геймпада",
         gamepadDisableTitle: "Отключить ввод с геймпада",
+        virtualKeyboardButtonTitle: "Показать Клавиатуру"
     },
     sections: {
         video: {
@@ -739,6 +752,7 @@ const ru = {
             title: "Файлы",
             uploadButton: "Загрузить файлы",
             uploadButtonTitle: "Загрузить файлы в удаленную сессию",
+            downloadButtonTitle: "Скачать Файлы",
         },
         gamepads: {
             title: "Геймпады",
@@ -787,6 +801,7 @@ const de = {
         microphoneDisableTitle: "Mikrofon deaktivieren",
         gamepadEnableTitle: "Gamepad-Eingabe aktivieren",
         gamepadDisableTitle: "Gamepad-Eingabe deaktivieren",
+        virtualKeyboardButtonTitle: "Tastatur einblenden",
     },
     sections: {
         video: {
@@ -848,6 +863,7 @@ const de = {
             title: "Dateien",
             uploadButton: "Dateien hochladen",
             uploadButtonTitle: "Dateien zur Remote-Sitzung hochladen",
+            downloadButtonTitle: "Dateien herunterladen",
         },
         gamepads: {
             title: "Gamepads",
@@ -896,6 +912,7 @@ const tr = {
         microphoneDisableTitle: "Mikrofonu Devre Dışı Bırak",
         gamepadEnableTitle: "Oyun Kumandası Girişini Etkinleştir",
         gamepadDisableTitle: "Oyun Kumandası Girişini Devre Dışı Bırak",
+        virtualKeyboardButtonTitle: "Klavyeyi Göster",
     },
     sections: {
         video: {
@@ -957,6 +974,7 @@ const tr = {
             title: "Dosyalar",
             uploadButton: "Dosya Yükle",
             uploadButtonTitle: "Uzak oturuma dosya yükle",
+            downloadButtonTitle: "Dosyaları İndir",
         },
         gamepads: {
             title: "Oyun Kumandaları",
@@ -1005,6 +1023,7 @@ const it = {
         microphoneDisableTitle: "Disabilita Microfono",
         gamepadEnableTitle: "Abilita Input Gamepad",
         gamepadDisableTitle: "Disabilita Input Gamepad",
+        virtualKeyboardButtonTitle: "Mostra Tastiera",
     },
     sections: {
         video: {
@@ -1066,6 +1085,7 @@ const it = {
             title: "File",
             uploadButton: "Carica File",
             uploadButtonTitle: "Carica file nella sessione remota",
+            downloadButtonTitle: "Scarica File",
         },
         gamepads: {
             title: "Gamepad",
@@ -1114,6 +1134,7 @@ const nl = {
         microphoneDisableTitle: "Microfoon uitschakelen",
         gamepadEnableTitle: "Gamepad-invoer inschakelen",
         gamepadDisableTitle: "Gamepad-invoer uitschakelen",
+        virtualKeyboardButtonTitle: "Toetsenbord Weergeven",
     },
     sections: {
         video: {
@@ -1175,6 +1196,7 @@ const nl = {
             title: "Bestanden",
             uploadButton: "Bestanden Uploaden",
             uploadButtonTitle: "Upload bestanden naar de externe sessie",
+            downloadButtonTitle: "Bestanden Downloaden",
         },
         gamepads: {
             title: "Gamepads",
@@ -1223,6 +1245,7 @@ const ar = {
         microphoneDisableTitle: "تعطيل الميكروفون",
         gamepadEnableTitle: "تمكين إدخال لوحة الألعاب",
         gamepadDisableTitle: "تعطيل إدخال لوحة الألعاب",
+        virtualKeyboardButtonTitle: "إظهار لوحة المفاتيح",
     },
     sections: {
         video: {
@@ -1284,6 +1307,7 @@ const ar = {
             title: "الملفات",
             uploadButton: "تحميل الملفات",
             uploadButtonTitle: "تحميل الملفات إلى الجلسة البعيدة",
+            downloadButtonTitle: "تحميل الملفات",
         },
         gamepads: {
             title: "لوحات الألعاب",
@@ -1332,6 +1356,7 @@ const ko = {
         microphoneDisableTitle: "마이크 비활성화",
         gamepadEnableTitle: "게임패드 입력 활성화",
         gamepadDisableTitle: "게임패드 입력 비활성화",
+        virtualKeyboardButtonTitle: "키보드 표시",
     },
     sections: {
         video: {
@@ -1393,6 +1418,7 @@ const ko = {
             title: "파일",
             uploadButton: "파일 업로드",
             uploadButtonTitle: "원격 세션에 파일 업로드",
+            downloadButtonTitle: "파일 다운로드",
         },
         gamepads: {
             title: "게임패드",
@@ -1441,6 +1467,7 @@ const ja = {
         microphoneDisableTitle: "マイクを無効にする",
         gamepadEnableTitle: "ゲームパッド入力を有効にする",
         gamepadDisableTitle: "ゲームパッド入力を無効にする",
+        virtualKeyboardButtonTitle: "キーボードを表示",
     },
     sections: {
         video: {
@@ -1502,6 +1529,7 @@ const ja = {
             title: "ファイル",
             uploadButton: "ファイルをアップロード",
             uploadButtonTitle: "リモートセッションにファイルをアップロード",
+            downloadButtonTitle: "ファイルをダウンロード",
         },
         gamepads: {
             title: "ゲームパッド",
@@ -1550,6 +1578,7 @@ const vi = {
         microphoneDisableTitle: "Tắt Micro",
         gamepadEnableTitle: "Bật Đầu vào Tay cầm chơi game",
         gamepadDisableTitle: "Tắt Đầu vào Tay cầm chơi game",
+        virtualKeyboardButtonTitle: "Hiển thị Bàn phím",
     },
     sections: {
         video: {
@@ -1611,6 +1640,7 @@ const vi = {
             title: "Tệp",
             uploadButton: "Tải lên Tệp",
             uploadButtonTitle: "Tải tệp lên phiên làm việc từ xa",
+            downloadButtonTitle: "Tải xuống Tệp",
         },
         gamepads: {
             title: "Tay cầm chơi game",
@@ -1659,6 +1689,7 @@ const th = {
         microphoneDisableTitle: "ปิดใช้งานไมโครโฟน",
         gamepadEnableTitle: "เปิดใช้งานอินพุตเกมแพด",
         gamepadDisableTitle: "ปิดใช้งานอินพุตเกมแพด",
+        virtualKeyboardButtonTitle: "แสดงแป้นพิมพ์",
     },
     sections: {
         video: {
@@ -1720,6 +1751,7 @@ const th = {
             title: "ไฟล์",
             uploadButton: "อัปโหลดไฟล์",
             uploadButtonTitle: "อัปโหลดไฟล์ไปยังเซสชันระยะไกล",
+            downloadButtonTitle: "ดาวน์โหลดไฟล์",
         },
         gamepads: {
             title: "เกมแพด",
@@ -1768,6 +1800,7 @@ const fil = {
         microphoneDisableTitle: "Huwag paganahin ang Mikropono",
         gamepadEnableTitle: "Paganahin ang Gamepad Input",
         gamepadDisableTitle: "Huwag paganahin ang Gamepad Input",
+        virtualKeyboardButtonTitle: "Ipakita ang Keyboard",
     },
     sections: {
         video: {
@@ -1829,6 +1862,7 @@ const fil = {
             title: "Mga File",
             uploadButton: "Mag-upload ng mga File",
             uploadButtonTitle: "Mag-upload ng mga file sa remote session",
+            downloadButtonTitle: "I-download ang mga File",
         },
         gamepads: {
             title: "Mga Gamepad",

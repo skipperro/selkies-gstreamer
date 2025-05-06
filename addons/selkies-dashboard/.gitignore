@@ -25,3 +25,6 @@ dist-ssr
 
 # Selkies Core
 src/selkies-core.js
+
+# Nginx theme
+nginx

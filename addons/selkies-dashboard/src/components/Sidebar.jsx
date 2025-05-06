@@ -46,7 +46,7 @@ const DEFAULT_SCALE_LOCALLY = true;
 const MAX_NOTIFICATIONS = 3;
 const NOTIFICATION_TIMEOUT_SUCCESS = 5000; // 5 seconds
 const NOTIFICATION_TIMEOUT_ERROR = 8000; // 8 seconds
-const NOTIFICATION_FADE_DURATION = 500; // 0.5 seconds (must match CSS)
+const NOTIFICATION_FADE_DURATION = 500; // 0.5 seconds
 
 // --- Helper Functions ---
 // Updated formatBytes to use translated units from 'raw' dictionary
@@ -72,7 +72,12 @@ const roundDownToEven = (num) => {
     return Math.floor(n / 2) * 2;
 };
 
-// --- Icons --- (Remain unchanged)
+// --- Icons ---
+const KeyboardIcon = () => (
+    <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+        <path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zm-3 0h2v2H8v-2zm-3 0h2v2H5v-2zm0-3h2v2H5V8zm3 0h2v2H8V8zm9 6H7v-2h10v2zm0-3h2v2h-2v-2zm0-3h2v2h-2V8z"/>
+    </svg>
+);
 const ScreenIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
         <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
@@ -153,6 +158,7 @@ function Sidebar({ isOpen }) {
   // --- Language State & Setup ---
   const [langCode, setLangCode] = useState('en'); // Default to English
   const [translator, setTranslator] = useState(() => getTranslator('en')); // Initial translator
+  const [isMobile, setIsMobile] = useState(false); // Mobile detect
 
   useEffect(() => {
     // Detect browser language on initial load
@@ -162,16 +168,18 @@ function Sidebar({ isOpen }) {
     // Optional: Check if primaryLang is supported in translations.js, otherwise keep 'en'
     setLangCode(primaryLang);
     setTranslator(getTranslator(primaryLang));
-
-    // Optional: Add listener for language changes if needed (rarely needed)
-    // const handleLanguageChange = () => {
-    //     const newLang = navigator.language.split('-')[0].toLowerCase();
-    //     setLangCode(newLang);
-    //     setTranslator(getTranslator(newLang));
-    // };
-    // window.addEventListener('languagechange', handleLanguageChange);
-    // return () => window.removeEventListener('languagechange', handleLanguageChange);
   }, []); // Run only on mount
+
+  // Mobile detection effect
+  useEffect(() => {
+    const mobileCheck = navigator.userAgentData?.mobile || false;
+    setIsMobile(mobileCheck);
+    if (navigator.userAgentData) {
+        console.log('Dashboard: Mobile detected via userAgentData.mobile:', mobileCheck);
+    } else {
+        console.warn('Dashboard: navigator.userAgentData not available. Mobile detection might be inaccurate. Consider a fallback if wider support is needed.');
+    }
+  }, []);
 
   // Get the translation function 't' and raw dictionary 'raw'
   const { t, raw } = translator;
@@ -179,6 +187,7 @@ function Sidebar({ isOpen }) {
   // --- Existing State ---
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [encoder, setEncoder] = useState(localStorage.getItem('encoder') || DEFAULT_ENCODER);
+  const [dynamicEncoderOptions, setDynamicEncoderOptions] = useState(encoderOptions); // New state for encoder options
   const [framerate, setFramerate] = useState(parseInt(localStorage.getItem('videoFramerate'), 10) || DEFAULT_FRAMERATE);
   const [videoBitRate, setVideoBitRate] = useState(parseInt(localStorage.getItem('videoBitRate'), 10) || DEFAULT_VIDEO_BITRATE);
   const [audioBitRate, setAudioBitRate] = useState(parseInt(localStorage.getItem('audioBitRate'), 10) || DEFAULT_AUDIO_BITRATE);
@@ -227,9 +236,18 @@ function Sidebar({ isOpen }) {
   });
   const [notifications, setNotifications] = useState([]);
   const notificationTimeouts = useRef({});
-
+  const [isFilesModalOpen, setIsFilesModalOpen] = useState(false);
 
   // --- Callbacks and Handlers ---
+
+  const toggleFilesModal = () => {
+    setIsFilesModalOpen(!isFilesModalOpen);
+  };
+
+  const handleShowVirtualKeyboard = () => {
+    window.postMessage({ type: 'showVirtualKeyboard' }, window.location.origin);
+    console.log("Dashboard: Sending postMessage: { type: 'showVirtualKeyboard' }");
+  };
 
   // --- Updated populateAudioDevices with translated error messages ---
   const populateAudioDevices = useCallback(async () => {
@@ -255,6 +273,9 @@ function Sidebar({ isOpen }) {
 
       const inputs = [];
       const outputs = [];
+      const inputFallbackLabel = t('sections.audio.defaultInputLabelFallback', { index: 0 }); // Provide a default for the fallback
+      const outputFallbackLabel = t('sections.audio.defaultOutputLabelFallback', { index: 0 }); // Provide a default for the fallback
+
 
       devices.forEach((device, index) => { // Added index for potential fallback label
         if (!device.deviceId) {
@@ -262,7 +283,8 @@ function Sidebar({ isOpen }) {
           return;
         }
         // Use browser label first, then potentially a translated fallback if needed
-        const label = device.label || (device.kind === 'audioinput' ? inputFallbackLabel : outputFallbackLabel);
+        const label = device.label || (device.kind === 'audioinput' ? t('sections.audio.defaultInputLabelFallback', { index: index + 1 }) : t('sections.audio.defaultOutputLabelFallback', { index: index + 1 }));
+
 
         if (device.kind === 'audioinput') {
           inputs.push({ deviceId: device.deviceId, label: label });
@@ -651,6 +673,13 @@ function Sidebar({ isOpen }) {
                     } else { return prevNotifications; }
                 });
             }
+            // --- New handler for serverSettings ---
+            else if (message.type === 'serverSettings') {
+                if (message.encoders && Array.isArray(message.encoders)) {
+                    console.log('Dashboard: Received serverSettings with encoders:', message.encoders);
+                    setDynamicEncoderOptions(message.encoders);
+                }
+            }
         }
     };
     window.addEventListener('message', handleWindowMessage);
@@ -728,7 +757,7 @@ function Sidebar({ isOpen }) {
             </div>
             {sectionsOpen.settings && (
               <div className="sidebar-section-content" id="settings-content">
-                <div className="dev-setting-item"> <label htmlFor="encoderSelect">{t('sections.video.encoderLabel')}</label> <select id="encoderSelect" value={encoder} onChange={handleEncoderChange}> {encoderOptions.map(enc => (<option key={enc} value={enc}>{enc}</option>))} </select> </div>
+                <div className="dev-setting-item"> <label htmlFor="encoderSelect">{t('sections.video.encoderLabel')}</label> <select id="encoderSelect" value={encoder} onChange={handleEncoderChange}> {dynamicEncoderOptions.map(enc => (<option key={enc} value={enc}>{enc}</option>))} </select> </div>
                 <div className="dev-setting-item"> <label htmlFor="framerateSlider">{t('sections.video.framerateLabel', { framerate: framerate })}</label> <input type="range" id="framerateSlider" min="0" max={framerateOptions.length - 1} step="1" value={framerateOptions.indexOf(framerate)} onChange={handleFramerateChange} /> </div>
                 <div className="dev-setting-item"> <label htmlFor="videoBitrateSlider">{t('sections.video.bitrateLabel', { bitrate: videoBitRate / 1000 })}</label> <input type="range" id="videoBitrateSlider" min="0" max={videoBitrateOptions.length - 1} step="1" value={videoBitrateOptions.indexOf(videoBitRate)} onChange={handleVideoBitrateChange} /> </div>
                 <div className="dev-setting-item">
@@ -883,6 +912,14 @@ function Sidebar({ isOpen }) {
                  >
                      {t('sections.files.uploadButton')}
                  </button>
+                 <button
+                     className="resolution-button"
+                     onClick={toggleFilesModal}
+                     style={{ marginTop: '5px', marginBottom: '5px' }}
+                     title={t('sections.files.downloadButtonTitle', 'Download Files')}
+                 >
+                     {t('sections.files.downloadButtonTitle', 'Download Files')}
+                 </button>
                </div>
              )}
         </div>
@@ -965,6 +1002,25 @@ function Sidebar({ isOpen }) {
           </div>
         ))}
       </div>
+
+      {/* Files Modal */}
+      {isFilesModalOpen && (
+        <div className="files-modal">
+            <button className="files-modal-close" onClick={toggleFilesModal} aria-label="Close files modal">&times;</button>
+            <iframe src="/files" title="Downloadable Files" />
+        </div>
+      )}
+      {/* Keyboard Pop Button */}
+      {isMobile && (
+        <button
+          className={`virtual-keyboard-button theme-${theme}`}
+          onClick={handleShowVirtualKeyboard}
+          title={t('buttons.virtualKeyboardButtonTitle', 'Pop Keyboard')} 
+          aria-label={t('buttons.virtualKeyboardButtonTitle', 'Pop Keyboard')}
+        >
+          <KeyboardIcon />
+        </button>
+      )}
     </>
   );
 }

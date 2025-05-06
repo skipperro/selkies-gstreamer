@@ -21,7 +21,7 @@
  */
 
 // Set this to true to enable the dev dashboard layout
-var dev_mode = true;
+var dev_mode = false;
 
 /**
  * @typedef {Object} WebRTCDemoSignalling
@@ -1451,12 +1451,18 @@ const initializeUI = () => {
     const showKeyboardButton = document.createElement('button');
     showKeyboardButton.id = 'devShowKeyboardButton';
     showKeyboardButton.textContent = 'Show Virtual Keyboard';
-    showKeyboardButton.style.marginTop = '10px';
     showKeyboardButton.addEventListener('click', () => {
         console.log("Dev Sidebar: Show Keyboard button clicked. Posting 'showVirtualKeyboard' message.");
         window.postMessage({ type: 'showVirtualKeyboard' }, window.location.origin);
     });
     sidebarDiv.appendChild(showKeyboardButton);
+    const showFilesButton = document.createElement('button');
+    showFilesButton.id = 'devShowFilesButton';
+    showFilesButton.textContent = 'Desktop Files';
+    showFilesButton.addEventListener('click', () => {
+        window.open("files/");
+    });
+    sidebarDiv.appendChild(showFilesButton);
     // Define common resolutions [width, height, label]
     const commonResolutions = [
         { value: "", text: "-- Select Preset --" }, // Default option
