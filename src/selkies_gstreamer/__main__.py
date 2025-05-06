@@ -61,7 +61,7 @@ from input_handler import (WebRTCInput, SelkiesGamepad, GamepadMapper,
 from gstreamer_pipeline import (GSTWebRTCApp, GSTWebRTCAppError, fit_res,
                                 get_new_res, resize_display,
                                 generate_xrandr_gtf_modeline, set_dpi,
-                                set_cursor_size)
+                                set_cursor_size, check_encoder_supported)
 import psutil
 import GPUtil
 import traceback
@@ -655,6 +655,33 @@ class DataStreamingServer:
              return
 
         self.data_ws = websocket
+
+        # ---- Send Server Settings Message ----
+        encoders_to_check = [
+            'x264enc',
+            'nvh264enc',
+            'vah264enc',
+            'openh264enc'
+        ]
+        supported_encoders = []
+        for encoder_name in encoders_to_check:
+            if check_encoder_supported(encoder_name):
+                supported_encoders.append(encoder_name)
+        
+        server_settings_payload = {
+            'type': 'server_settings',
+            'encoders': supported_encoders
+        }
+        server_settings_message_json = json.dumps(server_settings_payload)
+        
+        try:
+            await websocket.send(server_settings_message_json)
+            data_logger.info(f"Sent server_settings to {raddr}: {server_settings_message_json}")
+        except websockets.exceptions.ConnectionClosed:
+            data_logger.warning(
+                f"Connection closed before sending server_settings to {raddr}. Client may not have received settings."
+            )
+            return
         # --- Initialize Backpressure State for this connection ---
         self._initial_target_bitrate_kbps = TARGET_VIDEO_BITRATE_KBPS # Use current global target as initial
         self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
@@ -2144,8 +2171,7 @@ class WebRTCSimpleServer:
             # Unexpected error during handling
             logger_signaling.error(f"Unexpected error in connection handler for {uid}: {e}", exc_info=True)
             # Ensure connection is closed on unexpected error
-            if ws.open:
-                await ws.close(code=1011, reason="Internal handler error")
+            await ws.close(code=1011, reason="Internal handler error")
         finally:
             # Cleanup (removing the peer) is handled by the caller (run -> handler's finally block)
             logger_signaling.debug(f"Exiting connection_handler for {uid}.")

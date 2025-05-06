@@ -2574,6 +2574,48 @@ function receiveMessage(event) {
             enterFullscreen();
             break;
 
+        case 'serverSettings':
+            if (dev_mode) {
+                console.log('Received server_settings payload:', message);
+                // --- Handle Encoders Setting ---
+                if (message && message.hasOwnProperty('encoders') && Array.isArray(message.encoders)) {
+                    const serverSupportedEncoders = message.encoders;
+                    console.log('Server supported encoders:', serverSupportedEncoders);
+
+                    // Ensure encoderSelectElement is available
+                    if (typeof encoderSelectElement !== 'undefined' && encoderSelectElement) {
+                        // Clear existing options from the dropdown
+                        while (encoderSelectElement.firstChild) {
+                            encoderSelectElement.removeChild(encoderSelectElement.firstChild);
+                        }
+                        // Populate dropdown with encoders sent by the server
+                        if (serverSupportedEncoders.length > 0) {
+                            serverSupportedEncoders.forEach(encoder => {
+                                const option = document.createElement('option');
+                                option.value = encoder;
+                                option.textContent = encoder;
+                                encoderSelectElement.appendChild(option);
+                            });
+                            encoderSelectElement.value = serverSupportedEncoders[0];
+                            console.log('Encoder dropdown updated with server-provided options.');
+                        } else {
+                            // Handle the case where the server provides an empty list of encoders
+                            const option = document.createElement('option');
+                            option.value = ""; // No value
+                            option.textContent = "No encoders available from server";
+                            option.disabled = true; // Make it unselectable
+                            encoderSelectElement.appendChild(option);
+                            console.warn('Server provided an empty list of encoders.');
+                        }
+                    } else {
+                        console.warn('encoderSelectElement is not defined or not found. Cannot update encoder dropdown.');
+                    }
+                } else {
+                    console.log('No "encoders" array found in server_settings payload, or it is not an array. Encoder dropdown will not be updated by the server.');
+                }
+            }
+            break;
+
         default:
             console.warn('Received unknown message type via window.postMessage:', message.type, message);
             break;
@@ -2743,13 +2785,6 @@ function handleSettingsMessage(settings) {
     } else if (clientMode === 'websockets') {
        console.warn("ResizeRemote setting received, but not sending to server in websockets mode (not implemented).");
     }
-  }
-
-  if (settings.scaleLocal !== undefined) {
-    scaleLocal = settings.scaleLocal;
-    setBoolParam('scaleLocal', scaleLocal); // Save to localStorage
-    videoElement.classList.toggle('scale', scaleLocal);
-    console.log(`Applied scaleLocal setting: ${scaleLocal}`);
   }
 
   if (settings.audioBitRate !== undefined) {
@@ -3861,8 +3896,9 @@ websocket.onopen = () => {
              if (dev_mode && gpuStatsDivElement) {
                gpuStatsDivElement.textContent = JSON.stringify(obj, null, 2);
              }
-           }
-           else if (obj.type === 'pipeline_status') {
+           } else if (obj.type === 'server_settings') {
+             window.postMessage({ type: 'serverSettings', encoders: obj.encoders }, window.location.origin);
+           } else if (obj.type === 'pipeline_status') {
                 console.log('Received pipeline status confirmation from server:', obj);
                 let statusChanged = false;
                 if (obj.video !== undefined && obj.video !== isVideoPipelineActive) {
@@ -3998,7 +4034,7 @@ websocket.onopen = () => {
                 ? webrtc.input.getWindowResolution()
                 : [roundDownToEven(window.innerWidth), roundDownToEven(window.innerHeight)];
 
-            if (!scaleLocal) {
+            if (!scaleLocallyManual) {
               videoElement.style.width = `${windowResolution[0] / window.devicePixelRatio}px`;
               videoElement.style.height = `${windowResolution[1] / window.devicePixelRatio}px`;
             }

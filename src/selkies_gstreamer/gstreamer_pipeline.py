@@ -2052,6 +2052,12 @@ def set_dpi(dpi):
         )
         return False
     return True
+def check_encoder_supported(encoder):
+    support = Gst.ElementFactory.find(encoder)
+    if (support):
+        return True
+    else:
+        return False
 def set_cursor_size(size):
     from shutil import which
     logger_gstwebrtc_app_resize = logging.getLogger("gstwebrtc_app_resize")
