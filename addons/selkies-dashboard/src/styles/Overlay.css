@@ -819,6 +819,10 @@ body {
     cursor: pointer;
     transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
     text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 .resolution-button:hover {
@@ -1095,4 +1099,244 @@ a:active {
   width: 24px; /* Adjust icon size as needed */
   height: 24px;
   fill: currentColor; /* Icon color inherits from button's text color */
+}
+
+.apps-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80vw; /* 80% of viewport width */
+    height: 80vh; /* 80% of viewport height */
+    max-width: 1000px; /* Optional: max width */
+    max-height: 700px; /* Optional: max height */
+    background-color: var(--sidebar-bg);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 15px; /* Rounded corners */
+    box-shadow: 0 5px 20px var(--sidebar-shadow);
+    z-index: 1070; /* High z-index */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevent content from spilling out before scroll is active */
+}
+
+.apps-modal-close {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    background: transparent;
+    border: none;
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    z-index: 1071;
+}
+
+.apps-modal-close:hover {
+    color: var(--sidebar-header-color);
+}
+
+.apps-modal-content {
+    padding: 20px;
+    padding-top: 40px; /* Space for close button */
+    flex-grow: 1;
+    overflow-y: auto; /* Scroll for content */
+    display: flex;
+    flex-direction: column;
+}
+
+.apps-modal-loading,
+.apps-modal-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    flex-grow: 1;
+    color: var(--sidebar-text);
+}
+.apps-modal-loading p {
+    margin-top: 10px;
+}
+.apps-modal-error {
+    color: var(--notification-error-color);
+}
+
+
+.apps-search-bar {
+    width: 100%;
+    padding: 10px 15px;
+    margin-bottom: 20px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    font-size: 1em;
+    box-sizing: border-box;
+}
+.apps-search-bar:focus {
+    outline: none;
+    border-color: var(--sidebar-header-color);
+}
+
+.apps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 20px;
+    align-content: start;
+}
+
+.app-card {
+    background-color: var(--section-bg);
+    border: 1px solid var(--item-border);
+    border-radius: 8px;
+    padding: 15px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between; /* Keeps pushing name to bottom */
+    position: relative; /* For badge */
+    min-height: 180px;
+    max-height: 220px;
+    overflow: hidden;
+}
+
+.app-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.theme-dark .app-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+
+.app-card-icon {
+    width: 96px;
+    height: 96px;
+    object-fit: contain;
+    margin-bottom: 10px;
+    flex-shrink: 0;
+}
+
+.app-card-name {
+    font-size: 0.9em;
+    color: var(--sidebar-text);
+    word-break: break-word;
+    margin-top: auto;
+    line-height: 1.3;
+    max-height: 3.9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.app-card-installed-badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background-color: var(--notification-success-color);
+    color: white; /* Or var(--button-text) if it fits better */
+    padding: 2px 6px;
+    font-size: 0.7em;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+
+/* App Detail View */
+.app-detail-view {
+    padding: 10px;
+    color: var(--sidebar-text);
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center content */
+    text-align: center; /* Center text */
+}
+
+.app-detail-back-button {
+    align-self: flex-start; /* Position to the left */
+    margin-bottom: 15px;
+    background-color: var(--input-bg);
+    color: var(--sidebar-text);
+    border: 1px solid var(--item-border);
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+.app-detail-back-button:hover {
+    background-color: var(--section-bg);
+    border-color: var(--sidebar-header-color);
+}
+
+.app-detail-icon {
+    width: 128px; /* Slightly smaller than GTK's detail view */
+    height: 128px;
+    object-fit: contain;
+    margin-bottom: 15px;
+    border-radius: 8px; /* Optional: if icons are square */
+}
+
+.app-detail-view h2 {
+    color: var(--sidebar-header-color);
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.app-detail-description {
+    font-size: 1em;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    max-width: 600px; /* Prevent description from becoming too wide */
+}
+
+.app-action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    justify-content: center; /* Center buttons */
+}
+
+.app-action-button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    font-size: 1em;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    min-width: 120px; /* Ensure buttons have a decent width */
+}
+
+.app-action-button.install {
+    background-color: var(--button-bg);
+    color: var(--button-text);
+}
+.app-action-button.install:hover {
+    background-color: var(--button-hover-bg);
+}
+
+.app-action-button.update {
+    background-color: #f0ad4e; /* Example: Orange for update */
+    color: white;
+}
+.app-action-button.update:hover {
+    background-color: #eea236;
+}
+
+.app-action-button.remove {
+    background-color: var(--notification-error-color); /* Example: Red for remove */
+    color: white;
+}
+.app-action-button.remove:hover {
+    background-color: #c9302c;
+}
+
+/* Spinner Icon color fix if needed */
+.apps-modal-loading svg {
+    stroke: var(--sidebar-header-color);
 }

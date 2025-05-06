@@ -768,6 +768,11 @@ export class Input {
         return true;
     }
     _handleKeyDown(event) {
+        const WHITELIST_CLASS = 'allow-native-input';
+        if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
+            console.debug('Input: KeyDown on whitelisted element, allowing native behavior.', event.target);
+            return;
+        }
         const keyboardInputAssist = document.getElementById('keyboard-input-assist');
         if (event.target === keyboardInputAssist) {
             console.log("Ignoring keydown event targeted at keyboard-input-assist.");
@@ -799,6 +804,11 @@ export class Input {
         }
     }
     _handleKeyPress(event) {
+        const WHITELIST_CLASS = 'allow-native-input';
+        if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
+            console.debug('Input: KeyPress on whitelisted element, allowing native behavior.', event.target);
+            return;
+        }
         if (this.isComposing) return;
         if (!this._guac_markEvent(event)) return;
         if (event.keyCode === 229) return;
@@ -809,6 +819,11 @@ export class Input {
         }
     }
     _handleKeyUp(event) {
+        const WHITELIST_CLASS = 'allow-native-input';
+        if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
+            console.debug('Input: KeyUp on whitelisted element, allowing native behavior.', event.target);
+            return;
+        }
         if (this.isComposing) return;
         if (!this._guac_markEvent(event)) return;
         if (event.keyCode === 229) return;
@@ -1490,6 +1505,24 @@ export class Input {
             this.send("kr"); // Send server reset command
             this.resetKeyboard(); // Reset local state
         }
+    }
+
+    /**
+     * Checks if the event target or its ancestors have a specific class.
+     * @private
+     * @param {EventTarget} target - The event target element.
+     * @param {string} className - The class name to check for.
+     * @returns {boolean} - True if the class is found, false otherwise.
+     */
+    _targetHasClass(target, className) {
+        let element = target;
+        while (element && element.classList) {
+            if (element.classList.contains(className)) {
+                return true;
+            }
+            element = element.parentElement;
+        }
+        return false;
     }
 
     getCursorScaleFactor({ remoteResolutionEnabled = false } = {}) {

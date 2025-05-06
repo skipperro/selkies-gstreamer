@@ -1,7 +1,8 @@
 // src/components/Sidebar.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import GamepadVisualizer from './GamepadVisualizer';
-import { getTranslator } from '../translations'; // Import the translator factory
+import { getTranslator } from '../translations';
+import yaml from 'js-yaml';
 
 // --- Constants ---
 const encoderOptions = [
@@ -41,6 +42,9 @@ const DEFAULT_AUDIO_BITRATE = 320000;
 const DEFAULT_VIDEO_BUFFER_SIZE = 0;
 const DEFAULT_ENCODER = encoderOptions[0];
 const DEFAULT_SCALE_LOCALLY = true;
+const REPO_BASE_URL = 'https://raw.githubusercontent.com/linuxserver/proot-apps/master/metadata/';
+const METADATA_URL = `${REPO_BASE_URL}metadata.yml`;
+const IMAGE_BASE_URL = `${REPO_BASE_URL}img/`;
 
 // --- Notification Constants ---
 const MAX_NOTIFICATIONS = 3;
@@ -73,6 +77,11 @@ const roundDownToEven = (num) => {
 };
 
 // --- Icons ---
+const AppsIcon = () => (
+    <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+        <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>
+    </svg>
+);
 const KeyboardIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
         <path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zm-3 0h2v2H8v-2zm-3 0h2v2H5v-2zm0-3h2v2H5V8zm3 0h2v2H8V8zm9 6H7v-2h10v2zm0-3h2v2h-2v-2zm0-3h2v2h-2V8z"/>
@@ -154,6 +163,157 @@ const SelkiesLogo = ({ width = 30, height = 30, className, t, ...props }) => (
   );
 
 
+function AppsModal({ isOpen, onClose, t }) {
+    const [appData, setAppData] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedApp, setSelectedApp] = useState(null);
+    const [installedApps, setInstalledApps] = useState([]); // Fake installed apps
+
+    useEffect(() => {
+        if (isOpen && !appData && !isLoading) {
+            const fetchAppData = async () => {
+                setIsLoading(true);
+                setError(null);
+                try {
+                    const response = await fetch(METADATA_URL);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const yamlText = await response.text();
+                    const parsedData = yaml.load(yamlText);
+                    setAppData(parsedData);
+                } catch (e) {
+                    console.error("Failed to fetch or parse app data:", e);
+                    setError(t('appsModal.errorLoading', 'Failed to load app data. Please try again.'));
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            fetchAppData();
+        }
+    }, [isOpen, appData, isLoading, t]);
+
+    const handleSearchChange = (event) => {
+        setSearchTerm(event.target.value.toLowerCase());
+    };
+
+    const handleAppClick = (app) => {
+        setSelectedApp(app);
+    };
+
+    const handleBackToGrid = () => {
+        setSelectedApp(null);
+    };
+
+    const handleInstall = (appName) => {
+        console.log(`Install app: ${appName}`);
+        setInstalledApps(prev => [...prev, appName]);
+        alert(t('appsModal.installingMessage', `Simulating install for: ${appName}`, { appName }));
+    };
+
+    const handleRemove = (appName) => {
+        console.log(`Remove app: ${appName}`);
+        setInstalledApps(prev => prev.filter(name => name !== appName));
+        alert(t('appsModal.removingMessage', `Simulating removal for: ${appName}`, { appName }));
+    };
+
+    const handleUpdate = (appName) => {
+        console.log(`Update app: ${appName}`);
+        alert(t('appsModal.updatingMessage', `Simulating update for: ${appName}`, { appName }));
+    };
+
+    const filteredApps = appData?.include?.filter(app =>
+        !app.disabled &&
+        (app.full_name?.toLowerCase().includes(searchTerm) ||
+         app.name?.toLowerCase().includes(searchTerm) ||
+         app.description?.toLowerCase().includes(searchTerm))
+    ) || [];
+
+    const isAppInstalled = (appName) => installedApps.includes(appName);
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="apps-modal">
+            <button className="apps-modal-close" onClick={onClose} aria-label={t('appsModal.closeAlt', "Close apps modal")}>&times;</button>
+            <div className="apps-modal-content">
+                {isLoading && (
+                    <div className="apps-modal-loading">
+                        <SpinnerIcon />
+                        <p>{t('appsModal.loading', 'Loading apps...')}</p>
+                    </div>
+                )}
+                {error && <p className="apps-modal-error">{error}</p>}
+
+                {!isLoading && !error && appData && (
+                    <>
+                        {selectedApp ? (
+                            <div className="app-detail-view">
+                                <button onClick={handleBackToGrid} className="app-detail-back-button">
+                                    &larr; {t('appsModal.backButton', 'Back to list')}
+                                </button>
+                                <img
+                                    src={`${IMAGE_BASE_URL}${selectedApp.icon}`}
+                                    alt={selectedApp.full_name}
+                                    className="app-detail-icon"
+                                    onError={(e) => { e.target.style.display = 'none'; }}
+                                />
+                                <h2>{selectedApp.full_name}</h2>
+                                <p className="app-detail-description">{selectedApp.description}</p>
+                                <div className="app-action-buttons">
+                                    {isAppInstalled(selectedApp.name) ? (
+                                        <>
+                                            <button onClick={() => handleUpdate(selectedApp.name)} className="app-action-button update">
+                                                {t('appsModal.updateButton', 'Update')} {selectedApp.name}
+                                            </button>
+                                            <button onClick={() => handleRemove(selectedApp.name)} className="app-action-button remove">
+                                                {t('appsModal.removeButton', 'Remove')} {selectedApp.name}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button onClick={() => handleInstall(selectedApp.name)} className="app-action-button install">
+                                            {t('appsModal.installButton', 'Install')} {selectedApp.name}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <input
+                                    type="text"
+                                    className="apps-search-bar allow-native-input"
+                                    placeholder={t('appsModal.searchPlaceholder', "Search apps...")}
+                                    value={searchTerm}
+                                    onChange={handleSearchChange}
+                                />
+                                <div className="apps-grid">
+                                    {filteredApps.length > 0 ? filteredApps.map(app => (
+                                        <div key={app.name} className="app-card" onClick={() => handleAppClick(app)}>
+                                            <img
+                                                src={`${IMAGE_BASE_URL}${app.icon}`}
+                                                alt={app.full_name}
+                                                className="app-card-icon"
+                                                loading="lazy"
+                                                onError={(e) => { e.target.style.visibility = 'hidden'; }}
+                                            />
+                                            <p className="app-card-name">{app.full_name}</p>
+                                            {isAppInstalled(app.name) && <div className="app-card-installed-badge">{t('appsModal.installedBadge', 'Installed')}</div>}
+                                        </div>
+                                    )) : (
+                                        <p>{t('appsModal.noAppsFound', 'No apps found matching your search.')}</p>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function Sidebar({ isOpen }) {
   // --- Language State & Setup ---
   const [langCode, setLangCode] = useState('en'); // Default to English
@@ -233,12 +393,18 @@ function Sidebar({ isOpen }) {
     clipboard: false,
     gamepads: false,
     files: false,
+    apps: false,
   });
   const [notifications, setNotifications] = useState([]);
   const notificationTimeouts = useRef({});
   const [isFilesModalOpen, setIsFilesModalOpen] = useState(false);
+  const [isAppsModalOpen, setIsAppsModalOpen] = useState(false);
 
   // --- Callbacks and Handlers ---
+
+  const toggleAppsModal = () => {
+    setIsAppsModalOpen(!isAppsModalOpen);
+  };
 
   const toggleFilesModal = () => {
     setIsFilesModalOpen(!isFilesModalOpen);
@@ -813,11 +979,11 @@ function Sidebar({ isOpen }) {
                  <div className="resolution-manual-inputs">
                     <div className="dev-setting-item manual-input-item">
                       <label htmlFor="manualWidthInput">{t('sections.screen.widthLabel')}</label>
-                      <input type="number" id="manualWidthInput" min="1" step="2" placeholder={t('sections.screen.widthPlaceholder')} value={manualWidth} onChange={handleManualWidthChange} />
+                      <input class="allow-native-input" type="number" id="manualWidthInput" min="1" step="2" placeholder={t('sections.screen.widthPlaceholder')} value={manualWidth} onChange={handleManualWidthChange} />
                     </div>
                     <div className="dev-setting-item manual-input-item">
                       <label htmlFor="manualHeightInput">{t('sections.screen.heightLabel')}</label>
-                      <input type="number" id="manualHeightInput" min="1" step="2" placeholder={t('sections.screen.heightPlaceholder')} value={manualHeight} onChange={handleManualHeightChange} />
+                      <input class="allow-native-input" type="number" id="manualHeightInput" min="1" step="2" placeholder={t('sections.screen.heightPlaceholder')} value={manualHeight} onChange={handleManualHeightChange} />
                     </div>
                  </div>
                  <div className="resolution-action-buttons">
@@ -890,7 +1056,7 @@ function Sidebar({ isOpen }) {
                <div className="sidebar-section-content" id="clipboard-content">
                  <div className="dashboard-clipboard-item">
                     <label htmlFor="dashboardClipboardTextarea">{t('sections.clipboard.label')}</label>
-                    <textarea id="dashboardClipboardTextarea" value={dashboardClipboardContent} onChange={handleClipboardChange} onBlur={handleClipboardBlur} rows="5" placeholder={t('sections.clipboard.placeholder')} />
+                    <textarea class="allow-native-input" id="dashboardClipboardTextarea" value={dashboardClipboardContent} onChange={handleClipboardChange} onBlur={handleClipboardBlur} rows="5" placeholder={t('sections.clipboard.placeholder')} />
                  </div>
                </div>
              )}
@@ -922,6 +1088,26 @@ function Sidebar({ isOpen }) {
                  </button>
                </div>
              )}
+        </div>
+
+        {/* Apps Section */}
+        <div className="sidebar-section">
+            <div className="sidebar-section-header" onClick={() => toggleSection('apps')} role="button" aria-expanded={sectionsOpen.apps} aria-controls="apps-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('apps')}>
+              <h3>{t('sections.apps.title', 'Apps')}</h3>
+              <span className="section-toggle-icon" aria-hidden="true">{sectionsOpen.apps ? <CaretUpIcon /> : <CaretDownIcon />}</span>
+            </div>
+            {sectionsOpen.apps && (
+              <div className="sidebar-section-content" id="apps-content">
+                <button
+                    className="resolution-button"
+                    onClick={toggleAppsModal}
+                    style={{ marginTop: '5px', marginBottom: '5px' }}
+                    title={t('sections.apps.openButtonTitle', 'Manage Apps')}
+                >
+                    <AppsIcon /> <span style={{marginLeft: '8px'}}>{t('sections.apps.openButton', 'Manage Apps')}</span>
+                </button>
+              </div>
+            )}
         </div>
 
         {/* Gamepads Section */}
@@ -1009,6 +1195,14 @@ function Sidebar({ isOpen }) {
             <button className="files-modal-close" onClick={toggleFilesModal} aria-label="Close files modal">&times;</button>
             <iframe src="/files" title="Downloadable Files" />
         </div>
+      )}
+      {/* Apps Modal */}
+      {isAppsModalOpen && (
+        <AppsModal
+            isOpen={isAppsModalOpen}
+            onClose={toggleAppsModal}
+            t={t}
+        />
       )}
       {/* Keyboard Pop Button */}
       {isMobile && (

@@ -44,6 +44,8 @@ const en = {
             deviceErrorDefault: "Error listing audio devices: {errorName}",
             deviceErrorPermission: "Permission denied. Please allow microphone access in browser settings to select devices.",
             deviceErrorNotFound: "No audio devices found.",
+            defaultInputLabelFallback: "Input Device {index}",
+            defaultOutputLabelFallback: "Output Device {index}",
         },
         screen: {
             title: "Screen Settings",
@@ -91,6 +93,11 @@ const en = {
         gamepads: {
             title: "Gamepads",
             noActivity: "No gamepad activity detected yet...",
+        },
+        apps: { // New section for "Apps"
+          title: "Apps",
+          openButtonTitle: "Manage Apps", // Tooltip for the button
+          openButton: "Manage Apps"      // Text on the button
         }
     },
     resolutionPresets: {
@@ -105,6 +112,21 @@ const en = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Close apps modal",
+        loading: "Loading apps...",
+        errorLoading: "Failed to load app data. Please try again.",
+        searchPlaceholder: "Search apps...",
+        noAppsFound: "No apps found matching your search.",
+        backButton: "Back to list",
+        installButton: "Install",
+        updateButton: "Update",
+        removeButton: "Remove",
+        installingMessage: "Simulating install for: {{appName}}",
+        removingMessage: "Simulating removal for: {{appName}}",
+        updatingMessage: "Simulating update for: {{appName}}",
+        installedBadge: "Installed"
+    },
     notifications: {
         closeButtonAlt: "Close notification for {fileName}",
         uploading: "Uploading... {progress}%",
@@ -118,6 +140,10 @@ const en = {
     },
     byteUnits: ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 Bytes",
+    filesModal: {
+        closeAlt: "Close files modal",
+        iframeTitle: "Downloadable Files"
+    }
 };
 
 // --- Spanish Translations (Complete) ---
@@ -155,6 +181,8 @@ const es = {
              deviceErrorDefault: "Error al listar dispositivos de audio: {errorName}",
              deviceErrorPermission: "Permiso denegado. Permita el acceso al micrófono en la configuración del navegador para seleccionar dispositivos.",
              deviceErrorNotFound: "No se encontraron dispositivos de audio.",
+             defaultInputLabelFallback: "Dispositivo de Entrada {index}",
+             defaultOutputLabelFallback: "Dispositivo de Salida {index}",
         },
         screen: {
              title: "Configuración de Pantalla",
@@ -202,6 +230,11 @@ const es = {
         gamepads: {
              title: "Mandos",
              noActivity: "Aún no se ha detectado actividad del mando...",
+        },
+        apps: { // New section for "Apps"
+          title: "Aplicaciones",
+          openButtonTitle: "Gestionar Aplicaciones",
+          openButton: "Gestionar Aplicaciones"
         }
     },
     resolutionPresets: {
@@ -216,6 +249,21 @@ const es = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Cerrar modal de aplicaciones",
+        loading: "Cargando aplicaciones...",
+        errorLoading: "Error al cargar los datos de las aplicaciones. Por favor, inténtalo de nuevo.",
+        searchPlaceholder: "Buscar aplicaciones...",
+        noAppsFound: "No se encontraron aplicaciones que coincidan con tu búsqueda.",
+        backButton: "Volver a la lista",
+        installButton: "Instalar",
+        updateButton: "Actualizar",
+        removeButton: "Eliminar",
+        installingMessage: "Simulando instalación para: {{appName}}",
+        removingMessage: "Simulando eliminación para: {{appName}}",
+        updatingMessage: "Simulando actualización para: {{appName}}",
+        installedBadge: "Instalado"
+    },
     notifications: {
         closeButtonAlt: "Cerrar notificación para {fileName}",
         uploading: "Subiendo... {progress}%",
@@ -229,6 +277,10 @@ const es = {
     },
     byteUnits: ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 Bytes",
+    filesModal: {
+        closeAlt: "Cerrar modal de archivos",
+        iframeTitle: "Archivos Descargables"
+    }
 };
 
 // --- Chinese (Simplified) Translations ---
@@ -266,6 +318,8 @@ const zh = {
             deviceErrorDefault: "列出音频设备时出错: {errorName}",
             deviceErrorPermission: "权限被拒绝。请在浏览器设置中允许麦克风访问以选择设备。",
             deviceErrorNotFound: "未找到音频设备。",
+            defaultInputLabelFallback: "输入设备 {index}",
+            defaultOutputLabelFallback: "输出设备 {index}",
         },
         screen: {
             title: "屏幕设置",
@@ -313,6 +367,11 @@ const zh = {
         gamepads: {
             title: "游戏手柄",
             noActivity: "尚未检测到游戏手柄活动...",
+        },
+        apps: { // New section for "Apps"
+          title: "应用程序",
+          openButtonTitle: "管理应用程序",
+          openButton: "管理应用程序"
         }
     },
     resolutionPresets: {
@@ -327,6 +386,21 @@ const zh = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "关闭应用程序模态框",
+        loading: "正在加载应用程序...",
+        errorLoading: "加载应用程序数据失败。请重试。",
+        searchPlaceholder: "搜索应用程序...",
+        noAppsFound: "未找到与您的搜索匹配的应用程序。",
+        backButton: "返回列表",
+        installButton: "安装",
+        updateButton: "更新",
+        removeButton: "移除",
+        installingMessage: "模拟安装: {{appName}}",
+        removingMessage: "模拟移除: {{appName}}",
+        updatingMessage: "模拟更新: {{appName}}",
+        installedBadge: "已安装"
+    },
     notifications: {
         closeButtonAlt: "关闭 {fileName} 的通知",
         uploading: "正在上传... {progress}%",
@@ -340,6 +414,10 @@ const zh = {
     },
     byteUnits: ['字节', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 字节",
+    filesModal: {
+        closeAlt: "关闭文件模态框",
+        iframeTitle: "可下载文件"
+    }
 };
 
 // --- Hindi Translations ---
@@ -377,6 +455,8 @@ const hi = {
             deviceErrorDefault: "ऑडियो डिवाइस सूचीबद्ध करने में त्रुटि: {errorName}",
             deviceErrorPermission: "अनुमति अस्वीकृत। डिवाइस चुनने के लिए कृपया ब्राउज़र सेटिंग्स में माइक्रोफ़ोन एक्सेस की अनुमति दें।",
             deviceErrorNotFound: "कोई ऑडियो डिवाइस नहीं मिला।",
+            defaultInputLabelFallback: "इनपुट डिवाइस {index}",
+            defaultOutputLabelFallback: "आउटपुट डिवाइस {index}",
         },
         screen: {
             title: "स्क्रीन सेटिंग्स",
@@ -424,6 +504,11 @@ const hi = {
         gamepads: {
             title: "गेमपैड",
             noActivity: "अभी तक कोई गेमपैड गतिविधि का पता नहीं चला है...",
+        },
+        apps: { // New section for "Apps"
+          title: "ऐप्स",
+          openButtonTitle: "ऐप्स प्रबंधित करें",
+          openButton: "ऐप्स प्रबंधित करें"
         }
     },
     resolutionPresets: {
@@ -438,6 +523,21 @@ const hi = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "ऐप्स मोडल बंद करें",
+        loading: "ऐप्स लोड हो रहे हैं...",
+        errorLoading: "ऐप डेटा लोड करने में विफल। कृपया पुनः प्रयास करें।",
+        searchPlaceholder: "ऐप्स खोजें...",
+        noAppsFound: "आपकी खोज से मेल खाने वाले कोई ऐप्स नहीं मिले।",
+        backButton: "सूची पर वापस जाएं",
+        installButton: "इंस्टॉल करें",
+        updateButton: "अपडेट करें",
+        removeButton: "हटाएं",
+        installingMessage: "इसके लिए इंस्टॉलेशन का अनुकरण किया जा रहा है: {{appName}}",
+        removingMessage: "इसके लिए हटाने का अनुकरण किया जा रहा है: {{appName}}",
+        updatingMessage: "इसके लिए अपडेट का अनुकरण किया जा रहा है: {{appName}}",
+        installedBadge: "इंस्टॉल किया गया"
+    },
     notifications: {
         closeButtonAlt: "{fileName} के लिए अधिसूचना बंद करें",
         uploading: "अपलोड हो रहा है... {progress}%",
@@ -451,6 +551,10 @@ const hi = {
     },
     byteUnits: ['बाइट्स', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 बाइट्स",
+    filesModal: {
+        closeAlt: "फ़ाइलें मोडल बंद करें",
+        iframeTitle: "डाउनलोड करने योग्य फ़ाइलें"
+    }
 };
 
 // --- Portuguese Translations ---
@@ -488,6 +592,8 @@ const pt = {
             deviceErrorDefault: "Erro ao listar dispositivos de áudio: {errorName}",
             deviceErrorPermission: "Permissão negada. Permita o acesso ao microfone nas configurações do navegador para selecionar dispositivos.",
             deviceErrorNotFound: "Nenhum dispositivo de áudio encontrado.",
+            defaultInputLabelFallback: "Dispositivo de Entrada {index}",
+            defaultOutputLabelFallback: "Dispositivo de Saída {index}",
         },
         screen: {
             title: "Configurações de Tela",
@@ -535,6 +641,11 @@ const pt = {
         gamepads: {
             title: "Gamepads",
             noActivity: "Nenhuma atividade de gamepad detectada ainda...",
+        },
+        apps: { // New section for "Apps"
+          title: "Aplicativos",
+          openButtonTitle: "Gerenciar Aplicativos",
+          openButton: "Gerenciar Aplicativos"
         }
     },
     resolutionPresets: {
@@ -549,6 +660,21 @@ const pt = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Fechar modal de aplicativos",
+        loading: "Carregando aplicativos...",
+        errorLoading: "Falha ao carregar dados dos aplicativos. Por favor, tente novamente.",
+        searchPlaceholder: "Buscar aplicativos...",
+        noAppsFound: "Nenhum aplicativo encontrado correspondente à sua busca.",
+        backButton: "Voltar para a lista",
+        installButton: "Instalar",
+        updateButton: "Atualizar",
+        removeButton: "Remover",
+        installingMessage: "Simulando instalação para: {{appName}}",
+        removingMessage: "Simulando remoção para: {{appName}}",
+        updatingMessage: "Simulando atualização para: {{appName}}",
+        installedBadge: "Instalado"
+    },
     notifications: {
         closeButtonAlt: "Fechar notificação para {fileName}",
         uploading: "Carregando... {progress}%",
@@ -562,6 +688,10 @@ const pt = {
     },
     byteUnits: ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 Bytes",
+    filesModal: {
+        closeAlt: "Fechar modal de arquivos",
+        iframeTitle: "Arquivos para Download"
+    }
 };
 
 // --- French Translations ---
@@ -599,6 +729,8 @@ const fr = {
             deviceErrorDefault: "Erreur lors de l'énumération des périphériques audio : {errorName}",
             deviceErrorPermission: "Autorisation refusée. Veuillez autoriser l'accès au microphone dans les paramètres du navigateur pour sélectionner des périphériques.",
             deviceErrorNotFound: "Aucun périphérique audio trouvé.",
+            defaultInputLabelFallback: "Périphérique d'entrée {index}",
+            defaultOutputLabelFallback: "Périphérique de sortie {index}",
         },
         screen: {
             title: "Paramètres d'écran",
@@ -646,6 +778,11 @@ const fr = {
         gamepads: {
             title: "Manettes",
             noActivity: "Aucune activité de manette détectée pour le moment...",
+        },
+        apps: { // New section for "Apps"
+          title: "Applications",
+          openButtonTitle: "Gérer les applications",
+          openButton: "Gérer les applications"
         }
     },
     resolutionPresets: {
@@ -660,6 +797,21 @@ const fr = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Fermer la modale des applications",
+        loading: "Chargement des applications...",
+        errorLoading: "Échec du chargement des données des applications. Veuillez réessayer.",
+        searchPlaceholder: "Rechercher des applications...",
+        noAppsFound: "Aucune application trouvée correspondant à votre recherche.",
+        backButton: "Retour à la liste",
+        installButton: "Installer",
+        updateButton: "Mettre à jour",
+        removeButton: "Supprimer",
+        installingMessage: "Simulation de l'installation pour : {{appName}}",
+        removingMessage: "Simulation de la suppression pour : {{appName}}",
+        updatingMessage: "Simulation de la mise à jour pour : {{appName}}",
+        installedBadge: "Installé"
+    },
     notifications: {
         closeButtonAlt: "Fermer la notification pour {fileName}",
         uploading: "Téléversement... {progress}%",
@@ -673,6 +825,10 @@ const fr = {
     },
     byteUnits: ['Octets', 'Ko', 'Mo', 'Go', 'To', 'Po', 'Eo', 'Zo', 'Yo'], // French often uses 'o' for octet
     zeroBytes: "0 Octets",
+    filesModal: {
+        closeAlt: "Fermer la modale des fichiers",
+        iframeTitle: "Fichiers téléchargeables"
+    }
 };
 
 // --- Russian Translations ---
@@ -710,6 +866,8 @@ const ru = {
             deviceErrorDefault: "Ошибка при перечислении аудиоустройств: {errorName}",
             deviceErrorPermission: "Доступ запрещен. Пожалуйста, разрешите доступ к микрофону в настройках браузера для выбора устройств.",
             deviceErrorNotFound: "Аудиоустройства не найдены.",
+            defaultInputLabelFallback: "Устройство ввода {index}",
+            defaultOutputLabelFallback: "Устройство вывода {index}",
         },
         screen: {
             title: "Настройки экрана",
@@ -757,6 +915,11 @@ const ru = {
         gamepads: {
             title: "Геймпады",
             noActivity: "Активность геймпада пока не обнаружена...",
+        },
+        apps: { // New section for "Apps"
+          title: "Приложения",
+          openButtonTitle: "Управление приложениями",
+          openButton: "Управление приложениями"
         }
     },
     resolutionPresets: {
@@ -771,6 +934,21 @@ const ru = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Закрыть модальное окно приложений",
+        loading: "Загрузка приложений...",
+        errorLoading: "Не удалось загрузить данные приложений. Пожалуйста, попробуйте еще раз.",
+        searchPlaceholder: "Поиск приложений...",
+        noAppsFound: "Приложения, соответствующие вашему поиску, не найдены.",
+        backButton: "Назад к списку",
+        installButton: "Установить",
+        updateButton: "Обновить",
+        removeButton: "Удалить",
+        installingMessage: "Симуляция установки для: {{appName}}",
+        removingMessage: "Симуляция удаления для: {{appName}}",
+        updatingMessage: "Симуляция обновления для: {{appName}}",
+        installedBadge: "Установлено"
+    },
     notifications: {
         closeButtonAlt: "Закрыть уведомление для {fileName}",
         uploading: "Загрузка... {progress}%",
@@ -784,6 +962,10 @@ const ru = {
     },
     byteUnits: ['Байты', 'КБ', 'МБ', 'ГБ', 'ТБ', 'ПБ', 'ЭБ', 'ЗБ', 'ЙБ'], // Russian uses Cyrillic abbreviations
     zeroBytes: "0 Байт",
+    filesModal: {
+        closeAlt: "Закрыть модальное окно файлов",
+        iframeTitle: "Файлы для скачивания"
+    }
 };
 
 // --- German Translations ---
@@ -821,6 +1003,8 @@ const de = {
             deviceErrorDefault: "Fehler beim Auflisten der Audiogeräte: {errorName}",
             deviceErrorPermission: "Berechtigung verweigert. Bitte erlauben Sie den Mikrofonzugriff in den Browsereinstellungen, um Geräte auszuwählen.",
             deviceErrorNotFound: "Keine Audiogeräte gefunden.",
+            defaultInputLabelFallback: "Eingabegerät {index}",
+            defaultOutputLabelFallback: "Ausgabegerät {index}",
         },
         screen: {
             title: "Bildschirmeinstellungen",
@@ -868,6 +1052,11 @@ const de = {
         gamepads: {
             title: "Gamepads",
             noActivity: "Bisher keine Gamepad-Aktivität erkannt...",
+        },
+        apps: { // New section for "Apps"
+          title: "Anwendungen",
+          openButtonTitle: "Anwendungen verwalten",
+          openButton: "Anwendungen verwalten"
         }
     },
     resolutionPresets: {
@@ -882,6 +1071,21 @@ const de = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Anwendungsmodal schließen",
+        loading: "Anwendungen werden geladen...",
+        errorLoading: "Fehler beim Laden der Anwendungsdaten. Bitte versuchen Sie es erneut.",
+        searchPlaceholder: "Anwendungen suchen...",
+        noAppsFound: "Keine Anwendungen gefunden, die Ihrer Suche entsprechen.",
+        backButton: "Zurück zur Liste",
+        installButton: "Installieren",
+        updateButton: "Aktualisieren",
+        removeButton: "Entfernen",
+        installingMessage: "Simulation der Installation für: {{appName}}",
+        removingMessage: "Simulation der Entfernung für: {{appName}}",
+        updatingMessage: "Simulation der Aktualisierung für: {{appName}}",
+        installedBadge: "Installiert"
+    },
     notifications: {
         closeButtonAlt: "Benachrichtigung für {fileName} schließen",
         uploading: "Hochladen... {progress}%",
@@ -895,6 +1099,10 @@ const de = {
     },
     byteUnits: ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 Bytes",
+    filesModal: {
+        closeAlt: "Dateimodal schließen",
+        iframeTitle: "Herunterladbare Dateien"
+    }
 };
 
 // --- Turkish Translations ---
@@ -932,6 +1140,8 @@ const tr = {
             deviceErrorDefault: "Ses aygıtları listelenirken hata oluştu: {errorName}",
             deviceErrorPermission: "İzin reddedildi. Aygıtları seçmek için lütfen tarayıcı ayarlarında mikrofon erişimine izin verin.",
             deviceErrorNotFound: "Ses aygıtı bulunamadı.",
+            defaultInputLabelFallback: "Giriş Aygıtı {index}",
+            defaultOutputLabelFallback: "Çıkış Aygıtı {index}",
         },
         screen: {
             title: "Ekran Ayarları",
@@ -979,6 +1189,11 @@ const tr = {
         gamepads: {
             title: "Oyun Kumandaları",
             noActivity: "Henüz oyun kumandası etkinliği algılanmadı...",
+        },
+        apps: { // New section for "Apps"
+          title: "Uygulamalar",
+          openButtonTitle: "Uygulamaları Yönet",
+          openButton: "Uygulamaları Yönet"
         }
     },
     resolutionPresets: {
@@ -993,6 +1208,21 @@ const tr = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Uygulama modalını kapat",
+        loading: "Uygulamalar yükleniyor...",
+        errorLoading: "Uygulama verileri yüklenemedi. Lütfen tekrar deneyin.",
+        searchPlaceholder: "Uygulama ara...",
+        noAppsFound: "Aramanızla eşleşen uygulama bulunamadı.",
+        backButton: "Listeye geri dön",
+        installButton: "Yükle",
+        updateButton: "Güncelle",
+        removeButton: "Kaldır",
+        installingMessage: "Şunun için yükleme simüle ediliyor: {{appName}}",
+        removingMessage: "Şunun için kaldırma simüle ediliyor: {{appName}}",
+        updatingMessage: "Şunun için güncelleme simüle ediliyor: {{appName}}",
+        installedBadge: "Yüklendi"
+    },
     notifications: {
         closeButtonAlt: "{fileName} için bildirimi kapat",
         uploading: "Yükleniyor... {progress}%",
@@ -1006,6 +1236,10 @@ const tr = {
     },
     byteUnits: ['Bayt', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 Bayt",
+    filesModal: {
+        closeAlt: "Dosya modalını kapat",
+        iframeTitle: "İndirilebilir Dosyalar"
+    }
 };
 
 // --- Italian Translations ---
@@ -1043,6 +1277,8 @@ const it = {
             deviceErrorDefault: "Errore nell'elencare i dispositivi audio: {errorName}",
             deviceErrorPermission: "Permesso negato. Consenti l'accesso al microfono nelle impostazioni del browser per selezionare i dispositivi.",
             deviceErrorNotFound: "Nessun dispositivo audio trovato.",
+            defaultInputLabelFallback: "Dispositivo di Input {index}",
+            defaultOutputLabelFallback: "Dispositivo di Output {index}",
         },
         screen: {
             title: "Impostazioni Schermo",
@@ -1090,6 +1326,11 @@ const it = {
         gamepads: {
             title: "Gamepad",
             noActivity: "Nessuna attività del gamepad ancora rilevata...",
+        },
+        apps: { // New section for "Apps"
+          title: "Applicazioni",
+          openButtonTitle: "Gestisci Applicazioni",
+          openButton: "Gestisci Applicazioni"
         }
     },
     resolutionPresets: {
@@ -1104,6 +1345,21 @@ const it = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Chiudi modale applicazioni",
+        loading: "Caricamento applicazioni...",
+        errorLoading: "Errore nel caricamento dei dati delle applicazioni. Riprova.",
+        searchPlaceholder: "Cerca applicazioni...",
+        noAppsFound: "Nessuna applicazione trovata corrispondente alla tua ricerca.",
+        backButton: "Torna alla lista",
+        installButton: "Installa",
+        updateButton: "Aggiorna",
+        removeButton: "Rimuovi",
+        installingMessage: "Simulazione installazione per: {{appName}}",
+        removingMessage: "Simulazione rimozione per: {{appName}}",
+        updatingMessage: "Simulazione aggiornamento per: {{appName}}",
+        installedBadge: "Installato"
+    },
     notifications: {
         closeButtonAlt: "Chiudi notifica per {fileName}",
         uploading: "Caricamento... {progress}%",
@@ -1117,6 +1373,10 @@ const it = {
     },
     byteUnits: ['Byte', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 Byte",
+    filesModal: {
+        closeAlt: "Chiudi modale file",
+        iframeTitle: "File Scaricabili"
+    }
 };
 
 // --- Dutch Translations ---
@@ -1154,6 +1414,8 @@ const nl = {
             deviceErrorDefault: "Fout bij het ophalen van audioapparaten: {errorName}",
             deviceErrorPermission: "Toestemming geweigerd. Sta microfoontoegang toe in browserinstellingen om apparaten te selecteren.",
             deviceErrorNotFound: "Geen audioapparaten gevonden.",
+            defaultInputLabelFallback: "Invoerapparaat {index}",
+            defaultOutputLabelFallback: "Uitvoerapparaat {index}",
         },
         screen: {
             title: "Scherminstellingen",
@@ -1201,6 +1463,11 @@ const nl = {
         gamepads: {
             title: "Gamepads",
             noActivity: "Nog geen gamepad activiteit gedetecteerd...",
+        },
+        apps: { // New section for "Apps"
+          title: "Applicaties",
+          openButtonTitle: "Applicaties beheren",
+          openButton: "Applicaties beheren"
         }
     },
     resolutionPresets: {
@@ -1215,6 +1482,21 @@ const nl = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Applicatiemodal sluiten",
+        loading: "Applicaties laden...",
+        errorLoading: "Fout bij het laden van applicatiegegevens. Probeer het opnieuw.",
+        searchPlaceholder: "Zoek applicaties...",
+        noAppsFound: "Geen applicaties gevonden die overeenkomen met uw zoekopdracht.",
+        backButton: "Terug naar lijst",
+        installButton: "Installeren",
+        updateButton: "Bijwerken",
+        removeButton: "Verwijderen",
+        installingMessage: "Simulatie van installatie voor: {{appName}}",
+        removingMessage: "Simulatie van verwijdering voor: {{appName}}",
+        updatingMessage: "Simulatie van update voor: {{appName}}",
+        installedBadge: "Geïnstalleerd"
+    },
     notifications: {
         closeButtonAlt: "Melding sluiten voor {fileName}",
         uploading: "Uploaden... {progress}%",
@@ -1228,6 +1510,10 @@ const nl = {
     },
     byteUnits: ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 Bytes",
+    filesModal: {
+        closeAlt: "Bestandsmodal sluiten",
+        iframeTitle: "Downloadbare bestanden"
+    }
 };
 
 // --- Arabic Translations ---
@@ -1265,6 +1551,8 @@ const ar = {
             deviceErrorDefault: "خطأ في سرد أجهزة الصوت: {errorName}",
             deviceErrorPermission: "تم رفض الإذن. يرجى السماح بالوصول إلى الميكروفون في إعدادات المتصفح لتحديد الأجهزة.",
             deviceErrorNotFound: "لم يتم العثور على أجهزة صوت.",
+            defaultInputLabelFallback: "جهاز الإدخال {index}",
+            defaultOutputLabelFallback: "جهاز الإخراج {index}",
         },
         screen: {
             title: "إعدادات الشاشة",
@@ -1312,6 +1600,11 @@ const ar = {
         gamepads: {
             title: "لوحات الألعاب",
             noActivity: "لم يتم اكتشاف أي نشاط للوحة الألعاب بعد...",
+        },
+        apps: { // New section for "Apps"
+          title: "التطبيقات",
+          openButtonTitle: "إدارة التطبيقات",
+          openButton: "إدارة التطبيقات"
         }
     },
     resolutionPresets: {
@@ -1326,6 +1619,21 @@ const ar = {
         "640x480": "640 × 480 (VGA 4:3)",
         "320x240": "320 × 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "إغلاق نافذة التطبيقات",
+        loading: "جارٍ تحميل التطبيقات...",
+        errorLoading: "فشل تحميل بيانات التطبيقات. يرجى المحاولة مرة أخرى.",
+        searchPlaceholder: "البحث في التطبيقات...",
+        noAppsFound: "لم يتم العثور على تطبيقات تطابق بحثك.",
+        backButton: "العودة إلى القائمة",
+        installButton: "تثبيت",
+        updateButton: "تحديث",
+        removeButton: "إزالة",
+        installingMessage: "محاكاة التثبيت لـ: {{appName}}",
+        removingMessage: "محاكاة الإزالة لـ: {{appName}}",
+        updatingMessage: "محاكاة التحديث لـ: {{appName}}",
+        installedBadge: "مثبت"
+    },
     notifications: {
         closeButtonAlt: "إغلاق الإشعار لـ {fileName}",
         uploading: "جارٍ التحميل... {progress}%",
@@ -1339,6 +1647,10 @@ const ar = {
     },
     byteUnits: ['بايت', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 بايت",
+    filesModal: {
+        closeAlt: "إغلاق نافذة الملفات",
+        iframeTitle: "ملفات قابلة للتحميل"
+    }
 };
 
 // --- Korean Translations ---
@@ -1376,6 +1688,8 @@ const ko = {
             deviceErrorDefault: "오디오 장치 목록 오류: {errorName}",
             deviceErrorPermission: "권한이 거부되었습니다. 장치를 선택하려면 브라우저 설정에서 마이크 액세스를 허용하십시오.",
             deviceErrorNotFound: "오디오 장치를 찾을 수 없습니다.",
+            defaultInputLabelFallback: "입력 장치 {index}",
+            defaultOutputLabelFallback: "출력 장치 {index}",
         },
         screen: {
             title: "화면 설정",
@@ -1423,6 +1737,11 @@ const ko = {
         gamepads: {
             title: "게임패드",
             noActivity: "아직 게임패드 활동이 감지되지 않았습니다...",
+        },
+        apps: { // New section for "Apps"
+          title: "앱",
+          openButtonTitle: "앱 관리",
+          openButton: "앱 관리"
         }
     },
     resolutionPresets: {
@@ -1437,6 +1756,21 @@ const ko = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "앱 모달 닫기",
+        loading: "앱 로드 중...",
+        errorLoading: "앱 데이터 로드 실패. 다시 시도하십시오.",
+        searchPlaceholder: "앱 검색...",
+        noAppsFound: "검색과 일치하는 앱을 찾을 수 없습니다.",
+        backButton: "목록으로 돌아가기",
+        installButton: "설치",
+        updateButton: "업데이트",
+        removeButton: "제거",
+        installingMessage: "{{appName}} 설치 시뮬레이션 중",
+        removingMessage: "{{appName}} 제거 시뮬레이션 중",
+        updatingMessage: "{{appName}} 업데이트 시뮬레이션 중",
+        installedBadge: "설치됨"
+    },
     notifications: {
         closeButtonAlt: "{fileName} 알림 닫기",
         uploading: "업로드 중... {progress}%",
@@ -1450,6 +1784,10 @@ const ko = {
     },
     byteUnits: ['바이트', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 바이트",
+    filesModal: {
+        closeAlt: "파일 모달 닫기",
+        iframeTitle: "다운로드 가능한 파일"
+    }
 };
 
 // --- Japanese Translations ---
@@ -1487,6 +1825,8 @@ const ja = {
             deviceErrorDefault: "オーディオデバイスのリスト表示エラー: {errorName}",
             deviceErrorPermission: "権限が拒否されました。デバイスを選択するには、ブラウザ設定でマイクへのアクセスを許可してください。",
             deviceErrorNotFound: "オーディオデバイスが見つかりません。",
+            defaultInputLabelFallback: "入力デバイス {index}",
+            defaultOutputLabelFallback: "出力デバイス {index}",
         },
         screen: {
             title: "画面設定",
@@ -1534,6 +1874,11 @@ const ja = {
         gamepads: {
             title: "ゲームパッド",
             noActivity: "まだゲームパッドのアクティビティが検出されていません...",
+        },
+        apps: { // New section for "Apps"
+          title: "アプリ",
+          openButtonTitle: "アプリを管理",
+          openButton: "アプリを管理"
         }
     },
     resolutionPresets: {
@@ -1548,6 +1893,21 @@ const ja = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "アプリモーダルを閉じる",
+        loading: "アプリを読み込み中...",
+        errorLoading: "アプリデータの読み込みに失敗しました。もう一度お試しください。",
+        searchPlaceholder: "アプリを検索...",
+        noAppsFound: "検索に一致するアプリが見つかりません。",
+        backButton: "リストに戻る",
+        installButton: "インストール",
+        updateButton: "更新",
+        removeButton: "削除",
+        installingMessage: "{{appName}} のインストールをシミュレートしています",
+        removingMessage: "{{appName}} の削除をシミュレートしています",
+        updatingMessage: "{{appName}} の更新をシミュレートしています",
+        installedBadge: "インストール済み"
+    },
     notifications: {
         closeButtonAlt: "{fileName} の通知を閉じる",
         uploading: "アップロード中... {progress}%",
@@ -1561,6 +1921,10 @@ const ja = {
     },
     byteUnits: ['バイト', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 バイト",
+    filesModal: {
+        closeAlt: "ファイルモーダルを閉じる",
+        iframeTitle: "ダウンロード可能なファイル"
+    }
 };
 
 // --- Vietnamese Translations ---
@@ -1598,6 +1962,8 @@ const vi = {
             deviceErrorDefault: "Lỗi liệt kê thiết bị âm thanh: {errorName}",
             deviceErrorPermission: "Quyền bị từ chối. Vui lòng cho phép truy cập micro trong cài đặt trình duyệt để chọn thiết bị.",
             deviceErrorNotFound: "Không tìm thấy thiết bị âm thanh nào.",
+            defaultInputLabelFallback: "Thiết bị Đầu vào {index}",
+            defaultOutputLabelFallback: "Thiết bị Đầu ra {index}",
         },
         screen: {
             title: "Cài đặt Màn hình",
@@ -1645,6 +2011,11 @@ const vi = {
         gamepads: {
             title: "Tay cầm chơi game",
             noActivity: "Chưa phát hiện hoạt động nào của tay cầm chơi game...",
+        },
+        apps: { // New section for "Apps"
+          title: "Ứng dụng",
+          openButtonTitle: "Quản lý Ứng dụng",
+          openButton: "Quản lý Ứng dụng"
         }
     },
     resolutionPresets: {
@@ -1659,6 +2030,21 @@ const vi = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Đóng modal ứng dụng",
+        loading: "Đang tải ứng dụng...",
+        errorLoading: "Tải dữ liệu ứng dụng thất bại. Vui lòng thử lại.",
+        searchPlaceholder: "Tìm kiếm ứng dụng...",
+        noAppsFound: "Không tìm thấy ứng dụng nào khớp với tìm kiếm của bạn.",
+        backButton: "Quay lại danh sách",
+        installButton: "Cài đặt",
+        updateButton: "Cập nhật",
+        removeButton: "Gỡ bỏ",
+        installingMessage: "Mô phỏng cài đặt cho: {{appName}}",
+        removingMessage: "Mô phỏng gỡ bỏ cho: {{appName}}",
+        updatingMessage: "Mô phỏng cập nhật cho: {{appName}}",
+        installedBadge: "Đã cài đặt"
+    },
     notifications: {
         closeButtonAlt: "Đóng thông báo cho {fileName}",
         uploading: "Đang tải lên... {progress}%",
@@ -1672,6 +2058,10 @@ const vi = {
     },
     byteUnits: ['Byte', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 Byte",
+    filesModal: {
+        closeAlt: "Đóng modal tệp",
+        iframeTitle: "Tệp có thể tải xuống"
+    }
 };
 
 // --- Thai Translations ---
@@ -1709,6 +2099,8 @@ const th = {
             deviceErrorDefault: "ข้อผิดพลาดในการแสดงรายการอุปกรณ์เสียง: {errorName}",
             deviceErrorPermission: "การอนุญาตถูกปฏิเสธ โปรดอนุญาตการเข้าถึงไมโครโฟนในการตั้งค่าเบราว์เซอร์เพื่อเลือกอุปกรณ์",
             deviceErrorNotFound: "ไม่พบอุปกรณ์เสียง",
+            defaultInputLabelFallback: "อุปกรณ์อินพุต {index}",
+            defaultOutputLabelFallback: "อุปกรณ์เอาต์พุต {index}",
         },
         screen: {
             title: "การตั้งค่าหน้าจอ",
@@ -1756,6 +2148,11 @@ const th = {
         gamepads: {
             title: "เกมแพด",
             noActivity: "ยังไม่พบกิจกรรมของเกมแพด...",
+        },
+        apps: { // New section for "Apps"
+          title: "แอป",
+          openButtonTitle: "จัดการแอป",
+          openButton: "จัดการแอป"
         }
     },
     resolutionPresets: {
@@ -1770,6 +2167,21 @@ const th = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "ปิดหน้าต่างแอป",
+        loading: "กำลังโหลดแอป...",
+        errorLoading: "โหลดข้อมูลแอปไม่สำเร็จ โปรดลองอีกครั้ง",
+        searchPlaceholder: "ค้นหาแอป...",
+        noAppsFound: "ไม่พบแอปที่ตรงกับการค้นหาของคุณ",
+        backButton: "กลับไปที่รายการ",
+        installButton: "ติดตั้ง",
+        updateButton: "อัปเดต",
+        removeButton: "ลบ",
+        installingMessage: "กำลังจำลองการติดตั้งสำหรับ: {{appName}}",
+        removingMessage: "กำลังจำลองการลบสำหรับ: {{appName}}",
+        updatingMessage: "กำลังจำลองการอัปเดตสำหรับ: {{appName}}",
+        installedBadge: "ติดตั้งแล้ว"
+    },
     notifications: {
         closeButtonAlt: "ปิดการแจ้งเตือนสำหรับ {fileName}",
         uploading: "กำลังอัปโหลด... {progress}%",
@@ -1783,6 +2195,10 @@ const th = {
     },
     byteUnits: ['ไบต์', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 ไบต์",
+    filesModal: {
+        closeAlt: "ปิดหน้าต่างไฟล์",
+        iframeTitle: "ไฟล์ที่สามารถดาวน์โหลดได้"
+    }
 };
 
 // --- Filipino Translations ---
@@ -1820,6 +2236,8 @@ const fil = {
             deviceErrorDefault: "Error sa paglista ng mga audio device: {errorName}",
             deviceErrorPermission: "Tinanggihan ang pahintulot. Mangyaring payagan ang access sa mikropono sa mga setting ng browser upang pumili ng mga device.",
             deviceErrorNotFound: "Walang nahanap na mga audio device.",
+            defaultInputLabelFallback: "Input Device {index}",
+            defaultOutputLabelFallback: "Output Device {index}",
         },
         screen: {
             title: "Mga Setting ng Screen",
@@ -1867,6 +2285,11 @@ const fil = {
         gamepads: {
             title: "Mga Gamepad",
             noActivity: "Wala pang aktibidad ng gamepad na natukoy...",
+        },
+        apps: { // New section for "Apps"
+          title: "Mga App",
+          openButtonTitle: "Pamahalaan ang mga App",
+          openButton: "Pamahalaan ang mga App"
         }
     },
     resolutionPresets: {
@@ -1881,6 +2304,21 @@ const fil = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
+    appsModal: { // New section for "AppsModal"
+        closeAlt: "Isara ang modal ng mga app",
+        loading: "Nilo-load ang mga app...",
+        errorLoading: "Nabigo ang pag-load ng data ng app. Pakisubukang muli.",
+        searchPlaceholder: "Maghanap ng mga app...",
+        noAppsFound: "Walang nahanap na app na tumutugma sa iyong paghahanap.",
+        backButton: "Bumalik sa listahan",
+        installButton: "I-install",
+        updateButton: "I-update",
+        removeButton: "Alisin",
+        installingMessage: "Sinusubukan ang pag-install para sa: {{appName}}",
+        removingMessage: "Sinusubukan ang pag-alis para sa: {{appName}}",
+        updatingMessage: "Sinusubukan ang pag-update para sa: {{appName}}",
+        installedBadge: "Naka-install"
+    },
     notifications: {
         closeButtonAlt: "Isara ang notification para sa {fileName}",
         uploading: "Nag-a-upload... {progress}%",
@@ -1894,6 +2332,10 @@ const fil = {
     },
     byteUnits: ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
     zeroBytes: "0 Bytes",
+    filesModal: {
+        closeAlt: "Isara ang modal ng mga file",
+        iframeTitle: "Mga Nada-download na File"
+    }
 };
 
 
