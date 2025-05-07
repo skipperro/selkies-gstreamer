@@ -52,12 +52,7 @@ except ImportError:
     PULSEAUDIO_AVAILABLE = False
     data_logger.warning("pulsectl or pasimple not found. Microphone forwarding will be disabled.")
 from system_metrics import Metrics, GPUMonitor, SystemMonitor, FPS_HIST_BUCKETS
-from input_handler import (WebRTCInput, SelkiesGamepad, GamepadMapper,
-                           get_btn_event, get_axis_event, detect_gamepad_config,
-                           get_num_btns_for_mapping, get_num_axes_for_mapping,
-                           normalize_axis_val, normalize_trigger_val, ABS_MIN,
-                           ABS_MAX, STANDARD_XPAD_CONFIG, XPAD_CONFIG_MAP,
-                           logger_selkies_gamepad)
+from input_handler import (WebRTCInput, SelkiesGamepad, GamepadMapper)
 from gstreamer_pipeline import (GSTWebRTCApp, GSTWebRTCAppError, fit_res,
                                 get_new_res, resize_display,
                                 generate_xrandr_gtf_modeline, set_dpi,
