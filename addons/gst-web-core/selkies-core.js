@@ -1395,6 +1395,7 @@ const initializeUI = () => {
     widthLabel.style.marginRight = '5px';
     widthLabel.style.width = '50px'; // Align labels
     manualWidthInput = document.createElement('input');
+    manualWidthInput.className = 'allow-native-input';
     manualWidthInput.type = 'number';
     manualWidthInput.id = 'manualWidthInput';
     manualWidthInput.min = '1';
@@ -1418,6 +1419,7 @@ const initializeUI = () => {
     heightLabel.style.marginRight = '5px';
     heightLabel.style.width = '50px'; // Align labels
     manualHeightInput = document.createElement('input');
+    manualHeightInput.className = 'allow-native-input';
     manualHeightInput.type = 'number';
     manualHeightInput.id = 'manualHeightInput';
     manualHeightInput.min = '1';
@@ -1714,6 +1716,7 @@ const initializeUI = () => {
     clipboardLabel.htmlFor = 'serverClipboardTextarea';
     clipboardContainer.appendChild(clipboardLabel);
     serverClipboardTextareaElement = document.createElement('textarea');
+    serverClipboardTextareaElement.className = 'allow-native-input';
     serverClipboardTextareaElement.id = 'serverClipboardTextarea';
     serverClipboardTextareaElement.value = serverClipboardContent;
     serverClipboardTextareaElement.addEventListener('blur', (event) => {
@@ -1774,7 +1777,47 @@ const initializeUI = () => {
         window.dispatchEvent(new CustomEvent('requestFileUpload'));
     });
     sidebarDiv.appendChild(uploadButton);
+    const commandTestContainer = document.createElement('div');
+    commandTestContainer.className = 'dev-setting-item'; // Reuse existing class for styling
+    commandTestContainer.style.borderTop = '1px solid #555';
+    commandTestContainer.style.paddingTop = '10px';
+    commandTestContainer.style.marginTop = '10px';
 
+    const commandLabel = document.createElement('label');
+    commandLabel.textContent = 'Send Raw Command:';
+    commandLabel.htmlFor = 'devCommandInput';
+    commandTestContainer.appendChild(commandLabel);
+
+    const commandInput = document.createElement('input');
+    commandInput.type = 'text';
+    commandInput.id = 'devCommandInput';
+    commandInput.className = 'allow-native-input';
+    commandInput.placeholder = 'Enter command string';
+    commandInput.style.width = '100%';
+    commandInput.style.padding = '5px';
+    commandInput.style.backgroundColor = '#333';
+    commandInput.style.color = '#eee';
+    commandInput.style.border = '1px solid #555';
+    commandInput.style.boxSizing = 'border-box';
+    commandInput.style.marginBottom = '5px';
+    commandTestContainer.appendChild(commandInput);
+
+    const sendCommandButton = document.createElement('button');
+    sendCommandButton.id = 'devSendCommandButton';
+    sendCommandButton.textContent = 'Send Command';
+    sendCommandButton.addEventListener('click', () => {
+        const commandString = commandInput.value.trim();
+        if (commandString) {
+            console.log(`Dev Sidebar: Sending command "${commandString}" via window.postMessage.`);
+            window.postMessage({ type: 'command', value: commandString }, window.location.origin);
+            commandInput.value = ''; // Clear input after sending
+        } else {
+            console.warn('Dev Sidebar: Command input is empty, not sending.');
+            alert('Please enter a command string.');
+        }
+    });
+    commandTestContainer.appendChild(sendCommandButton);
+    sidebarDiv.appendChild(commandTestContainer);
 
   } // End if(dev_mode)
 
@@ -2621,6 +2664,24 @@ function receiveMessage(event) {
                 }
             }
             break;
+        case 'command':
+            if (typeof message.value === 'string') {
+                const commandString = message.value;
+                console.log(`Received 'command' message with value: "${commandString}". Forwarding to WebSocket.`);
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    try {
+                        websocket.send(`cmd,${commandString}`);
+                        console.log(`Sent command to server via WebSocket: cmd,${commandString}`);
+                    } catch (e) {
+                        console.error('Failed to send command via WebSocket:', e);
+                    }
+                } else {
+                    console.warn('Cannot send command: WebSocket is not open or not available.');
+                }
+            } else {
+                console.warn("Received 'command' message without a string value:", message);
+            }
+            break;
 
         default:
             console.warn('Received unknown message type via window.postMessage:', message.type, message);
@@ -3434,8 +3495,7 @@ document.addEventListener('DOMContentLoaded', () => {
              let reason = "";
              if(document.hidden) reason = "(Tab Hidden)";
              else if (!isVideoPipelineActive) reason = "(Pipeline Inactive)";
-             else if (videoFrameBuffer.length <= videoBufferSize) reason = `(Buffering ${videoFrameBuffer.length}/${videoBufferSize+1})`;
-             videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames ${reason}`;
+             videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
          }
          if (canvasContext && (document.hidden || !isVideoPipelineActive)) {
              canvasContext.clearRect(0, 0, canvas.width, canvas.height);
@@ -3904,6 +3964,13 @@ websocket.onopen = () => {
              }
            } else if (obj.type === 'server_settings') {
              window.postMessage({ type: 'serverSettings', encoders: obj.encoders }, window.location.origin);
+           } else if (obj.type === 'server_apps') { // <<< NEW SECTION START
+             if (obj.apps && Array.isArray(obj.apps)) {
+               console.log('[websockets] Received server_apps:', obj.apps);
+               window.postMessage({ type: 'systemApps', apps: obj.apps }, window.location.origin);
+             } else {
+               console.warn('[websockets] Received server_apps message without a valid "apps" array:', obj);
+             }
            } else if (obj.type === 'pipeline_status') {
                 console.log('Received pipeline status confirmation from server:', obj);
                 let statusChanged = false;

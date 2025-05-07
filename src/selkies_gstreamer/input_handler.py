@@ -1048,6 +1048,28 @@ class WebRTCInput:
             scale = toks[1]
             if re.fullmatch(r"^\d+(\.\d+)?$", scale): self.on_scaling_ratio(float(scale))
             else: logger_webrtc_input.warning(f"Rejecting scaling change, invalid: {scale}")
+        elif msg_type == "cmd":
+            if len(toks) > 1:
+                command_to_run = ",".join(toks[1:]) # Reconstruct command string if it contained commas
+                logger_webrtc_input.info(f"Attempting to execute command: '{command_to_run}'")
+                home_directory = os.path.expanduser("~")
+                try:
+                    # Use subprocess.Popen for fire-and-forget execution
+                    # stdout and stderr are redirected to DEVNULL to ignore output.
+                    # start_new_session=True detaches the process from the current one.
+                    subprocess.Popen(
+                        command_to_run, 
+                        shell=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        cwd=home_directory,
+                        start_new_session=True 
+                    )
+                    logger_webrtc_input.info(f"Successfully launched command: '{command_to_run}'")
+                except Exception as e:
+                    logger_webrtc_input.error(f"Failed to launch command '{command_to_run}': {e}")
+            else:
+                logger_webrtc_input.warning("Received 'cmd' message without a command string.")
         elif msg_type == "_arg_fps": self.on_set_fps(int(toks[1]))
         elif msg_type == "_arg_resize":
             if len(toks) == 3:

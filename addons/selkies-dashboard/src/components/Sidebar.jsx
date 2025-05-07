@@ -162,14 +162,38 @@ const SelkiesLogo = ({ width = 30, height = 30, className, t, ...props }) => (
     </svg>
   );
 
-
+const INSTALLED_APPS_STORAGE_KEY = 'prootInstalledApps';
 function AppsModal({ isOpen, onClose, t }) {
     const [appData, setAppData] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedApp, setSelectedApp] = useState(null);
-    const [installedApps, setInstalledApps] = useState([]); // Fake installed apps
+
+    // Initialize installedApps from localStorage or default to an empty array
+    const [installedApps, setInstalledApps] = useState(() => {
+        const savedApps = localStorage.getItem(INSTALLED_APPS_STORAGE_KEY);
+        if (savedApps) {
+            try {
+                const parsedApps = JSON.parse(savedApps);
+                // Basic validation: ensure it's an array of strings
+                if (Array.isArray(parsedApps) && parsedApps.every(item => typeof item === 'string')) {
+                    return parsedApps;
+                }
+                console.warn("Invalid data found in localStorage for installed apps. Resetting.");
+                localStorage.removeItem(INSTALLED_APPS_STORAGE_KEY); // Clear invalid data
+            } catch (e) {
+                console.error("Failed to parse installed apps from localStorage:", e);
+                localStorage.removeItem(INSTALLED_APPS_STORAGE_KEY); // Clear corrupted data
+            }
+        }
+        return []; // Default to empty array
+    });
+
+    // Effect to save installedApps to localStorage whenever it changes
+    useEffect(() => {
+        localStorage.setItem(INSTALLED_APPS_STORAGE_KEY, JSON.stringify(installedApps));
+    }, [installedApps]);
 
     useEffect(() => {
         if (isOpen && !appData && !isLoading) {
@@ -182,7 +206,7 @@ function AppsModal({ isOpen, onClose, t }) {
                         throw new Error(`HTTP error! status: ${response.status}`);
                     }
                     const yamlText = await response.text();
-                    const parsedData = yaml.load(yamlText);
+                    const parsedData = yaml.load(yamlText); // Ensure 'yaml' is imported
                     setAppData(parsedData);
                 } catch (e) {
                     console.error("Failed to fetch or parse app data:", e);
@@ -193,7 +217,7 @@ function AppsModal({ isOpen, onClose, t }) {
             };
             fetchAppData();
         }
-    }, [isOpen, appData, isLoading, t]);
+    }, [isOpen, appData, isLoading, t]); // 'yaml' is not a dependency here, but make sure it's imported
 
     const handleSearchChange = (event) => {
         setSearchTerm(event.target.value.toLowerCase());
@@ -209,19 +233,28 @@ function AppsModal({ isOpen, onClose, t }) {
 
     const handleInstall = (appName) => {
         console.log(`Install app: ${appName}`);
-        setInstalledApps(prev => [...prev, appName]);
-        alert(t('appsModal.installingMessage', `Simulating install for: ${appName}`, { appName }));
+        const commandString = `st ~/.local/bin/proot-apps install ${appName}`;
+        window.postMessage({ type: 'command', value: commandString }, window.location.origin);
+        setInstalledApps(prev => {
+            if (!prev.includes(appName)) {
+                return [...prev, appName];
+            }
+            return prev;
+        });
     };
 
     const handleRemove = (appName) => {
         console.log(`Remove app: ${appName}`);
+        const commandString = `st ~/.local/bin/proot-apps remove ${appName}`;
+        window.postMessage({ type: 'command', value: commandString }, window.location.origin);
         setInstalledApps(prev => prev.filter(name => name !== appName));
-        alert(t('appsModal.removingMessage', `Simulating removal for: ${appName}`, { appName }));
     };
 
     const handleUpdate = (appName) => {
         console.log(`Update app: ${appName}`);
-        alert(t('appsModal.updatingMessage', `Simulating update for: ${appName}`, { appName }));
+        const commandString = `st ~/.local/bin/proot-apps update ${appName}`;
+        window.postMessage({ type: 'command', value: commandString }, window.location.origin);
+        // No change to installedApps state for update, as it's still installed
     };
 
     const filteredApps = appData?.include?.filter(app =>
