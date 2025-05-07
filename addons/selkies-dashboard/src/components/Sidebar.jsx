@@ -799,15 +799,63 @@ function Sidebar({ isOpen }) {
         if (event.origin !== window.location.origin) return;
         const message = event.data;
         if (typeof message === 'object' && message !== null) {
-            // --- Existing handlers ---
-            if (message.type === 'pipelineStatusUpdate') { if (message.video !== undefined) setIsVideoActive(message.video); if (message.audio !== undefined) setIsAudioActive(message.audio); if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone); }
-            else if (message.type === 'gamepadControl') { if (message.enabled !== undefined) setIsGamepadEnabled(message.enabled); }
-            else if (message.type === 'sidebarButtonStatusUpdate') { if (message.video !== undefined) setIsVideoActive(message.video); if (message.audio !== undefined) setIsAudioActive(message.audio); if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone); if (message.gamepad !== undefined) setIsGamepadEnabled(message.gamepad); }
-            else if (message.type === 'clipboardContentUpdate') { if (typeof message.text === 'string') setDashboardClipboardContent(message.text); else console.warn('Dashboard: Received clipboardContentUpdate without valid text property.'); }
-            else if (message.type === 'audioDeviceStatusUpdate') { if (message.inputDeviceId !== undefined) setSelectedInputDeviceId(message.inputDeviceId || 'default'); if (message.outputDeviceId !== undefined) setSelectedOutputDeviceId(message.outputDeviceId || 'default'); }
-            else if (message.type === 'gamepadButtonUpdate' || message.type === 'gamepadAxisUpdate') { if (!hasReceivedGamepadData) setHasReceivedGamepadData(true); /* ... update gamepadStates ... */ }
-
-            // --- Updated File Upload Message Handler ---
+            if (message.type === 'pipelineStatusUpdate') {
+              console.log('Dashboard: Received pipelineStatusUpdate', message);
+              if (message.video !== undefined) setIsVideoActive(message.video);
+              if (message.audio !== undefined) setIsAudioActive(message.audio);
+              if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone);
+            }
+            else if (message.type === 'gamepadControl') {
+               if (message.enabled !== undefined) {
+                    console.log('Dashboard: Received gamepadControl status/confirmation', message);
+                    setIsGamepadEnabled(message.enabled);
+                }
+            }
+            else if (message.type === 'sidebarButtonStatusUpdate') {
+              console.log('Dashboard: Received sidebarButtonStatusUpdate', message);
+              if (message.video !== undefined) setIsVideoActive(message.video);
+              if (message.audio !== undefined) setIsAudioActive(message.audio);
+              if (message.microphone !== undefined) setIsMicrophoneActive(message.microphone);
+              if (message.gamepad !== undefined) setIsGamepadEnabled(message.gamepad);
+            }
+            else if (message.type === 'clipboardContentUpdate') {
+                console.log('Dashboard: Received clipboardContentUpdate', message);
+                if (typeof message.text === 'string') {
+                    setDashboardClipboardContent(message.text);
+                } else {
+                    console.warn('Dashboard: Received clipboardContentUpdate without valid text property.');
+                }
+            }
+            else if (message.type === 'audioDeviceStatusUpdate') {
+                 console.log('Dashboard: Received audioDeviceStatusUpdate', message);
+                 if (message.inputDeviceId !== undefined) {
+                     setSelectedInputDeviceId(message.inputDeviceId || 'default');
+                 }
+                 if (message.outputDeviceId !== undefined) {
+                     setSelectedOutputDeviceId(message.outputDeviceId || 'default');
+                 }
+            }
+            else if (message.type === 'gamepadButtonUpdate' || message.type === 'gamepadAxisUpdate') {
+                if (!hasReceivedGamepadData) {
+                    setHasReceivedGamepadData(true);
+                    console.log("Dashboard: First gamepad message received, enabling section header.");
+                }
+                const gpIndex = message.gamepadIndex;
+                if (gpIndex === undefined || gpIndex === null) return;
+                setGamepadStates(prevStates => {
+                    const newState = { ...prevStates };
+                    if (!newState[gpIndex]) newState[gpIndex] = { buttons: {}, axes: {} };
+                    else newState[gpIndex] = { buttons: { ...(newState[gpIndex].buttons || {}) }, axes: { ...(newState[gpIndex].axes || {}) } };
+                    if (message.type === 'gamepadButtonUpdate') {
+                        const buttonIndex = message.buttonIndex;
+                        if (buttonIndex !== undefined) newState[gpIndex].buttons[buttonIndex] = message.value || 0;
+                    } else {
+                        const axisIndex = message.axisIndex;
+                        if (axisIndex !== undefined) newState[gpIndex].axes[axisIndex] = Math.max(-1, Math.min(1, message.value || 0));
+                    }
+                    return newState;
+                });
+            }
             else if (message.type === 'fileUpload') {
                 const { status, fileName, progress, fileSize, message: errorMessage } = message.payload;
                 const id = fileName;
@@ -839,7 +887,6 @@ function Sidebar({ isOpen }) {
                     } else { return prevNotifications; }
                 });
             }
-            // --- New handler for serverSettings ---
             else if (message.type === 'serverSettings') {
                 if (message.encoders && Array.isArray(message.encoders)) {
                     console.log('Dashboard: Received serverSettings with encoders:', message.encoders);
@@ -854,7 +901,7 @@ function Sidebar({ isOpen }) {
         Object.values(notificationTimeouts.current).forEach(timers => { clearTimeout(timers.fadeTimer); clearTimeout(timers.removeTimer); });
         notificationTimeouts.current = {};
     };
-  }, [hasReceivedGamepadData, scheduleNotificationRemoval, removeNotification, t]); // <-- Add t here
+  }, [hasReceivedGamepadData, scheduleNotificationRemoval, removeNotification, t]);
 
 
   // --- Component Rendering ---
