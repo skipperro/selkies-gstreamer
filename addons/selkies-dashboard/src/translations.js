@@ -92,9 +92,15 @@ const en = {
         },
         gamepads: {
             title: "Gamepads",
-            noActivity: "No gamepad activity detected yet...",
+            noActivity: "No physical gamepad activity detected yet...",
+            touchEnableTitle: "Enable Touch Gamepad",
+            touchDisableTitle: "Disable Touch Gamepad",
+            touchActiveLabel: "Touch Gamepad: ON",
+            touchInactiveLabel: "Touch Gamepad: OFF",
+            physicalHiddenForTouch: "Physical gamepad display is hidden while touch gamepad is active.",
+            noActivityMobileOrEnableTouch: "No physical gamepads. Enable touch gamepad or connect a controller."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "Apps",
           openButtonTitle: "Manage Apps", // Tooltip for the button
           openButton: "Manage Apps"      // Text on the button
@@ -230,8 +236,14 @@ const es = {
         gamepads: {
              title: "Mandos",
              noActivity: "Aún no se ha detectado actividad del mando...",
+             touchEnableTitle: "Activar Mando Táctil",
+             touchDisableTitle: "Desactivar Mando Táctil",
+             touchActiveLabel: "Mando Táctil: ENCENDIDO",
+             touchInactiveLabel: "Mando Táctil: APAGADO",
+             physicalHiddenForTouch: "La visualización de mandos físicos está oculta mientras el mando táctil está activo.",
+             noActivityMobileOrEnableTouch: "No hay mandos físicos. Active el mando táctil o conecte un controlador."
         },
-        apps: { // New section for "Apps"
+        apps: { 
           title: "Aplicaciones",
           openButtonTitle: "Gestionar Aplicaciones",
           openButton: "Gestionar Aplicaciones"
@@ -367,8 +379,14 @@ const zh = {
         gamepads: {
             title: "游戏手柄",
             noActivity: "尚未检测到游戏手柄活动...",
+            touchEnableTitle: "启用触摸手柄",
+            touchDisableTitle: "禁用触摸手柄",
+            touchActiveLabel: "触摸手柄: 开",
+            touchInactiveLabel: "触摸手柄: 关",
+            physicalHiddenForTouch: "触摸手柄激活时，物理手柄显示将被隐藏。",
+            noActivityMobileOrEnableTouch: "没有物理手柄。请启用触摸手柄或连接控制器。"
         },
-        apps: { // New section for "Apps"
+        apps: { 
           title: "应用程序",
           openButtonTitle: "管理应用程序",
           openButton: "管理应用程序"
@@ -504,8 +522,14 @@ const hi = {
         gamepads: {
             title: "गेमपैड",
             noActivity: "अभी तक कोई गेमपैड गतिविधि का पता नहीं चला है...",
+            touchEnableTitle: "टच गेमपैड सक्षम करें",
+            touchDisableTitle: "टच गेमपैड अक्षम करें",
+            touchActiveLabel: "टच गेमपैड: चालू",
+            touchInactiveLabel: "टच गेमपैड: बंद",
+            physicalHiddenForTouch: "टच गेमपैड सक्रिय होने पर भौतिक गेमपैड डिस्प्ले छिपा रहता है।",
+            noActivityMobileOrEnableTouch: "कोई भौतिक गेमपैड नहीं। टच गेमपैड सक्षम करें या नियंत्रक कनेक्ट करें।"
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "ऐप्स",
           openButtonTitle: "ऐप्स प्रबंधित करें",
           openButton: "ऐप्स प्रबंधित करें"
@@ -641,8 +665,14 @@ const pt = {
         gamepads: {
             title: "Gamepads",
             noActivity: "Nenhuma atividade de gamepad detectada ainda...",
+            touchEnableTitle: "Ativar Gamepad Tátil",
+            touchDisableTitle: "Desativar Gamepad Tátil",
+            touchActiveLabel: "Gamepad Tátil: LIGADO",
+            touchInactiveLabel: "Gamepad Tátil: DESLIGADO",
+            physicalHiddenForTouch: "A exibição de gamepads físicos fica oculta enquanto o gamepad tátil está ativo.",
+            noActivityMobileOrEnableTouch: "Sem gamepads físicos. Ative o gamepad tátil ou conecte um controle."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "Aplicativos",
           openButtonTitle: "Gerenciar Aplicativos",
           openButton: "Gerenciar Aplicativos"
@@ -778,8 +808,14 @@ const fr = {
         gamepads: {
             title: "Manettes",
             noActivity: "Aucune activité de manette détectée pour le moment...",
+            touchEnableTitle: "Activer la manette tactile",
+            touchDisableTitle: "Désactiver la manette tactile",
+            touchActiveLabel: "Manette tactile : ACTIVÉE",
+            touchInactiveLabel: "Manette tactile : DÉSACTIVÉE",
+            physicalHiddenForTouch: "L'affichage des manettes physiques est masqué lorsque la manette tactile est active.",
+            noActivityMobileOrEnableTouch: "Aucune manette physique. Activez la manette tactile ou connectez un contrôleur."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "Applications",
           openButtonTitle: "Gérer les applications",
           openButton: "Gérer les applications"
@@ -915,8 +951,14 @@ const ru = {
         gamepads: {
             title: "Геймпады",
             noActivity: "Активность геймпада пока не обнаружена...",
+            touchEnableTitle: "Включить сенсорный геймпад",
+            touchDisableTitle: "Отключить сенсорный геймпад",
+            touchActiveLabel: "Сенсорный геймпад: ВКЛ",
+            touchInactiveLabel: "Сенсорный геймпад: ВЫКЛ",
+            physicalHiddenForTouch: "Отображение физических геймпадов скрыто, пока активен сенсорный геймпад.",
+            noActivityMobileOrEnableTouch: "Физические геймпады отсутствуют. Включите сенсорный геймпад или подключите контроллер."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "Приложения",
           openButtonTitle: "Управление приложениями",
           openButton: "Управление приложениями"
@@ -1052,8 +1094,14 @@ const de = {
         gamepads: {
             title: "Gamepads",
             noActivity: "Bisher keine Gamepad-Aktivität erkannt...",
+            touchEnableTitle: "Touch-Gamepad aktivieren",
+            touchDisableTitle: "Touch-Gamepad deaktivieren",
+            touchActiveLabel: "Touch-Gamepad: AN",
+            touchInactiveLabel: "Touch-Gamepad: AUS",
+            physicalHiddenForTouch: "Die Anzeige physischer Gamepads ist ausgeblendet, während das Touch-Gamepad aktiv ist.",
+            noActivityMobileOrEnableTouch: "Keine physischen Gamepads. Aktivieren Sie das Touch-Gamepad oder schließen Sie einen Controller an."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "Anwendungen",
           openButtonTitle: "Anwendungen verwalten",
           openButton: "Anwendungen verwalten"
@@ -1189,8 +1237,14 @@ const tr = {
         gamepads: {
             title: "Oyun Kumandaları",
             noActivity: "Henüz oyun kumandası etkinliği algılanmadı...",
+            touchEnableTitle: "Dokunmatik Oyun Kumandasını Etkinleştir",
+            touchDisableTitle: "Dokunmatik Oyun Kumandasını Devre Dışı Bırak",
+            touchActiveLabel: "Dokunmatik Kumanda: AÇIK",
+            touchInactiveLabel: "Dokunmatik Kumanda: KAPALI",
+            physicalHiddenForTouch: "Dokunmatik oyun kumandası etkinken fiziksel oyun kumandası ekranı gizlenir.",
+            noActivityMobileOrEnableTouch: "Fiziksel oyun kumandası yok. Dokunmatik oyun kumandasını etkinleştirin veya bir denetleyici bağlayın."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "Uygulamalar",
           openButtonTitle: "Uygulamaları Yönet",
           openButton: "Uygulamaları Yönet"
@@ -1326,8 +1380,14 @@ const it = {
         gamepads: {
             title: "Gamepad",
             noActivity: "Nessuna attività del gamepad ancora rilevata...",
+            touchEnableTitle: "Abilita Gamepad Touch",
+            touchDisableTitle: "Disabilita Gamepad Touch",
+            touchActiveLabel: "Gamepad Touch: ON",
+            touchInactiveLabel: "Gamepad Touch: OFF",
+            physicalHiddenForTouch: "La visualizzazione dei gamepad fisici è nascosta mentre il gamepad touch è attivo.",
+            noActivityMobileOrEnableTouch: "Nessun gamepad fisico. Abilita il gamepad touch o collega un controller."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "Applicazioni",
           openButtonTitle: "Gestisci Applicazioni",
           openButton: "Gestisci Applicazioni"
@@ -1463,8 +1523,14 @@ const nl = {
         gamepads: {
             title: "Gamepads",
             noActivity: "Nog geen gamepad activiteit gedetecteerd...",
+            touchEnableTitle: "Touch Gamepad inschakelen",
+            touchDisableTitle: "Touch Gamepad uitschakelen",
+            touchActiveLabel: "Touch Gamepad: AAN",
+            touchInactiveLabel: "Touch Gamepad: UIT",
+            physicalHiddenForTouch: "Weergave van fysieke gamepads is verborgen terwijl de touch gamepad actief is.",
+            noActivityMobileOrEnableTouch: "Geen fysieke gamepads. Schakel de touch gamepad in of sluit een controller aan."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "Applicaties",
           openButtonTitle: "Applicaties beheren",
           openButton: "Applicaties beheren"
@@ -1600,6 +1666,12 @@ const ar = {
         gamepads: {
             title: "لوحات الألعاب",
             noActivity: "لم يتم اكتشاف أي نشاط للوحة الألعاب بعد...",
+            touchEnableTitle: "تمكين لوحة ألعاب اللمس",
+            touchDisableTitle: "تعطيل لوحة ألعاب اللمس",
+            touchActiveLabel: "لوحة ألعاب اللمس: تشغيل",
+            touchInactiveLabel: "لوحة ألعاب اللمس: إيقاف",
+            physicalHiddenForTouch: "يتم إخفاء عرض لوحة الألعاب الفعلية أثناء تنشيط لوحة ألعاب اللمس.",
+            noActivityMobileOrEnableTouch: "لا توجد لوحات ألعاب فعلية. قم بتمكين لوحة ألعاب اللمس أو قم بتوصيل وحدة تحكم."
         },
         apps: { // New section for "Apps"
           title: "التطبيقات",
@@ -1737,8 +1809,14 @@ const ko = {
         gamepads: {
             title: "게임패드",
             noActivity: "아직 게임패드 활동이 감지되지 않았습니다...",
+            touchEnableTitle: "터치 게임패드 활성화",
+            touchDisableTitle: "터치 게임패드 비활성화",
+            touchActiveLabel: "터치 게임패드: 켜짐",
+            touchInactiveLabel: "터치 게임패드: 꺼짐",
+            physicalHiddenForTouch: "터치 게임패드가 활성화되어 있는 동안에는 물리적 게임패드 표시가 숨겨집니다.",
+            noActivityMobileOrEnableTouch: "물리적 게임패드가 없습니다. 터치 게임패드를 활성화하거나 컨트롤러를 연결하십시오."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "앱",
           openButtonTitle: "앱 관리",
           openButton: "앱 관리"
@@ -1874,8 +1952,14 @@ const ja = {
         gamepads: {
             title: "ゲームパッド",
             noActivity: "まだゲームパッドのアクティビティが検出されていません...",
+            touchEnableTitle: "タッチゲームパッドを有効にする",
+            touchDisableTitle: "タッチゲームパッドを無効にする",
+            touchActiveLabel: "タッチゲームパッド: オン",
+            touchInactiveLabel: "タッチゲームパッド: オフ",
+            physicalHiddenForTouch: "タッチゲームパッドがアクティブな間、物理ゲームパッドの表示は非表示になります。",
+            noActivityMobileOrEnableTouch: "物理ゲームパッドがありません。タッチゲームパッドを有効にするか、コントローラーを接続してください。"
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "アプリ",
           openButtonTitle: "アプリを管理",
           openButton: "アプリを管理"
@@ -2011,8 +2095,14 @@ const vi = {
         gamepads: {
             title: "Tay cầm chơi game",
             noActivity: "Chưa phát hiện hoạt động nào của tay cầm chơi game...",
+            touchEnableTitle: "Bật Tay cầm cảm ứng",
+            touchDisableTitle: "Tắt Tay cầm cảm ứng",
+            touchActiveLabel: "Tay cầm cảm ứng: BẬT",
+            touchInactiveLabel: "Tay cầm cảm ứng: TẮT",
+            physicalHiddenForTouch: "Màn hình tay cầm vật lý bị ẩn khi tay cầm cảm ứng đang hoạt động.",
+            noActivityMobileOrEnableTouch: "Không có tay cầm vật lý. Bật tay cầm cảm ứng hoặc kết nối bộ điều khiển."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "Ứng dụng",
           openButtonTitle: "Quản lý Ứng dụng",
           openButton: "Quản lý Ứng dụng"
@@ -2148,8 +2238,14 @@ const th = {
         gamepads: {
             title: "เกมแพด",
             noActivity: "ยังไม่พบกิจกรรมของเกมแพด...",
+            touchEnableTitle: "เปิดใช้งานทัชเกมแพด",
+            touchDisableTitle: "ปิดใช้งานทัชเกมแพด",
+            touchActiveLabel: "ทัชเกมแพด: เปิด",
+            touchInactiveLabel: "ทัชเกมแพด: ปิด",
+            physicalHiddenForTouch: "การแสดงผลเกมแพดจริงจะถูกซ่อนขณะที่ทัชเกมแพดทำงานอยู่",
+            noActivityMobileOrEnableTouch: "ไม่มีเกมแพดจริง เปิดใช้งานทัชเกมแพดหรือเชื่อมต่อคอนโทรลเลอร์"
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "แอป",
           openButtonTitle: "จัดการแอป",
           openButton: "จัดการแอป"
@@ -2285,8 +2381,14 @@ const fil = {
         gamepads: {
             title: "Mga Gamepad",
             noActivity: "Wala pang aktibidad ng gamepad na natukoy...",
+            touchEnableTitle: "Paganahin ang Touch Gamepad",
+            touchDisableTitle: "Huwag paganahin ang Touch Gamepad",
+            touchActiveLabel: "Touch Gamepad: ON",
+            touchInactiveLabel: "Touch Gamepad: OFF",
+            physicalHiddenForTouch: "Nakatago ang display ng pisikal na gamepad habang aktibo ang touch gamepad.",
+            noActivityMobileOrEnableTouch: "Walang pisikal na gamepad. Paganahin ang touch gamepad o kumonekta ng controller."
         },
-        apps: { // New section for "Apps"
+        apps: {
           title: "Mga App",
           openButtonTitle: "Pamahalaan ang mga App",
           openButton: "Pamahalaan ang mga App"
@@ -2304,7 +2406,7 @@ const fil = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
-    appsModal: { // New section for "AppsModal"
+    appsModal: {
         closeAlt: "Isara ang modal ng mga app",
         loading: "Nilo-load ang mga app...",
         errorLoading: "Nabigo ang pag-load ng data ng app. Pakisubukang muli.",
