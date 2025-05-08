@@ -312,8 +312,8 @@ function Sidebar({ isOpen }) {
         (navigator.userAgentData && navigator.userAgentData.mobile) ||
         /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
     );
-    //setIsMobile(!!mobileCheck); // Ensure boolean
-    setIsMobile(true);
+    setIsMobile(!!mobileCheck); // Ensure boolean
+    
     if (!!mobileCheck) {
         // If mobile, ensure the gamepads section is open by default
         setSectionsOpen(prev => ({ ...prev, gamepads: true }));

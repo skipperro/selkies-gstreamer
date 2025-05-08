@@ -26,5 +26,8 @@ dist-ssr
 # Selkies Core
 src/selkies-core.js
 
+# Touch Gamepad
+src/universalTouchGamepad.js
+
 # Nginx theme
 nginx
