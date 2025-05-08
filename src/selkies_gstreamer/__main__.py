@@ -9,7 +9,7 @@ logger_webrtc_input = logging.getLogger("webrtc_input")
 logger_webrtc_signalling = logging.getLogger("webrtc_signalling")
 logger = logging.getLogger("main")
 web_logger = logging.getLogger("web")
-data_logger = logging.getLogger("data_websocket")
+data_logger = logging.getLogger("data_websocket") # Used for JPEG logs too
 
 import concurrent.futures
 import asyncio
@@ -51,6 +51,15 @@ try:
 except ImportError:
     PULSEAUDIO_AVAILABLE = False
     data_logger.warning("pulsectl or pasimple not found. Microphone forwarding will be disabled.")
+import ctypes
+X11_CAPTURE_AVAILABLE = False
+try:
+    from x11_screen_capture import CaptureSettings, ScreenCapture, StripeCallback
+    X11_CAPTURE_AVAILABLE = True
+    data_logger.info("x11_screen_capture library found. JPEG encoding mode available.")
+except ImportError:
+    data_logger.warning("x11_screen_capture library not found. JPEG encoding mode unavailable.")
+    pass
 from system_metrics import Metrics, GPUMonitor, SystemMonitor, FPS_HIST_BUCKETS
 from input_handler import (WebRTCInput, SelkiesGamepad, GamepadMapper)
 from gstreamer_pipeline import (GSTWebRTCApp, GSTWebRTCAppError, fit_res,
@@ -634,12 +643,187 @@ class DataStreamingServer:
         self._last_adjustment_timestamp = 0.0
         self._low_fps_condition_start_timestamp = None
 
+        # --- JPEG Capture Attributes ---
+        self.jpeg_capture_module = None
+        self.is_jpeg_capturing = False
+        self.jpeg_capture_loop = None # To store the asyncio event loop for the callback
+        # --- End JPEG Capture Attributes ---
+
+    # --- JPEG Capture Methods ---
+    def _jpeg_stripe_callback(self, result_ptr, user_data):
+        """Callback executed by x11_screen_capture library thread."""
+        # Check if still capturing, loop exists, websocket exists, and pointer is valid
+        if not self.is_jpeg_capturing or not self.jpeg_capture_loop or not self.data_ws or not result_ptr:
+            return
+
+        result = result_ptr.contents
+        if result.data and result.size > 0:
+            try:
+                # Cast the void* data to a byte pointer of the correct size
+                data_bytes_ptr = ctypes.cast(
+                    result.data, ctypes.POINTER(ctypes.c_ubyte * result.size)
+                )
+                # Copy data into a Python bytes object
+                jpeg_buffer = bytes(data_bytes_ptr.contents)
+
+                # Schedule sending the data on the main event loop
+                if self.data_ws:
+                    async def send_data_async():
+                        try:
+                            # Double check websocket state before sending
+                            if self.data_ws:
+                                data_type_byte = b'\x03'  # Indicates JPEG data
+                                frame_type_byte = b'\x00' # Static placeholder for JPEG
+                                prefixed_jpeg_data = data_type_byte + frame_type_byte + jpeg_buffer
+                                # Send the prefixed data
+                                await self.data_ws.send(prefixed_jpeg_data)
+                        except websockets.exceptions.ConnectionClosed:
+                            data_logger.debug("JPEG Callback: WebSocket closed while trying to send.")
+                            # Consider stopping capture if WS closed? Handled by main handler cleanup.
+                        except Exception as e:
+                            data_logger.error(f"JPEG Callback: Error sending prefixed JPEG data: {e}")
+
+                    # Safely schedule the async send operation from this thread
+                    asyncio.run_coroutine_threadsafe(send_data_async(), self.jpeg_capture_loop)
+            except Exception as e:
+                data_logger.error(f"Error processing JPEG stripe in callback: {e}", exc_info=True)
+        # No need to free result.data, the C library manages it
+
+    async def _start_jpeg_pipeline(self):
+        """Starts the X11 JPEG screen capture pipeline."""
+        if not X11_CAPTURE_AVAILABLE:
+            data_logger.error("Cannot start JPEG pipeline: x11_screen_capture library not available.")
+            await self._send_error_to_client("JPEG encoder not available on server")
+            return False
+        if self.is_jpeg_capturing:
+            data_logger.warning("JPEG capture already running.")
+            return True
+        if not self.app:
+            data_logger.error("Cannot start JPEG pipeline: self.app (GSTWebRTCApp) is not set.")
+            await self._send_error_to_client("Server misconfiguration for JPEG")
+            return False
+        if not self.jpeg_capture_loop: # Should be set in ws_handler
+            self.jpeg_capture_loop = asyncio.get_running_loop()
+            if not self.jpeg_capture_loop:
+                 data_logger.error("Cannot start JPEG pipeline: could not get running event loop.")
+                 await self._send_error_to_client("Server error getting event loop")
+                 return False
+
+        # Get current dimensions from the app object (should be set by ws_handler before calling this)
+        display_width = getattr(self.app, 'display_width', 1024) # Use user default
+        display_height = getattr(self.app, 'display_height', 768) # Use user default
+
+        # --- Fixed settings for JPEG capture ---
+        # These could be made configurable via args if needed later
+        fixed_target_fps = 30.0
+        fixed_jpeg_quality = 40 # Lower quality = smaller size, higher framerate possible
+        # --- End Fixed settings ---
+
+        data_logger.info(f"Starting X11 JPEG capture: {display_width}x{display_height} @ {fixed_target_fps}fps, Quality: {fixed_jpeg_quality}")
+        try:
+            # Configure capture settings
+            capture_settings = CaptureSettings()
+            capture_settings.capture_width = display_width
+            capture_settings.capture_height = display_height
+            capture_settings.capture_x = 0 # Capture full screen
+            capture_settings.capture_y = 0
+            capture_settings.target_fps = fixed_target_fps
+            capture_settings.jpeg_quality = fixed_jpeg_quality
+            # Optional: Configure paint-over quality (higher quality for changed areas)
+            capture_settings.paint_over_jpeg_quality = 95
+            capture_settings.use_paint_over_quality = True
+            capture_settings.paint_over_trigger_frames = 2
+            capture_settings.damage_block_threshold = 15
+            capture_settings.damage_block_duration = 30
+
+            # Create the callback object
+            stripe_callback_obj = StripeCallback(self._jpeg_stripe_callback)
+
+            # Create the screen capture module instance
+            if self.jpeg_capture_module: # Defensive cleanup if somehow exists
+                del self.jpeg_capture_module
+            self.jpeg_capture_module = ScreenCapture()
+
+            if not self.jpeg_capture_module:
+                data_logger.error("Failed to create ScreenCapture module instance for JPEG.")
+                await self._send_error_to_client("Failed to init JPEG capture module")
+                return False
+
+            # Start the capture in a separate thread using run_in_executor
+            # The C library handles its own threading internally for capture + callback
+            await self.jpeg_capture_loop.run_in_executor(
+                None, # Use default executor (ThreadPoolExecutor)
+                self.jpeg_capture_module.start_capture,
+                capture_settings,
+                stripe_callback_obj
+            )
+
+            self.is_jpeg_capturing = True
+            data_logger.info("X11 JPEG capture started successfully.")
+            return True
+        except Exception as e:
+            data_logger.error(f"Failed to start X11 JPEG capture: {e}", exc_info=True)
+            await self._send_error_to_client(f"Error starting JPEG capture: {str(e)[:100]}") # Send truncated error
+            self.is_jpeg_capturing = False
+            # Clean up module instance if creation succeeded but start failed
+            if self.jpeg_capture_module:
+                del self.jpeg_capture_module
+                self.jpeg_capture_module = None
+            return False
+
+    async def _stop_jpeg_pipeline(self):
+        """Stops the X11 JPEG screen capture pipeline."""
+        if not self.is_jpeg_capturing or not self.jpeg_capture_module:
+            # data_logger.debug("JPEG capture not running, stop request ignored.")
+            return True # Indicate success (it's already stopped)
+
+        data_logger.info("Stopping X11 JPEG capture...")
+        self.is_jpeg_capturing = False # Set flag first to prevent callback processing during stop
+
+        try:
+            if self.jpeg_capture_loop and self.jpeg_capture_module:
+                # Call the blocking stop_capture in an executor
+                await self.jpeg_capture_loop.run_in_executor(None, self.jpeg_capture_module.stop_capture)
+                data_logger.info("X11 JPEG capture stop command issued and completed.")
+            else:
+                 data_logger.warning("Cannot issue stop command: loop or module missing.")
+        except Exception as e:
+            data_logger.error(f"Error stopping X11 JPEG capture via executor: {e}", exc_info=True)
+            # Continue cleanup even if stop command failed
+        finally:
+            # Ensure module instance is released for garbage collection
+            if self.jpeg_capture_module:
+                module_to_del = self.jpeg_capture_module
+                self.jpeg_capture_module = None
+                # Let Python's GC handle the __del__ in the C extension if it exists
+                del module_to_del
+                data_logger.debug("X11 Capture module instance released for GC.")
+            # self.is_jpeg_capturing is already False
+        return True
+
+    async def _send_error_to_client(self, error_message):
+        """Sends an ERROR message to the connected client."""
+        if self.data_ws:
+            try:
+                await self.data_ws.send(f"ERROR {error_message}")
+            except Exception as e:
+                data_logger.warning(f"Could not send error to client: {e}")
+    # --- End JPEG Capture Methods ---
+
+
     async def ws_handler(self, websocket):
         """Handles incoming WebSocket connections and messages."""
         global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
 
         raddr = websocket.remote_address
         data_logger.info(f"Data WebSocket connected from {raddr}")
+
+        # --- Store connection-specific state ---
+        if not self.jpeg_capture_loop: # Ensure loop is captured for this handler instance
+            self.jpeg_capture_loop = asyncio.get_running_loop()
+        self.data_ws = websocket # Store current websocket for this handler instance
+        # --- End connection-specific state ---
+
         mode_message = f"MODE {self.mode}"
         try:
             await websocket.send(mode_message)
@@ -649,8 +833,6 @@ class DataStreamingServer:
              )
              return
 
-        self.data_ws = websocket
-
         # ---- Send Server Settings Message ----
         encoders_to_check = [
             'x264enc',
@@ -659,16 +841,20 @@ class DataStreamingServer:
             'openh264enc'
         ]
         supported_encoders = []
+        # Add JPEG if the library is available
+        if X11_CAPTURE_AVAILABLE:
+            supported_encoders.append('jpeg')
+
         for encoder_name in encoders_to_check:
             if check_encoder_supported(encoder_name):
                 supported_encoders.append(encoder_name)
-        
+
         server_settings_payload = {
             'type': 'server_settings',
             'encoders': supported_encoders
         }
         server_settings_message_json = json.dumps(server_settings_payload)
-        
+
         try:
             await websocket.send(server_settings_message_json)
             data_logger.info(f"Sent server_settings to {raddr}: {server_settings_message_json}")
@@ -732,22 +918,15 @@ class DataStreamingServer:
                 logger.error(f"Failed to initialize or connect WebRTCInput for websockets mode: {e}", exc_info=True)
                 self.webrtc_input = None # Ensure it's None if setup fails
 
-            # Automatically start pipelines on connection
-            data_logger.info("Attempting to start WS pipelines automatically on connection.")
-            try:
-                if hasattr(self.app, 'start_websocket_video_pipeline'):
-                    await self.app.start_websocket_video_pipeline()
-                else:
-                    data_logger.error("app instance has no start_websocket_video_pipeline method.")
-
-                if hasattr(self.app, 'start_websocket_audio_pipeline'):
+            data_logger.info("Attempting to start audio pipeline by default for websockets mode...")
+            if hasattr(self.app, 'start_websocket_audio_pipeline'):
+                try:
                     await self.app.start_websocket_audio_pipeline()
-                else:
-                    data_logger.error("app instance has no start_websocket_audio_pipeline method.")
-                data_logger.info("Automatic WS pipeline start initiated.")
-            except Exception as e:
-                 data_logger.error(f"Error during automatic pipeline start: {e}", exc_info=True)
-
+                    data_logger.info("Default audio pipeline started successfully for websockets mode.")
+                except Exception as e:
+                    data_logger.error(f"Error starting default audio pipeline for websockets mode: {e}", exc_info=True)
+            else:
+                data_logger.warning("app instance has no start_websocket_audio_pipeline method. Cannot start audio by default.")
             # Setup stats collection and sending for this connection
             self._shared_stats_ws = {} # Reset stats for this connection
             gpu_id_for_monitor = getattr(self.app, 'gpu_id', 0)
@@ -772,15 +951,6 @@ class DataStreamingServer:
 
             data_logger.info("Starting WebSocket backpressure adjustment task.")
             self._backpressure_task = asyncio.create_task(self._run_backpressure_logic())
-
-            try:
-                 await self.webrtc_input.connect()
-                 data_logger.info("WebRTCInput local connections established (if applicable).")
-            except Exception as e:
-                 data_logger.error(
-                     f"Failed to establish WebRTCInput local connections: {e}",
-                     exc_info=True
-                 )
 
         else:
             # Operating in webrtc mode
@@ -881,8 +1051,9 @@ class DataStreamingServer:
                                     mic_setup_done = True
                                     pa_module_index = existing_source_info.owner_module
                                     # Restart audio pipeline
-                                    await self.app.stop_websocket_audio_pipeline()
-                                    await self.app.start_websocket_audio_pipeline()
+                                    if hasattr(self.app, 'stop_websocket_audio_pipeline'): await self.app.stop_websocket_audio_pipeline()
+                                    if hasattr(self.app, 'start_websocket_audio_pipeline'): await self.app.start_websocket_audio_pipeline()
+
 
                                 else:
                                     # Source does NOT exist, proceed to create it
@@ -907,8 +1078,8 @@ class DataStreamingServer:
                                             data_logger.info(f"Successfully verified creation of source '{virtual_source_name}' (Index: {new_source_info.index}).")
                                             mic_setup_done = True # Mark setup done ONLY after successful load AND verificationi
                                             # Restart audio pipeline
-                                            await self.app.stop_websocket_audio_pipeline()
-                                            await self.app.start_websocket_audio_pipeline()
+                                            if hasattr(self.app, 'stop_websocket_audio_pipeline'): await self.app.stop_websocket_audio_pipeline()
+                                            if hasattr(self.app, 'start_websocket_audio_pipeline'): await self.app.start_websocket_audio_pipeline()
                                         else:
                                             data_logger.error(f"Loaded module {pa_module_index} but failed to find source '{virtual_source_name}' immediately after checking list.")
                                             # Attempt to clean up the potentially problematic module load
@@ -985,7 +1156,9 @@ class DataStreamingServer:
                                         server_name=None,
                                         device_name="input"
                                     )
-                                    data_logger.debug(f"Successfully opened pasimple stream to '{sink_name}' at {current_pa_rate} Hz.")
+                                    # current_pa_rate was not set, this line would error if uncommented
+                                    # data_logger.debug(f"Successfully opened pasimple stream to '{sink_name}' at {current_pa_rate} Hz.")
+                                    data_logger.debug(f"Successfully opened pasimple stream to '{sink_name}' at 24000 Hz.")
                                 except Exception as e_open:
                                     data_logger.error(f"Failed to open pasimple stream to '{sink_name}': {e_open}", exc_info=True)
                                     pa_stream = None
@@ -1165,23 +1338,29 @@ class DataStreamingServer:
                         # Handle standard commands for websockets mode
                         if message == "START_VIDEO":
                             data_logger.info("Received START_VIDEO command.")
-                            if hasattr(self.app, 'start_websocket_video_pipeline'):
-                                try:
-                                    await self.app.start_websocket_video_pipeline()
-                                except Exception as e:
-                                    data_logger.error(f"Error starting WS video pipeline via helper: {e}", exc_info=True)
+                            # --- Start correct pipeline based on app.encoder ---
+                            if self.app.encoder == 'jpeg':
+                                await self._start_jpeg_pipeline()
+                            elif hasattr(self.app, 'start_websocket_video_pipeline'):
+                                await self.app.start_websocket_video_pipeline()
                             else:
-                                data_logger.error("app instance has no start_websocket_video_pipeline method.")
-                                await websocket.send("ERROR START_VIDEO Method not found")
+                                data_logger.error("app instance has no start_websocket_video_pipeline method for GStreamer.")
+                                await self._send_error_to_client("START_VIDEO Method not found")
+                            # --- End START_VIDEO ---
                         elif message == "STOP_VIDEO":
                             data_logger.info("Received STOP_VIDEO command.")
-                            if hasattr(self.app, 'stop_websocket_video_pipeline'):
-                                try:
+                            # --- Stop correct pipeline ---
+                            if self.is_jpeg_capturing: # Check if JPEG is actually running
+                                await self._stop_jpeg_pipeline()
+                            elif hasattr(self.app, 'stop_websocket_video_pipeline'): # Otherwise assume GStreamer
+                                # Check if GStreamer pipeline is running before stopping
+                                if getattr(self.app, 'pipeline_running', False):
                                     await self.app.stop_websocket_video_pipeline()
-                                except Exception as e:
-                                    data_logger.error(f"Error stopping WS video pipeline via helper: {e}", exc_info=True)
+                                else:
+                                    data_logger.debug("STOP_VIDEO ignored: GStreamer pipeline not running.")
                             else:
-                                data_logger.error("app instance has no stop_websocket_video_pipeline method.")
+                                data_logger.error("app instance has no stop_websocket_video_pipeline method for GStreamer.")
+                            # --- End STOP_VIDEO ---
                         elif message == "START_AUDIO":
                             data_logger.info("Received START_AUDIO command.")
                             if hasattr(self.app, 'start_websocket_audio_pipeline'):
@@ -1201,11 +1380,60 @@ class DataStreamingServer:
                             else:
                                 data_logger.error("app instance has no stop_websocket_audio_pipeline method.")
                         elif message.startswith("r,"):
-                            # Handle resolution change request
-                            res = message[2:]
-                            on_resize_handler(res, self.app)
+                            # --- Handle Resize (5-Step Logic) ---
+                            target_res_str = message[2:]
+                            data_logger.info(f"Received resize request: {target_res_str}")
+
+                            # 1. Stop active video pipeline
+                            pipeline_was_running = False
+                            if self.is_jpeg_capturing:
+                                data_logger.info("Stopping JPEG capture before resize...")
+                                await self._stop_jpeg_pipeline()
+                                pipeline_was_running = True
+                            elif getattr(self.app, 'pipeline_running', False) and hasattr(self.app, 'stop_websocket_video_pipeline'):
+                                data_logger.info("Stopping GStreamer video pipeline before resize...")
+                                await self.app.stop_websocket_video_pipeline()
+                                pipeline_was_running = True
+
+                            # 2. Call on_resize_handler to attempt screen change
+                            on_resize_handler(target_res_str, self.app) # Updates app.last_resize_success
+
+                            # 3. Parse target dimensions and update app state
+                            target_w = 0
+                            target_h = 0
+                            resize_succeeded = getattr(self.app, 'last_resize_success', False)
+                            if resize_succeeded:
+                                try:
+                                    parts = target_res_str.split('x')
+                                    if len(parts) == 2:
+                                        target_w = int(parts[0])
+                                        target_h = int(parts[1])
+                                        if target_w > 0 and target_h > 0:
+                                            data_logger.info(f"Resize successful, updating app dimensions to {target_w}x{target_h}")
+                                            self.app.display_width = target_w
+                                            self.app.display_height = target_h
+                                        else:
+                                             data_logger.error(f"Parsed invalid dimensions from resize request '{target_res_str}'. Cannot update app state.")
+                                             resize_succeeded = False # Mark as failed if parsing fails
+                                    else:
+                                        data_logger.error(f"Invalid format in resize request '{target_res_str}'. Cannot update app state.")
+                                        resize_succeeded = False
+                                except ValueError:
+                                    data_logger.error(f"Non-integer dimensions in resize request '{target_res_str}'. Cannot update app state.")
+                                    resize_succeeded = False
+                            else:
+                                data_logger.warning(f"Resize attempt for {target_res_str} failed (reported by on_resize_handler). App dimensions not updated to target.")
+                                # Optionally: Query actual dimensions and update app state here if needed.
+                                # For simplicity, we leave app dimensions as they were before the failed attempt.
+
+                            data_logger.info("Restarting video pipeline after resize attempt...")
+                            if self.app.encoder == 'jpeg':
+                                await self._start_jpeg_pipeline() # Will use updated app.display_width/height
+                            elif hasattr(self.app, 'start_websocket_video_pipeline'):
+                                await self.app.start_websocket_video_pipeline() # Will use updated app.display_width/height
+                            # --- End Resize Handling ---
                         elif message.startswith("s,"):
-                            # Handle scaling ratio change request
+                            # Handle scaling ratio change request (no specific JPEG action, GStreamer might react)
                             scale = message[2:]
                             try:
                                 scale = float(scale)
@@ -1214,128 +1442,136 @@ class DataStreamingServer:
                                 data_logger.error(f"Invalid scale value received: {scale}")
                         elif message.startswith("cfps,"):
                           # Handle client FPS report for backpressure logic
-                          try:
-                              parts = message.split(",")
-                              if len(parts) != 2:
-                                  data_logger.error(f"Invalid cfps message format: {message}")
-                                  continue
-                              current_cfps_str = parts[1]
-                              # Store the reported FPS for the backpressure logic
-                              self._latest_client_render_fps = float(current_cfps_str)
-
-                          except ValueError:
-                              data_logger.error(f"Error: Invalid cfps value received (not a number): {message}")
-                              self._latest_client_render_fps = 0.0 # Reset on error
-                          except Exception as e:
-                              data_logger.error(f"Error processing cfps message: {e}", exc_info=True)
-                              self._latest_client_render_fps = 0.0 # Reset on error
-
-                        elif message.startswith("SET_VIDEO_BITRATE,"):
-                            # Handle request to change video bitrate
+                          # Ignore if JPEG is the encoder
+                          if self.app.encoder != 'jpeg':
                             try:
                                 parts = message.split(",")
                                 if len(parts) != 2:
-                                    data_logger.error(f"Invalid SET_VIDEO_BITRATE message format: {message}")
-                                    await websocket.send("ERROR Invalid SET_VIDEO_BITRATE format")
+                                    data_logger.error(f"Invalid cfps message format: {message}")
                                     continue
-                                new_bitrate_kbps = int(parts[1])
-                                data_logger.info(f"Received SET_VIDEO_BITRATE: {new_bitrate_kbps}kbps")
-
-                                TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps # Update global target
-
-                                # Stop, update bitrate, restart pipeline
-                                if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
-                                if hasattr(self.app, 'video_bitrate'): self.app.video_bitrate = new_bitrate_kbps # Update app instance
-                                if hasattr(self.app, 'start_websocket_video_pipeline'):
-                                    await self.app.start_websocket_video_pipeline()
-                                    data_logger.info("Video pipeline stopped and restarted with new video bitrate.")
-                                else:
-                                    data_logger.error("app instance has no start_websocket_video_pipeline method after stop.")
-                                    await websocket.send("ERROR Failed to restart video pipeline after setting bitrate")
+                                current_cfps_str = parts[1]
+                                self._latest_client_render_fps = float(current_cfps_str)
                             except ValueError:
-                                data_logger.error(f"Invalid SET_VIDEO_BITRATE value (not an integer): {message}")
-                                await websocket.send("ERROR Invalid SET_VIDEO_BITRATE value")
+                                data_logger.error(f"Error: Invalid cfps value received (not a number): {message}")
+                                self._latest_client_render_fps = 0.0 # Reset on error
                             except Exception as e:
-                                data_logger.error(f"Error setting video bitrate and restarting pipeline: {e}", exc_info=True)
-                                await websocket.send("ERROR Failed to set video bitrate")
+                                data_logger.error(f"Error processing cfps message: {e}", exc_info=True)
+                                self._latest_client_render_fps = 0.0 # Reset on error
+                          # else:
+                              # data_logger.debug("cfps message ignored for JPEG encoder.")
+
+
+                        elif message.startswith("SET_VIDEO_BITRATE,"):
+                            # Ignore if JPEG is active
+                            if self.app.encoder == 'jpeg':
+                                data_logger.info(f"Message '{message}' ignored: JPEG encoder uses fixed quality, not bitrate.")
+                            else: # GStreamer
+                                try:
+                                    parts = message.split(",")
+                                    if len(parts) != 2:
+                                        data_logger.error(f"Invalid SET_VIDEO_BITRATE message format: {message}")
+                                        await self._send_error_to_client("Invalid SET_VIDEO_BITRATE format")
+                                        continue
+                                    new_bitrate_kbps = int(parts[1])
+                                    data_logger.info(f"Received SET_VIDEO_BITRATE for GStreamer: {new_bitrate_kbps}kbps")
+                                    TARGET_VIDEO_BITRATE_KBPS = new_bitrate_kbps
+                                    self.app.video_bitrate = new_bitrate_kbps
+                                    if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
+                                    if hasattr(self.app, 'start_websocket_video_pipeline'):
+                                        await self.app.start_websocket_video_pipeline()
+                                        data_logger.info("GStreamer video pipeline restarted with new video bitrate.")
+                                except Exception as e:
+                                    data_logger.error(f"Error setting GStreamer video bitrate: {e}", exc_info=True)
+                                    await self._send_error_to_client("Failed to set GStreamer video bitrate")
+
                         elif message.startswith("SET_AUDIO_BITRATE,"):
-                            # Handle request to change audio bitrate
+                            # Audio is always GStreamer for now
                             try:
                                 parts = message.split(",")
                                 if len(parts) != 2:
                                     data_logger.error(f"Invalid SET_AUDIO_BITRATE message format: {message}")
-                                    await websocket.send("ERROR Invalid SET_AUDIO_BITRATE format")
+                                    await self._send_error_to_client("Invalid SET_AUDIO_BITRATE format")
                                     continue
                                 new_bitrate_bps = int(parts[1])
                                 data_logger.info(f"Received SET_AUDIO_BITRATE: {new_bitrate_bps}bps")
-
-                                # Stop, update bitrate, restart pipeline
                                 if hasattr(self.app, 'stop_websocket_audio_pipeline'): await self.app.stop_websocket_audio_pipeline()
                                 if hasattr(self.app, 'audio_bitrate'): self.app.audio_bitrate = new_bitrate_bps
                                 if hasattr(self.app, 'start_websocket_audio_pipeline'):
                                     await self.app.start_websocket_audio_pipeline()
-                                    data_logger.info("Audio pipeline stopped and restarted after setting audio bitrate.")
-                                else:
-                                    data_logger.error("app instance has no start_websocket_audio_pipeline method after stop.")
-                                    await websocket.send("ERROR Failed to restart audio pipeline after setting audio bitrate")
-                            except ValueError:
-                                data_logger.error(f"Invalid SET_AUDIO_BITRATE value (not an integer): {message}")
-                                await websocket.send("ERROR Invalid SET_AUDIO_BITRATE value")
+                                    data_logger.info("Audio pipeline restarted with new audio bitrate.")
                             except Exception as e:
-                                data_logger.error(f"Error setting audio bitrate and restarting pipeline: {e}", exc_info=True)
-                                await websocket.send("ERROR Failed to set audio bitrate")
+                                data_logger.error(f"Error setting audio bitrate: {e}", exc_info=True)
+                                await self._send_error_to_client("Failed to set audio bitrate")
+
                         elif message.startswith("SET_ENCODER,"):
-                            # Handle request to change video encoder
+                            # --- Handle Encoder Change ---
                             try:
                                 parts = message.split(",")
                                 if len(parts) != 2:
                                     data_logger.error(f"Invalid SET_ENCODER message format: {message}")
-                                    await websocket.send("ERROR Invalid SET_ENCODER format")
+                                    await self._send_error_to_client("Invalid SET_ENCODER format")
                                     continue
-                                new_encoder_str = parts[1]
+                                new_encoder_str = parts[1].strip().lower() # Normalize
                                 data_logger.info(f"Received SET_ENCODER: {new_encoder_str}")
 
-                                # Stop, update encoder, restart pipeline
-                                if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
-                                if hasattr(self.app, 'encoder'): self.app.encoder = new_encoder_str # Update app instance
-                                if hasattr(self.app, 'start_websocket_video_pipeline'):
-                                    await self.app.start_websocket_video_pipeline()
-                                    data_logger.info("Video pipeline stopped and restarted with new encoder.")
+                                if new_encoder_str == self.app.encoder:
+                                    data_logger.info(f"Encoder already set to {new_encoder_str}. No change.")
+                                    continue
+
+                                # Check availability for JPEG
+                                if new_encoder_str == "jpeg" and not X11_CAPTURE_AVAILABLE:
+                                    data_logger.error("Client requested 'jpeg' encoder, but x11_screen_capture is not available.")
+                                    await self._send_error_to_client("JPEG encoder not available on server")
+                                    continue
+
+                                # Stop current video pipeline, whichever it is
+                                pipeline_was_running = False
+                                if self.is_jpeg_capturing:
+                                    await self._stop_jpeg_pipeline()
+                                    pipeline_was_running = True
+                                elif hasattr(self.app, 'stop_websocket_video_pipeline') and getattr(self.app, 'pipeline_running', False):
+                                    await self.app.stop_websocket_video_pipeline()
+                                    pipeline_was_running = True
+
+                                # Update app's encoder knowledge
+                                self.app.encoder = new_encoder_str
+
+                                # Start new video pipeline if one was running before
+                                if pipeline_was_running:
+                                    if new_encoder_str == 'jpeg':
+                                        await self._start_jpeg_pipeline()
+                                    elif hasattr(self.app, 'start_websocket_video_pipeline'):
+                                        await self.app.start_websocket_video_pipeline()
+                                    data_logger.info(f"Video pipeline stopped and restarted with new encoder: {new_encoder_str}.")
                                 else:
-                                    data_logger.error("app instance has no start_websocket_video_pipeline method after stop.")
-                                    await websocket.send("ERROR Failed to restart video pipeline after setting encoder")
+                                    data_logger.info(f"Encoder set to {new_encoder_str}. Pipeline was not running, will start on next START_VIDEO or resize.")
                             except Exception as e:
                                 data_logger.error(f"Error setting encoder and restarting pipeline: {e}", exc_info=True)
-                                await websocket.send("ERROR Failed to set encoder")
+                                await self._send_error_to_client(f"Failed to set encoder: {str(e)[:100]}")
+                            # --- End Encoder Change ---
+
                         elif message.startswith("SET_FRAMERATE,"):
-                            # Handle request to change framerate
-                            try:
-                                parts = message.split(",")
-                                if len(parts) != 2:
-                                    data_logger.error(f"Invalid SET_FRAMERATE message format: {message}")
-                                    await websocket.send("ERROR Invalid SET_FRAMERATE format")
-                                    continue
-                                new_framerate_int = int(parts[1])
-                                data_logger.info(f"Received SET_FRAMERATE: {new_framerate_int}fps")
-
-                                TARGET_FRAMERATE = new_framerate_int # Update global target
-
-                                # Stop, update framerate, restart pipeline
-                                if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
-                                if hasattr(self.app, 'framerate'): self.app.framerate = new_framerate_int # Update app instance
-                                if hasattr(self.app, 'start_websocket_video_pipeline'):
-                                    await self.app.start_websocket_video_pipeline()
-                                    data_logger.info("Video pipeline stopped and restarted with new framerate.")
-                                else:
-                                    data_logger.error("app instance has no start_websocket_video_pipeline method after stop.")
-                                    await websocket.send("ERROR Failed to restart video pipeline after setting framerate")
-                            except ValueError:
-                                data_logger.error(f"Invalid SET_FRAMERATE value (not an integer): {message}")
-                                await websocket.send("ERROR Invalid SET_FRAMERATE value")
-                            except Exception as e:
-                                data_logger.error(f"Error setting framerate and restarting pipeline: {e}", exc_info=True)
-                                await websocket.send("ERROR Failed to set framerate")
-
+                            # Ignore if JPEG is active
+                            if self.app.encoder == 'jpeg':
+                                data_logger.info(f"Message '{message}' ignored: JPEG encoder uses fixed framerate.")
+                            else: # GStreamer
+                                try:
+                                    parts = message.split(",")
+                                    if len(parts) != 2:
+                                        data_logger.error(f"Invalid SET_FRAMERATE message format: {message}")
+                                        await self._send_error_to_client("Invalid SET_FRAMERATE format")
+                                        continue
+                                    new_framerate_int = int(parts[1])
+                                    data_logger.info(f"Received SET_FRAMERATE for GStreamer: {new_framerate_int}fps")
+                                    TARGET_FRAMERATE = new_framerate_int
+                                    self.app.framerate = new_framerate_int
+                                    if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
+                                    if hasattr(self.app, 'start_websocket_video_pipeline'):
+                                        await self.app.start_websocket_video_pipeline()
+                                        data_logger.info("GStreamer video pipeline restarted with new framerate.")
+                                except Exception as e:
+                                    data_logger.error(f"Error setting GStreamer framerate: {e}", exc_info=True)
+                                    await self._send_error_to_client("Failed to set GStreamer framerate")
                         else:
                              # Default handling for other string messages (e.g., input events)
                              if self.webrtc_input and hasattr(self.webrtc_input, 'on_message'):
@@ -1365,20 +1601,49 @@ class DataStreamingServer:
             )
 
         finally:
-            data_logger.info(f"Cleaning up Data WebSocket handler for {raddr} (including PulseAudio)...")
+            data_logger.info(f"Cleaning up Data WebSocket handler for {raddr} (including PulseAudio and Pipelines)...")
+            # --- Cancel background tasks ---
             if self._backpressure_task and not self._backpressure_task.done():
                 data_logger.info("Cancelling WebSocket backpressure task...")
                 self._backpressure_task.cancel()
                 try:
-                    # Wait for the task to acknowledge cancellation
-                    await asyncio.wait_for(asyncio.shield(self._backpressure_task), timeout=1.0)
+                    await asyncio.wait_for(asyncio.shield(self._backpressure_task), timeout=0.5) # Shorter timeout
                 except asyncio.CancelledError:
                     data_logger.info("WebSocket backpressure task cancellation confirmed.")
                 except asyncio.TimeoutError:
                     data_logger.warning("Timeout waiting for backpressure task cancellation.")
-                except Exception as e:
+                except Exception as e: # Catch all for safety
                     data_logger.error(f"Error during backpressure task cleanup: {e}")
                 self._backpressure_task = None
+
+            tasks_to_cancel_ws = []
+            if self._system_monitor_task_ws and not self._system_monitor_task_ws.done(): tasks_to_cancel_ws.append(self._system_monitor_task_ws)
+            if self._gpu_monitor_task_ws and not self._gpu_monitor_task_ws.done(): tasks_to_cancel_ws.append(self._gpu_monitor_task_ws)
+            if self._stats_sender_task_ws and not self._stats_sender_task_ws.done(): tasks_to_cancel_ws.append(self._stats_sender_task_ws)
+
+            for task in tasks_to_cancel_ws: task.cancel()
+            if tasks_to_cancel_ws:
+                await asyncio.gather(*tasks_to_cancel_ws, return_exceptions=True)
+                data_logger.info("Websockets mode stats tasks cancelled.")
+            # --- End Cancel background tasks ---
+
+            # --- Stop Pipelines ---
+            if self.is_jpeg_capturing:
+                await self._stop_jpeg_pipeline()
+            # Stop GStreamer video if running
+            if getattr(self.app, 'pipeline_running', False) and hasattr(self.app, 'stop_websocket_video_pipeline'):
+                data_logger.info("Stopping GStreamer video pipeline during cleanup.")
+                await self.app.stop_websocket_video_pipeline()
+            # Stop GStreamer audio if running (use a separate flag if audio has independent lifecycle)
+            # Assuming audio runs if video runs for now, or managed by its own start/stop calls
+            if hasattr(self.app, 'stop_websocket_audio_pipeline'): # Check if method exists
+                 # Add a check here if audio pipeline state is tracked separately
+                 # E.g., if getattr(self.app, 'audio_pipeline_running', False):
+                 data_logger.info("Stopping GStreamer audio pipeline during cleanup.")
+                 await self.app.stop_websocket_audio_pipeline()
+            # --- End Stop Pipelines ---
+
+            # --- PulseAudio Cleanup ---
             if pa_stream:
                 data_logger.info(f"Closing pasimple stream connected to '{sink_name}'.")
                 try:
@@ -1387,12 +1652,10 @@ class DataStreamingServer:
                     data_logger.error(f"Error closing pasimple stream during cleanup: {e}")
                 pa_stream = None
             if pa_module_index is not None and pulse:
-                # Only unload the module if this handler instance loaded it
                 data_logger.info(f"Unloading PulseAudio module index {pa_module_index}.")
                 try:
                     pulse.module_unload(pa_module_index)
                 except Exception as e:
-                    # Log error but continue cleanup
                     data_logger.error(f"Error unloading PulseAudio module {pa_module_index}: {e}")
             if pulse:
                 data_logger.debug("Closing pulsectl client connection.")
@@ -1400,83 +1663,32 @@ class DataStreamingServer:
                     pulse.close()
                 except Exception as e:
                      data_logger.error(f"Error closing pulsectl connection: {e}")
+            # --- End PulseAudio Cleanup ---
 
-            # Clean up any incomplete uploads associated with this connection
+            # --- File Upload Cleanup ---
             if active_upload_target_path and active_upload_target_path in active_uploads_by_path:
                 target_path = active_upload_target_path
                 data_logger.warning(f"Connection closed with active upload: '{target_path}'. Cleaning up.")
-                file_handle = active_uploads_by_path[target_path]
                 try:
-                    file_handle.close()
-                    data_logger.info(f"Closed handle for incomplete upload: '{target_path}'")
-                except Exception as e:
-                    data_logger.error(f"Error closing handle for '{target_path}' during cleanup: {e}")
-                try:
+                    active_uploads_by_path[target_path].close()
                     os.remove(target_path)
-                    data_logger.info(f"Deleted incomplete file: '{target_path}'")
-                except FileNotFoundError:
-                     pass # File might not have been created or already deleted
-                except OSError as e:
-                    data_logger.error(f"Could not delete incomplete file '{target_path}': {e}")
-            elif active_uploads_by_path:
-                data_logger.warning(f"Connection closed, active_upload_target_path was None, but active_uploads_by_path dict still contained {len(active_uploads_by_path)} entries. Cleaning up residual handles.")
-                for path, handle in list(active_uploads_by_path.items()):
-                     try: handle.close()
-                     except: pass
-                     try: os.remove(path) # Attempt to delete residual files
-                     except: pass
+                    data_logger.info(f"Closed and deleted incomplete upload: '{target_path}'")
+                except Exception as e:
+                    data_logger.error(f"Error cleaning up active upload '{target_path}': {e}")
+                if target_path in active_uploads_by_path: del active_uploads_by_path[target_path]
+            # --- End File Upload Cleanup ---
 
-            if self.mode == "websockets":
-                # Clean up resources specific to websockets mode for this connection
-                data_logger.info("Stopping websockets mode tasks...")
-                tasks_to_cancel = []
-                # Cancel stats collection and sending tasks
-                if self._system_monitor_task_ws and not self._system_monitor_task_ws.done():
-                    self._system_monitor_task_ws.cancel()
-                    tasks_to_cancel.append(self._system_monitor_task_ws)
-                if self._gpu_monitor_task_ws and not self._gpu_monitor_task_ws.done():
-                    self._gpu_monitor_task_ws.cancel()
-                    tasks_to_cancel.append(self._gpu_monitor_task_ws)
-                if self._stats_sender_task_ws and not self._stats_sender_task_ws.done():
-                    self._stats_sender_task_ws.cancel()
-                    tasks_to_cancel.append(self._stats_sender_task_ws)
+            # --- Input Handler Cleanup ---
+            if self.mode == "websockets" and self.webrtc_input:
+                data_logger.info("Disconnecting WebRTCInput.")
+                if hasattr(self.webrtc_input, 'disconnect'):
+                     try: await self.webrtc_input.disconnect()
+                     except Exception as e: data_logger.error(f"Error disconnecting webrtc_input: {e}", exc_info=True)
+                self.webrtc_input = None
+            # --- End Input Handler Cleanup ---
 
-                if tasks_to_cancel:
-                     data_logger.info("Waiting for websockets mode tasks to cancel...")
-                     try:
-                         await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
-                         data_logger.info("Websockets mode tasks cancelled.")
-                     except asyncio.CancelledError:
-                         data_logger.info("Gather itself was cancelled during task cleanup.")
-
-                # Stop associated GStreamer pipelines
-                data_logger.info("Stopping websockets mode pipelines.")
-                if hasattr(self.app, 'stop_websocket_video_pipeline'):
-                    try: await self.app.stop_websocket_video_pipeline()
-                    except Exception as e: data_logger.error(f"Error stopping WS video pipeline: {e}", exc_info=True)
-                else:
-                    data_logger.warning("app instance has no stop_websocket_video_pipeline method.")
-                if hasattr(self.app, 'stop_websocket_audio_pipeline'):
-                    try: await self.app.stop_websocket_audio_pipeline()
-                    except Exception as e: data_logger.error(f"Error stopping WS audio pipeline: {e}", exc_info=True)
-                else:
-                    data_logger.warning("app instance has no stop_websocket_audio_pipeline method.")
-
-                # Disconnect the input handler if it was initialized
-                if self.webrtc_input:
-                    data_logger.info("Disconnecting WebRTCInput.")
-                    if hasattr(self.webrtc_input, 'disconnect'):
-                         try: await self.webrtc_input.disconnect()
-                         except Exception as e: data_logger.error(f"Error disconnecting webrtc_input: {e}", exc_info=True)
-                    else:
-                         data_logger.warning("webrtc_input instance has no disconnect method.")
-                    self.webrtc_input = None # Clear reference
-
-                # Reset FPS adjustment state for the next connection
-                self._last_adjustment_timestamp = 0.0
-                self._low_fps_condition_start_timestamp = None
-
-            self.data_ws = None # Clear the reference to the closed websocket
+            self.data_ws = None # Clear the reference to this specific connection's websocket
+            self.jpeg_capture_loop = None # Clear loop reference for this handler
             data_logger.info(f"Data WebSocket handler finished for {raddr}")
 
     async def _run_backpressure_logic(self):
@@ -1485,106 +1697,79 @@ class DataStreamingServer:
         try:
             while True:
                 await asyncio.sleep(BACKPRESSURE_CHECK_INTERVAL_SECONDS)
+
+                # --- Skip backpressure if JPEG encoder is active ---
+                if self.app and self.app.encoder == 'jpeg':
+                    # data_logger.debug("Backpressure check skipped: JPEG encoder is active.")
+                    continue
+                # --- End Skip ---
+
                 now = time.monotonic()
                 self._last_backpressure_check_time = now
 
-                # Ensure app exists and we are still in the correct mode
                 if not self.app or self.mode != 'websockets':
                     data_logger.warning("Backpressure check skipped: App not available or not in websockets mode.")
                     continue
 
-                # Check if the video pipeline is actually running before trying to adjust
-                # Use the pipeline_running flag set by start/stop helpers
+                # Check if GStreamer video pipeline is running
                 if not getattr(self.app, 'pipeline_running', False):
-                    # data_logger.debug("Backpressure check skipped: WS Video pipeline is not running.")
+                    # data_logger.debug("Backpressure check skipped: WS GStreamer Video pipeline is not running.")
                     continue
 
-                # Get Server FPS (from WS pipeline measurement)
                 server_fps = 0.0
                 try:
                     server_fps = self.app.get_current_server_fps()
                 except Exception as e:
                     data_logger.error(f"Backpressure: Error getting server FPS: {e}")
-                    continue # Skip check if server FPS unavailable
+                    continue
 
-                # Get Client FPS (value updated by ws_handler)
                 client_fps = self._latest_client_render_fps
-
-                # Initial check / Skip if values are invalid or too early
                 if server_fps <= 0 or client_fps <= 0:
                     # data_logger.debug(f"Backpressure check skipped: Server FPS ({server_fps:.1f}) or Client FPS ({client_fps:.1f}) not valid yet.")
                     continue
 
-                # --- Comparison and Action ---
                 is_client_lagging = client_fps < (server_fps - FPS_DIFFERENCE_THRESHOLD)
 
                 if is_client_lagging:
-                    # --- Bitrate Reduction ---
-                    self._last_time_client_ok = 0 # Reset OK timer as client is lagging
-
+                    self._last_time_client_ok = 0
                     new_bitrate = self._current_target_bitrate_kbps - BITRATE_DECREASE_STEP_KBPS
-                    new_bitrate = max(self._min_bitrate_kbps, new_bitrate) # Clamp to minimum
+                    new_bitrate = max(self._min_bitrate_kbps, new_bitrate)
 
                     if new_bitrate < self._current_target_bitrate_kbps:
                         data_logger.warning(
-                            f"Backpressure Triggered: Client FPS ({client_fps:.1f}) < Server FPS ({server_fps:.1f}) - Threshold ({FPS_DIFFERENCE_THRESHOLD}). "
-                            f"Reducing bitrate from {self._current_target_bitrate_kbps}kbps -> {new_bitrate}kbps by restarting pipeline."
+                            f"Backpressure Triggered (GStreamer): Client FPS ({client_fps:.1f}) < Server FPS ({server_fps:.1f}). "
+                            f"Reducing GStreamer bitrate {self._current_target_bitrate_kbps}kbps -> {new_bitrate}kbps."
                         )
                         try:
-                            # Stop existing pipeline
-                            await self.app.stop_websocket_video_pipeline()
-                            # Update the bitrate that the start method will use
-                            self.app.video_bitrate = new_bitrate
-                            # Start new pipeline with updated bitrate
-                            await self.app.start_websocket_video_pipeline()
-                            # Update internal tracking state *after* successful restart
+                            if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
+                            if hasattr(self.app, 'video_bitrate'): self.app.video_bitrate = new_bitrate
+                            if hasattr(self.app, 'start_websocket_video_pipeline'): await self.app.start_websocket_video_pipeline()
                             self._current_target_bitrate_kbps = new_bitrate
                             self._last_bitrate_adjustment_time = now
-                            data_logger.info(f"Backpressure: Pipeline restarted with bitrate {new_bitrate}kbps.")
                         except Exception as e:
-                            data_logger.error(f"Backpressure: Error restarting pipeline for bitrate reduction to {new_bitrate}kbps: {e}", exc_info=True)
-                            # Attempt to revert app bitrate if start failed? Or leave it for next cycle?
-                            # For simplicity, leave it; the next check might try again or ramp up later.
-                    # else:
-                    #     data_logger.debug("Backpressure: Client lagging but bitrate already at minimum.")
-
-                else:
-                    # --- Bitrate Ramp-Up ---
-                    if self._last_time_client_ok == 0: # Record first time client seems OK
-                        self._last_time_client_ok = now
-
-                    # Check if client has been OK for the stability period
+                            data_logger.error(f"Backpressure: Error restarting GStreamer pipeline for bitrate reduction: {e}", exc_info=True)
+                else: # Client not lagging
+                    if self._last_time_client_ok == 0: self._last_time_client_ok = now
                     is_stable = (now - self._last_time_client_ok) >= RAMP_UP_STABILITY_SECONDS
-                    # Check if bitrate is below the initial target
                     is_below_initial = self._current_target_bitrate_kbps < self._initial_target_bitrate_kbps
-                    # Check if enough time has passed since the *last adjustment* (up or down)
-                    is_cooled_down = (now - self._last_bitrate_adjustment_time) >= RAMP_UP_STABILITY_SECONDS # Use stability duration as cooldown
+                    is_cooled_down = (now - self._last_bitrate_adjustment_time) >= RAMP_UP_STABILITY_SECONDS
 
                     if is_stable and is_below_initial and is_cooled_down:
                         new_bitrate = self._current_target_bitrate_kbps + BITRATE_INCREASE_STEP_KBPS
-                        new_bitrate = min(self._initial_target_bitrate_kbps, new_bitrate) # Clamp to initial target
-
+                        new_bitrate = min(self._initial_target_bitrate_kbps, new_bitrate)
                         if new_bitrate > self._current_target_bitrate_kbps:
                              data_logger.info(
-                                 f"Backpressure Ramp-Up: Client stable ({client_fps:.1f} >= {server_fps:.1f} - {FPS_DIFFERENCE_THRESHOLD}). "
-                                 f"Increasing bitrate from {self._current_target_bitrate_kbps}kbps -> {new_bitrate}kbps by restarting pipeline."
+                                 f"Backpressure Ramp-Up (GStreamer): Client stable. Increasing GStreamer bitrate {self._current_target_bitrate_kbps}kbps -> {new_bitrate}kbps."
                              )
                              try:
-                                # Stop existing pipeline
-                                await self.app.stop_websocket_video_pipeline()
-                                # Update the bitrate that the start method will use
-                                self.app.video_bitrate = new_bitrate
-                                # Start new pipeline with updated bitrate
-                                await self.app.start_websocket_video_pipeline()
-                                # Update internal tracking state *after* successful restart
+                                if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
+                                if hasattr(self.app, 'video_bitrate'): self.app.video_bitrate = new_bitrate
+                                if hasattr(self.app, 'start_websocket_video_pipeline'): await self.app.start_websocket_video_pipeline()
                                 self._current_target_bitrate_kbps = new_bitrate
                                 self._last_bitrate_adjustment_time = now
-                                # Reset client OK timer after ramp-up step to ensure stability period restarts for next potential ramp-up
                                 self._last_time_client_ok = now
-                                data_logger.info(f"Backpressure: Pipeline restarted with bitrate {new_bitrate}kbps.")
                              except Exception as e:
-                                 data_logger.error(f"Backpressure: Error restarting pipeline for bitrate ramp-up to {new_bitrate}kbps: {e}", exc_info=True)
-
+                                 data_logger.error(f"Backpressure: Error restarting GStreamer pipeline for bitrate ramp-up: {e}", exc_info=True)
         except asyncio.CancelledError:
             data_logger.info("Backpressure logic task cancelled.")
         except Exception as e:
@@ -1596,7 +1781,6 @@ class DataStreamingServer:
         """Starts the data WebSocket server."""
         self.stop_server = asyncio.Future()
         try:
-            # Start the server using websockets library
             async with websockets.asyncio.server.serve(
                 self.ws_handler,
                 '0.0.0.0',
@@ -1606,10 +1790,8 @@ class DataStreamingServer:
                 data_logger.info(
                     f"Data WebSocket Server listening on port {self.port}"
                 )
-                # Wait until stop() is called
                 await self.stop_server
         except OSError as e:
-             # Handle specific errors like address in use
              data_logger.error(f"Failed to start Data WebSocket Server on port {self.port}: {e}")
              raise
         except Exception as e:
@@ -1621,15 +1803,12 @@ class DataStreamingServer:
 
     async def stop(self):
         """Stops the data WebSocket server."""
-        logger_signaling.info("Stopping Data WebSocket Server...")
-        # Signal the run_server loop to exit
+        logger_signaling.info("Stopping Data WebSocket Server...") # logger_signaling is used in original
         if self.stop_server is not None and not self.stop_server.done():
             self.stop_server.set_result(True)
-        # Close the underlying server object
         if self.server:
             try:
                 self.server.close()
-                # Wait briefly for close completion
                 await asyncio.wait_for(self.server.wait_closed(), timeout=2.0)
             except asyncio.TimeoutError:
                  data_logger.warning("Timeout waiting for Data WebSocket server to close.")
@@ -1637,10 +1816,13 @@ class DataStreamingServer:
                  data_logger.warning(
                      f"Error waiting for Data WebSocket server to close: {e}"
                  )
-            self.server = None # Ensure it's None after attempt
-
+            self.server = None
+        # --- Ensure JPEG capture is stopped if the DataStreamingServer itself is stopped. ---
+        if self.is_jpeg_capturing:
+            data_logger.info("DataStreamingServer stopping: ensuring JPEG capture is also stopped.")
+            await self._stop_jpeg_pipeline()
+        # --- End JPEG Stop ---
         data_logger.info("Data WebSocket Server Stopped.")
-
 
 class WebRTCSimpleServer:
     """A simple WebRTC signaling server with HTTP file serving capabilities."""
@@ -2593,25 +2775,41 @@ class WebRTCSignalling:
              )
              await self.on_disconnect()
 
-def on_resize_handler(res, current_app):
-    """Handles client request to resize the remote display."""
+# --- Simplified on_resize_handler ---
+def on_resize_handler(res_from_client, current_app):
+    """
+    Attempts to resize the display using resize_display based on the client request.
+    Updates current_app.last_resize_success flag.
+    Does NOT update current_app.display_width/height.
+    """
+    logger_gstwebrtc_app_resize.info(f"on_resize_handler attempting resize for: {res_from_client}")
     try:
-        curr_res, new_res, _, __, ___ = get_new_res(res)
-        if curr_res != new_res:
-            # Check if the last resize attempt failed to prevent rapid failed attempts
-            if not getattr(current_app, 'last_resize_success', True):
-                logger.warning("skipping resize because last resize failed.")
-                return
-            logger.warning("resizing display from {} to {}".format(curr_res, new_res))
-            # Attempt to resize the display using external tools (e.g., xrandr)
-            if resize_display(res):
-                current_app.send_remote_resolution(res) # Notify client of new resolution
-                current_app.last_resize_success = True # Reset flag on success
-            else:
-                current_app.last_resize_success = False # Set flag on failure
+        # Check if the last resize attempt failed to prevent rapid failed attempts
+        if not getattr(current_app, 'last_resize_success', True):
+            logger_gstwebrtc_app_resize.warning(f"Skipping resize for {res_from_client} because last attempt failed.")
+            # Ensure flag remains False
+            current_app.last_resize_success = False
+            return # Don't attempt resize
+
+        logger_gstwebrtc_app_resize.info(f"Calling resize_display with '{res_from_client}'...")
+        # Attempt to resize the display using external tools (e.g., xrandr)
+        success = resize_display(res_from_client)
+
+        if success:
+            logger_gstwebrtc_app_resize.info(f"resize_display('{res_from_client}') reported success.")
+            current_app.last_resize_success = True # Set flag on success
+            # Optionally send confirmation back to client - ws_handler can do this too
+            # if hasattr(current_app, 'send_remote_resolution'):
+            #     current_app.send_remote_resolution(res_from_client)
+        else:
+            logger_gstwebrtc_app_resize.error(f"resize_display('{res_from_client}') reported failure.")
+            current_app.last_resize_success = False # Set flag on failure
+
     except Exception as e:
-        logger.error(f"Error during resize handling for '{res}': {e}", exc_info=True)
-        if current_app: current_app.last_resize_success = False # Assume failure on error
+        logger_gstwebrtc_app_resize.error(f"Error during resize handling for '{res_from_client}': {e}", exc_info=True)
+        # Ensure flag is False on any exception during the process
+        if current_app: current_app.last_resize_success = False
+# --- End Simplified on_resize_handler ---
 
 
 def on_scaling_ratio_handler(scale, current_app):
@@ -2846,7 +3044,9 @@ async def main():
     parser.add_argument(
         "--encoder",
         default=os.environ.get("SELKIES_ENCODER", "x264enc"),
-        help="GStreamer video encoder to use",
+        # --- Add jpeg as a potential default/choice ---
+        help="Video encoder to use (e.g., x264enc, nvh264enc, jpeg)",
+        # --- End add jpeg ---
     )
     parser.add_argument(
         "--gpu_id",
@@ -2929,6 +3129,9 @@ async def main():
     global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
     TARGET_FRAMERATE = int(args.framerate)
     TARGET_VIDEO_BITRATE_KBPS = int(args.video_bitrate)
+    # --- Initialize app.encoder from args ---
+    initial_encoder = args.encoder.lower()
+    # --- End encoder init ---
 
     # Load settings from JSON file, potentially overriding command-line args/env vars
     if os.path.exists(args.json_config):
@@ -2948,7 +3151,8 @@ async def main():
                 if k == "enable_resize":
                     args.enable_resize = str((str(v).lower() == "true")).lower()
                 if k == "encoder":
-                    args.encoder = v.lower()
+                    initial_encoder = v.lower() # Update initial encoder from JSON
+                    args.encoder = initial_encoder # Keep args consistent
         except Exception as e:
             logger.error(
                 "failed to load json config from {}: {}".format(
@@ -2974,6 +3178,7 @@ async def main():
 
     # Log effective arguments after parsing and overlay
     logger.info(f"Effective arguments: {args}")
+    logger.info(f"Initial Encoder: {initial_encoder}")
 
     # --- Wait for App Ready ---
     await wait_for_app_ready(args.app_ready_file, args.app_wait_ready.lower() == "true")
@@ -3022,7 +3227,7 @@ async def main():
             else:
                 # Log other signaling errors and potentially stop the pipeline
                 logger.error("Signalling error: %s", str(e), exc_info=True)
-                if app: await app.stop_pipeline()
+                if app and hasattr(app, 'stop_pipeline'): await app.stop_pipeline()
         async def on_audio_signalling_error(e):
             if isinstance(e, WebRTCSignallingErrorNoPeer):
                  # If audio peer not found, retry session setup
@@ -3031,14 +3236,15 @@ async def main():
                  await audio_signalling.setup_call()
             else:
                  logger.error("Audio signalling error: %s", str(e), exc_info=True)
-                 if audio_app: await audio_app.stop_pipeline()
+                 if audio_app and hasattr(audio_app, 'stop_pipeline'): await audio_app.stop_pipeline()
 
         # Assign handlers to signaling clients
         signalling.on_error = on_signalling_error
         audio_signalling.on_error = on_audio_signalling_error
         # Stop pipelines if signaling disconnects
-        signalling.on_disconnect = lambda: app.stop_pipeline() if app else None
-        audio_signalling.on_disconnect = lambda: audio_app.stop_pipeline() if audio_app else None
+        if hasattr(GSTWebRTCApp, 'stop_pipeline'): # Check before assigning lambda
+            signalling.on_disconnect = lambda: app.stop_pipeline() if app else None
+            audio_signalling.on_disconnect = lambda: audio_app.stop_pipeline() if audio_app else None
         # Initiate session setup upon successful connection
         signalling.on_connect = signalling.setup_call
         audio_signalling.on_connect = audio_signalling.setup_call
@@ -3149,21 +3355,31 @@ async def main():
     event_loop = asyncio.get_running_loop()
     # Main application instance (handles video/app stream)
     app = GSTWebRTCApp(
-        event_loop, stun_servers, turn_servers, audio_channels, initial_fps, args.encoder,
+        event_loop, stun_servers, turn_servers, audio_channels, initial_fps,
+        initial_encoder, # Use initial encoder determined from args/JSON
         gpu_id, initial_video_bitrate, initial_audio_bitrate, keyframe_distance,
         congestion_control, video_packetloss_percent, audio_packetloss_percent,
         data_streaming_server=None, # Will be set below
         mode=args.mode
     )
+    # --- Initialize App State ---
+    # Set default dimensions (will be overridden by first resize message)
+    app.display_width = 1024
+    app.display_height = 768
+    app.last_resize_success = True # Assume initial state is valid
+    # Ensure encoder attribute matches initial value
+    app.encoder = initial_encoder
+    logger.info(f"App initialized with: encoder={app.encoder}, display={app.display_width}x{app.display_height}")
+    # --- End Initialize App State ---
+
     # Add helper methods if they don't exist (for compatibility/websockets mode)
     if not hasattr(GSTWebRTCApp, 'start_websocket_video_pipeline'): GSTWebRTCApp.start_websocket_video_pipeline = lambda self: logger.warning("start_websocket_video_pipeline not implemented.")
     if not hasattr(GSTWebRTCApp, 'stop_websocket_video_pipeline'): GSTWebRTCApp.stop_websocket_video_pipeline = lambda self: logger.warning("stop_websocket_video_pipeline not implemented.")
     if not hasattr(GSTWebRTCApp, 'start_websocket_audio_pipeline'): GSTWebRTCApp.start_websocket_audio_pipeline = lambda self: logger.warning("start_websocket_audio_pipeline not implemented.")
     if not hasattr(GSTWebRTCApp, 'stop_websocket_audio_pipeline'): GSTWebRTCApp.stop_websocket_audio_pipeline = lambda self: logger.warning("stop_websocket_audio_pipeline not implemented.")
-    if not hasattr(GSTWebRTCApp, 'stop_ws_pipeline'): GSTWebRTCApp.stop_ws_pipeline = GSTWebRTCApp.stop_pipeline
+    if not hasattr(GSTWebRTCApp, 'stop_ws_pipeline'): GSTWebRTCApp.stop_ws_pipeline = GSTWebRTCApp.stop_pipeline if hasattr(GSTWebRTCApp, 'stop_pipeline') else lambda self: logger.warning("stop_pipeline not implemented.")
     if not hasattr(GSTWebRTCApp, 'build_audio_ws_pipeline'): GSTWebRTCApp.build_audio_ws_pipeline = lambda self: logger.warning("build_audio_ws_pipeline not implemented.")
 
-    app.last_resize_success = True # Track resize success state
     # Data WebSocket server instance
     data_websocket_server = DataStreamingServer(
         int(args.data_websocket_port), args.mode, app, args.uinput_mouse_socket, args.js_socket_path,
@@ -3179,6 +3395,12 @@ async def main():
             initial_video_bitrate, initial_audio_bitrate, keyframe_distance, congestion_control,
             video_packetloss_percent, audio_packetloss_percent, data_streaming_server=data_websocket_server, mode=args.mode
         )
+        # Initialize audio app state similarly if needed, though less critical
+        if audio_app:
+            audio_app.display_width = 1024
+            audio_app.display_height = 768
+            audio_app.last_resize_success = True
+            audio_app.encoder = "opusenc" # Explicitly set
 
     # --- Setup Callbacks (Linking components) ---
     if args.mode == 'webrtc':
@@ -3187,15 +3409,15 @@ async def main():
              logger.critical("WebRTC mode setup error: Signaling objects not initialized. Exiting.")
              sys.exit(1)
         # Link GSTApp SDP/ICE generation to Signaling client sending methods
-        app.on_sdp = signalling.send_sdp
-        if audio_app: audio_app.on_sdp = audio_signalling.send_sdp
-        app.on_ice = signalling.send_ice
-        if audio_app: audio_app.on_ice = audio_signalling.send_ice
+        if hasattr(app, 'on_sdp'): app.on_sdp = signalling.send_sdp
+        if audio_app and hasattr(audio_app, 'on_sdp'): audio_app.on_sdp = audio_signalling.send_sdp
+        if hasattr(app, 'on_ice'): app.on_ice = signalling.send_ice
+        if audio_app and hasattr(audio_app, 'on_ice'): audio_app.on_ice = audio_signalling.send_ice
         # Link Signaling client SDP/ICE receiving methods to GSTApp handlers
-        signalling.on_sdp = app.set_sdp
-        if audio_signalling: audio_signalling.on_sdp = audio_app.set_sdp if audio_app else lambda *_: None
-        signalling.on_ice = app.set_ice
-        if audio_signalling: audio_signalling.on_ice = audio_app.set_ice if audio_app else lambda *_: None
+        if hasattr(app, 'set_sdp'): signalling.on_sdp = app.set_sdp
+        if audio_signalling and audio_app and hasattr(audio_app, 'set_sdp'): audio_signalling.on_sdp = audio_app.set_sdp
+        if hasattr(app, 'set_ice'): signalling.on_ice = app.set_ice
+        if audio_signalling and audio_app and hasattr(audio_app, 'set_ice'): audio_signalling.on_ice = audio_app.set_ice
 
     # Handler for when a signaling session is established
     def on_session_handler(session_peer_id, meta=None):
@@ -3213,11 +3435,11 @@ async def main():
                         logger.info("Remote resize disabled by server config.")
                         if cursor_size <= 0: set_cursor_size(16) # Set default cursor if not specified
                 logger.info("Starting main video/app pipeline (webrtc mode)")
-                app.start_pipeline()
+                if hasattr(app, 'start_pipeline'): app.start_pipeline()
             elif str(session_peer_id) == str(audio_peer_id) and audio_app:
                 # Audio-only session established
                 logger.info("Starting audio pipeline (webrtc mode)")
-                audio_app.start_pipeline(audio_only=True)
+                if hasattr(audio_app, 'start_pipeline'): audio_app.start_pipeline(audio_only=True)
             else:
                 logger.error("Failed to start pipeline for unexpected peer_id: %s" % session_peer_id)
 
@@ -3237,36 +3459,42 @@ async def main():
         data_websocket_server.webrtc_input = webrtc_input
 
     # Callback for sending cursor changes (used by cursor monitor)
-    webrtc_input.on_cursor_change = webrtc_input.send_cursor_data
+    if hasattr(webrtc_input, 'send_cursor_data'):
+        webrtc_input.on_cursor_change = webrtc_input.send_cursor_data
 
     # Handler for when WebRTC data channel opens
     def data_channel_ready():
         logger.info("WebRTC data channel opened. Sending initial state.")
         # Send initial configuration values to the client
-        app.send_framerate(app.framerate)
-        app.send_video_bitrate(app.video_bitrate)
+        if hasattr(app, 'send_framerate'): app.send_framerate(app.framerate)
+        if hasattr(app, 'send_video_bitrate'): app.send_video_bitrate(app.video_bitrate)
         audio_bitrate_to_send = audio_app.audio_bitrate if audio_app else app.audio_bitrate
-        app.send_audio_bitrate(audio_bitrate_to_send)
-        app.send_resize_enabled(enable_resize)
-        app.send_encoder(app.encoder)
-        app.send_cursor_data(app.last_cursor_sent) # Send last known cursor
+        if hasattr(app, 'send_audio_bitrate'): app.send_audio_bitrate(audio_bitrate_to_send)
+        if hasattr(app, 'send_resize_enabled'): app.send_resize_enabled(enable_resize)
+        if hasattr(app, 'send_encoder'): app.send_encoder(app.encoder)
+        if hasattr(app, 'send_cursor_data') and hasattr(app, 'last_cursor_sent'): app.send_cursor_data(app.last_cursor_sent) # Send last known cursor
 
     # Assign data channel callbacks (WebRTC mode)
     if args.mode == 'webrtc':
-        app.on_data_open = data_channel_ready
-        app.on_data_message = webrtc_input.on_message # Route data channel messages to input handler
+        if hasattr(app, 'on_data_open'): app.on_data_open = data_channel_ready
+        if hasattr(app, 'on_data_message'): app.on_data_message = webrtc_input.on_message # Route data channel messages to input handler
 
     # --- Input Handler Callbacks ---
     # Callbacks triggered by messages received via WebRTC data channel or WebSocket
-    webrtc_input.on_video_encoder_bit_rate = lambda bitrate: set_json_app_argument(args.json_config, "video_bitrate", bitrate) and app.set_video_bitrate(int(bitrate))
-    webrtc_input.on_audio_encoder_bit_rate = lambda bitrate: set_json_app_argument(args.json_config, "audio_bitrate", bitrate) and (audio_app.set_audio_bitrate(int(bitrate)) if args.mode == 'webrtc' and audio_app else app.set_audio_bitrate(int(bitrate)))
-    webrtc_input.on_mouse_pointer_visible = lambda visible: app.set_pointer_visible(visible)
-    webrtc_input.on_clipboard_read = webrtc_input.send_clipboard_data # Triggered when client requests clipboard content
+    if hasattr(app, 'set_video_bitrate'):
+        webrtc_input.on_video_encoder_bit_rate = lambda bitrate: set_json_app_argument(args.json_config, "video_bitrate", bitrate) and app.set_video_bitrate(int(bitrate))
+    if args.mode == 'webrtc' and audio_app and hasattr(audio_app, 'set_audio_bitrate'):
+        webrtc_input.on_audio_encoder_bit_rate = lambda bitrate: set_json_app_argument(args.json_config, "audio_bitrate", bitrate) and audio_app.set_audio_bitrate(int(bitrate))
+    elif hasattr(app, 'set_audio_bitrate'): # Fallback for non-webrtc or if audio_app doesn't handle it
+        webrtc_input.on_audio_encoder_bit_rate = lambda bitrate: set_json_app_argument(args.json_config, "audio_bitrate", bitrate) and app.set_audio_bitrate(int(bitrate))
+
+    if hasattr(app, 'set_pointer_visible'): webrtc_input.on_mouse_pointer_visible = lambda visible: app.set_pointer_visible(visible)
+    if hasattr(webrtc_input, 'send_clipboard_data'): webrtc_input.on_clipboard_read = webrtc_input.send_clipboard_data # Triggered when client requests clipboard content
 
     # Handler for setting FPS
     def set_fps_handler(fps):
         set_json_app_argument(args.json_config, "framerate", fps)
-        app.set_framerate(fps)
+        if hasattr(app, 'set_framerate'): app.set_framerate(fps)
     webrtc_input.on_set_fps = set_fps_handler
 
     # Assign resize/scaling handlers only if enabled
@@ -3279,15 +3507,16 @@ async def main():
         webrtc_input.on_scaling_ratio = lambda scale: logger.warning(f"remote resize is disabled, skipping DPI scale change to {scale}")
 
     # Callback for ping response (latency calculation)
-    webrtc_input.on_ping_response = lambda latency: app.send_latency_time(latency)
+    if hasattr(app, 'send_latency_time'): webrtc_input.on_ping_response = lambda latency: app.send_latency_time(latency)
 
     # Handler for enabling/disabling remote resize dynamically
     def enable_resize_handler(enabled, enable_res):
-        global enable_resize # Need to modify global state
+        # Use nonlocal as enable_resize is defined in main's scope
+        nonlocal enable_resize
         new_state = str(enabled).lower() == 'true'
         logger.info(f"Setting remote resize enabled to: {new_state}")
         set_json_app_argument(args.json_config, "enable_resize", new_state)
-        enable_resize = new_state # Update global state
+        enable_resize = new_state # Update scope's variable
         if new_state:
             # Re-assign handlers if enabled
             webrtc_input.on_resize = lambda res: on_resize_handler(res, app)
@@ -3312,7 +3541,7 @@ async def main():
         # GPU Monitor (only if NVENC encoder is likely used)
         gpu_mon = GPUMonitor(enabled=args.encoder.startswith("nv"))
         def on_gpu_stats(load, memory_total, memory_used):
-            app.send_gpu_stats(load, memory_total, memory_used) # Send via data channel
+            if hasattr(app, 'send_gpu_stats'): app.send_gpu_stats(load, memory_total, memory_used) # Send via data channel
             metrics.set_gpu_utilization(load * 100) # Update Prometheus metrics
         gpu_mon.on_stats = on_gpu_stats
 
@@ -3321,8 +3550,8 @@ async def main():
         def on_sysmon_timer(t):
             # Send system stats and initiate ping via data channel
             webrtc_input.ping_start = t
-            app.send_system_stats(system_mon.cpu_percent, system_mon.mem_total, system_mon.mem_used)
-            app.send_ping(t)
+            if hasattr(app, 'send_system_stats'): app.send_system_stats(system_mon.cpu_percent, system_mon.mem_total, system_mon.mem_used)
+            if hasattr(app, 'send_ping'): app.send_ping(t)
         system_mon.on_timer = on_sysmon_timer
 
     # --- Setup Signaling Server ---
@@ -3336,7 +3565,7 @@ async def main():
         rtc_config_file=args.rtc_config_json, rtc_config=rtc_config, # Pass initial RTC config
         turn_shared_secret=args.turn_shared_secret if using_hmac_turn else "", # Pass secret only if HMAC is used
         turn_host=args.turn_host if using_hmac_turn else "",
-        turn_port=args.turn_port if using_hmac_turn else 0,
+        turn_port=int(args.turn_port) if using_hmac_turn and args.turn_port else 0, # Ensure int if present
         turn_protocol=turn_protocol, turn_tls=using_turn_tls,
         turn_auth_header_name=args.turn_rest_username_auth_header,
         stun_host=args.stun_host, stun_port=int(args.stun_port)
@@ -3353,14 +3582,14 @@ async def main():
         def mon_rtc_config(new_stun_servers, new_turn_servers, new_rtc_config):
             logger.info("RTC config updated by monitor. Applying changes.")
             # Update running GStreamer pipelines
-            if app and app.webrtcbin: app.update_rtc_config(new_stun_servers, new_turn_servers)
-            if audio_app and audio_app.webrtcbin: audio_app.update_rtc_config(new_stun_servers, new_turn_servers)
+            if app and hasattr(app, 'webrtcbin') and hasattr(app, 'update_rtc_config'): app.update_rtc_config(new_stun_servers, new_turn_servers)
+            if audio_app and hasattr(audio_app, 'webrtcbin') and hasattr(audio_app, 'update_rtc_config'): audio_app.update_rtc_config(new_stun_servers, new_turn_servers)
             # Update config served by the signaling server's /turn endpoint
             server.set_rtc_config(new_rtc_config)
 
         # Initialize monitors based on which RTC config source was chosen
         hmac_turn_mon = HMACRTCMonitor(
-            args.turn_host, int(args.turn_port), args.turn_shared_secret, turn_rest_username,
+            args.turn_host, int(args.turn_port) if args.turn_port else 0, args.turn_shared_secret, turn_rest_username,
             turn_protocol=turn_protocol, turn_tls=using_turn_tls, stun_host=args.stun_host,
             stun_port=args.stun_port, period=60, enabled=using_hmac_turn
         )
@@ -3411,8 +3640,8 @@ async def main():
 
         # Start GStreamer Bus Handlers (Essential if apps exist)
         logger.info("Starting GStreamer bus handlers...")
-        if app: gst_bus_tasks.append(asyncio.create_task(app.handle_bus_calls()))
-        if audio_app: gst_bus_tasks.append(asyncio.create_task(audio_app.handle_bus_calls()))
+        if app and hasattr(app, 'handle_bus_calls'): gst_bus_tasks.append(asyncio.create_task(app.handle_bus_calls()))
+        if audio_app and hasattr(audio_app, 'handle_bus_calls'): gst_bus_tasks.append(asyncio.create_task(audio_app.handle_bus_calls()))
 
         # --- Mode-Specific Task Starting and Waiting ---
         if args.mode == 'webrtc':
@@ -3517,8 +3746,18 @@ async def main():
             # Use appropriate stop method based on mode
             if args.mode == 'websockets':
                  # Prefer specific websocket stop methods if they exist
-                 if hasattr(app, 'stop_websocket_video_pipeline'): stop_method = app.stop_websocket_video_pipeline
-                 elif hasattr(app, 'stop_websocket_audio_pipeline'): stop_method = app.stop_websocket_audio_pipeline
+                 # Check for JPEG first if that's the active encoder
+                 if app.encoder == 'jpeg' and hasattr(data_websocket_server, '_stop_jpeg_pipeline'):
+                     # JPEG stop is handled by data_websocket_server.stop()
+                     pass
+                 elif hasattr(app, 'stop_websocket_video_pipeline'):
+                      stop_method = app.stop_websocket_video_pipeline
+                 # Check audio separately
+                 if hasattr(app, 'stop_websocket_audio_pipeline'):
+                     try:
+                         await app.stop_websocket_audio_pipeline()
+                     except Exception as e: logger.error(f"Error stopping WS audio pipeline: {e}", exc_info=True)
+
             # Fallback to generic stop_pipeline if mode-specific not found or in webrtc mode
             if not stop_method and hasattr(app, 'stop_pipeline'): stop_method = app.stop_pipeline
 
@@ -3528,7 +3767,7 @@ async def main():
                     if asyncio.iscoroutinefunction(stop_method): await stop_method()
                     else: stop_method()
                 except Exception as e: logger.error(f"Error stopping main app pipeline: {e}", exc_info=True)
-            else: logger.warning("Could not find a suitable stop method for the main app.")
+            # else: logger.warning("Could not find a suitable stop method for the main app.") # Reduce noise
 
         if audio_app: # Only exists in webrtc mode
             logger.info("Stopping audio app pipeline...")
@@ -3555,9 +3794,10 @@ async def main():
             logger.info("WebRTCInput components stopped.")
 
         # Stop Servers (Both modes - stop these last)
+        # Data server stop will handle stopping JPEG capture if active
         logger.info("Stopping main servers...")
-        if server: await server.stop()
         if data_websocket_server: await data_websocket_server.stop()
+        if server: await server.stop()
         logger.info("Servers stopped.")
 
         # Stop Metrics HTTP server if running

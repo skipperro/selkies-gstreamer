@@ -7,6 +7,7 @@ import yaml from 'js-yaml';
 // --- Constants ---
 const encoderOptions = [
     'x264enc',
+    'jpeg',
     'nvh264enc',
     'vah264enc',
     'openh264enc'

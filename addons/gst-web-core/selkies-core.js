@@ -382,6 +382,7 @@ window.currentAudioBufferSize = 0;
 
 /** @type {VideoFrame[]} */
 let videoFrameBuffer = [];
+let jpegStripeRenderQueue = [];
 let videoBufferSize = 0;
 let videoBufferSelectElement;
 let videoBufferDivElement;
@@ -1042,7 +1043,7 @@ function sendResolutionToServer(width, height) {
     }
 }
 
-/** NEW HELPER FUNCTION
+/** HELPER FUNCTION
  * Applies CSS styles to the canvas based on manual resolution settings and scaling preference.
  * @param {number} targetWidth - The desired internal width of the stream.
  * @param {number} targetHeight - The desired internal height of the stream.
@@ -1054,69 +1055,73 @@ function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
         return;
     }
 
-    const container = canvas.parentElement; // Assumes canvas is directly in the video-container
+    // Set internal buffer size
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        console.log(`Canvas internal buffer set to manual: ${targetWidth}x${targetHeight}`);
+    }
+
+    const container = canvas.parentElement;
     const containerWidth = container.clientWidth;
     const containerHeight = container.clientHeight;
-
-    // Always ensure canvas buffer matches target resolution (or incoming frame size handled by paintVideoFrame)
-    // Note: paintVideoFrame might override this if frame dimensions differ, which is usually desired.
-    // canvas.width = targetWidth;
-    // canvas.height = targetHeight;
 
     if (scaleToFit) {
         // Scale Locally (Maintain Aspect Ratio) - Checked
         const targetAspectRatio = targetWidth / targetHeight;
         const containerAspectRatio = containerWidth / containerHeight;
-
         let cssWidth, cssHeight;
-
         if (targetAspectRatio > containerAspectRatio) {
-            // Target is wider than container (letterbox)
             cssWidth = containerWidth;
             cssHeight = containerWidth / targetAspectRatio;
         } else {
-            // Target is taller than or same as container (pillarbox)
             cssHeight = containerHeight;
             cssWidth = containerHeight * targetAspectRatio;
         }
-
         const topOffset = (containerHeight - cssHeight) / 2;
         const leftOffset = (containerWidth - cssWidth) / 2;
-
         canvas.style.position = 'absolute';
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
         canvas.style.top = `${topOffset}px`;
         canvas.style.left = `${leftOffset}px`;
-        canvas.style.objectFit = 'contain'; // Explicitly set object-fit for clarity
-        console.log(`Applied manual style (Scaled): CSS ${cssWidth}x${cssHeight}, Pos ${leftOffset},${topOffset}`);
-
+        canvas.style.objectFit = 'contain'; // Should be redundant if buffer matches target
+        console.log(`Applied manual style (Scaled): CSS ${cssWidth}x${cssHeight}, Buffer ${targetWidth}x${targetHeight}, Pos ${leftOffset},${topOffset}`);
     } else {
         // Scale Locally - Unchecked (Exact resolution, top-left, overflow)
         canvas.style.position = 'absolute';
-        canvas.style.width = `${targetWidth}px`;
-        canvas.style.height = `${targetHeight}px`;
+        canvas.style.width = `${targetWidth}px`; // CSS matches buffer
+        canvas.style.height = `${targetHeight}px`;// CSS matches buffer
         canvas.style.top = '0px';
         canvas.style.left = '0px';
-        canvas.style.objectFit = 'fill'; // Or 'none', depending on desired overflow behavior
-        console.log(`Applied manual style (Exact): CSS ${targetWidth}x${targetHeight}, Pos 0,0`);
+        canvas.style.objectFit = 'fill'; // Or 'none'
+        console.log(`Applied manual style (Exact): CSS ${targetWidth}x${targetHeight}, Buffer ${targetWidth}x${targetHeight}, Pos 0,0`);
     }
-    // Make canvas visible if it wasn't
     canvas.style.display = 'block';
 }
 
-/** NEW HELPER FUNCTION
+/** HELPER FUNCTION
  * Resets the canvas CSS styles to default (fill container).
  */
-function resetCanvasStyle() {
+function resetCanvasStyle(streamWidth, streamHeight) {
     if (!canvas) return;
+
+    // Set internal buffer size
+    if (canvas.width !== streamWidth || canvas.height !== streamHeight) {
+        canvas.width = streamWidth;
+        canvas.height = streamHeight;
+        console.log(`Canvas internal buffer reset to: ${streamWidth}x${streamHeight}`);
+    }
+
+    // Set CSS display style
     canvas.style.position = 'absolute';
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     canvas.style.top = '0px';
     canvas.style.left = '0px';
-    canvas.style.objectFit = 'contain'; // Reset to default behavior
-    console.log("Reset canvas style to default (100% width/height)");
+    canvas.style.objectFit = 'contain'; // Crucial for aspect ratio with 100%
+    canvas.style.display = 'block'; // Ensure it's visible
+    console.log(`Reset canvas CSS style to 100% width/height, object-fit: contain. Buffer: ${streamWidth}x${streamHeight}`);
 }
 
 /** NEW HELPER FUNCTION
@@ -1188,7 +1193,9 @@ const initializeUI = () => {
   }
   videoContainer.appendChild(canvas);
   // Apply default style initially
-  resetCanvasStyle();
+  const initialStreamWidth = 1024;
+  const initialStreamHeight = 768;
+  resetCanvasStyle(initialStreamWidth, initialStreamHeight);
   canvasContext = canvas.getContext('2d');
   if (!canvasContext) {
     console.error('Failed to get 2D rendering context');
@@ -1588,6 +1595,7 @@ const initializeUI = () => {
     encoderSelectElement.id = 'encoderSelect';
     const encoders = [
         'x264enc',
+        'jpeg',
         'nvh264enc',
         'vah264enc',
         'openh264enc'
@@ -2079,15 +2087,13 @@ const initializeInput = () => {
     }
     console.log("Auto-resize triggered.");
     const windowResolution = inputInstance.getWindowResolution();
-    // Ensure resolution sent to server is even
     const evenWidth = roundDownToEven(windowResolution[0]);
     const evenHeight = roundDownToEven(windowResolution[1]);
-
-    // Send the calculated resolution to the server
+  
     sendResolutionToServer(evenWidth, evenHeight);
-
-    // Reset canvas style to fill container when auto-resizing
-    resetCanvasStyle();
+  
+    // Update canvas buffer and reset style for auto mode
+    resetCanvasStyle(evenWidth, evenHeight); // Pass the new stream dimensions
   };
 
   originalWindowResizeHandler = debounce(handleResizeUI, 500);
@@ -2392,8 +2398,11 @@ function receiveMessage(event) {
             window.isManualResolutionMode = false;
             manualWidth = null;
             manualHeight = null;
-
-            resetCanvasStyle(); // Reset local canvas styling first
+            // Calculate current auto-resolution
+            const currentWindowRes = window.webrtcInput.getWindowResolution(); // Assuming webrtcInput is available
+            const autoWidth = roundDownToEven(currentWindowRes[0]);
+            const autoHeight = roundDownToEven(currentWindowRes[1]);
+            resetCanvasStyle(autoWidth, autoHeight); // Reset local canvas styling first
             enableAutoResize(); // Re-enable listener and trigger immediate resize
 
             break;
@@ -2875,7 +2884,7 @@ function handleSettingsMessage(settings) {
              option.value = audioBitRate.toString();
              option.textContent = `${audioBitRate} kbit/s (custom)`;
              audioBitrateSelectElement.insertBefore(option, audioBitrateSelectElement.firstChild);
-             audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitrate.toString(); // Ensure the new option is selected
+             audioBitrateSelectElement.value = audioBitrateSelectElement.value = audioBitRate.toString(); // Ensure the new option is selected
          }
     }
 
@@ -2895,42 +2904,72 @@ function handleSettingsMessage(settings) {
   }
 
   if (settings.encoder !== undefined) {
-      const encoder = settings.encoder;
-      setStringParam('encoder', encoder); // Save to localStorage
+      const newEncoderSetting = settings.encoder; // Use a clear name for the new value from settings
+      const oldEncoder = getStringParam('encoder', 'x264enc'); // Get the previously saved encoder
+
+      setStringParam('encoder', newEncoderSetting); // Save the new encoder setting to localStorage
 
       // Update UI dropdown if in dev mode
-       if (dev_mode && encoderSelectElement) {
-           encoderSelectElement.value = encoder;
-            let optionExists = false;
-            for (let i = 0; i < encoderSelectElement.options.length; i++) {
-                if (encoderSelectElement.options[i].value === encoder) {
-                    optionExists = true;
-                    break;
-                }
-            }
-            // Add option if it doesn't exist
-            if (!optionExists) {
-                console.warn(`Received encoder ${encoder} from settings is not in dropdown options. Adding it.`);
-                const option = document.createElement('option');
-                option.value = encoder;
-                option.textContent = `${encoder} (custom)`;
-                encoderSelectElement.insertBefore(option, encoderSelectElement.firstChild);
-                encoderSelectElement.value = encoder; // Ensure the new option is selected
-            }
-       }
+      if (dev_mode && encoderSelectElement) {
+          encoderSelectElement.value = newEncoderSetting;
+          let optionExists = false;
+          for (let i = 0; i < encoderSelectElement.options.length; i++) {
+              if (encoderSelectElement.options[i].value === newEncoderSetting) {
+                  optionExists = true;
+                  break;
+              }
+          }
+          // Add option if it doesn't exist
+          if (!optionExists) {
+              console.warn(`Received encoder ${newEncoderSetting} from settings is not in dropdown options. Adding it.`);
+              const option = document.createElement('option');
+              option.value = newEncoderSetting;
+              option.textContent = `${newEncoderSetting} (custom)`;
+              encoderSelectElement.insertBefore(option, encoderSelectElement.firstChild);
+              encoderSelectElement.value = newEncoderSetting; // Ensure the new option is selected
+          }
+      }
 
-       // Send to server
+      // Send to server
       if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-           webrtc.sendDataChannelMessage(`enc,${encoder}`);
-           console.log(`Sent encoder ${encoder} to server via DataChannel.`);
+          webrtc.sendDataChannelMessage(`enc,${newEncoderSetting}`);
+          console.log(`Sent encoder ${newEncoderSetting} to server via DataChannel.`);
       } else if (clientMode === 'websockets') {
-           if (websocket && websocket.readyState === WebSocket.OPEN) {
-               const message = `SET_ENCODER,${encoder}`;
-               console.log(`Sent websocket message: ${message}`);
-               websocket.send(message);
-           } else {
-               console.warn("Websocket connection not open, cannot send encoder setting.");
-           }
+          if (websocket && websocket.readyState === WebSocket.OPEN) {
+              const message = `SET_ENCODER,${newEncoderSetting}`;
+              console.log(`Sent websocket message: ${message}`);
+              websocket.send(message);
+          } else {
+              console.warn("Websocket connection not open, cannot send encoder setting.");
+          }
+      }
+
+      // Check if the encoder is changing TO jpeg FROM something else
+      if (newEncoderSetting === 'jpeg' && oldEncoder !== 'jpeg') {
+          console.log("Encoder changed to JPEG. Ensuring canvas buffer is correctly sized.");
+          let currentTargetWidth, currentTargetHeight;
+          if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
+              currentTargetWidth = manualWidth;
+              currentTargetHeight = manualHeight;
+              console.log(`JPEG Switch: Using manual resolution for canvas buffer: ${currentTargetWidth}x${currentTargetHeight}`);
+              // applyManualCanvasStyle now also sets canvas.width and canvas.height
+              applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, scaleLocallyManual);
+          } else {
+              // Default to auto/window resolution if not in manual mode
+              // Ensure window.webrtcInput is available and has getWindowResolution method
+              if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
+                  const currentWindowRes = window.webrtcInput.getWindowResolution();
+                  currentTargetWidth = roundDownToEven(currentWindowRes[0]);
+                  currentTargetHeight = roundDownToEven(currentWindowRes[1]);
+                  console.log(`JPEG Switch: Using auto (window) resolution for canvas buffer: ${currentTargetWidth}x${currentTargetHeight}`);
+                  // resetCanvasStyle now also sets canvas.width and canvas.height
+                  resetCanvasStyle(currentTargetWidth, currentTargetHeight);
+              } else {
+                  console.warn("Cannot determine auto resolution for JPEG switch: webrtcInput or getWindowResolution not available.");
+                  // Fallback or error handling might be needed here, e.g., use a default.
+                  // For now, we'll log a warning. The canvas might not resize correctly.
+              }
+          }
       }
   }
 
@@ -2967,7 +3006,7 @@ function handleSettingsMessage(settings) {
     console.log(`Applied turnSwitch setting: ${turnSwitch}. Reloading...`);
     if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
       console.log('WebRTC not connected, skipping immediate reload.');
-      return;
+      return; // Important to return if not reloading, to process other settings
     }
     setTimeout(() => {
       window.location.reload();
@@ -2979,7 +3018,7 @@ function handleSettingsMessage(settings) {
      console.log(`Applied debug setting: ${debug}. Reloading...`);
     if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
       console.log('WebRTC not connected, skipping immediate reload.');
-      return;
+      return; // Important to return if not reloading, to process other settings
     }
     setTimeout(() => {
       window.location.reload();
@@ -3414,6 +3453,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  async function decodeAndQueueJpegStripe(startY, jpegData) {
+      if (typeof ImageDecoder === 'undefined') {
+          console.warn('ImageDecoder API not supported. Cannot decode JPEG stripes.');
+          return;
+      }
+      try {
+          const imageDecoder = new ImageDecoder({
+              data: jpegData,
+              type: 'image/jpeg'
+          });
+          const result = await imageDecoder.decode();
+          jpegStripeRenderQueue.push({ image: result.image, startY: startY });
+          
+          imageDecoder.close();
+  
+      } catch (error) {
+          console.error('Error decoding JPEG stripe:', error, 'startY:', startY, 'dataLength:', jpegData.byteLength);
+      }
+  }
+
   /**
    * Handles a decoded video frame from the decoder.
    * Adds the frame to the videoFrameBuffer.
@@ -3455,7 +3514,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // Only paint if the tab is visible, the video pipeline is active,
+    let videoPaintedThisFrame = false;
+    // --- Existing Video Frame Rendering ---
     if (!document.hidden && isVideoPipelineActive && videoFrameBuffer.length > videoBufferSize) {
         const frameToPaint = videoFrameBuffer.shift();
 
@@ -3463,16 +3523,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (canvas.width !== frameToPaint.codedWidth || canvas.height !== frameToPaint.codedHeight) {
                  canvas.width = frameToPaint.codedWidth;
                  canvas.height = frameToPaint.codedHeight;
-                 console.log(`Canvas internal buffer resized to ${canvas.width}x${canvas.height} to match video frame`);
+                 // console.log(`Canvas internal buffer resized to ${canvas.width}x${canvas.height} to match video frame`);
             }
 
-            // Draw the frame to the canvas buffer
             canvasContext.drawImage(frameToPaint, 0, 0, canvas.width, canvas.height);
-
-            // Close the frame to release resources
             frameToPaint.close();
+            videoPaintedThisFrame = true;
 
-            // FPS calculation logic
             frameCount++;
             const now = performance.now();
             const elapsed = now - lastFpsUpdateTime;
@@ -3483,26 +3540,77 @@ document.addEventListener('DOMContentLoaded', () => {
                 lastFpsUpdateTime = now;
             }
 
-            // Start stream / initialize input if this is the first frame
             if (!streamStarted) {
                 startStream();
-                initializeInput(); // Input init depends on stream starting/overlay being ready
+                initializeInput();
             }
         }
     } else {
-         // If not painting, still update the buffer display in dev mode
+         // If not painting video, still update the buffer display in dev mode
          if (dev_mode && videoBufferDivElement) {
              let reason = "";
              if(document.hidden) reason = "(Tab Hidden)";
              else if (!isVideoPipelineActive) reason = "(Pipeline Inactive)";
-             videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
+             // Add a reason if buffer is not full enough
+             else if (videoFrameBuffer.length <= videoBufferSize) reason = `(Buffer: ${videoFrameBuffer.length}/${videoBufferSize})`;
+             videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames ${reason}`;
          }
+         // This clearRect happens if video is inactive or tab is hidden.
+         // JPEG stripes drawn after this will appear on a (potentially) cleared canvas.
          if (canvasContext && (document.hidden || !isVideoPipelineActive)) {
              canvasContext.clearRect(0, 0, canvas.width, canvas.height);
          }
     }
 
-    // Request the next frame unconditionally
+    // --- START OF NEW MODIFICATION: JPEG Stripe Rendering ---
+    let jpegPaintedThisFrame = false;
+    if (canvasContext && jpegStripeRenderQueue.length > 0) {
+        // Ensure canvas has some dimensions. If no video frame has set them yet,
+        // and canvas is at default (e.g., 300x150 or 0x0), JPEG drawing might be problematic.
+        // The upstream example hardcoded canvas size (e.g., 2560x1440).
+        // If your JPEG stream has known dimensions different from potential video,
+        // you might need logic here or on JPEG stream start to set canvas.width/height.
+        // For now, we'll draw assuming canvas is appropriately sized.
+        if ((canvas.width === 0 || canvas.height === 0) || (canvas.width === 300 && canvas.height === 150)) {
+            // Check if this is the default size from HTML if not set by JS
+            const firstStripe = jpegStripeRenderQueue[0];
+            if (firstStripe && firstStripe.image && (firstStripe.startY + firstStripe.image.height > canvas.height || firstStripe.image.width > canvas.width)) {
+                 console.warn(`[paintVideoFrame] Canvas dimensions (${canvas.width}x${canvas.height}) may be too small for JPEG stripes. Consider setting canvas dimensions if JPEGs are the primary/initial content.`);
+                 // Example: If you know JPEG stream is 2560x1440 and it's the main content:
+                 // if (canvas.width < 2560 || canvas.height < 1440) { // Or some other logic
+                 //    canvas.width = 2560;
+                 //    canvas.height = 1440;
+                 //    console.log(`[paintVideoFrame] Resized canvas to expected JPEG dimensions: ${canvas.width}x${canvas.height}`);
+                 // }
+            }
+        }
+        
+        let segmentsDrawnThisFrame = 0;
+        while (jpegStripeRenderQueue.length > 0) {
+            const segment = jpegStripeRenderQueue.shift();
+            if (segment && segment.image) {
+                try {
+                    canvasContext.drawImage(segment.image, 0, segment.startY);
+                    segment.image.close(); // Release ImageBitmap resources
+                    jpegPaintedThisFrame = true;
+                    segmentsDrawnThisFrame++;
+                } catch (e) {
+                    console.error("[paintVideoFrame] Error drawing JPEG segment:", e, segment);
+                    if (segment.image && typeof segment.image.close === 'function') {
+                        segment.image.close(); // Attempt to close even on error
+                    }
+                }
+            }
+        }
+
+        // If JPEG stripes were the first thing to be rendered, ensure stream is "started"
+        if (jpegPaintedThisFrame && !streamStarted) {
+            startStream();
+            initializeInput();
+        }
+    }
+    // --- END OF NEW MODIFICATION ---
+
     requestAnimationFrame(paintVideoFrame);
   }
 
@@ -3937,6 +4045,23 @@ websocket.onopen = () => {
           }
         } else if (dataTypeByte === 0x02) {
             console.log('Received unexpected microphone data (type 0x02) from server.');
+        } else if (dataTypeByte === 0x03) {
+            // Header: data_type_byte (1B), frame_type_byte (1B), frame_id (2B), stripe_y_start (2B)
+            // Total header size = 1 + 1 + 2 + 2 = 6 bytes
+            if (arrayBuffer.byteLength < 6) {
+                console.warn('[websockets] Received short JPEG stripe message (type 0x03), ignoring.');
+                return;
+            }
+
+            const stripe_y_start = dataView.getUint16(4, false); // Offset 4, Y-coordinate for this stripe
+            const jpegDataBuffer = arrayBuffer.slice(6); // JPEG data starts after the 6-byte header
+
+            if (jpegDataBuffer.byteLength === 0) {
+                console.warn('[websockets] Received JPEG stripe (type 0x03) with no image data, ignoring.');
+                return;
+            }
+
+            decodeAndQueueJpegStripe(stripe_y_start, jpegDataBuffer);
         } else {
           console.warn('Unknown binary data payload type received:', dataTypeByte);
         }
