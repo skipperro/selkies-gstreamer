@@ -61,6 +61,8 @@ class GSTWebRTCApp:
         mode='webrtc'
     ):
         self.mode= mode
+        self.display_width = 1024
+        self.display_height = 768
         self.pipeline_running = False
         self.async_event_loop = async_event_loop
         self.stun_servers = stun_servers

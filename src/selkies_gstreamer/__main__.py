@@ -2775,7 +2775,6 @@ class WebRTCSignalling:
              )
              await self.on_disconnect()
 
-# --- Simplified on_resize_handler ---
 def on_resize_handler(res_from_client, current_app):
     """
     Attempts to resize the display using resize_display based on the client request.
@@ -2784,23 +2783,16 @@ def on_resize_handler(res_from_client, current_app):
     """
     logger_gstwebrtc_app_resize.info(f"on_resize_handler attempting resize for: {res_from_client}")
     try:
-        # Check if the last resize attempt failed to prevent rapid failed attempts
-        if not getattr(current_app, 'last_resize_success', True):
-            logger_gstwebrtc_app_resize.warning(f"Skipping resize for {res_from_client} because last attempt failed.")
-            # Ensure flag remains False
-            current_app.last_resize_success = False
-            return # Don't attempt resize
-
         logger_gstwebrtc_app_resize.info(f"Calling resize_display with '{res_from_client}'...")
         # Attempt to resize the display using external tools (e.g., xrandr)
+        res = res_from_client.split('x')
+        current_app.display_width = int(res[0])
+        current_app.display_height = int(res[1])
         success = resize_display(res_from_client)
 
         if success:
             logger_gstwebrtc_app_resize.info(f"resize_display('{res_from_client}') reported success.")
             current_app.last_resize_success = True # Set flag on success
-            # Optionally send confirmation back to client - ws_handler can do this too
-            # if hasattr(current_app, 'send_remote_resolution'):
-            #     current_app.send_remote_resolution(res_from_client)
         else:
             logger_gstwebrtc_app_resize.error(f"resize_display('{res_from_client}') reported failure.")
             current_app.last_resize_success = False # Set flag on failure
@@ -2809,7 +2801,6 @@ def on_resize_handler(res_from_client, current_app):
         logger_gstwebrtc_app_resize.error(f"Error during resize handling for '{res_from_client}': {e}", exc_info=True)
         # Ensure flag is False on any exception during the process
         if current_app: current_app.last_resize_success = False
-# --- End Simplified on_resize_handler ---
 
 
 def on_scaling_ratio_handler(scale, current_app):
@@ -3363,9 +3354,6 @@ async def main():
         mode=args.mode
     )
     # --- Initialize App State ---
-    # Set default dimensions (will be overridden by first resize message)
-    app.display_width = 1024
-    app.display_height = 768
     app.last_resize_success = True # Assume initial state is valid
     # Ensure encoder attribute matches initial value
     app.encoder = initial_encoder
