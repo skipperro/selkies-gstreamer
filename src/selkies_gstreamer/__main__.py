@@ -54,11 +54,11 @@ except ImportError:
 import ctypes
 X11_CAPTURE_AVAILABLE = False
 try:
-    from x11_screen_capture import CaptureSettings, ScreenCapture, StripeCallback
+    from pixelflux import CaptureSettings, ScreenCapture, StripeCallback
     X11_CAPTURE_AVAILABLE = True
-    data_logger.info("x11_screen_capture library found. JPEG encoding mode available.")
+    data_logger.info("pixelflux library found. Striped encoding modes available.")
 except ImportError:
-    data_logger.warning("x11_screen_capture library not found. JPEG encoding mode unavailable.")
+    data_logger.warning("pixelflux library not found. Striped encoding modes unavailable.")
     pass
 from system_metrics import Metrics, GPUMonitor, SystemMonitor, FPS_HIST_BUCKETS
 from input_handler import (WebRTCInput, SelkiesGamepad, GamepadMapper)
@@ -69,12 +69,37 @@ from gstreamer_pipeline import (GSTWebRTCApp, GSTWebRTCAppError, fit_res,
 import psutil
 import GPUtil
 import traceback
-FPS_DIFFERENCE_THRESHOLD = 5
+FPS_DIFFERENCE_THRESHOLD = 5 # Keep for reference, but new logic uses frame_delta
 BITRATE_DECREASE_STEP_KBPS = 2000
 BITRATE_INCREASE_STEP_KBPS = 1000
-BACKPRESSURE_CHECK_INTERVAL_SECONDS = 2.0
-RAMP_UP_STABILITY_SECONDS = 20.0
-MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE = 1000
+BACKPRESSURE_CHECK_INTERVAL_SECONDS = 2.0 # Can be reused
+RAMP_UP_STABILITY_SECONDS = 20.0 # Can be reused
+MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE = 1000 # Can be reused
+
+# --- New Frame ID Based Backpressure Constants ---
+FRAME_DIFFERENCE_THRESHOLD_LOW = 5       # Client is stable or catching up
+FRAME_DIFFERENCE_THRESHOLD_HIGH = 15     # Minor lag threshold
+FRAME_DIFFERENCE_THRESHOLD_SEVERE = 45   # Severe lag threshold
+STALLED_CLIENT_TIMEOUT_SECONDS = 4.0     # If client ACK hasn't updated for this long
+
+CRF_INCREASE_STEP = 3
+CRF_DECREASE_STEP = 2
+MAX_X264_CRF_BACKPRESSURE = 45
+# Initial CRF will be read from args or client settings
+
+MIN_JPEG_QUALITY_BACKPRESSURE = 20
+JPEG_QUALITY_DECREASE_STEP = 10
+# Initial JPEG quality will be read from args or default CaptureSettings
+
+# Defaults for Severe Lag Reset
+DEFAULT_JPEG_QUALITY_SEVERE_LAG = 30
+DEFAULT_X264_CRF_SEVERE_LAG = 35 # Higher CRF = lower quality/complexity
+DEFAULT_GSTREAMER_BITRATE_SEVERE_LAG_KBPS = 2000
+
+# Thresholds for acting on consecutive reports
+CONSECUTIVE_LAG_REPORTS_THRESHOLD = 2 # Number of consecutive high lag reports to trigger action
+MIN_ADJUSTMENT_INTERVAL_SECONDS = 10.0 # Minimum time between adjustments
+
 TARGET_FRAMERATE = 60
 TARGET_VIDEO_BITRATE_KBPS = 16000
 MIN_VIDEO_BITRATE_KBPS = 500
@@ -604,7 +629,7 @@ class DataStreamingServer:
 
     def __init__(self, port, mode, app, uinput_mouse_socket, js_socket_path,
                  enable_clipboard, enable_cursors, cursor_size, cursor_scale,
-                 cursor_debug):
+                 cursor_debug, cli_args):
         """Initializes the data WebSocket server."""
         self.port = port
         self.mode = mode
@@ -612,16 +637,30 @@ class DataStreamingServer:
         self.stop_server = None
         self.data_ws = None
         self.app = app
-
-        # Backpressure state (initialized in ws_handler when connection starts)
-        self._initial_target_bitrate_kbps = TARGET_VIDEO_BITRATE_KBPS
-        self._current_target_bitrate_kbps = TARGET_VIDEO_BITRATE_KBPS
-        self._min_bitrate_kbps = max(MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE, MIN_VIDEO_BITRATE_KBPS) # Use specific or global min
+        self.cli_args = cli_args
         self._latest_client_render_fps = 0.0
         self._last_backpressure_check_time = 0.0
-        self._last_bitrate_adjustment_time = 0.0
-        self._last_time_client_ok = 0.0
-        self._backpressure_task = None
+        self._last_bitrate_adjustment_time = 0.0 # Reused by new backpressure logic
+        self._last_time_client_ok = 0.0 # Reused by new backpressure logic
+        self._backpressure_task = None # Will be _frame_backpressure_task
+
+        # --- Frame ID Backpressure State ---
+        self._active_pipeline_last_sent_frame_id = 0
+        self._client_acknowledged_frame_id = -1 # Start at -1 to indicate no ACK received yet
+        self._frame_backpressure_task = None # Specific task for frame ID logic
+        self._consecutive_lag_reports = 0
+        self._last_client_acknowledged_frame_id_update_time = 0.0
+        self._previous_ack_id_for_stall_check = -1
+        self._previous_sent_id_for_stall_check = -1
+        self._last_client_stable_report_time = 0.0 # Time client was last seen as stable
+
+        # Store initial (target) and current encoder parameters for backpressure adjustments
+        self._initial_jpeg_quality = 75 # Default, will be overridden
+        self._current_jpeg_quality = 75
+        self._initial_jpeg_use_paint_over_quality = True # Default
+        self._current_jpeg_use_paint_over_quality = True
+        self._jpeg_paint_overs_disabled_this_session = False # Tracks if paint-overs were turned off by backpressure
+        self._initial_x264_crf = 25 # Default, will be overridden (self.h264_crf is current)
 
         # State for Websockets mode stats collection/sending
         self._system_monitor_task_ws = None
@@ -647,11 +686,157 @@ class DataStreamingServer:
         self.jpeg_capture_module = None
         self.is_jpeg_capturing = False
         self.jpeg_capture_loop = None # To store the asyncio event loop for the callback
-        # --- End JPEG Capture Attributes ---
+
+        # --- Striped x264enc Capture Attributes ---
+        self.x264_striped_capture_module = None
+        self.is_x264_striped_capturing = False
+        self.x264_python_stripes_received_this_interval = 0
+        self.x264_python_last_stripe_log_time = time.monotonic()
+        self.X264_PYTHON_STRIPE_LOG_INTERVAL_SECONDS = 1.0
+        self.h264_crf = 25
+        self.client_settings_received = None
+
+    # --- X264-Striped Capture Methods ---
+    def _x264_striped_stripe_callback(self, result_ptr, user_data):
+        current_async_loop = self.jpeg_capture_loop
+        if not self.is_x264_striped_capturing or not current_async_loop or not self.data_ws or not result_ptr:
+            return
+
+        result = result_ptr.contents
+        # [0x04][0x00][frame_id_be(2B)][stripe_y_start_be(2B)][H264_payload(...)]
+
+        if result.data and result.size > 0: 
+            try:
+                # This payload_from_cpp ALREADY has the full 6-byte header from C++
+                payload_from_cpp_with_full_header = bytes(ctypes.cast(result.data, ctypes.POINTER(ctypes.c_ubyte * result.size)).contents)
+                self.x264_python_stripes_received_this_interval += 1
+                now_monotonic = time.monotonic()
+                elapsed_seconds = now_monotonic - self.x264_python_last_stripe_log_time
+
+                if elapsed_seconds >= self.X264_PYTHON_STRIPE_LOG_INTERVAL_SECONDS:
+                    stripes_per_second = self.x264_python_stripes_received_this_interval / elapsed_seconds
+                    self.x264_python_stripes_received_this_interval = 0
+                    self.x264_python_last_stripe_log_time = now_monotonic
+                if self.data_ws:
+                    async def send_data_async():
+                        try:
+                            if self.data_ws:
+                                # Python does NO header construction. It sends the C++ buffer directly.
+                                await self.data_ws.send(payload_from_cpp_with_full_header)
+                                self.update_last_sent_frame_id(result.frame_id)
+                        except websockets.exceptions.ConnectionClosed:
+                            data_logger.debug("X264-Striped Callback: WebSocket closed while trying to send (C++ full header).")
+                        except Exception as e:
+                            data_logger.error(f"X264-Striped Callback: Error sending data (C++ full header): {e}", exc_info=True)
+                    
+                    if current_async_loop.is_running():
+                        asyncio.run_coroutine_threadsafe(send_data_async(), current_async_loop)
+                    else:
+                        data_logger.warning("X264-Striped Callback: Event loop not running, cannot send data.")
+            except Exception as e:
+                data_logger.error(f"Error processing x264-striped stripe in callback (C++ full header): {e}", exc_info=True)
+
+    async def _start_x264_striped_pipeline(self):
+        """Starts the X11 x264-striped screen capture pipeline."""
+        if not X11_CAPTURE_AVAILABLE:
+            data_logger.error("Cannot start x264-striped pipeline: pixelflux library not available.")
+            await self._send_error_to_client("x264-striped encoder not available on server")
+            return False
+        if self.is_x264_striped_capturing:
+            data_logger.warning("x264-striped capture already running.")
+            return True
+        if not self.app:
+            data_logger.error("Cannot start x264-striped pipeline: self.app (GSTWebRTCApp) is not set.")
+            await self._send_error_to_client("Server misconfiguration for x264-striped")
+            return False
+        
+        current_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
+        if not current_loop:
+            data_logger.error("Cannot start x264-striped pipeline: could not get running event loop.")
+            await self._send_error_to_client("Server error getting event loop")
+            return False
+        self.jpeg_capture_loop = current_loop # Ensure it's set for the callback
+
+        display_width = getattr(self.app, 'display_width', 1024)
+        display_height = getattr(self.app, 'display_height', 768)
+        target_fps = float(getattr(self.app, 'framerate', 30.0)) # Use app's framerate
+
+        data_logger.info(f"Starting X11 x264-striped capture: {display_width}x{display_height} @ {target_fps}fps, output_mode=1")
+        try:
+            capture_settings = CaptureSettings()
+            capture_settings.capture_width = display_width
+            capture_settings.capture_height = display_height
+            capture_settings.capture_x = 0 
+            capture_settings.capture_y = 0
+            capture_settings.target_fps = target_fps
+            capture_settings.jpeg_quality = 75
+            capture_settings.paint_over_jpeg_quality = 95
+            capture_settings.use_paint_over_quality = True
+            capture_settings.paint_over_trigger_frames = 2
+            capture_settings.damage_block_threshold = 15
+            capture_settings.damage_block_duration = 30
+            capture_settings.h264_crf = self.h264_crf 
+            
+            # Key change for x264-striped mode
+            capture_settings.output_mode = 1 
+
+            stripe_callback_obj = StripeCallback(self._x264_striped_stripe_callback)
+
+            if self.x264_striped_capture_module: # Defensive cleanup
+                del self.x264_striped_capture_module
+            self.x264_striped_capture_module = ScreenCapture()
+
+            if not self.x264_striped_capture_module:
+                data_logger.error("Failed to create ScreenCapture module instance for x264-striped.")
+                await self._send_error_to_client("Failed to init x264-striped capture module")
+                return False
+
+            await self.jpeg_capture_loop.run_in_executor(
+                None, 
+                self.x264_striped_capture_module.start_capture,
+                capture_settings,
+                stripe_callback_obj
+            )
+
+            self.is_x264_striped_capturing = True
+            data_logger.info("X11 x264-striped capture started successfully.")
+            return True
+        except Exception as e:
+            data_logger.error(f"Failed to start X11 x264-striped capture: {e}", exc_info=True)
+            await self._send_error_to_client(f"Error starting x264-striped capture: {str(e)[:100]}")
+            self.is_x264_striped_capturing = False
+            if self.x264_striped_capture_module:
+                del self.x264_striped_capture_module
+                self.x264_striped_capture_module = None
+            return False
+
+    async def _stop_x264_striped_pipeline(self):
+        """Stops the X11 x264-striped screen capture pipeline."""
+        if not self.is_x264_striped_capturing or not self.x264_striped_capture_module:
+            return True 
+
+        data_logger.info("Stopping X11 x264-striped capture...")
+        self.is_x264_striped_capturing = False 
+
+        try:
+            if self.jpeg_capture_loop and self.x264_striped_capture_module:
+                await self.jpeg_capture_loop.run_in_executor(None, self.x264_striped_capture_module.stop_capture)
+                data_logger.info("X11 x264-striped capture stop command issued and completed.")
+            else:
+                data_logger.warning("Cannot issue stop command for x264-striped: loop or module missing.")
+        except Exception as e:
+            data_logger.error(f"Error stopping X11 x264-striped capture via executor: {e}", exc_info=True)
+        finally:
+            if self.x264_striped_capture_module:
+                module_to_del = self.x264_striped_capture_module
+                self.x264_striped_capture_module = None
+                del module_to_del # Allow C extension's __del__ to run if it exists
+                data_logger.debug("X11 Capture module instance for x264-striped released for GC.")
+        return True
 
     # --- JPEG Capture Methods ---
     def _jpeg_stripe_callback(self, result_ptr, user_data):
-        """Callback executed by x11_screen_capture library thread."""
+        """Callback executed by pixelflux library thread."""
         # Check if still capturing, loop exists, websocket exists, and pointer is valid
         if not self.is_jpeg_capturing or not self.jpeg_capture_loop or not self.data_ws or not result_ptr:
             return
@@ -665,7 +850,9 @@ class DataStreamingServer:
                 )
                 # Copy data into a Python bytes object
                 jpeg_buffer = bytes(data_bytes_ptr.contents)
-
+                # Set frameID
+                frame_id_from_struct = result.frame_id 
+                self.update_last_sent_frame_id(frame_id_from_struct)
                 # Schedule sending the data on the main event loop
                 if self.data_ws:
                     async def send_data_async():
@@ -688,11 +875,14 @@ class DataStreamingServer:
             except Exception as e:
                 data_logger.error(f"Error processing JPEG stripe in callback: {e}", exc_info=True)
         # No need to free result.data, the C library manages it
+    def update_last_sent_frame_id(self, frame_id: int):
+        """Updates the last sent frame ID, handling wrap-around."""
+        self._active_pipeline_last_sent_frame_id = frame_id
 
     async def _start_jpeg_pipeline(self):
         """Starts the X11 JPEG screen capture pipeline."""
         if not X11_CAPTURE_AVAILABLE:
-            data_logger.error("Cannot start JPEG pipeline: x11_screen_capture library not available.")
+            data_logger.error("Cannot start JPEG pipeline: pixelflux library not available.")
             await self._send_error_to_client("JPEG encoder not available on server")
             return False
         if self.is_jpeg_capturing:
@@ -712,14 +902,8 @@ class DataStreamingServer:
         # Get current dimensions from the app object (should be set by ws_handler before calling this)
         display_width = getattr(self.app, 'display_width', 1024) # Use user default
         display_height = getattr(self.app, 'display_height', 768) # Use user default
-
-        # --- Fixed settings for JPEG capture ---
-        # These could be made configurable via args if needed later
-        fixed_target_fps = 30.0
-        fixed_jpeg_quality = 40 # Lower quality = smaller size, higher framerate possible
-        # --- End Fixed settings ---
-
-        data_logger.info(f"Starting X11 JPEG capture: {display_width}x{display_height} @ {fixed_target_fps}fps, Quality: {fixed_jpeg_quality}")
+        target_fps = float(getattr(self.app, 'framerate', 30.0))
+        data_logger.info(f"Starting X11 JPEG capture: {display_width}x{display_height} @ {target_fps}fps, Quality: {self._current_jpeg_quality}")
         try:
             # Configure capture settings
             capture_settings = CaptureSettings()
@@ -727,14 +911,15 @@ class DataStreamingServer:
             capture_settings.capture_height = display_height
             capture_settings.capture_x = 0 # Capture full screen
             capture_settings.capture_y = 0
-            capture_settings.target_fps = fixed_target_fps
-            capture_settings.jpeg_quality = fixed_jpeg_quality
+            capture_settings.target_fps = target_fps
+            capture_settings.jpeg_quality = self._current_jpeg_quality
             # Optional: Configure paint-over quality (higher quality for changed areas)
             capture_settings.paint_over_jpeg_quality = 95
-            capture_settings.use_paint_over_quality = True
+            capture_settings.use_paint_over_quality = self._current_jpeg_use_paint_over_quality
             capture_settings.paint_over_trigger_frames = 2
             capture_settings.damage_block_threshold = 15
             capture_settings.damage_block_duration = 30
+            capture_settings.output_mode = 0
 
             # Create the callback object
             stripe_callback_obj = StripeCallback(self._jpeg_stripe_callback)
@@ -810,10 +995,223 @@ class DataStreamingServer:
                 data_logger.warning(f"Could not send error to client: {e}")
     # --- End JPEG Capture Methods ---
 
+    def _parse_settings_payload(self, payload_str: str) -> dict:
+        settings_data = json.loads(payload_str)
+        parsed = {}
+
+        # Helper to safely get params
+        def get_int(key, default):
+            v = settings_data.get(key)
+            try: return int(v) if v is not None else default
+            except (ValueError, TypeError): return default
+        def get_bool(key, default):
+            v = settings_data.get(key)
+            if v is None: return default
+            if isinstance(v, bool): return v
+            return str(v).lower() == 'true'
+        def get_str(key, default):
+            v = settings_data.get(key)
+            return str(v) if v is not None else default
+
+        # Default values should ideally come from a single source of truth (e.g., args parsed in main)
+        # For simplicity, using common defaults or current app state as fallback.
+        parsed['videoBitRate'] = get_int('webrtc_videoBitRate', self.app.video_bitrate * 1000)
+        parsed['videoFramerate'] = get_int('webrtc_videoFramerate', self.app.framerate)
+        parsed['videoCRF'] = get_int('webrtc_videoCRF', self.h264_crf) # self.h264_crf is specific to x264enc-striped
+        parsed['audioBitRate'] = get_int('webrtc_audioBitRate', self.app.audio_bitrate)
+        parsed['encoder'] = get_str('webrtc_encoder', self.app.encoder)
+        
+        parsed['resizeRemote'] = get_bool('webrtc_resizeRemote', getattr(self.app, 'client_preferred_resize_enabled', True))
+        parsed['videoBufferSize'] = get_int('webrtc_videoBufferSize', getattr(self.app, 'video_buffer_size', 0))
+        parsed['isManualResolutionMode'] = get_bool('webrtc_isManualResolutionMode', getattr(self.app, 'client_is_manual_resolution_mode', False))
+        parsed['manualWidth'] = get_int('webrtc_manualWidth', getattr(self.app, 'client_manual_width', self.app.display_width))
+        parsed['manualHeight'] = get_int('webrtc_manualHeight', getattr(self.app, 'client_manual_height', self.app.display_height))
+        
+        # Client-side only settings can be parsed if needed server-side for logging/state
+        # parsed['debug'] = get_bool('webrtc_debug', False)
+        # parsed['turnSwitch'] = get_bool('webrtc_turnSwitch', False)
+        # parsed['scaleLocallyManual'] = get_bool('webrtc_scaleLocallyManual', True)
+        # parsed['isGamepadEnabled'] = get_bool('webrtc_isGamepadEnabled', True)
+
+
+        data_logger.debug(f"Parsed client settings payload: {parsed}")
+        return parsed
+
+    async def _apply_client_settings(self, settings: dict, is_initial_settings: bool):
+        data_logger.info(f"Applying client settings (initial={is_initial_settings}): {settings}")
+        
+        # Store pre-change state to detect if restart is needed
+        old_encoder = self.app.encoder
+        old_video_bitrate_kbps = self.app.video_bitrate
+        old_framerate = self.app.framerate
+        old_h264_crf = self.h264_crf # For x264enc-striped
+        old_gstreamer_crf = getattr(self.app, 'video_crf', 25) # For GStreamer x264enc
+        old_audio_bitrate_bps = self.app.audio_bitrate
+        old_video_buffer_size = getattr(self.app, 'video_buffer_size', 0)
+        old_display_width = self.app.display_width
+        old_display_height = self.app.display_height
+
+        # --- Pre-emptive check and actions if encoder is about to change ---
+        requested_new_encoder = settings.get('encoder') 
+        
+        if requested_new_encoder and requested_new_encoder != old_encoder:
+            if self.mode == "websockets":
+                if self._frame_backpressure_task and not self._frame_backpressure_task.done():
+                    self._frame_backpressure_task.cancel()
+                    data_logger.info(f"Cancelled frame backpressure task because encoder is changing from {old_encoder} to {requested_new_encoder}.")
+                    self._frame_backpressure_task = None 
+                
+                self._active_pipeline_last_sent_frame_id = 0
+                self._client_acknowledged_frame_id = -1
+                if old_encoder not in ['jpeg', 'x264enc-striped'] and hasattr(self.app, 'gstreamer_ws_current_frame_id'):
+                    self.app.gstreamer_ws_current_frame_id = 0
+                data_logger.info(f"Frame IDs reset because encoder is changing from {old_encoder} to {requested_new_encoder}.")
+        # --- End Pre-emptive check ---
+
+        # Apply core settings
+        # 'new_encoder' variable here refers to the value from the current settings payload
+        new_encoder_from_payload = settings.get('encoder')
+        if new_encoder_from_payload:
+            if new_encoder_from_payload == "jpeg" and not X11_CAPTURE_AVAILABLE:
+                data_logger.error("Client requested 'jpeg' encoder, but pixelflux is not available.")
+                await self._send_error_to_client("JPEG encoder not available on server")
+            elif new_encoder_from_payload == "x264enc-striped" and not X11_CAPTURE_AVAILABLE:
+                data_logger.error("Client requested 'x264enc-striped' encoder, but pixelflux is not available.")
+                await self._send_error_to_client("x264enc-striped encoder not available on server")
+            else:
+                self.app.encoder = new_encoder_from_payload # Update self.app.encoder
+        
+        new_video_bitrate_bps = settings.get('videoBitRate')
+        if new_video_bitrate_bps is not None:
+            new_video_bitrate_kbps = new_video_bitrate_bps // 1000
+            self.app.video_bitrate = new_video_bitrate_kbps
+            global TARGET_VIDEO_BITRATE_KBPS 
+            TARGET_VIDEO_BITRATE_KBPS = self.app.video_bitrate # Update global for consistency if needed by other parts
+            
+            # Update initial and current target for backpressure
+            self._initial_target_bitrate_kbps = self.app.video_bitrate 
+            if is_initial_settings or self.app.encoder not in ['jpeg', 'x264enc-striped']:
+                 self._current_target_bitrate_kbps = self.app.video_bitrate
+
+
+        new_framerate = settings.get('videoFramerate')
+        if new_framerate is not None:
+            self.app.framerate = new_framerate
+            global TARGET_FRAMERATE 
+            TARGET_FRAMERATE = new_framerate # Update global for consistency
+
+        new_crf = settings.get('videoCRF')
+        if new_crf is not None:
+            if self.app.encoder == 'x264enc-striped': 
+                self.h264_crf = new_crf
+                self._initial_x264_crf = new_crf # Update initial for backpressure ramp-up
+            elif self.app.encoder == 'x264enc': # GStreamer x264enc
+                setattr(self.app, 'video_crf', new_crf)
+
+        new_audio_bitrate_bps = settings.get('audioBitRate')
+        if new_audio_bitrate_bps is not None: 
+            self.app.audio_bitrate = new_audio_bitrate_bps
+        
+        new_video_buffer_size = settings.get('videoBufferSize')
+        if new_video_buffer_size is not None: 
+            setattr(self.app, 'video_buffer_size', new_video_buffer_size)
+
+        # Apply resize/resolution related settings
+        if 'resizeRemote' in settings: 
+            setattr(self.app, 'client_preferred_resize_enabled', settings['resizeRemote'])
+        if 'isManualResolutionMode' in settings: 
+            setattr(self.app, 'client_is_manual_resolution_mode', settings['isManualResolutionMode'])
+        if 'manualWidth' in settings: 
+            setattr(self.app, 'client_manual_width', settings['manualWidth'])
+        if 'manualHeight' in settings: 
+            setattr(self.app, 'client_manual_height', settings['manualHeight'])
+
+        # Determine if pipelines need restart based on changed values
+        restart_video_pipeline = False
+        restart_audio_pipeline = False
+
+        if self.app.encoder != old_encoder: restart_video_pipeline = True
+        if self.app.video_bitrate != old_video_bitrate_kbps: restart_video_pipeline = True
+        if self.app.framerate != old_framerate: restart_video_pipeline = True
+        # Check CRF changes against old values
+        if self.app.encoder == 'x264enc-striped' and self.h264_crf != old_h264_crf: restart_video_pipeline = True
+        if self.app.encoder == 'x264enc' and getattr(self.app, 'video_crf', 25) != old_gstreamer_crf: restart_video_pipeline = True
+        if getattr(self.app, 'video_buffer_size', 0) != old_video_buffer_size: restart_video_pipeline = True
+        if self.app.audio_bitrate != old_audio_bitrate_bps: restart_audio_pipeline = True
+
+        # Handle manual resolution change from settings
+        is_manual_res_mode = getattr(self.app, 'client_is_manual_resolution_mode', False)
+        manual_w = getattr(self.app, 'client_manual_width', old_display_width)
+        manual_h = getattr(self.app, 'client_manual_height', old_display_height)
+        
+        effective_resize_enabled = getattr(self.app, 'server_enable_resize', False) and \
+                                   getattr(self.app, 'client_preferred_resize_enabled', True)
+
+        if is_manual_res_mode and effective_resize_enabled:
+            if manual_w is not None and manual_h is not None and \
+               (manual_w != old_display_width or manual_h != old_display_height):
+                data_logger.info(f"Applying manual resolution from client settings: {manual_w}x{manual_h}")
+                on_resize_handler(f"{manual_w}x{manual_h}", self.app) 
+                if self.app.display_width != old_display_width or self.app.display_height != old_display_height:
+                    restart_video_pipeline = True
+        
+        # If not initial settings, and pipelines were running, perform restarts
+        if not is_initial_settings:
+            video_pipeline_was_active = self.is_jpeg_capturing or \
+                                       self.is_x264_striped_capturing or \
+                                       (hasattr(self.app, 'pipeline_running') and self.app.pipeline_running)
+            
+            audio_pipeline_was_active = False 
+            if hasattr(self.app, 'audio_pipeline_running_ws_flag'): 
+                 audio_pipeline_was_active = self.app.audio_pipeline_running_ws_flag
+            elif video_pipeline_was_active and self.app.encoder not in ['jpeg', 'x264enc-striped']:
+                 audio_pipeline_was_active = True
+
+
+            if restart_video_pipeline and video_pipeline_was_active:
+                data_logger.info("Restarting video pipeline due to client settings update.")
+                # Stop the pipeline that *was* running (using old_encoder)
+                if old_encoder == 'jpeg': 
+                    await self._stop_jpeg_pipeline()
+                elif old_encoder == 'x264enc-striped': 
+                    await self._stop_x264_striped_pipeline()
+                elif hasattr(self.app, 'stop_websocket_video_pipeline'): 
+                    await self.app.stop_websocket_video_pipeline()
+                
+                # If the encoder itself did NOT change (i.e., self.app.encoder is same as old_encoder),
+                # but a restart is happening due to parameter changes, then reset frame IDs.
+                # If the encoder *did* change, the pre-emptive check above already handled this.
+                if self.mode == "websockets" and self.app.encoder == old_encoder: 
+                    await self._reset_frame_ids_and_notify(pipeline_reset_reason="client_settings_param_change_for_same_encoder")
+
+                # Start new video with current self.app.encoder (which is now the new one) and new settings
+                if self.app.encoder == 'jpeg': 
+                    await self._start_jpeg_pipeline()
+                elif self.app.encoder == 'x264enc-striped': 
+                    await self._start_x264_striped_pipeline()
+                elif hasattr(self.app, 'start_websocket_video_pipeline'): 
+                    await self.app.start_websocket_video_pipeline()
+
+            if restart_audio_pipeline and audio_pipeline_was_active:
+                data_logger.info("Restarting audio pipeline due to client settings update.")
+                if hasattr(self.app, 'stop_websocket_audio_pipeline'): 
+                    await self.app.stop_websocket_audio_pipeline()
+                if hasattr(self.app, 'start_websocket_audio_pipeline'): 
+                    await self.app.start_websocket_audio_pipeline()
+
+        # After all settings are applied and pipelines potentially restarted:
+        # If the encoder *was changed by these settings* (compare requested_new_encoder with old_encoder)
+        # and we are in websockets mode, ensure the frame backpressure task is (re)started.
+        if self.mode == "websockets" and requested_new_encoder and requested_new_encoder != old_encoder:
+            # Check if task needs starting/restarting (it might have been cancelled above)
+            if not self._frame_backpressure_task or self._frame_backpressure_task.done(): 
+                 data_logger.info(f"Starting/restarting frame-based backpressure task for new encoder {self.app.encoder} after settings change.")
+                 self._frame_backpressure_task = asyncio.create_task(self._run_frame_backpressure_logic())
+        
 
     async def ws_handler(self, websocket):
         """Handles incoming WebSocket connections and messages."""
-        global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
+        global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS, args
 
         raddr = websocket.remote_address
         data_logger.info(f"Data WebSocket connected from {raddr}")
@@ -823,7 +1221,8 @@ class DataStreamingServer:
             self.jpeg_capture_loop = asyncio.get_running_loop()
         self.data_ws = websocket # Store current websocket for this handler instance
         # --- End connection-specific state ---
-
+        self.client_settings_received = asyncio.Event()
+        initial_settings_processed = False
         mode_message = f"MODE {self.mode}"
         try:
             await websocket.send(mode_message)
@@ -843,6 +1242,7 @@ class DataStreamingServer:
         supported_encoders = []
         # Add JPEG if the library is available
         if X11_CAPTURE_AVAILABLE:
+            supported_encoders.append('x264enc-striped')
             supported_encoders.append('jpeg')
 
         for encoder_name in encoders_to_check:
@@ -868,9 +1268,35 @@ class DataStreamingServer:
         self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
         self._min_bitrate_kbps = max(MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE, MIN_VIDEO_BITRATE_KBPS)
         self._latest_client_render_fps = 0.0 # Reset client FPS
-        self._last_bitrate_adjustment_time = time.monotonic() # Initialize to now
-        self._last_time_client_ok = time.monotonic()          # Initialize to now
+        self._last_adjustment_time = time.monotonic() # Renamed from _last_bitrate_adjustment_time
+        self._last_time_client_ok = time.monotonic() # Renamed
         self._backpressure_task = None                       # Reset task handle
+
+        # Frame ID specific backpressure state reset for new connection
+        self._active_pipeline_last_sent_frame_id = 0
+        self._client_acknowledged_frame_id = -1
+        if self._frame_backpressure_task and not self._frame_backpressure_task.done():
+            self._frame_backpressure_task.cancel() # Cancel if lingering from previous connection
+        self._frame_backpressure_task = None
+        self._consecutive_lag_reports = 0
+        self._last_client_acknowledged_frame_id_update_time = time.monotonic()
+        self._previous_ack_id_for_stall_check = -1
+        self._previous_sent_id_for_stall_check = -1
+        self._last_client_stable_report_time = time.monotonic()
+        # Initialize/reset current and initial encoder parameters for backpressure
+        # These come from global args or could be from parsed client settings later
+        # For JPEG:
+        # Assuming CaptureSettings default is 75 for quality, true for paint-overs.
+        # These could be made configurable via args if needed.
+        self._initial_jpeg_quality = getattr(self.cli_args, 'jpeg_quality_initial', 75) # Add if you want arg for this
+        self._current_jpeg_quality = self._initial_jpeg_quality
+        self._initial_jpeg_use_paint_over_quality = getattr(self.cli_args, 'jpeg_paint_over_initial', True) # Add if you want arg
+        self._current_jpeg_use_paint_over_quality = self._initial_jpeg_use_paint_over_quality
+        self._jpeg_paint_overs_disabled_this_session = False
+
+        # For x264-striped:
+        self._initial_x264_crf = self.cli_args.h264_crf # From command line args
+        self.h264_crf = self._initial_x264_crf # Current CRF
 
         # Maps final server file path -> file handle for ongoing uploads for this connection
         active_uploads_by_path = {}
@@ -918,15 +1344,6 @@ class DataStreamingServer:
                 logger.error(f"Failed to initialize or connect WebRTCInput for websockets mode: {e}", exc_info=True)
                 self.webrtc_input = None # Ensure it's None if setup fails
 
-            data_logger.info("Attempting to start audio pipeline by default for websockets mode...")
-            if hasattr(self.app, 'start_websocket_audio_pipeline'):
-                try:
-                    await self.app.start_websocket_audio_pipeline()
-                    data_logger.info("Default audio pipeline started successfully for websockets mode.")
-                except Exception as e:
-                    data_logger.error(f"Error starting default audio pipeline for websockets mode: {e}", exc_info=True)
-            else:
-                data_logger.warning("app instance has no start_websocket_audio_pipeline method. Cannot start audio by default.")
             # Setup stats collection and sending for this connection
             self._shared_stats_ws = {} # Reset stats for this connection
             gpu_id_for_monitor = getattr(self.app, 'gpu_id', 0)
@@ -949,15 +1366,16 @@ class DataStreamingServer:
                 "System/GPU monitor and sender tasks started for websockets mode."
             )
 
-            data_logger.info("Starting WebSocket backpressure adjustment task.")
-            self._backpressure_task = asyncio.create_task(self._run_backpressure_logic())
-
         else:
             # Operating in webrtc mode
             data_logger.info(
                 "Operating in webrtc mode. Data websocket handler is minimal."
             )
             self.webrtc_input = None
+            # Ensure old backpressure task is not started for WebRTC mode either
+            if self._backpressure_task and not self._backpressure_task.done():
+                self._backpressure_task.cancel()
+            self._backpressure_task = None
 
 
         try:
@@ -1261,6 +1679,62 @@ class DataStreamingServer:
                         except Exception as e:
                             data_logger.error(f"Error processing FILE_UPLOAD_START '{message}' from {raddr}: {e}", exc_info=True)
                             active_upload_target_path = None # Ensure reset on error
+                    elif message.startswith("SETTINGS,"):
+                        try:
+                            _, payload_str = message.split(",", 1)
+                            parsed_settings = self._parse_settings_payload(payload_str)
+                            # Update initial targets if they are part of settings
+                            if 'videoBitRate' in parsed_settings and self.app.encoder not in ['jpeg', 'x264enc-striped']:
+                                self._initial_target_bitrate_kbps = parsed_settings['videoBitRate'] // 1000
+                                # Also set current if it's initial settings
+                                if not initial_settings_processed:
+                                     self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
+                                     self.app.video_bitrate = self._initial_target_bitrate_kbps
+
+                            if 'videoCRF' in parsed_settings and self.app.encoder == 'x264enc-striped':
+                                self._initial_x264_crf = parsed_settings['videoCRF']
+                                if not initial_settings_processed:
+                                     self.h264_crf = self._initial_x264_crf
+                            await self._apply_client_settings(parsed_settings, is_initial_settings=(not initial_settings_processed))
+
+                            if not initial_settings_processed:
+                                self.client_settings_received.set()
+                                initial_settings_processed = True
+                                data_logger.info("Initial client settings processed and event set.")
+                                if self.mode == "websockets":
+                                    # Stop any old backpressure task
+                                    if self._backpressure_task and not self._backpressure_task.done():
+                                        self._backpressure_task.cancel()
+                                        self._backpressure_task = None
+                                    if self._frame_backpressure_task and not self._frame_backpressure_task.done():
+                                        self._frame_backpressure_task.cancel()
+                                    # Start new frame-based backpressure logic
+                                    data_logger.info("Starting frame-based backpressure adjustment task.")
+                                    self._frame_backpressure_task = asyncio.create_task(self._run_frame_backpressure_logic())
+
+                                    # Start pipelines after settings
+                                    await self.app.start_websocket_audio_pipeline()
+                                    if self.app.encoder == 'jpeg': await self._start_jpeg_pipeline()
+                                    elif self.app.encoder == 'x264enc-striped': await self._start_x264_striped_pipeline()
+                                    else: await self.app.start_websocket_video_pipeline()
+                        except json.JSONDecodeError:
+                            data_logger.error(f"Failed to parse JSON from SETTINGS message: {message}")
+                        except Exception as e:
+                            data_logger.error(f"Error processing SETTINGS message '{message}': {e}", exc_info=True)
+                    elif message.startswith("CLIENT_FRAME_ACK"):
+                        try:
+                            parts = message.split(" ", 1)
+                            if len(parts) == 2:
+                                acked_frame_id = int(parts[1])
+                                self._client_acknowledged_frame_id = acked_frame_id
+                                self._last_client_acknowledged_frame_id_update_time = time.monotonic()
+                                # data_logger.debug(f"Client ACK received for frame_id: {acked_frame_id}")
+                            else:
+                                data_logger.warning(f"Malformed CLIENT_FRAME_ACK: {message}")
+                        except ValueError:
+                            data_logger.warning(f"Invalid frame_id in CLIENT_FRAME_ACK: {message}")
+                        except Exception as e:
+                            data_logger.error(f"Error processing CLIENT_FRAME_ACK '{message}': {e}", exc_info=True)
                     elif message.startswith('FILE_UPLOAD_END:'):
                         try:
                             _, relative_path_end = message.split(':', 1)
@@ -1336,22 +1810,31 @@ class DataStreamingServer:
                             active_upload_target_path = None # Ensure reset
                     elif self.mode == "websockets":
                         # Handle standard commands for websockets mode
+                        command_part = message.split(",")[0] 
+                        if not self.client_settings_received.is_set() and \
+                           command_part in ["START_VIDEO", "START_AUDIO", "r"]:
+                             data_logger.warning(f"Command '{message}' received before initial client settings. Ignoring.")
+                             await self._send_error_to_client(f"Command '{command_part}' ignored, waiting for initial settings.")
+                             continue
                         if message == "START_VIDEO":
+                            await self.client_settings_received.wait()
                             data_logger.info("Received START_VIDEO command.")
                             # --- Start correct pipeline based on app.encoder ---
                             if self.app.encoder == 'jpeg':
                                 await self._start_jpeg_pipeline()
+                            elif self.app.encoder == 'x264enc-striped':
+                                await self._start_x264_striped_pipeline()
                             elif hasattr(self.app, 'start_websocket_video_pipeline'):
                                 await self.app.start_websocket_video_pipeline()
                             else:
                                 data_logger.error("app instance has no start_websocket_video_pipeline method for GStreamer.")
                                 await self._send_error_to_client("START_VIDEO Method not found")
-                            # --- End START_VIDEO ---
                         elif message == "STOP_VIDEO":
                             data_logger.info("Received STOP_VIDEO command.")
-                            # --- Stop correct pipeline ---
                             if self.is_jpeg_capturing: # Check if JPEG is actually running
                                 await self._stop_jpeg_pipeline()
+                            elif self.is_x264_striped_capturing: # ADD THIS BLOCK
+                                await self._stop_x264_striped_pipeline()
                             elif hasattr(self.app, 'stop_websocket_video_pipeline'): # Otherwise assume GStreamer
                                 # Check if GStreamer pipeline is running before stopping
                                 if getattr(self.app, 'pipeline_running', False):
@@ -1360,8 +1843,8 @@ class DataStreamingServer:
                                     data_logger.debug("STOP_VIDEO ignored: GStreamer pipeline not running.")
                             else:
                                 data_logger.error("app instance has no stop_websocket_video_pipeline method for GStreamer.")
-                            # --- End STOP_VIDEO ---
                         elif message == "START_AUDIO":
+                            await self.client_settings_received.wait()
                             data_logger.info("Received START_AUDIO command.")
                             if hasattr(self.app, 'start_websocket_audio_pipeline'):
                                  try:
@@ -1380,15 +1863,21 @@ class DataStreamingServer:
                             else:
                                 data_logger.error("app instance has no stop_websocket_audio_pipeline method.")
                         elif message.startswith("r,"):
+                            await self.client_settings_received.wait()
                             # --- Handle Resize (5-Step Logic) ---
                             target_res_str = message[2:]
                             data_logger.info(f"Received resize request: {target_res_str}")
 
                             # 1. Stop active video pipeline
                             pipeline_was_running = False
+                            print(self.is_x264_striped_capturing)
                             if self.is_jpeg_capturing:
                                 data_logger.info("Stopping JPEG capture before resize...")
                                 await self._stop_jpeg_pipeline()
+                                pipeline_was_running = True
+                            elif self.is_x264_striped_capturing:
+                                data_logger.info("Stopping x264-striped capture before resize...")
+                                await self._stop_x264_striped_pipeline()
                                 pipeline_was_running = True
                             elif getattr(self.app, 'pipeline_running', False) and hasattr(self.app, 'stop_websocket_video_pipeline'):
                                 data_logger.info("Stopping GStreamer video pipeline before resize...")
@@ -1428,7 +1917,9 @@ class DataStreamingServer:
 
                             data_logger.info("Restarting video pipeline after resize attempt...")
                             if self.app.encoder == 'jpeg':
-                                await self._start_jpeg_pipeline() # Will use updated app.display_width/height
+                                await self._start_jpeg_pipeline()
+                            elif self.app.encoder == 'x264enc-striped':
+                                await self._start_x264_striped_pipeline()
                             elif hasattr(self.app, 'start_websocket_video_pipeline'):
                                 await self.app.start_websocket_video_pipeline() # Will use updated app.display_width/height
                             # --- End Resize Handling ---
@@ -1443,7 +1934,7 @@ class DataStreamingServer:
                         elif message.startswith("cfps,"):
                           # Handle client FPS report for backpressure logic
                           # Ignore if JPEG is the encoder
-                          if self.app.encoder != 'jpeg':
+                          if self.app.encoder not in ['jpeg', 'x264enc-striped']:
                             try:
                                 parts = message.split(",")
                                 if len(parts) != 2:
@@ -1463,7 +1954,7 @@ class DataStreamingServer:
 
                         elif message.startswith("SET_VIDEO_BITRATE,"):
                             # Ignore if JPEG is active
-                            if self.app.encoder == 'jpeg':
+                            if self.app.encoder in ['jpeg', 'x264enc-striped']:
                                 data_logger.info(f"Message '{message}' ignored: JPEG encoder uses fixed quality, not bitrate.")
                             else: # GStreamer
                                 try:
@@ -1484,25 +1975,6 @@ class DataStreamingServer:
                                     data_logger.error(f"Error setting GStreamer video bitrate: {e}", exc_info=True)
                                     await self._send_error_to_client("Failed to set GStreamer video bitrate")
 
-                        elif message.startswith("SET_AUDIO_BITRATE,"):
-                            # Audio is always GStreamer for now
-                            try:
-                                parts = message.split(",")
-                                if len(parts) != 2:
-                                    data_logger.error(f"Invalid SET_AUDIO_BITRATE message format: {message}")
-                                    await self._send_error_to_client("Invalid SET_AUDIO_BITRATE format")
-                                    continue
-                                new_bitrate_bps = int(parts[1])
-                                data_logger.info(f"Received SET_AUDIO_BITRATE: {new_bitrate_bps}bps")
-                                if hasattr(self.app, 'stop_websocket_audio_pipeline'): await self.app.stop_websocket_audio_pipeline()
-                                if hasattr(self.app, 'audio_bitrate'): self.app.audio_bitrate = new_bitrate_bps
-                                if hasattr(self.app, 'start_websocket_audio_pipeline'):
-                                    await self.app.start_websocket_audio_pipeline()
-                                    data_logger.info("Audio pipeline restarted with new audio bitrate.")
-                            except Exception as e:
-                                data_logger.error(f"Error setting audio bitrate: {e}", exc_info=True)
-                                await self._send_error_to_client("Failed to set audio bitrate")
-
                         elif message.startswith("SET_ENCODER,"):
                             # --- Handle Encoder Change ---
                             try:
@@ -1520,14 +1992,20 @@ class DataStreamingServer:
 
                                 # Check availability for JPEG
                                 if new_encoder_str == "jpeg" and not X11_CAPTURE_AVAILABLE:
-                                    data_logger.error("Client requested 'jpeg' encoder, but x11_screen_capture is not available.")
+                                    data_logger.error("Client requested 'jpeg' encoder, but pixelflux is not available.")
                                     await self._send_error_to_client("JPEG encoder not available on server")
                                     continue
-
+                                if new_encoder_str == "x264enc-striped" and not X11_CAPTURE_AVAILABLE:
+                                    data_logger.error("Client requested 'x264enc-striped' encoder, but pixelflux is not available.")
+                                    await self._send_error_to_client("x264enc-striped encoder not available on server")
+                                    continue
                                 # Stop current video pipeline, whichever it is
                                 pipeline_was_running = False
                                 if self.is_jpeg_capturing:
                                     await self._stop_jpeg_pipeline()
+                                    pipeline_was_running = True
+                                elif self.is_x264_striped_capturing:
+                                    await self._stop_x264_striped_pipeline()
                                     pipeline_was_running = True
                                 elif hasattr(self.app, 'stop_websocket_video_pipeline') and getattr(self.app, 'pipeline_running', False):
                                     await self.app.stop_websocket_video_pipeline()
@@ -1536,42 +2014,148 @@ class DataStreamingServer:
                                 # Update app's encoder knowledge
                                 self.app.encoder = new_encoder_str
 
+                                # Update app's encoder knowledge
+                                old_encoder_for_backpressure_reset = self.app.encoder
+                                self.app.encoder = new_encoder_str
+
+                                # Reset and restart backpressure task if mode is websockets
+                                if self.mode == "websockets":
+                                    if self._frame_backpressure_task and not self._frame_backpressure_task.done():
+                                        self._frame_backpressure_task.cancel()
+                                        data_logger.info("Cancelled existing frame backpressure task due to encoder change.")
+                                    
+                                    # Reset frame IDs before starting new pipeline with new encoder
+                                    self._active_pipeline_last_sent_frame_id = 0
+                                    self._client_acknowledged_frame_id = -1
+                                    if old_encoder_for_backpressure_reset != 'jpeg' and \
+                                       old_encoder_for_backpressure_reset != 'x264enc-striped' and \
+                                       hasattr(self.app, 'gstreamer_ws_current_frame_id'):
+                                        self.app.gstreamer_ws_current_frame_id = 0
+
                                 # Start new video pipeline if one was running before
                                 if pipeline_was_running:
                                     if new_encoder_str == 'jpeg':
                                         await self._start_jpeg_pipeline()
+                                    elif new_encoder_str == 'x264enc-striped':
+                                        await self._start_x264_striped_pipeline()
                                     elif hasattr(self.app, 'start_websocket_video_pipeline'):
                                         await self.app.start_websocket_video_pipeline()
                                     data_logger.info(f"Video pipeline stopped and restarted with new encoder: {new_encoder_str}.")
                                 else:
                                     data_logger.info(f"Encoder set to {new_encoder_str}. Pipeline was not running, will start on next START_VIDEO or resize.")
+                                if self.mode == "websockets" and (pipeline_was_running or new_encoder_str in ['jpeg', 'x264enc-striped'] or check_encoder_supported(new_encoder_str)): # Start if new encoder is valid for WS
+                                    data_logger.info("Restarting frame-based backpressure task for new encoder.")
+                                    self._frame_backpressure_task = asyncio.create_task(self._run_frame_backpressure_logic())
                             except Exception as e:
                                 data_logger.error(f"Error setting encoder and restarting pipeline: {e}", exc_info=True)
                                 await self._send_error_to_client(f"Failed to set encoder: {str(e)[:100]}")
                             # --- End Encoder Change ---
-
                         elif message.startswith("SET_FRAMERATE,"):
-                            # Ignore if JPEG is active
-                            if self.app.encoder == 'jpeg':
-                                data_logger.info(f"Message '{message}' ignored: JPEG encoder uses fixed framerate.")
-                            else: # GStreamer
-                                try:
-                                    parts = message.split(",")
-                                    if len(parts) != 2:
-                                        data_logger.error(f"Invalid SET_FRAMERATE message format: {message}")
-                                        await self._send_error_to_client("Invalid SET_FRAMERATE format")
-                                        continue
-                                    new_framerate_int = int(parts[1])
-                                    data_logger.info(f"Received SET_FRAMERATE for GStreamer: {new_framerate_int}fps")
-                                    TARGET_FRAMERATE = new_framerate_int
-                                    self.app.framerate = new_framerate_int
-                                    if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
-                                    if hasattr(self.app, 'start_websocket_video_pipeline'):
-                                        await self.app.start_websocket_video_pipeline()
-                                        data_logger.info("GStreamer video pipeline restarted with new framerate.")
-                                except Exception as e:
-                                    data_logger.error(f"Error setting GStreamer framerate: {e}", exc_info=True)
-                                    await self._send_error_to_client("Failed to set GStreamer framerate")
+                           try:
+                               parts = message.split(",")
+                               if len(parts) != 2:
+                                   data_logger.error(f"Invalid SET_FRAMERATE message format: {message}")
+                                   await self._send_error_to_client("Invalid SET_FRAMERATE format")
+                                   continue
+                               new_framerate_int = int(parts[1])
+
+                               # Update the target framerate in the app state universally
+                               data_logger.info(f"Received SET_FRAMERATE request: {new_framerate_int}fps for encoder '{self.app.encoder}'")
+                               self.app.framerate = new_framerate_int # Update app state for all modes
+
+                               # Apply the change based on the current encoder
+                               if self.app.encoder == 'jpeg':
+                                   data_logger.info(f"Applying SET_FRAMERATE for JPEG encoder: {new_framerate_int}fps")
+                                   if self.is_jpeg_capturing:
+                                       await self._stop_jpeg_pipeline()
+                                       await self._start_jpeg_pipeline() # Will read updated self.app.framerate
+                                       data_logger.info("JPEG pipeline restarted with new framerate.")
+                                   else:
+                                       data_logger.info("JPEG pipeline not running, framerate will be applied on next start.")
+                               elif self.app.encoder == 'x264enc-striped':
+                                   data_logger.info(f"Applying SET_FRAMERATE for x264enc-striped encoder: {new_framerate_int}fps")
+                                   if self.is_x264_striped_capturing:
+                                       await self._stop_x264_striped_pipeline()
+                                       await self._start_x264_striped_pipeline() # Will read updated self.app.framerate
+                                       data_logger.info("x264enc-striped pipeline restarted with new framerate.")
+                                   else:
+                                        data_logger.info("x264enc-striped pipeline not running, framerate will be applied on next start.")
+                               else: # GStreamer handling (original logic, TARGET_FRAMERATE removed as app.framerate is now the source)
+                                   data_logger.info(f"Received SET_FRAMERATE for GStreamer: {new_framerate_int}fps")
+                                   pipeline_was_running = getattr(self.app, 'pipeline_running', False)
+                                   if pipeline_was_running and hasattr(self.app, 'stop_websocket_video_pipeline'):
+                                       await self.app.stop_websocket_video_pipeline()
+                                   if pipeline_was_running and hasattr(self.app, 'start_websocket_video_pipeline'):
+                                       await self.app.start_websocket_video_pipeline() # Reads updated self.app.framerate internally
+                                       data_logger.info("GStreamer video pipeline restarted with new framerate.")
+                                   elif not pipeline_was_running:
+                                       data_logger.info("GStreamer pipeline not running, framerate will be applied on next start.")
+                           except ValueError:
+                               data_logger.error(f"Invalid framerate value received: {message}")
+                               await self._send_error_to_client("Invalid framerate value")
+                           except Exception as e:
+                               data_logger.error(f"Error setting framerate: {e}", exc_info=True)
+                               await self._send_error_to_client("Failed to set framerate")
+                        elif message.startswith("SET_CRF,"):
+                            try:
+                                parts = message.split(",")
+                                if len(parts) != 2:
+                                    data_logger.error(f"Invalid SET_CRF message format: {message}")
+                                    await self._send_error_to_client("Invalid SET_CRF format")
+                                    continue
+                                new_crf_int = int(parts[1])
+                                if not (0 <= new_crf_int <= 51):
+                                    data_logger.error(f"Invalid CRF value received: {new_crf_int}. Must be between 0 and 51.")
+                                    await self._send_error_to_client("Invalid CRF value (0-51)")
+                                    continue
+
+                                data_logger.info(f"Received SET_CRF request: {new_crf_int}")
+
+                                # Update the CRF value stored in the app instance
+                                self.h264_crf = new_crf_int
+
+                                # Stop/Restart logic targeting JPEG and x264-striped modes specifically
+                                jpeg_was_running = self.is_jpeg_capturing
+                                x264_was_running = self.is_x264_striped_capturing
+                                pipeline_restarted = False
+
+                                if jpeg_was_running:
+                                    data_logger.info("Stopping JPEG pipeline for CRF change...")
+                                    await self._stop_jpeg_pipeline()
+                                if x264_was_running:
+                                    data_logger.info("Stopping x264-striped pipeline for CRF change...")
+                                    await self._stop_x264_striped_pipeline()
+
+                                if jpeg_was_running:
+                                    data_logger.info("Restarting JPEG pipeline after CRF change...")
+                                    await self._start_jpeg_pipeline() # Restarts JPEG even though CRF doesn't apply
+                                    pipeline_restarted = True
+                                if x264_was_running:
+                                    data_logger.info("Restarting x264-striped pipeline after CRF change...")
+                                    await self._start_x264_striped_pipeline() # Restarts x264 with new CRF
+                                    pipeline_restarted = True
+
+                                if pipeline_restarted:
+                                    data_logger.info("Target pipelines restarted with new CRF setting applied (where applicable).")
+                                else:
+                                    data_logger.info("CRF setting updated. Target pipelines were not running.")
+
+                            except ValueError:
+                                data_logger.error(f"Invalid CRF value received (not an integer): {message}")
+                                await self._send_error_to_client("Invalid CRF value format")
+                            except Exception as e:
+                                data_logger.error(f"Error setting H.264 CRF: {e}", exc_info=True)
+                                await self._send_error_to_client("Failed to set H.264 CRF")
+                            else:
+                                # Default handling for other string messages (e.g., input events)
+                                if self.webrtc_input and hasattr(self.webrtc_input, 'on_message'):
+                                    await self.webrtc_input.on_message(message)
+                                else:
+                                    data_logger.warning(
+                                        f"Received message '{message}' but webrtc_input is not "
+                                        "initialized or has no on_message method."
+                                    )
+
                         else:
                              # Default handling for other string messages (e.g., input events)
                              if self.webrtc_input and hasattr(self.webrtc_input, 'on_message'):
@@ -1581,7 +2165,6 @@ class DataStreamingServer:
                                       f"Received message '{message}' but webrtc_input is not "
                                       "initialized or has no on_message method."
                                   )
-
                     elif self.mode == "webrtc":
                         data_logger.warning(
                             "Received unexpected string message in webrtc mode on data "
@@ -1616,6 +2199,19 @@ class DataStreamingServer:
                     data_logger.error(f"Error during backpressure task cleanup: {e}")
                 self._backpressure_task = None
 
+            if self._frame_backpressure_task and not self._frame_backpressure_task.done(): # New task
+                data_logger.info("Cancelling frame-based backpressure task...")
+                self._frame_backpressure_task.cancel()
+                try:
+                    await asyncio.wait_for(asyncio.shield(self._frame_backpressure_task), timeout=1.0)
+                except asyncio.CancelledError:
+                    data_logger.info("Frame-based backpressure task cancellation confirmed.")
+                except asyncio.TimeoutError:
+                    data_logger.warning("Timeout waiting for frame-based backpressure task cancellation.")
+                except Exception as e: 
+                    data_logger.error(f"Error during frame-based backpressure task cleanup: {e}")
+                self._frame_backpressure_task = None
+
             tasks_to_cancel_ws = []
             if self._system_monitor_task_ws and not self._system_monitor_task_ws.done(): tasks_to_cancel_ws.append(self._system_monitor_task_ws)
             if self._gpu_monitor_task_ws and not self._gpu_monitor_task_ws.done(): tasks_to_cancel_ws.append(self._gpu_monitor_task_ws)
@@ -1630,6 +2226,8 @@ class DataStreamingServer:
             # --- Stop Pipelines ---
             if self.is_jpeg_capturing:
                 await self._stop_jpeg_pipeline()
+            if self.is_x264_striped_capturing:
+                await self._stop_x264_striped_pipeline()
             # Stop GStreamer video if running
             if getattr(self.app, 'pipeline_running', False) and hasattr(self.app, 'stop_websocket_video_pipeline'):
                 data_logger.info("Stopping GStreamer video pipeline during cleanup.")
@@ -1691,91 +2289,223 @@ class DataStreamingServer:
             self.jpeg_capture_loop = None # Clear loop reference for this handler
             data_logger.info(f"Data WebSocket handler finished for {raddr}")
 
-    async def _run_backpressure_logic(self):
-        """Periodically checks FPS and adjusts video bitrate for WebSocket mode by restarting the pipeline."""
-        data_logger.info("Backpressure logic task started (pipeline restart mode).")
+    async def _reset_frame_ids_and_notify(self, pipeline_reset_reason="backpressure_adjustment"):
+        """Resets frame ID counters and notifies client if applicable."""
+        data_logger.info(f"Resetting frame IDs due to: {pipeline_reset_reason}")
+        self._active_pipeline_last_sent_frame_id = 0
+        self._client_acknowledged_frame_id = -1 # Reset to uninitialized state
+        self._previous_ack_id_for_stall_check = -1
+        self._previous_sent_id_for_stall_check = -1
+        
+        if self.app.encoder not in ['jpeg', 'x264enc-striped'] and hasattr(self.app, 'gstreamer_ws_current_frame_id'):
+            self.app.gstreamer_ws_current_frame_id = 0
+        
+        if self.data_ws:
+            try:
+                # Notify client that pipeline is resetting, so it should expect frame IDs from 0
+                await self.data_ws.send("PIPELINE_RESETTING 0") 
+                data_logger.info("Sent PIPELINE_RESETTING 0 to client.")
+            except websockets.exceptions.ConnectionClosed:
+                data_logger.warning("Could not send PIPELINE_RESETTING to client: connection closed.")
+            except Exception as e:
+                data_logger.error(f"Error sending PIPELINE_RESETTING: {e}")
+
+    async def _restart_active_video_pipeline_for_backpressure(self, reason: str):
+        """Stops, applies new params, and restarts the active video pipeline, then resets frame IDs."""
+        data_logger.info(f"Restarting video pipeline for backpressure: {reason}. Current encoder: {self.app.encoder}")
+        
+        # 1. Stop the current pipeline
+        if self.app.encoder == 'jpeg':
+            if self.is_jpeg_capturing: await self._stop_jpeg_pipeline()
+        elif self.app.encoder == 'x264enc-striped':
+            if self.is_x264_striped_capturing: await self._stop_x264_striped_pipeline()
+        elif hasattr(self.app, 'stop_websocket_video_pipeline'): # GStreamer
+            if getattr(self.app, 'pipeline_running', False):
+                await self.app.stop_websocket_video_pipeline()
+        
+        # Frame IDs are reset AFTER restart, but notify client BEFORE to prepare for ID reset
+        await self._reset_frame_ids_and_notify(pipeline_reset_reason=reason)
+
+        # 2. Start the pipeline with new parameters (already set on self.app or self attributes)
+        if self.app.encoder == 'jpeg':
+            await self._start_jpeg_pipeline()
+        elif self.app.encoder == 'x264enc-striped':
+            await self._start_x264_striped_pipeline()
+        elif hasattr(self.app, 'start_websocket_video_pipeline'): # GStreamer
+            await self.app.start_websocket_video_pipeline()
+        
+        data_logger.info(f"Video pipeline restarted with new parameters for {self.app.encoder}.")
+
+
+    async def _run_frame_backpressure_logic(self):
+        """Periodically checks frame ID delta and adjusts stream complexity."""
+        data_logger.info("Frame ID-based backpressure logic task started.")
+        self._last_adjustment_time = time.monotonic() # Initialize to prevent immediate adjustment
+        self._last_client_stable_report_time = time.monotonic()
+        self._previous_ack_id_for_stall_check = self._client_acknowledged_frame_id
+        self._previous_sent_id_for_stall_check = self._active_pipeline_last_sent_frame_id
+
+        last_sync_log_time = time.monotonic()
+        sync_log_interval = 1.0  # Log every 1 second
+
         try:
             while True:
                 await asyncio.sleep(BACKPRESSURE_CHECK_INTERVAL_SECONDS)
-
-                # --- Skip backpressure if JPEG encoder is active ---
-                if self.app and self.app.encoder == 'jpeg':
-                    # data_logger.debug("Backpressure check skipped: JPEG encoder is active.")
-                    continue
-                # --- End Skip ---
-
                 now = time.monotonic()
-                self._last_backpressure_check_time = now
 
-                if not self.app or self.mode != 'websockets':
-                    data_logger.warning("Backpressure check skipped: App not available or not in websockets mode.")
+
+                current_time_monotonic = time.monotonic()
+                if current_time_monotonic - last_sync_log_time >= sync_log_interval:
+                    data_logger.info(
+                        f"Frame Sync: Server Sent ID: {self._active_pipeline_last_sent_frame_id}, "
+                        f"Client ACK ID: {self._client_acknowledged_frame_id}"
+                    )
+                    last_sync_log_time = current_time_monotonic
+                if not self.app or self.mode != 'websockets' or not self.data_ws:
+                    # data_logger.debug("Frame backpressure check skipped: Conditions not met.")
                     continue
 
-                # Check if GStreamer video pipeline is running
-                if not getattr(self.app, 'pipeline_running', False):
-                    # data_logger.debug("Backpressure check skipped: WS GStreamer Video pipeline is not running.")
+                # Check if the relevant video pipeline is running
+                pipeline_active = False
+                if self.app.encoder == 'jpeg':
+                    pipeline_active = self.is_jpeg_capturing
+                elif self.app.encoder == 'x264enc-striped':
+                    pipeline_active = self.is_x264_striped_capturing
+                else: # GStreamer
+                    pipeline_active = getattr(self.app, 'pipeline_running', False)
+
+                if not pipeline_active:
+                    # data_logger.debug(f"Frame backpressure check skipped: {self.app.encoder} pipeline not active.")
                     continue
 
-                server_fps = 0.0
-                try:
-                    server_fps = self.app.get_current_server_fps()
-                except Exception as e:
-                    data_logger.error(f"Backpressure: Error getting server FPS: {e}")
+                sent_id = self._active_pipeline_last_sent_frame_id
+                ack_id = self._client_acknowledged_frame_id
+
+                if ack_id == -1: # No ACK received yet from client
+                    # data_logger.debug("Frame backpressure: No client ACK received yet. Assuming stable.")
+                    self._last_client_stable_report_time = now
+                    self._previous_ack_id_for_stall_check = ack_id
+                    self._previous_sent_id_for_stall_check = sent_id
                     continue
 
-                client_fps = self._latest_client_render_fps
-                if server_fps <= 0 or client_fps <= 0:
-                    # data_logger.debug(f"Backpressure check skipped: Server FPS ({server_fps:.1f}) or Client FPS ({client_fps:.1f}) not valid yet.")
-                    continue
+                # Calculate frame_delta considering wrap-around (uint16)
+                frame_delta = (sent_id - ack_id + 65536) % 65536
+                
+                # Stall detection
+                is_stalled = False
+                if ack_id == self._previous_ack_id_for_stall_check and \
+                   sent_id != self._previous_sent_id_for_stall_check and \
+                   (now - self._last_client_acknowledged_frame_id_update_time > STALLED_CLIENT_TIMEOUT_SECONDS):
+                    is_stalled = True
+                    data_logger.warning(f"Frame backpressure: Client appears STALLED. Last ACK: {ack_id} for {now - self._last_client_acknowledged_frame_id_update_time:.2f}s while server sent up to {sent_id}.")
 
-                is_client_lagging = client_fps < (server_fps - FPS_DIFFERENCE_THRESHOLD)
+                self._previous_ack_id_for_stall_check = ack_id
+                self._previous_sent_id_for_stall_check = sent_id
 
-                if is_client_lagging:
-                    self._last_time_client_ok = 0
-                    new_bitrate = self._current_target_bitrate_kbps - BITRATE_DECREASE_STEP_KBPS
-                    new_bitrate = max(self._min_bitrate_kbps, new_bitrate)
+                # --- Lag Detection and Corrective Actions ---
+                adjustment_made = False
+                if is_stalled or frame_delta > FRAME_DIFFERENCE_THRESHOLD_SEVERE:
+                    # --- Severe Lag ---
+                    data_logger.error(
+                        f"Frame backpressure: SEVERE LAG detected. Delta: {frame_delta}, Stalled: {is_stalled}. Resetting pipeline."
+                    )
+                    # Apply more significant corrective measure defaults
+                    if self.app.encoder == 'jpeg':
+                        self._current_jpeg_quality = DEFAULT_JPEG_QUALITY_SEVERE_LAG
+                        self._current_jpeg_use_paint_over_quality = False # Turn off paint-overs
+                        self._jpeg_paint_overs_disabled_this_session = True
+                    elif self.app.encoder == 'x264enc-striped':
+                        self.h264_crf = DEFAULT_X264_CRF_SEVERE_LAG
+                    else: # GStreamer
+                        self.app.video_bitrate = DEFAULT_GSTREAMER_BITRATE_SEVERE_LAG_KBPS
+                        self._current_target_bitrate_kbps = self.app.video_bitrate
+                    
+                    await self._restart_active_video_pipeline_for_backpressure("severe_lag_reset")
+                    # Reset counters after severe action
+                    self._consecutive_lag_reports = 0
+                    adjustment_made = True
 
-                    if new_bitrate < self._current_target_bitrate_kbps:
-                        data_logger.warning(
-                            f"Backpressure Triggered (GStreamer): Client FPS ({client_fps:.1f}) < Server FPS ({server_fps:.1f}). "
-                            f"Reducing GStreamer bitrate {self._current_target_bitrate_kbps}kbps -> {new_bitrate}kbps."
-                        )
-                        try:
-                            if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
-                            if hasattr(self.app, 'video_bitrate'): self.app.video_bitrate = new_bitrate
-                            if hasattr(self.app, 'start_websocket_video_pipeline'): await self.app.start_websocket_video_pipeline()
-                            self._current_target_bitrate_kbps = new_bitrate
-                            self._last_bitrate_adjustment_time = now
-                        except Exception as e:
-                            data_logger.error(f"Backpressure: Error restarting GStreamer pipeline for bitrate reduction: {e}", exc_info=True)
-                else: # Client not lagging
-                    if self._last_time_client_ok == 0: self._last_time_client_ok = now
-                    is_stable = (now - self._last_time_client_ok) >= RAMP_UP_STABILITY_SECONDS
-                    is_below_initial = self._current_target_bitrate_kbps < self._initial_target_bitrate_kbps
-                    is_cooled_down = (now - self._last_bitrate_adjustment_time) >= RAMP_UP_STABILITY_SECONDS
-
-                    if is_stable and is_below_initial and is_cooled_down:
-                        new_bitrate = self._current_target_bitrate_kbps + BITRATE_INCREASE_STEP_KBPS
-                        new_bitrate = min(self._initial_target_bitrate_kbps, new_bitrate)
-                        if new_bitrate > self._current_target_bitrate_kbps:
-                             data_logger.info(
-                                 f"Backpressure Ramp-Up (GStreamer): Client stable. Increasing GStreamer bitrate {self._current_target_bitrate_kbps}kbps -> {new_bitrate}kbps."
-                             )
-                             try:
-                                if hasattr(self.app, 'stop_websocket_video_pipeline'): await self.app.stop_websocket_video_pipeline()
-                                if hasattr(self.app, 'video_bitrate'): self.app.video_bitrate = new_bitrate
-                                if hasattr(self.app, 'start_websocket_video_pipeline'): await self.app.start_websocket_video_pipeline()
+                elif frame_delta > FRAME_DIFFERENCE_THRESHOLD_HIGH:
+                    # --- Minor Lag ---
+                    self._consecutive_lag_reports += 1
+                    data_logger.warning(
+                        f"Frame backpressure: MINOR LAG detected. Delta: {frame_delta}. Consecutive reports: {self._consecutive_lag_reports}."
+                    )
+                    if self._consecutive_lag_reports >= CONSECUTIVE_LAG_REPORTS_THRESHOLD and \
+                       (now - self._last_adjustment_time) >= MIN_ADJUSTMENT_INTERVAL_SECONDS:
+                        data_logger.info("Frame backpressure: Applying corrective action for minor lag.")
+                        if self.app.encoder == 'jpeg':
+                            if self._current_jpeg_use_paint_over_quality and not self._jpeg_paint_overs_disabled_this_session:
+                                self._current_jpeg_use_paint_over_quality = False
+                                self._jpeg_paint_overs_disabled_this_session = True # Mark as disabled by backpressure
+                                data_logger.info("JPEG: Disabling paint-overs.")
+                            else:
+                                self._current_jpeg_quality = max(MIN_JPEG_QUALITY_BACKPRESSURE, self._current_jpeg_quality - JPEG_QUALITY_DECREASE_STEP)
+                                data_logger.info(f"JPEG: Reducing quality to {self._current_jpeg_quality}.")
+                        elif self.app.encoder == 'x264enc-striped':
+                            self.h264_crf = min(MAX_X264_CRF_BACKPRESSURE, self.h264_crf + CRF_INCREASE_STEP)
+                            data_logger.info(f"x264-striped: Increasing CRF to {self.h264_crf}.")
+                        else: # GStreamer
+                            new_bitrate = max(self._min_bitrate_kbps, self.app.video_bitrate - BITRATE_DECREASE_STEP_KBPS)
+                            if new_bitrate < self.app.video_bitrate :
+                                self.app.video_bitrate = new_bitrate
                                 self._current_target_bitrate_kbps = new_bitrate
-                                self._last_bitrate_adjustment_time = now
-                                self._last_time_client_ok = now
-                             except Exception as e:
-                                 data_logger.error(f"Backpressure: Error restarting GStreamer pipeline for bitrate ramp-up: {e}", exc_info=True)
+                                data_logger.info(f"GStreamer: Reducing bitrate to {self.app.video_bitrate} kbps.")
+                            else:
+                                data_logger.info(f"GStreamer: Bitrate already at min ({self.app.video_bitrate} kbps). No change.")
+
+
+                        await self._restart_active_video_pipeline_for_backpressure("minor_lag_adjustment")
+                        self._consecutive_lag_reports = 0
+                        adjustment_made = True
+                    # else:
+                        # data_logger.debug("Minor lag detected, but threshold/cooldown not met for action.")
+                
+                elif frame_delta <= FRAME_DIFFERENCE_THRESHOLD_LOW:
+                    # --- Stable or Catching Up ---
+                    # data_logger.debug(f"Frame backpressure: Client stable/catching up. Delta: {frame_delta}.")
+                    self._consecutive_lag_reports = 0 # Reset minor lag counter
+
+                    if (now - self._last_client_stable_report_time) >= RAMP_UP_STABILITY_SECONDS and \
+                       (now - self._last_adjustment_time) >= MIN_ADJUSTMENT_INTERVAL_SECONDS: # Ensure some time has passed since last adjustment
+                        ramp_up_action_taken = False
+                        if self.app.encoder == 'jpeg':
+                            # JPEG: Quality ramp-up is generally not done. Paint-overs remain disabled.
+                            pass
+                        elif self.app.encoder == 'x264enc-striped':
+                            if self.h264_crf > self._initial_x264_crf:
+                                self.h264_crf = max(self._initial_x264_crf, self.h264_crf - CRF_DECREASE_STEP)
+                                data_logger.info(f"Frame backpressure: RAMP-UP. x264-striped: Decreasing CRF to {self.h264_crf}.")
+                                await self._restart_active_video_pipeline_for_backpressure("ramp_up_crf")
+                                ramp_up_action_taken = True
+                        else: # GStreamer
+                            if self.app.video_bitrate < self._initial_target_bitrate_kbps: # Use initial target from ws_handler
+                                new_bitrate = min(self._initial_target_bitrate_kbps, self.app.video_bitrate + BITRATE_INCREASE_STEP_KBPS)
+                                if new_bitrate > self.app.video_bitrate:
+                                    self.app.video_bitrate = new_bitrate
+                                    self._current_target_bitrate_kbps = new_bitrate
+                                    data_logger.info(f"Frame backpressure: RAMP-UP. GStreamer: Increasing bitrate to {self.app.video_bitrate} kbps.")
+                                    await self._restart_active_video_pipeline_for_backpressure("ramp_up_bitrate")
+                                    ramp_up_action_taken = True
+                        
+                        if ramp_up_action_taken:
+                            adjustment_made = True
+                            # self._last_client_stable_report_time = now # Reset stability timer after successful ramp-up
+                    
+                    if not adjustment_made: # If no ramp-up occurred, just note stability
+                         self._last_client_stable_report_time = now
+
+
+                if adjustment_made:
+                    self._last_adjustment_time = now
+                    self._last_client_stable_report_time = now # Reset stability timer after any adjustment
+
         except asyncio.CancelledError:
-            data_logger.info("Backpressure logic task cancelled.")
+            data_logger.info("Frame ID-based backpressure logic task cancelled.")
         except Exception as e:
-             data_logger.error(f"Backpressure logic task error: {e}", exc_info=True)
+             data_logger.error(f"Frame ID-based backpressure logic task error: {e}", exc_info=True)
         finally:
-             data_logger.info("Backpressure logic task finished.")
+             data_logger.info("Frame ID-based backpressure logic task finished.")
 
     async def run_server(self):
         """Starts the data WebSocket server."""
@@ -1817,11 +2547,12 @@ class DataStreamingServer:
                      f"Error waiting for Data WebSocket server to close: {e}"
                  )
             self.server = None
-        # --- Ensure JPEG capture is stopped if the DataStreamingServer itself is stopped. ---
         if self.is_jpeg_capturing:
             data_logger.info("DataStreamingServer stopping: ensuring JPEG capture is also stopped.")
             await self._stop_jpeg_pipeline()
-        # --- End JPEG Stop ---
+        if self.is_x264_striped_capturing:
+            data_logger.info("DataStreamingServer stopping: ensuring x264-striped capture is also stopped.")
+            await self._stop_x264_striped_pipeline()
         data_logger.info("Data WebSocket Server Stopped.")
 
 class WebRTCSimpleServer:
@@ -3036,7 +3767,7 @@ async def main():
         "--encoder",
         default=os.environ.get("SELKIES_ENCODER", "x264enc"),
         # --- Add jpeg as a potential default/choice ---
-        help="Video encoder to use (e.g., x264enc, nvh264enc, jpeg)",
+        help="Video encoder to use (e.g., x264enc, nvh264enc, jpeg, x264enc-striped)",
         # --- End add jpeg ---
     )
     parser.add_argument(
@@ -3068,6 +3799,12 @@ async def main():
         "--video_packetloss_percent",
         default=os.environ.get("SELKIES_VIDEO_PACKETLOSS_PERCENT", "0"),
         help='Expected packet loss percentage (%%) for ULP/RED Forward Error Correction (FEC) in video, use "0" to disable FEC, less effective because of other mechanisms including NACK/PLI, enabling not recommended if Google Congestion Control is enabled',
+    )
+    parser.add_argument(
+        "--h264_crf",
+        default=os.environ.get("SELKIES_H264_CRF", "25"),
+        type=int,
+        help="H.264 Constant Rate Factor (CRF) for x264enc-striped mode (0-51, lower is higher quality), default: 25",
     )
     parser.add_argument(
         "--audio_bitrate",
@@ -3137,13 +3874,13 @@ async def main():
                 if k == "video_bitrate":
                     TARGET_VIDEO_BITRATE_KBPS = int(v)
                     args.video_bitrate = str(TARGET_VIDEO_BITRATE_KBPS)
-                if k == "audio_bitrate":
-                    args.audio_bitrate = str(int(v))
                 if k == "enable_resize":
                     args.enable_resize = str((str(v).lower() == "true")).lower()
                 if k == "encoder":
                     initial_encoder = v.lower() # Update initial encoder from JSON
                     args.encoder = initial_encoder # Keep args consistent
+                if k == "h264_crf":
+                    args.h264_crf = int(v)
         except Exception as e:
             logger.error(
                 "failed to load json config from {}: {}".format(
@@ -3353,6 +4090,7 @@ async def main():
         data_streaming_server=None, # Will be set below
         mode=args.mode
     )
+    app.server_enable_resize = enable_resize
     # --- Initialize App State ---
     app.last_resize_success = True # Assume initial state is valid
     # Ensure encoder attribute matches initial value
@@ -3371,7 +4109,7 @@ async def main():
     # Data WebSocket server instance
     data_websocket_server = DataStreamingServer(
         int(args.data_websocket_port), args.mode, app, args.uinput_mouse_socket, args.js_socket_path,
-        args.enable_clipboard.lower(), enable_cursors, cursor_size, 1.0, cursor_debug
+        args.enable_clipboard.lower(), enable_cursors, cursor_size, 1.0, cursor_debug, args
     )
     app.data_streaming_server = data_websocket_server # Link data server to main app
 
@@ -3738,6 +4476,8 @@ async def main():
                  if app.encoder == 'jpeg' and hasattr(data_websocket_server, '_stop_jpeg_pipeline'):
                      # JPEG stop is handled by data_websocket_server.stop()
                      pass
+                 elif app.encoder == 'x264enc-striped' and hasattr(data_websocket_server, '_stop_x264_striped_pipeline'):
+                     pass # Stop is handled by data_websocket_server.stop()
                  elif hasattr(app, 'stop_websocket_video_pipeline'):
                       stop_method = app.stop_websocket_video_pipeline
                  # Check audio separately

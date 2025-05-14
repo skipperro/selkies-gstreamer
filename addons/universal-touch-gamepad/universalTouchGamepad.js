@@ -20,7 +20,37 @@
     const SETTINGS_ICON_SVG = `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
             <path d="M0 0h24v24H0V0z" fill="none"/>
-            <path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19-.15-.24.42.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23-.09.49 0 .61.22l2 3.46c.13.22-.07.49.12.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/>
+            <path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69-.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19-.15-.24.42.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23-.09.49 0 .61.22l2 3.46c.13.22-.07.49.12.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/>
+        </svg>
+    `;
+
+    const UP_ARROW_SVG = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 14h16l-8-8z"/>
+        </svg>
+    `;
+
+    const DOWN_ARROW_SVG = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 10h16l-8 8z"/>
+        </svg>
+    `;
+
+    const LEFT_ARROW_SVG = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M14 4v16l-8-8z"/>
+        </svg>
+    `;
+
+    const RIGHT_ARROW_SVG = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M10 4v16l8-8z"/>
+        </svg>
+    `;
+
+    const HOME_ICON_SVG = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8h5z"/>
         </svg>
     `;
 
@@ -65,7 +95,7 @@
                     if (targetIndex === -1 && allGamepads.length < 4) {
                         targetIndex = allGamepads.length;
                     } else if (targetIndex === -1) {
-                         targetIndex = gamepadState.index; // Fallback if no slots
+                         targetIndex = gamepadState.index; 
                     }
                 }
                 if(targetIndex >=0 && targetIndex < 4){
@@ -94,12 +124,12 @@
         const isAnalogButtonConfig = currentProfile?.analogTriggers?.find(t => t.buttonIndex === buttonIndex);
         
         if (isAnalogButtonConfig && analogValue !== null) {
-            newPressedState = newValue > 0.05; // Small deadzone for analog button press state
+            newPressedState = newValue > 0.05; 
         }
 
         if (buttonState.pressed !== newPressedState || buttonState.value !== newValue) {
             buttonState.pressed = newPressedState;
-            buttonState.touched = newPressedState; // For simplicity, touched mirrors pressed for now
+            buttonState.touched = newPressedState; 
             buttonState.value = newValue;
             gamepadState.timestamp = Date.now();
             if (isGamepadVisible && !gamepadState.connected) connectGamepad();
@@ -130,9 +160,8 @@
             gamepadState.buttons.forEach(b => { b.pressed = false; b.touched = false; b.value = 0.0; });
             dispatchGamepadEvent("gamepaddisconnected");
         }
-        // Reset visual states of tracked buttons
         Object.values(buttonElementsToTrack).forEach(btnTrack => {
-            if (btnTrack.element) { // btnTrack.element might not exist if it's from a previous profile
+            if (btnTrack.element) { 
                 btnTrack.activeTouchIds.clear();
                 btnTrack.element.classList.remove('pressed');
             }
@@ -150,10 +179,10 @@
         eightBit: {
             name: "8-bit",
             buttons: [
-                { id: 'dpadUp', index: 12, label: '▲', style: { left: '70px', bottom: '130px', width: '50px', height: '50px' } },
-                { id: 'dpadDown', index: 13, label: '▼', style: { left: '70px', bottom: '50px', width: '50px', height: '50px' } },
-                { id: 'dpadLeft', index: 14, label: '◄', style: { left: '20px', bottom: '90px', width: '50px', height: '50px' } },
-                { id: 'dpadRight', index: 15, label: '►', style: { left: '120px', bottom: '90px', width: '50px', height: '50px' } },
+                { id: 'dpadUp', index: 12, label: UP_ARROW_SVG, style: { left: '70px', bottom: '130px', width: '50px', height: '50px' } },
+                { id: 'dpadDown', index: 13, label: DOWN_ARROW_SVG, style: { left: '70px', bottom: '50px', width: '50px', height: '50px' } },
+                { id: 'dpadLeft', index: 14, label: LEFT_ARROW_SVG, style: { left: '20px', bottom: '90px', width: '50px', height: '50px' } },
+                { id: 'dpadRight', index: 15, label: RIGHT_ARROW_SVG, style: { left: '120px', bottom: '90px', width: '50px', height: '50px' } },
                 { id: 'select', index: 8, label: 'SELECT', shape: 'squircle', style: { left: 'calc(50% - 70px)', bottom: '30px', width: '60px', height: '30px'} },
                 { id: 'start', index: 9, label: 'START', shape: 'squircle', style: { right: 'calc(50% - 70px)', bottom: '30px', width: '60px', height: '30px' } },
                 { id: 'buttonB_nes', index: 1, label: 'B', style: { right: '30px', bottom: '90px', width: '60px', height: '60px', borderRadius: '15px' } },
@@ -168,10 +197,10 @@
         sixteenBit: {
             name: "16-bit",
             buttons: [
-                { id: 'dpadUp_snes', index: 12, label: '▲', style: { left: '70px', bottom: '130px', width: '50px', height: '50px' } },
-                { id: 'dpadDown_snes', index: 13, label: '▼', style: { left: '70px', bottom: '50px', width: '50px', height: '50px' } },
-                { id: 'dpadLeft_snes', index: 14, label: '◄', style: { left: '20px', bottom: '90px', width: '50px', height: '50px' } },
-                { id: 'dpadRight_snes', index: 15, label: '►', style: { left: '120px', bottom: '90px', width: '50px', height: '50px' } },
+                { id: 'dpadUp_snes', index: 12, label: UP_ARROW_SVG, style: { left: '70px', bottom: '130px', width: '50px', height: '50px' } },
+                { id: 'dpadDown_snes', index: 13, label: DOWN_ARROW_SVG, style: { left: '70px', bottom: '50px', width: '50px', height: '50px' } },
+                { id: 'dpadLeft_snes', index: 14, label: LEFT_ARROW_SVG, style: { left: '20px', bottom: '90px', width: '50px', height: '50px' } },
+                { id: 'dpadRight_snes', index: 15, label: RIGHT_ARROW_SVG, style: { left: '120px', bottom: '90px', width: '50px', height: '50px' } },
                 { id: 'select_snes', index: 8, label: 'SELECT', shape: 'squircle', style: { left: 'calc(50% - 70px)', bottom: '30px', width: '60px', height: '30px'} },
                 { id: 'start_snes', index: 9, label: 'START', shape: 'squircle', style: { right: 'calc(50% - 70px)', bottom: '30px', width: '60px', height: '30px' } },
                 { id: 'buttonY_snes', index: 3, label: 'Y', style: { right: '80px', bottom: '130px', width: '50px', height: '50px', borderRadius: '50%' } },
@@ -196,11 +225,11 @@
                 { id: 'rightStick', axes: [2, 3], clickButtonIndex: R3_BUTTON_INDEX, style: { right: '200px', bottom: '35px', size: '90px' } }
             ],
             buttons: [
-                { id: 'dpadUp_mod', index: 12, label: '▲', style: { left: '160px', bottom: '90px', width: '40px', height: '40px' } },
-                { id: 'dpadDown_mod', index: 13, label: '▼', style: { left: '160px', bottom: '30px', width: '40px', height: '40px' } },
-                { id: 'dpadLeft_mod', index: 14, label: '◄', style: { left: '120px', bottom: '60px', width: '40px', height: '40px' } },
-                { id: 'dpadRight_mod', index: 15, label: '►', style: { left: '200px', bottom: '60px', width: '40px', height: '40px' } },
-                { id: 'home_mod', index: 16, label: '🏠', style: { left: 'calc(50% - 20px)', bottom: '250px', width: '40px', height: '40px', borderRadius: '50%'} },
+                { id: 'dpadUp_mod', index: 12, label: UP_ARROW_SVG, style: { left: '160px', bottom: '90px', width: '40px', height: '40px' } },
+                { id: 'dpadDown_mod', index: 13, label: DOWN_ARROW_SVG, style: { left: '160px', bottom: '30px', width: '40px', height: '40px' } },
+                { id: 'dpadLeft_mod', index: 14, label: LEFT_ARROW_SVG, style: { left: '120px', bottom: '60px', width: '40px', height: '40px' } },
+                { id: 'dpadRight_mod', index: 15, label: RIGHT_ARROW_SVG, style: { left: '200px', bottom: '60px', width: '40px', height: '40px' } },
+                { id: 'home_mod', index: 16, label: HOME_ICON_SVG, style: { left: 'calc(50% - 20px)', bottom: '250px', width: '40px', height: '40px', borderRadius: '50%'} },
                 { id: 'select_mod', index: 8, label: 'VIEW', shape: 'squircle', style: { left: 'calc(50% - 75px)', bottom: '200px', width: '60px', height: '30px'} },
                 { id: 'start_mod', index: 9, label: 'MENU', shape: 'squircle', style: { right: 'calc(50% - 75px)', bottom: '200px', width: '60px', height: '30px' } },
                 { id: 'share_mod', index: 17, label: 'SHARE', shape: 'squircle', style: { left: 'calc(50% - 30px)', bottom: '150px', width: '60px', height: '25px', fontSize:'8px' } },
@@ -273,8 +302,10 @@
                 position: absolute;
                 box-sizing: border-box;
                 pointer-events: auto;
-                /* For debugging cluster areas: */
-                /* background-color: rgba(255, 0, 0, 0.05); border: 1px dashed rgba(255,0,0,0.3); */
+            }
+            .touch-button svg {
+                width: 70%; 
+                height: 70%;
             }
         `;
         styleSheet = document.createElement('style');
@@ -475,7 +506,11 @@
                 if (btnConfig.shape === 'squircle') button.classList.add('shape-squircle');
                 if (btnConfig.type === 'digitalShoulder') button.classList.add('type-digitalShoulder');
                 
-                button.textContent = isPreview ? (btnConfig.label && btnConfig.label.length > 2 && btnConfig.shape !== 'squircle' ? btnConfig.label[0] : btnConfig.label || '') : btnConfig.label || ''; 
+                if (typeof btnConfig.label === 'string' && btnConfig.label.trim().startsWith('<svg')) {
+                    button.innerHTML = btnConfig.label;
+                } else {
+                    button.textContent = isPreview ? (btnConfig.label && btnConfig.label.length > 2 && btnConfig.shape !== 'squircle' ? btnConfig.label[0] : btnConfig.label || '') : btnConfig.label || '';
+                }
                 
                 const btnStyles = {};
                 for (const key in btnConfig.style) {
@@ -489,12 +524,17 @@
                     }
                     btnStyles[key] = finalValue;
                 }
+
                 if (isPreview && btnConfig.label && scale < 0.5) {
-                    let previewFontSize = parseFloat(btnConfig.style.fontSize || '14px') * 0.7;
-                    if (btnStyles.fontSize) previewFontSize = parseFloat(btnStyles.fontSize) * 0.7;
-                    if (btnConfig.shape === 'squircle') previewFontSize *= 0.8;
-                    btnStyles.fontSize = `${previewFontSize}px`;
-                    if (btnConfig.label.length > 3 && btnConfig.shape !== 'squircle') button.textContent = btnConfig.label[0];
+                    if (!(typeof btnConfig.label === 'string' && btnConfig.label.trim().startsWith('<svg'))) {
+                        let previewFontSize = parseFloat(btnConfig.style.fontSize || '14px') * 0.7;
+                        if (btnStyles.fontSize) previewFontSize = parseFloat(btnStyles.fontSize) * 0.7;
+                        if (btnConfig.shape === 'squircle') previewFontSize *= 0.8;
+                        btnStyles.fontSize = `${previewFontSize}px`;
+                        if (btnConfig.label.length > 3 && btnConfig.shape !== 'squircle') {
+                             button.textContent = btnConfig.label[0];
+                        }
+                    }
                 }
                 Object.assign(button.style, btnStyles);
                 parentEl.appendChild(button);
@@ -750,7 +790,7 @@
             return;
         }
         createGamepadControlsOverlay();
-        gamepadControlsOverlayElement.style.display = 'block'; // Overlay visible; children control pointer events (overlay itself has pointer-events:none)
+        gamepadControlsOverlayElement.style.display = 'block'; 
         isGamepadVisible = true;
         const savedProfile = localStorage.getItem('universalTouchGamepad_currentProfile');
         if (savedProfile && profiles[savedProfile]) {

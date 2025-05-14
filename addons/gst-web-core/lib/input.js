@@ -770,7 +770,7 @@ export class Input {
     _handleKeyDown(event) {
         const WHITELIST_CLASS = 'allow-native-input';
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
-            console.debug('Input: KeyDown on whitelisted element, allowing native behavior.', event.target);
+            console.debug('Input: KeyDown on whitelisted element, allowing native behavior.');
             return;
         }
         const keyboardInputAssist = document.getElementById('keyboard-input-assist');
@@ -806,7 +806,7 @@ export class Input {
     _handleKeyPress(event) {
         const WHITELIST_CLASS = 'allow-native-input';
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
-            console.debug('Input: KeyPress on whitelisted element, allowing native behavior.', event.target);
+            console.debug('Input: KeyPress on whitelisted element, allowing native behavior.');
             return;
         }
         if (this.isComposing) return;
@@ -821,7 +821,7 @@ export class Input {
     _handleKeyUp(event) {
         const WHITELIST_CLASS = 'allow-native-input';
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
-            console.debug('Input: KeyUp on whitelisted element, allowing native behavior.', event.target);
+            console.debug('Input: KeyUp on whitelisted element, allowing native behavior.');
             return;
         }
         if (this.isComposing) return;

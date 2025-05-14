@@ -34,6 +34,7 @@ const en = {
             bitrateLabel: "Video Bitrate ({bitrate} Mbps):",
             bufferLabelImmediate: "Video Buffer Size (0 (Immediate)):",
             bufferLabelFrames: "Video Buffer Size ({videoBufferSize} frames):",
+            crfLabel: "Video CRF ({crf}):",
         },
         audio: {
             title: "Audio Settings",
@@ -177,6 +178,7 @@ const es = {
             bitrateLabel: "Tasa de bits de vídeo ({bitrate} Mbps):",
             bufferLabelImmediate: "Tamaño del Búfer de Vídeo (0 (Inmediato)):",
             bufferLabelFrames: "Tamaño del Búfer de Vídeo ({videoBufferSize} fotogramas):",
+            crfLabel: "CRF de Vídeo ({crf}):",
         },
         audio: {
              title: "Configuración de Audio",
@@ -320,6 +322,7 @@ const zh = {
             bitrateLabel: "视频比特率 ({bitrate} Mbps):",
             bufferLabelImmediate: "视频缓冲大小 (0 (立即)):",
             bufferLabelFrames: "视频缓冲大小 ({videoBufferSize} 帧):",
+            crfLabel: "视频 CRF ({crf}):", 
         },
         audio: {
             title: "音频设置",
@@ -463,6 +466,7 @@ const hi = {
             bitrateLabel: "वीडियो बिटरेट ({bitrate} Mbps):",
             bufferLabelImmediate: "वीडियो बफर आकार (0 (तत्काल)):",
             bufferLabelFrames: "वीडियो बफर आकार ({videoBufferSize} फ्रेम):",
+            crfLabel: "वीडियो CRF ({crf}):",
         },
         audio: {
             title: "ऑडियो सेटिंग्स",
@@ -606,6 +610,7 @@ const pt = {
             bitrateLabel: "Bitrate de Vídeo ({bitrate} Mbps):",
             bufferLabelImmediate: "Tamanho do Buffer de Vídeo (0 (Imediato)):",
             bufferLabelFrames: "Tamanho do Buffer de Vídeo ({videoBufferSize} quadros):",
+            crfLabel: "CRF de Vídeo ({crf}):",
         },
         audio: {
             title: "Configurações de Áudio",
@@ -749,6 +754,7 @@ const fr = {
             bitrateLabel: "Débit vidéo ({bitrate} Mbps) :",
             bufferLabelImmediate: "Taille du tampon vidéo (0 (Immédiat)) :",
             bufferLabelFrames: "Taille du tampon vidéo ({videoBufferSize} images) :",
+            crfLabel: "CRF Vidéo ({crf}) :",
         },
         audio: {
             title: "Paramètres audio",
@@ -892,6 +898,7 @@ const ru = {
             bitrateLabel: "Битрейт видео ({bitrate} Мбит/с):",
             bufferLabelImmediate: "Размер буфера видео (0 (Немедленно)):",
             bufferLabelFrames: "Размер буфера видео ({videoBufferSize} кадров):",
+            crfLabel: "CRF видео ({crf}):",
         },
         audio: {
             title: "Настройки аудио",
@@ -1035,6 +1042,7 @@ const de = {
             bitrateLabel: "Video-Bitrate ({bitrate} Mbps):",
             bufferLabelImmediate: "Video-Puffergröße (0 (Sofort)):",
             bufferLabelFrames: "Video-Puffergröße ({videoBufferSize} Frames):",
+            crfLabel: "Video CRF ({crf}):",
         },
         audio: {
             title: "Audioeinstellungen",
@@ -1178,6 +1186,7 @@ const tr = {
             bitrateLabel: "Video Bit Hızı ({bitrate} Mbps):",
             bufferLabelImmediate: "Video Tampon Boyutu (0 (Anında)):",
             bufferLabelFrames: "Video Tampon Boyutu ({videoBufferSize} kare):",
+            crfLabel: "Video CRF ({crf}):",
         },
         audio: {
             title: "Ses Ayarları",
@@ -1321,6 +1330,7 @@ const it = {
             bitrateLabel: "Bitrate Video ({bitrate} Mbps):",
             bufferLabelImmediate: "Dimensione Buffer Video (0 (Immediato)):",
             bufferLabelFrames: "Dimensione Buffer Video ({videoBufferSize} frame):",
+            crfLabel: "CRF Video ({crf}):",
         },
         audio: {
             title: "Impostazioni Audio",
@@ -1464,6 +1474,7 @@ const nl = {
             bitrateLabel: "Video Bitrate ({bitrate} Mbps):",
             bufferLabelImmediate: "Video Buffergrootte (0 (Onmiddellijk)):",
             bufferLabelFrames: "Video Buffergrootte ({videoBufferSize} frames):",
+            crfLabel: "Video CRF ({crf}):",
         },
         audio: {
             title: "Audio-instellingen",
@@ -1607,6 +1618,7 @@ const ar = {
             bitrateLabel: "معدل بت الفيديو ({bitrate} Mbps):",
             bufferLabelImmediate: "حجم مخزن الفيديو المؤقت (0 (فوري)):",
             bufferLabelFrames: "حجم مخزن الفيديو المؤقت ({videoBufferSize} إطارات):",
+            crfLabel: "CRF الفيديو ({crf}):",
         },
         audio: {
             title: "إعدادات الصوت",
@@ -1750,6 +1762,7 @@ const ko = {
             bitrateLabel: "비디오 비트 전송률 ({bitrate} Mbps):",
             bufferLabelImmediate: "비디오 버퍼 크기 (0 (즉시)):",
             bufferLabelFrames: "비디오 버퍼 크기 ({videoBufferSize} 프레임):",
+            crfLabel: "비디오 CRF ({crf}):",
         },
         audio: {
             title: "오디오 설정",
@@ -1893,6 +1906,7 @@ const ja = {
             bitrateLabel: "ビデオビットレート ({bitrate} Mbps):",
             bufferLabelImmediate: "ビデオバッファサイズ (0 (即時)):",
             bufferLabelFrames: "ビデオバッファサイズ ({videoBufferSize} フレーム):",
+            crfLabel: "ビデオ CRF ({crf}):",
         },
         audio: {
             title: "オーディオ設定",
@@ -2036,6 +2050,7 @@ const vi = {
             bitrateLabel: "Tốc độ bit Video ({bitrate} Mbps):",
             bufferLabelImmediate: "Kích thước Bộ đệm Video (0 (Ngay lập tức)):",
             bufferLabelFrames: "Kích thước Bộ đệm Video ({videoBufferSize} khung hình):",
+            crfLabel: "CRF Video ({crf}):",
         },
         audio: {
             title: "Cài đặt Âm thanh",
@@ -2179,6 +2194,7 @@ const th = {
             bitrateLabel: "บิตเรตวิดีโอ ({bitrate} Mbps):",
             bufferLabelImmediate: "ขนาดบัฟเฟอร์วิดีโอ (0 (ทันที)):",
             bufferLabelFrames: "ขนาดบัฟเฟอร์วิดีโอ ({videoBufferSize} เฟรม):",
+            crfLabel: "วิดีโอ CRF ({crf}):",
         },
         audio: {
             title: "การตั้งค่าเสียง",
@@ -2322,6 +2338,7 @@ const fil = {
             bitrateLabel: "Video Bitrate ({bitrate} Mbps):",
             bufferLabelImmediate: "Laki ng Video Buffer (0 (Agad)):",
             bufferLabelFrames: "Laki ng Video Buffer ({videoBufferSize} frames):",
+            crfLabel: "Video CRF ({crf}):",
         },
         audio: {
             title: "Mga Setting ng Audio",

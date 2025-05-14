@@ -6,15 +6,16 @@ import yaml from 'js-yaml';
 
 // --- Constants ---
 const encoderOptions = [
+    'x264enc-striped',
+    'nvh264enc',
     'x264enc',
     'jpeg',
-    'nvh264enc',
     'vah264enc',
     'openh264enc'
 ];
 
 const framerateOptions = [
-    8, 12, 15, 24, 25, 30, 48, 50, 60, 90, 100, 120, 144
+    8, 12, 15, 24, 25, 30, 48, 50, 60, 90, 100, 120, 144, 165
 ];
 
 const videoBitrateOptions = [
@@ -23,11 +24,9 @@ const videoBitrateOptions = [
     60000, 70000, 80000, 90000, 100000
 ];
 
-const audioBitrateOptions = [
-    32000, 64000, 96000, 128000, 192000, 256000, 320000, 512000
-];
-
 const videoBufferOptions = Array.from({ length: 16 }, (_, i) => i);
+
+const videoCRFOptions = [50, 45, 40, 35, 30, 25, 20, 10, 1];
 
 const commonResolutionValues = [
     "", "1920x1080", "1280x720", "1366x768", "1920x1200", "2560x1440",
@@ -38,9 +37,9 @@ const STATS_READ_INTERVAL_MS = 100;
 const MAX_AUDIO_BUFFER = 10;
 const DEFAULT_FRAMERATE = 60;
 const DEFAULT_VIDEO_BITRATE = 8000;
-const DEFAULT_AUDIO_BITRATE = 320000;
 const DEFAULT_VIDEO_BUFFER_SIZE = 0;
 const DEFAULT_ENCODER = encoderOptions[0];
+const DEFAULT_VIDEO_CRF = 25;
 const DEFAULT_SCALE_LOCALLY = true;
 const REPO_BASE_URL = 'https://raw.githubusercontent.com/linuxserver/proot-apps/master/metadata/';
 const METADATA_URL = `${REPO_BASE_URL}metadata.yml`;
@@ -51,7 +50,7 @@ const NOTIFICATION_TIMEOUT_SUCCESS = 5000;
 const NOTIFICATION_TIMEOUT_ERROR = 8000;
 const NOTIFICATION_FADE_DURATION = 500;
 
-const TOUCH_GAMEPAD_HOST_DIV_ID = 'touch-gamepad-host'; // Added constant
+const TOUCH_GAMEPAD_HOST_DIV_ID = 'touch-gamepad-host';
 
 // --- Helper Functions ---
 function formatBytes(bytes, decimals = 2, rawDict) {
@@ -211,7 +210,7 @@ function AppsModal({ isOpen, onClose, t }) {
             };
             fetchAppData();
         }
-    }, [isOpen, appData, isLoading, t, yaml]); // Added yaml to dependencies as it's used
+    }, [isOpen, appData, isLoading, t, yaml]);
 
     const handleSearchChange = (event) => setSearchTerm(event.target.value.toLowerCase());
     const handleAppClick = (app) => setSelectedApp(app);
@@ -290,12 +289,10 @@ function AppsModal({ isOpen, onClose, t }) {
 
 
 function Sidebar({ isOpen }) {
-  // --- Language State & Setup ---
   const [langCode, setLangCode] = useState('en');
   const [translator, setTranslator] = useState(() => getTranslator('en'));
   const [isMobile, setIsMobile] = useState(false);
 
-  // --- New State for Touch Gamepad ---
   const [isTouchGamepadActive, setIsTouchGamepadActive] = useState(false);
   const [isTouchGamepadSetup, setIsTouchGamepadSetup] = useState(false);
 
@@ -307,16 +304,14 @@ function Sidebar({ isOpen }) {
     setTranslator(getTranslator(primaryLang));
   }, []);
 
-  // Mobile detection effect
   useEffect(() => {
     const mobileCheck = typeof window !== 'undefined' && (
         (navigator.userAgentData && navigator.userAgentData.mobile) ||
         /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
     );
-    setIsMobile(!!mobileCheck); // Ensure boolean
+    setIsMobile(!!mobileCheck);
     
     if (!!mobileCheck) {
-        // If mobile, ensure the gamepads section is open by default
         setSectionsOpen(prev => ({ ...prev, gamepads: true }));
     }
 
@@ -332,14 +327,13 @@ function Sidebar({ isOpen }) {
 
   const { t, raw } = translator;
 
-  // --- Existing State ---
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [encoder, setEncoder] = useState(localStorage.getItem('encoder') || DEFAULT_ENCODER);
   const [dynamicEncoderOptions, setDynamicEncoderOptions] = useState(encoderOptions);
   const [framerate, setFramerate] = useState(parseInt(localStorage.getItem('videoFramerate'), 10) || DEFAULT_FRAMERATE);
   const [videoBitRate, setVideoBitRate] = useState(parseInt(localStorage.getItem('videoBitRate'), 10) || DEFAULT_VIDEO_BITRATE);
-  const [audioBitRate, setAudioBitRate] = useState(parseInt(localStorage.getItem('audioBitRate'), 10) || DEFAULT_AUDIO_BITRATE);
   const [videoBufferSize, setVideoBufferSize] = useState(parseInt(localStorage.getItem('videoBufferSize'), 10) || DEFAULT_VIDEO_BUFFER_SIZE);
+  const [videoCRF, setVideoCRF] = useState(parseInt(localStorage.getItem('videoCRF'), 10) || DEFAULT_VIDEO_CRF);
   const [manualWidth, setManualWidth] = useState('');
   const [manualHeight, setManualHeight] = useState('');
   const [scaleLocally, setScaleLocally] = useState(() => {
@@ -379,7 +373,7 @@ function Sidebar({ isOpen }) {
     screenSettings: false,
     stats: false,
     clipboard: false,
-    gamepads: false, // Will be updated by mobile detection effect if mobile
+    gamepads: false,
     files: false,
     apps: false,
   });
@@ -387,8 +381,6 @@ function Sidebar({ isOpen }) {
   const notificationTimeouts = useRef({});
   const [isFilesModalOpen, setIsFilesModalOpen] = useState(false);
   const [isAppsModalOpen, setIsAppsModalOpen] = useState(false);
-
-  // --- Callbacks and Handlers ---
 
   const toggleAppsModal = () => setIsAppsModalOpen(!isAppsModalOpen);
   const toggleFilesModal = () => setIsFilesModalOpen(!isFilesModalOpen);
@@ -482,13 +474,14 @@ function Sidebar({ isOpen }) {
        window.postMessage({ type: 'settings', settings: { videoBufferSize: selectedSize } }, window.location.origin);
      }
   };
-  const handleAudioBitrateChange = (event) => {
-     const index = parseInt(event.target.value, 10);
-     const selectedBitrate = audioBitrateOptions[index];
-     if (selectedBitrate !== undefined) {
-       setAudioBitRate(selectedBitrate); localStorage.setItem('audioBitRate', selectedBitrate.toString());
-       window.postMessage({ type: 'settings', settings: { audioBitRate: selectedBitrate } }, window.location.origin);
-     }
+  const handleVideoCRFChange = (event) => {
+    const index = parseInt(event.target.value, 10);
+    const selectedCRF = videoCRFOptions[index];
+    if (selectedCRF !== undefined) {
+        setVideoCRF(selectedCRF);
+        localStorage.setItem('videoCRF', selectedCRF.toString());
+        window.postMessage({ type: 'settings', settings: { videoCRF: selectedCRF } }, window.location.origin);
+    }
   };
   const handleAudioInputChange = (event) => {
       const deviceId = event.target.value; setSelectedInputDeviceId(deviceId);
@@ -538,7 +531,6 @@ function Sidebar({ isOpen }) {
   const handleMouseEnter = (e, itemKey) => { setHoveredItem(itemKey); setTooltipPosition({ x: e.clientX + 10, y: e.clientY + 10 }); };
   const handleMouseLeave = () => setHoveredItem(null);
 
-  // --- Touch Gamepad Handler ---
   const handleToggleTouchGamepad = useCallback(() => {
     const newActiveState = !isTouchGamepadActive;
     setIsTouchGamepadActive(newActiveState);
@@ -550,14 +542,14 @@ function Sidebar({ isOpen }) {
         }, window.location.origin);
         setIsTouchGamepadSetup(true);
         console.log("Dashboard: Touch Gamepad SETUP sent, targetDivId:", TOUCH_GAMEPAD_HOST_DIV_ID, "visible: true");
-    } else if (isTouchGamepadSetup) { // Only send visibility if setup has occurred
+    } else if (isTouchGamepadSetup) {
         window.postMessage({
             type: 'TOUCH_GAMEPAD_VISIBILITY',
             payload: { visible: newActiveState, targetDivId: TOUCH_GAMEPAD_HOST_DIV_ID }
         }, window.location.origin);
         console.log(`Dashboard: Touch Gamepad VISIBILITY sent, targetDivId:`, TOUCH_GAMEPAD_HOST_DIV_ID, `visible: ${newActiveState}`);
     }
-  }, [isTouchGamepadActive, isTouchGamepadSetup]); // TOUCH_GAMEPAD_HOST_DIV_ID is a constant
+  }, [isTouchGamepadActive, isTouchGamepadSetup]);
 
   const getTooltipContent = useCallback((itemKey) => {
       const memNA = t('sections.stats.tooltipMemoryNA');
@@ -606,10 +598,10 @@ function Sidebar({ isOpen }) {
     if (!isNaN(savedFramerate) && framerateOptions.includes(savedFramerate)) setFramerate(savedFramerate); else { setFramerate(DEFAULT_FRAMERATE); localStorage.setItem('videoFramerate', DEFAULT_FRAMERATE.toString()); }
     const savedVideoBitRate = parseInt(localStorage.getItem('videoBitRate'), 10);
     if (!isNaN(savedVideoBitRate) && videoBitrateOptions.includes(savedVideoBitRate)) setVideoBitRate(savedVideoBitRate); else { setVideoBitRate(DEFAULT_VIDEO_BITRATE); localStorage.setItem('videoBitRate', DEFAULT_VIDEO_BITRATE.toString()); }
-    const savedAudioBitRate = parseInt(localStorage.getItem('audioBitRate'), 10);
-    if (!isNaN(savedAudioBitRate) && audioBitrateOptions.includes(savedAudioBitRate)) setAudioBitRate(savedAudioBitRate); else { setAudioBitRate(DEFAULT_AUDIO_BITRATE); localStorage.setItem('audioBitRate', DEFAULT_AUDIO_BITRATE.toString()); }
     const savedVideoBufferSize = parseInt(localStorage.getItem('videoBufferSize'), 10);
     if (!isNaN(savedVideoBufferSize) && videoBufferOptions.includes(savedVideoBufferSize)) setVideoBufferSize(savedVideoBufferSize); else { setVideoBufferSize(DEFAULT_VIDEO_BUFFER_SIZE); localStorage.setItem('videoBufferSize', DEFAULT_VIDEO_BUFFER_SIZE.toString()); }
+    const savedVideoCRF = parseInt(localStorage.getItem('videoCRF'), 10);
+    if (!isNaN(savedVideoCRF) && videoCRFOptions.includes(savedVideoCRF)) setVideoCRF(savedVideoCRF); else { setVideoCRF(DEFAULT_VIDEO_CRF); localStorage.setItem('videoCRF', DEFAULT_VIDEO_CRF.toString()); }
   }, []);
 
   useEffect(() => {
@@ -678,7 +670,54 @@ function Sidebar({ isOpen }) {
                     } else return prev;
                 });
             } else if (message.type === 'serverSettings') {
-                if (message.encoders && Array.isArray(message.encoders)) setDynamicEncoderOptions(message.encoders);
+                if (message.encoders && Array.isArray(message.encoders)) {
+                    const newEncoderOptions = Array.isArray(message.encoders) && message.encoders.length > 0 ? message.encoders : encoderOptions;
+                    setDynamicEncoderOptions(newEncoderOptions);
+                }
+            } else if (message.type === 'initialClientSettings') {
+                console.log("Dashboard: Received initialClientSettings", message.settings);
+                const receivedSettings = message.settings;
+                if (receivedSettings && typeof receivedSettings === 'object' && Object.keys(receivedSettings).length > 0) {
+                    for (const prefixedKey in receivedSettings) {
+                        if (Object.hasOwnProperty.call(receivedSettings, prefixedKey)) {
+                            const valueStr = receivedSettings[prefixedKey];
+
+                            if (prefixedKey.endsWith('videoBitRate')) {
+                                const val = parseInt(valueStr, 10);
+                                if (!isNaN(val) && videoBitrateOptions.includes(val)) { setVideoBitRate(val); localStorage.setItem('videoBitRate', val.toString()); }
+                            } else if (prefixedKey.endsWith('videoFramerate')) {
+                                const val = parseInt(valueStr, 10);
+                                if (!isNaN(val) && framerateOptions.includes(val)) { setFramerate(val); localStorage.setItem('videoFramerate', val.toString()); }
+                            } else if (prefixedKey.endsWith('videoCRF')) {
+                                const val = parseInt(valueStr, 10);
+                                if (!isNaN(val) && videoCRFOptions.includes(val)) { setVideoCRF(val); localStorage.setItem('videoCRF', val.toString()); }
+                            } else if (prefixedKey.endsWith('encoder')) {
+                                if (dynamicEncoderOptions.includes(valueStr) || encoderOptions.includes(valueStr)) {
+                                    setEncoder(valueStr); localStorage.setItem('encoder', valueStr);
+                                }
+                            } else if (prefixedKey.endsWith('videoBufferSize')) {
+                                const val = parseInt(valueStr, 10);
+                                if (!isNaN(val) && videoBufferOptions.includes(val)) { setVideoBufferSize(val); localStorage.setItem('videoBufferSize', val.toString()); }
+                            } else if (prefixedKey.endsWith('scaleLocallyManual')) {
+                                const val = valueStr === 'true';
+                                setScaleLocally(val); localStorage.setItem('scaleLocallyManual', val.toString());
+                            } else if (prefixedKey.endsWith('manualWidth')) {
+                                if (valueStr && valueStr !== 'null') setManualWidth(valueStr); else setManualWidth('');
+                                localStorage.setItem('manualWidth', (valueStr && valueStr !== 'null') ? valueStr : '');
+                            } else if (prefixedKey.endsWith('manualHeight')) {
+                                if (valueStr && valueStr !== 'null') setManualHeight(valueStr); else setManualHeight('');
+                                localStorage.setItem('manualHeight', (valueStr && valueStr !== 'null') ? valueStr : '');
+                            } else if (prefixedKey.endsWith('isManualResolutionMode')) {
+                                const isManual = valueStr === 'true';
+                                localStorage.setItem('isManualResolutionMode', isManual.toString());
+                            } else if (prefixedKey.endsWith('isGamepadEnabled')) {
+                                const isGpEnabled = valueStr === 'true';
+                                setIsGamepadEnabled(isGpEnabled);
+                                localStorage.setItem('isGamepadEnabled', isGpEnabled.toString());
+                            }
+                        }
+                    }
+                }
             }
         }
     };
@@ -688,7 +727,7 @@ function Sidebar({ isOpen }) {
         Object.values(notificationTimeouts.current).forEach(timers => { clearTimeout(timers.fadeTimer); clearTimeout(timers.removeTimer); });
         notificationTimeouts.current = {};
     };
-  }, [hasReceivedGamepadData, scheduleNotificationRemoval, removeNotification, t]);
+  }, [hasReceivedGamepadData, scheduleNotificationRemoval, removeNotification, t, dynamicEncoderOptions]);
 
 
   const sidebarClasses = `sidebar ${isOpen ? 'is-open' : ''} theme-${theme}`;
@@ -705,6 +744,12 @@ function Sidebar({ isOpen }) {
   const translatedCommonResolutions = commonResolutionValues.map((value, index) => ({
       value: value, text: index === 0 ? t('sections.screen.resolutionPresetSelect') : (raw?.resolutionPresets?.[value] || value)
   }));
+
+  const showFPS = ['jpeg', 'x264enc-striped', 'x264enc', 'nvh264enc', 'vah264enc', 'openh264enc'].includes(encoder);
+  const showBitrate = ['x264enc', 'nvh264enc', 'vah264enc', 'openh264enc'].includes(encoder);
+  const showBufferSize = ['x264enc', 'nvh264enc', 'vah264enc', 'openh264enc'].includes(encoder);
+  const showCRF = ['x264enc-striped'].includes(encoder);
+
 
   return (
     <>
@@ -741,9 +786,18 @@ function Sidebar({ isOpen }) {
             {sectionsOpen.settings && (
               <div className="sidebar-section-content" id="settings-content">
                 <div className="dev-setting-item"> <label htmlFor="encoderSelect">{t('sections.video.encoderLabel')}</label> <select id="encoderSelect" value={encoder} onChange={handleEncoderChange}> {dynamicEncoderOptions.map(enc => (<option key={enc} value={enc}>{enc}</option>))} </select> </div>
-                <div className="dev-setting-item"> <label htmlFor="framerateSlider">{t('sections.video.framerateLabel', { framerate: framerate })}</label> <input type="range" id="framerateSlider" min="0" max={framerateOptions.length - 1} step="1" value={framerateOptions.indexOf(framerate)} onChange={handleFramerateChange} /> </div>
-                <div className="dev-setting-item"> <label htmlFor="videoBitrateSlider">{t('sections.video.bitrateLabel', { bitrate: videoBitRate / 1000 })}</label> <input type="range" id="videoBitrateSlider" min="0" max={videoBitrateOptions.length - 1} step="1" value={videoBitrateOptions.indexOf(videoBitRate)} onChange={handleVideoBitrateChange} /> </div>
-                <div className="dev-setting-item"> <label htmlFor="videoBufferSizeSlider">{videoBufferSize === 0 ? t('sections.video.bufferLabelImmediate') : t('sections.video.bufferLabelFrames', { videoBufferSize: videoBufferSize })}</label> <input type="range" id="videoBufferSizeSlider" min="0" max={videoBufferOptions.length - 1} step="1" value={videoBufferOptions.indexOf(videoBufferSize)} onChange={handleVideoBufferSizeChange} /> </div>
+                {showFPS && (
+                    <div className="dev-setting-item"> <label htmlFor="framerateSlider">{t('sections.video.framerateLabel', { framerate: framerate })}</label> <input type="range" id="framerateSlider" min="0" max={framerateOptions.length - 1} step="1" value={framerateOptions.indexOf(framerate)} onChange={handleFramerateChange} /> </div>
+                )}
+                {showBitrate && (
+                    <div className="dev-setting-item"> <label htmlFor="videoBitrateSlider">{t('sections.video.bitrateLabel', { bitrate: videoBitRate / 1000 })}</label> <input type="range" id="videoBitrateSlider" min="0" max={videoBitrateOptions.length - 1} step="1" value={videoBitrateOptions.indexOf(videoBitRate)} onChange={handleVideoBitrateChange} /> </div>
+                )}
+                {showBufferSize && (
+                    <div className="dev-setting-item"> <label htmlFor="videoBufferSizeSlider">{videoBufferSize === 0 ? t('sections.video.bufferLabelImmediate') : t('sections.video.bufferLabelFrames', { videoBufferSize: videoBufferSize })}</label> <input type="range" id="videoBufferSizeSlider" min="0" max={videoBufferOptions.length - 1} step="1" value={videoBufferOptions.indexOf(videoBufferSize)} onChange={handleVideoBufferSizeChange} /> </div>
+                )}
+                {showCRF && (
+                    <div className="dev-setting-item"> <label htmlFor="videoCRFSlider">{t('sections.video.crfLabel', { crf: videoCRF })}</label> <input type="range" id="videoCRFSlider" min="0" max={videoCRFOptions.length - 1} step="1" value={videoCRFOptions.indexOf(videoCRF)} onChange={handleVideoCRFChange} /> </div>
+                )}
               </div>
             )}
         </div>
@@ -754,8 +808,7 @@ function Sidebar({ isOpen }) {
              </div>
              {sectionsOpen.audioSettings && (
                <div className="sidebar-section-content" id="audio-settings-content">
-                 <div className="dev-setting-item"> <label htmlFor="audioBitrateSlider">{t('sections.audio.bitrateLabel', { bitrate: audioBitRate / 1000 })}</label> <input type="range" id="audioBitrateSlider" min="0" max={audioBitrateOptions.length - 1} step="1" value={audioBitrateOptions.indexOf(audioBitRate)} onChange={handleAudioBitrateChange} /> </div>
-                 <hr className="section-divider" /> {audioDeviceError && (<div className="error-message">{audioDeviceError}</div>)}
+                 {audioDeviceError && (<div className="error-message">{audioDeviceError}</div>)}
                  <div className="dev-setting-item"> <label htmlFor="audioInputSelect">{t('sections.audio.inputLabel')}</label> <select id="audioInputSelect" value={selectedInputDeviceId} onChange={handleAudioInputChange} disabled={isLoadingAudioDevices || !!audioDeviceError} className="audio-device-select"> {audioInputDevices.map(d => (<option key={d.deviceId} value={d.deviceId}>{d.label}</option>))} </select> </div>
                  {isOutputSelectionSupported && (<div className="dev-setting-item"> <label htmlFor="audioOutputSelect">{t('sections.audio.outputLabel')}</label> <select id="audioOutputSelect" value={selectedOutputDeviceId} onChange={handleAudioOutputChange} disabled={isLoadingAudioDevices || !!audioDeviceError} className="audio-device-select"> {audioOutputDevices.map(d => (<option key={d.deviceId} value={d.deviceId}>{d.label}</option>))} </select> </div>)}
                  {!isOutputSelectionSupported && !isLoadingAudioDevices && !audioDeviceError && (<p className="device-support-notice">{t('sections.audio.outputNotSupported')}</p>)}
@@ -819,8 +872,7 @@ function Sidebar({ isOpen }) {
             {sectionsOpen.apps && ( <div className="sidebar-section-content" id="apps-content"> <button className="resolution-button" onClick={toggleAppsModal} style={{ marginTop: '5px', marginBottom: '5px' }} title={t('sections.apps.openButtonTitle', 'Manage Apps')}> <AppsIcon /> <span style={{marginLeft: '8px'}}>{t('sections.apps.openButton', 'Manage Apps')}</span> </button> </div> )}
         </div>
 
-        {/* Gamepads Section - Modified */}
-        {(hasReceivedGamepadData || isMobile) && (
+        {(
           <div className="sidebar-section">
               <div className="sidebar-section-header" onClick={() => toggleSection('gamepads')} role="button" aria-expanded={sectionsOpen.gamepads} aria-controls="gamepads-content" tabIndex="0" onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('gamepads')}>
                 <h3>{t('sections.gamepads.title', 'Gamepads')}</h3>
@@ -828,15 +880,14 @@ function Sidebar({ isOpen }) {
               </div>
               {sectionsOpen.gamepads && (
                 <div className="sidebar-section-content" id="gamepads-content">
-                  {/* Touch Gamepad Button for Mobile */}
-                  {isMobile && (
+                  {(
                     <div className="dev-setting-item" style={{ marginBottom: '10px' }}>
                         <button
                             className={`resolution-button toggle-button ${isTouchGamepadActive ? 'active' : ''}`}
                             onClick={handleToggleTouchGamepad}
                             title={t(isTouchGamepadActive ? 'sections.gamepads.touchDisableTitle' : 'sections.gamepads.touchEnableTitle', isTouchGamepadActive ? 'Disable Touch Gamepad' : 'Enable Touch Gamepad')}
                         >
-                            <GamepadIcon /> {/* Using existing GamepadIcon */}
+                            <GamepadIcon />
                             <span style={{ marginLeft: '8px' }}>
                                 {t(isTouchGamepadActive ? 'sections.gamepads.touchActiveLabel' : 'sections.gamepads.touchInactiveLabel', isTouchGamepadActive ? 'Touch Gamepad: ON' : 'Touch Gamepad: OFF')}
                             </span>
@@ -844,22 +895,16 @@ function Sidebar({ isOpen }) {
                     </div>
                   )}
 
-                  {/* Conditional rendering for physical gamepads vs. messages */}
                   {isMobile && isTouchGamepadActive ? (
-                    // Case 1: Mobile and Touch Gamepad is ON - physical gamepad display is suppressed
                     <p>{t('sections.gamepads.physicalHiddenForTouch', 'Physical gamepad display is hidden while touch gamepad is active.')}</p>
                   ) : (
-                    // Case 2: Not Mobile OR (Mobile AND Touch Gamepad is OFF)
-                    // In this case, we show physical gamepads or a "no activity" message.
                     <>
                         {Object.keys(gamepadStates).length > 0 ? (
-                            // Physical gamepads detected and should be shown
                             Object.keys(gamepadStates).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)).map(gpIndexStr => {
                                 const gpIndex = parseInt(gpIndexStr, 10);
                                 return (<GamepadVisualizer key={gpIndex} gamepadIndex={gpIndex} gamepadState={gamepadStates[gpIndex]} />);
                             })
                         ) : (
-                            // No physical gamepads detected (and they are not being hidden by an active touch gamepad)
                             <p className="no-gamepads-message">
                                 {isMobile ? 
                                     t('sections.gamepads.noActivityMobileOrEnableTouch', 'No physical gamepads. Enable touch gamepad or connect a controller.')
@@ -874,7 +919,7 @@ function Sidebar({ isOpen }) {
               )}
           </div>
         )}
-      </div> {/* End of sidebar div */}
+      </div>
 
       {hoveredItem && ( <div className="gauge-tooltip" style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}> {getTooltipContent(hoveredItem)} </div> )}
 
