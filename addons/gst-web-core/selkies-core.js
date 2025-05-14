@@ -21,7 +21,7 @@
  */
 
 // Set this to true to enable the dev dashboard layout
-var dev_mode = true;
+var dev_mode = false;
 
 /**
  * @typedef {Object} WebRTCDemoSignalling
@@ -586,7 +586,7 @@ resizeRemote = getBoolParam('resizeRemote', resizeRemote);
 debug = getBoolParam('debug', debug);
 turnSwitch = getBoolParam('turnSwitch', turnSwitch);
 videoBufferSize = getIntParam('videoBufferSize', 0);
-currentEncoderMode = getStringParam('encoder', 'x264enc');
+currentEncoderMode = getStringParam('encoder', 'x264enc-striped');
 scaleLocallyManual = getBoolParam('scaleLocallyManual', true);
 isManualResolutionMode = getBoolParam('isManualResolutionMode', false);
 manualWidth = getIntParam('manualWidth', null);

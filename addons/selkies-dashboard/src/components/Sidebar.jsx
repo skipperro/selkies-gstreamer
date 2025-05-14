@@ -75,6 +75,18 @@ const roundDownToEven = (num) => {
     return Math.floor(n / 2) * 2;
 };
 
+// Debounce function
+function debounce(func, delay) {
+  let timeoutId;
+  return function(...args) {
+    const context = this;
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      func.apply(context, args);
+    }, delay);
+  };
+}
+
 // --- Icons ---
 const AppsIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
@@ -382,6 +394,41 @@ function Sidebar({ isOpen }) {
   const [isFilesModalOpen, setIsFilesModalOpen] = useState(false);
   const [isAppsModalOpen, setIsAppsModalOpen] = useState(false);
 
+  // --- Debounce Settings ---
+  const DEBOUNCE_DELAY = 500;
+
+  const debouncedUpdateFramerateSettings = useCallback(
+    debounce((newFramerate) => {
+      localStorage.setItem('videoFramerate', newFramerate.toString());
+      window.postMessage({ type: 'settings', settings: { videoFramerate: newFramerate } }, window.location.origin);
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdateVideoBitrateSettings = useCallback(
+    debounce((newBitrate) => {
+      localStorage.setItem('videoBitRate', newBitrate.toString());
+      window.postMessage({ type: 'settings', settings: { videoBitRate: newBitrate } }, window.location.origin);
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdateVideoBufferSizeSettings = useCallback(
+    debounce((newSize) => {
+      localStorage.setItem('videoBufferSize', newSize.toString());
+      window.postMessage({ type: 'settings', settings: { videoBufferSize: newSize } }, window.location.origin);
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdateVideoCRFSettings = useCallback(
+    debounce((newCRF) => {
+      localStorage.setItem('videoCRF', newCRF.toString());
+      window.postMessage({ type: 'settings', settings: { videoCRF: newCRF } }, window.location.origin);
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
   const toggleAppsModal = () => setIsAppsModalOpen(!isAppsModalOpen);
   const toggleFilesModal = () => setIsFilesModalOpen(!isFilesModalOpen);
   const handleShowVirtualKeyboard = () => {
@@ -454,33 +501,32 @@ function Sidebar({ isOpen }) {
     const index = parseInt(event.target.value, 10);
     const selectedFramerate = framerateOptions[index];
     if (selectedFramerate !== undefined) {
-      setFramerate(selectedFramerate); localStorage.setItem('videoFramerate', selectedFramerate.toString());
-      window.postMessage({ type: 'settings', settings: { videoFramerate: selectedFramerate } }, window.location.origin);
+      setFramerate(selectedFramerate); // Immediate UI update
+      debouncedUpdateFramerateSettings(selectedFramerate); // Debounced action
     }
   };
   const handleVideoBitrateChange = (event) => {
      const index = parseInt(event.target.value, 10);
      const selectedBitrate = videoBitrateOptions[index];
      if (selectedBitrate !== undefined) {
-       setVideoBitRate(selectedBitrate); localStorage.setItem('videoBitRate', selectedBitrate.toString());
-       window.postMessage({ type: 'settings', settings: { videoBitRate: selectedBitrate } }, window.location.origin);
+       setVideoBitRate(selectedBitrate); // Immediate UI update
+       debouncedUpdateVideoBitrateSettings(selectedBitrate); // Debounced action
      }
   };
   const handleVideoBufferSizeChange = (event) => {
      const index = parseInt(event.target.value, 10);
      const selectedSize = videoBufferOptions[index];
      if (selectedSize !== undefined) {
-       setVideoBufferSize(selectedSize); localStorage.setItem('videoBufferSize', selectedSize.toString());
-       window.postMessage({ type: 'settings', settings: { videoBufferSize: selectedSize } }, window.location.origin);
+       setVideoBufferSize(selectedSize); // Immediate UI update
+       debouncedUpdateVideoBufferSizeSettings(selectedSize); // Debounced action
      }
   };
   const handleVideoCRFChange = (event) => {
     const index = parseInt(event.target.value, 10);
     const selectedCRF = videoCRFOptions[index];
     if (selectedCRF !== undefined) {
-        setVideoCRF(selectedCRF);
-        localStorage.setItem('videoCRF', selectedCRF.toString());
-        window.postMessage({ type: 'settings', settings: { videoCRF: selectedCRF } }, window.location.origin);
+        setVideoCRF(selectedCRF); // Immediate UI update
+        debouncedUpdateVideoCRFSettings(selectedCRF); // Debounced action
     }
   };
   const handleAudioInputChange = (event) => {

@@ -659,7 +659,7 @@ class DataStreamingServer:
         self._current_jpeg_quality = 75
         self._initial_jpeg_use_paint_over_quality = True # Default
         self._current_jpeg_use_paint_over_quality = True
-        self._jpeg_paint_overs_disabled_this_session = False # Tracks if paint-overs were turned off by backpressure
+        self._jpeg_paint_overs_disabled_this_session = False # Tracks settings.if paint-overs were turned off by backpressure
         self._initial_x264_crf = 25 # Default, will be overridden (self.h264_crf is current)
 
         # State for Websockets mode stats collection/sending
@@ -4082,14 +4082,24 @@ async def main():
     # --- Initialize GST Apps and Data Server ---
     event_loop = asyncio.get_running_loop()
     # Main application instance (handles video/app stream)
-    app = GSTWebRTCApp(
-        event_loop, stun_servers, turn_servers, audio_channels, initial_fps,
-        initial_encoder, # Use initial encoder determined from args/JSON
-        gpu_id, initial_video_bitrate, initial_audio_bitrate, keyframe_distance,
-        congestion_control, video_packetloss_percent, audio_packetloss_percent,
-        data_streaming_server=None, # Will be set below
-        mode=args.mode
-    )
+    if args.mode == 'websockets' and initial_encoder in ["jpeg", "x264enc-striped"]:
+        app = GSTWebRTCApp(
+            event_loop, stun_servers, turn_servers, audio_channels, initial_fps,
+            'x264enc',
+            gpu_id, initial_video_bitrate, initial_audio_bitrate, keyframe_distance,
+            congestion_control, video_packetloss_percent, audio_packetloss_percent,
+            data_streaming_server=None, # Will be set below
+            mode=args.mode
+        )
+    else:
+        app = GSTWebRTCApp(
+            event_loop, stun_servers, turn_servers, audio_channels, initial_fps,
+            initial_encoder,
+            gpu_id, initial_video_bitrate, initial_audio_bitrate, keyframe_distance,
+            congestion_control, video_packetloss_percent, audio_packetloss_percent,
+            data_streaming_server=None, # Will be set below
+            mode=args.mode
+        )
     app.server_enable_resize = enable_resize
     # --- Initialize App State ---
     app.last_resize_success = True # Assume initial state is valid
