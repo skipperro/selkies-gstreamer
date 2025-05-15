@@ -32,6 +32,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include <arpa/inet.h>
 #include <sys/un.h>
 #include <sys/ioctl.h>
+#include <linux/ioctl.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <errno.h>
@@ -39,6 +40,13 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include <linux/joystick.h>
 #include <linux/input.h> // For EV_SYN, EV_KEY, EV_ABS, input_id, input_absinfo etc.
 #include <linux/input-event-codes.h> // For BTN_*, ABS_*, KEY_*
+
+// Conditional type for ioctl request parameter
+#ifdef __GLIBC__
+typedef unsigned long ioctl_request_t;
+#else // For musl and other POSIX-compliant libc
+typedef int ioctl_request_t;
+#endif
 
 #define LOG_FILE "/tmp/selkies_js.log"
 
@@ -115,7 +123,7 @@ static int load_real_func(void (**target_func_ptr)(void), const char *name)
 // Function pointers to original calls
 static int (*real_open)(const char *pathname, int flags, ...) = NULL;
 static int (*real_open64)(const char *pathname, int flags, ...) = NULL;
-static int (*real_ioctl)(int fd, unsigned long request, ...) = NULL;
+static int (*real_ioctl)(int fd, ioctl_request_t request, ...) = NULL; // MODIFIED
 static int (*real_epoll_ctl)(int epfd, int op, int fd, struct epoll_event *event) = NULL;
 static int (*real_close)(int fd) = NULL;
 // read is not explicitly interposed in the original, but good to have if needed for debugging
@@ -490,7 +498,8 @@ int close(int fd)
 }
 
 // Handler for joystick type ioctl calls
-int intercept_js_ioctl(js_interposer_t *interposer, int fd, unsigned long request, void *arg)
+// MODIFIED signature
+int intercept_js_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t request, void *arg)
 {
     int len;
     uint8_t *u8_ptr;
@@ -499,50 +508,50 @@ int intercept_js_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
     switch (_IOC_NR(request))
     {
     case 0x01: /* JSIOCGVERSION get driver version */
-        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGVERSION (0x%08lx) -> 0x%08x", interposer->open_dev_name, request, JS_VERSION);
+        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGVERSION (0x%08lx) -> 0x%08x", interposer->open_dev_name, (unsigned long)request, JS_VERSION); // CASTED request
         if (!arg) return -EINVAL;
         *((uint32_t *)arg) = JS_VERSION;
         return 0;
 
     case 0x11: /* JSIOCGAXES get number of axes */
-        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGAXES (0x%08lx) -> %u axes", interposer->open_dev_name, request, interposer->js_config.num_axes);
+        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGAXES (0x%08lx) -> %u axes", interposer->open_dev_name, (unsigned long)request, interposer->js_config.num_axes); // CASTED request
         if (!arg) return -EINVAL;
         *((uint8_t *)arg) = interposer->js_config.num_axes;
         return 0;
 
     case 0x12: /* JSIOCGBUTTONS get number of buttons */
-        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGBUTTONS (0x%08lx) -> %u buttons", interposer->open_dev_name, request, interposer->js_config.num_btns);
+        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGBUTTONS (0x%08lx) -> %u buttons", interposer->open_dev_name, (unsigned long)request, interposer->js_config.num_btns); // CASTED request
         if (!arg) return -EINVAL;
         *((uint8_t *)arg) = interposer->js_config.num_btns;
         return 0;
 
     case 0x13: /* JSIOCGNAME(len) get identifier string */
         len = _IOC_SIZE(request);
-        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGNAME(%d) (0x%08lx) -> '%s'", interposer->open_dev_name, len, request, interposer->js_config.name);
+        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGNAME(%d) (0x%08lx) -> '%s'", interposer->open_dev_name, len, (unsigned long)request, interposer->js_config.name); // CASTED request
         if (!arg) return -EINVAL;
         strncpy((char *)arg, interposer->js_config.name, len -1 );
         ((char *)arg)[len - 1] = '\0'; // Ensure null termination
         return strlen((char*)arg); // Historically returns strlen, not 0.
 
     case 0x21: /* JSIOCSCORR set correction values */
-        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCSCORR (0x%08lx) (noop)", interposer->open_dev_name, request);
+        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCSCORR (0x%08lx) (noop)", interposer->open_dev_name, (unsigned long)request); // CASTED request
         if (!arg) return -EINVAL;
         memcpy(&interposer->corr, arg, sizeof(js_corr_t)); // Store if needed, though often unused
         return 0;
 
     case 0x22: /* JSIOCGCORR get correction values */
-        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGCORR (0x%08lx)", interposer->open_dev_name, request);
+        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGCORR (0x%08lx)", interposer->open_dev_name, (unsigned long)request); // CASTED request
         if (!arg) return -EINVAL;
         memcpy(arg, &interposer->corr, sizeof(js_corr_t));
         return 0;
 
     case 0x31: /*  JSIOCSAXMAP set axis mapping */
-        interposer_log(LOG_WARN, "IOCTL(%s): JSIOCSAXMAP (0x%08lx) (not supported, config from socket)", interposer->open_dev_name, request);
+        interposer_log(LOG_WARN, "IOCTL(%s): JSIOCSAXMAP (0x%08lx) (not supported, config from socket)", interposer->open_dev_name, (unsigned long)request); // CASTED request
         // This would overwrite config from Python, usually not desired.
         return -EPERM; // Or just 0 if we want to silently ignore
 
     case 0x32: /* JSIOCGAXMAP get axis mapping */
-        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGAXMAP (0x%08lx) for %u axes", interposer->open_dev_name, request, interposer->js_config.num_axes);
+        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGAXMAP (0x%08lx) for %u axes", interposer->open_dev_name, (unsigned long)request, interposer->js_config.num_axes); // CASTED request
         if (!arg) return -EINVAL;
         u8_ptr = (uint8_t *)arg;
         // Check if the buffer provided by the application is large enough
@@ -553,11 +562,11 @@ int intercept_js_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
         return 0;
 
     case 0x33: /* JSIOCSBTNMAP set button mapping */
-        interposer_log(LOG_WARN, "IOCTL(%s): JSIOCSBTNMAP (0x%08lx) (not supported, config from socket)", interposer->open_dev_name, request);
+        interposer_log(LOG_WARN, "IOCTL(%s): JSIOCSBTNMAP (0x%08lx) (not supported, config from socket)", interposer->open_dev_name, (unsigned long)request); // CASTED request
         return -EPERM;
 
     case 0x34: /* JSIOCGBTNMAP get button mapping */
-        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGBTNMAP (0x%08lx) for %u buttons", interposer->open_dev_name, request, interposer->js_config.num_btns);
+        interposer_log(LOG_INFO, "IOCTL(%s): JSIOCGBTNMAP (0x%08lx) for %u buttons", interposer->open_dev_name, (unsigned long)request, interposer->js_config.num_btns); // CASTED request
         if (!arg) return -EINVAL;
         u16_ptr = (uint16_t *)arg;
         // _IOC_SIZE(request) should be KEY_MAX * sizeof(uint16_t) (e.g. 512 * 2 = 1024 bytes for JSIOCGBTNMAP)
@@ -566,13 +575,14 @@ int intercept_js_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
         return 0;
 
     default:
-        interposer_log(LOG_WARN, "Unhandled 'joystick' ioctl for %s: request 0x%02lx (NR=0x%02x)", interposer->open_dev_name, request, _IOC_NR(request));
+        interposer_log(LOG_WARN, "Unhandled 'joystick' ioctl for %s: request 0x%02lx (NR=0x%02x)", interposer->open_dev_name, (unsigned long)request, _IOC_NR(request)); // CASTED request
         return -ENOTTY; // Or call real_ioctl if appropriate for some pass-through
     }
 }
 
 // Handler for event type ioctl calls
-int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long request, void *arg)
+// MODIFIED signature
+int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t request, void *arg)
 {
     struct input_absinfo *absinfo;
     struct input_id *id;
@@ -627,7 +637,7 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
              // return -EINVAL; // Or provide defaults as above. Let's provide defaults for now.
         }
 
-        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGABS(0x%02x) (0x%08lx) min:%d max:%d", interposer->open_dev_name, abs_code, request, absinfo->minimum, absinfo->maximum);
+        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGABS(0x%02x) (0x%08lx) min:%d max:%d", interposer->open_dev_name, abs_code, (unsigned long)request, absinfo->minimum, absinfo->maximum); // CASTED request
         return 0; // Success
     }
 
@@ -636,7 +646,7 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
     {
     // EVIOCGVERSION: Get device version.
     case EVIOCGVERSION:
-        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGVERSION (0x%08lx) -> 0x%08x", interposer->open_dev_name, request, ev_version);
+        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGVERSION (0x%08lx) -> 0x%08x", interposer->open_dev_name, (unsigned long)request, ev_version); // CASTED request
         if (!arg) return -EINVAL;
         *((int *)arg) = ev_version;
         return 0;
@@ -651,14 +661,14 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
         id->product = interposer->js_config.product;
         id->version = interposer->js_config.version;
         interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGID (0x%08lx) -> bus:0x%04x, ven:0x%04x, prod:0x%04x, ver:0x%04x",
-                       interposer->open_dev_name, request, id->bustype, id->vendor, id->product, id->version);
+                       interposer->open_dev_name, (unsigned long)request, id->bustype, id->vendor, id->product, id->version); // CASTED request
         return 0;
 
     // EVIOCGNAME(len): Get device name.
     //case EVIOCGNAME(0): // This is tricky, EVIOCGNAME has length embedded. Check _IOC_NR for base.
         if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) == 0x06) { // EVIOCGNAME base
             len = _IOC_SIZE(request);
-            interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGNAME(%u) (0x%08lx) for name '%s'", interposer->open_dev_name, (unsigned int)len, request, interposer->js_config.name);
+            interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGNAME(%u) (0x%08lx) for name '%s'", interposer->open_dev_name, (unsigned int)len, (unsigned long)request, interposer->js_config.name); // CASTED request
             if (!arg) {
                 interposer_log(LOG_WARN, "IOCTL(%s): EVIOCGNAME called with NULL argument.", interposer->open_dev_name);
                 return -EINVAL;
@@ -695,10 +705,11 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
     // The actual value of request is constructed using _IOR('E', 0x20 + ev_type, char[len])
 
     // EVIOCGPROP(len): Get device properties.
-    case EVIOCGPROP(0):
+    case EVIOCGPROP(0): // This check might be problematic if EVIOCGPROP(0) is not how it's typically used/defined.
+                        // Better to check _IOC_TYPE and _IOC_NR.
         if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) == 0x09) { // EVIOCGPROP base
             len = _IOC_SIZE(request);
-            interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGPROP(%d) (0x%08lx) (returning 0 props)", interposer->open_dev_name, len, request);
+            interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGPROP(%d) (0x%08lx) (returning 0 props)", interposer->open_dev_name, len, (unsigned long)request); // CASTED request
             if (!arg) return -EINVAL;
             if (len > 0) memset(arg, 0, len); // No specific properties claimed by default
             return 0; // Number of bytes written (0 for no props)
@@ -706,10 +717,10 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
         break;
 
     // EVIOCGKEY(len): Get current key state.
-    case EVIOCGKEY(0):
+    case EVIOCGKEY(0): // Similar to EVIOCGPROP, better to check _IOC_TYPE and _IOC_NR.
          if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) == 0x18) { // EVIOCGKEY base
             len = _IOC_SIZE(request);
-            interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGKEY(%d) (0x%08lx) (returning all keys up)", interposer->open_dev_name, len, request);
+            interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGKEY(%d) (0x%08lx) (returning all keys up)", interposer->open_dev_name, len, (unsigned long)request); // CASTED request
             if (!arg) return -EINVAL;
             if (len > 0) memset(arg, 0, len); // Report all keys as up
             return 0; // Success
@@ -719,7 +730,7 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
     // EVIOCGRAB: Grab/ungrab device.
     case EVIOCGRAB:
         interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGRAB (0x%08lx) (arg: %p, val: %d) (noop, success)",
-                       interposer->open_dev_name, request, arg, arg ? *((int*)arg) : -1);
+                       interposer->open_dev_name, (unsigned long)request, arg, arg ? *((int*)arg) : -1); // CASTED request
         // For a virtual device, "grabbing" might not make sense or could be a no-op.
         // If arg is non-zero, it means grab. If zero, release.
         // We just return success.
@@ -741,7 +752,7 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
         memset(arg, 0, len); // Clear the buffer first
 
         interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGBIT for EV type 0x%02x, len %d (0x%08lx)",
-                       interposer->open_dev_name, ev_type_query, len, request);
+                       interposer->open_dev_name, ev_type_query, len, (unsigned long)request); // CASTED request
 
         if (ev_type_query == 0) { // Query for supported event types (EV_SYN, EV_KEY, EV_ABS, etc.)
             // We support SYN, KEY, ABS. Maybe MSC for EV_MSC / MSC_SCAN.
@@ -755,7 +766,7 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
         else if (ev_type_query == EV_KEY) { // Query for supported key codes
             for (i = 0; i < interposer->js_config.num_btns; ++i) {
                 int key_code = interposer->js_config.btn_map[i];
-                if (key_code < len * 8) { // Check if key_code fits in the provided buffer
+                if (key_code >= 0 && key_code < KEY_MAX && key_code < len * 8) { // Check if key_code fits in the provided buffer and is valid
                     ((unsigned char *)arg)[key_code / 8] |= (1 << (key_code % 8));
                 }
             }
@@ -764,7 +775,7 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
         else if (ev_type_query == EV_ABS) { // Query for supported absolute axis codes
             for (i = 0; i < interposer->js_config.num_axes; ++i) {
                 int abs_code = interposer->js_config.axes_map[i];
-                if (abs_code < len * 8) {
+                 if (abs_code >= 0 && abs_code < ABS_MAX && abs_code < len * 8) { // Check if abs_code fits and is valid
                     ((unsigned char *)arg)[abs_code / 8] |= (1 << (abs_code % 8));
                 }
             }
@@ -777,21 +788,22 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, unsigned long reques
 
 
     interposer_log(LOG_WARN, "Unhandled EVDEV ioctl for %s: request 0x%08lx (Type 'E', NR 0x%02x)",
-                   interposer->open_dev_name, request, _IOC_NR(request));
+                   interposer->open_dev_name, (unsigned long)request, _IOC_NR(request)); // CASTED request
     return -ENOTTY; // Standard response for unsupported ioctl
 }
 
 
 // Interposer function for ioctl syscall
-int ioctl(int fd, unsigned long request, ...)
+// MODIFIED signature
+int ioctl(int fd, ioctl_request_t request, ...)
 {
     if (load_real_func((void *)&real_ioctl, "ioctl") < 0) {
          errno = EFAULT; return -1;
     }
 
-    va_list args_list; // Changed name to avoid conflict
+    va_list args_list; 
     va_start(args_list, request);
-    void *arg_ptr = va_arg(args_list, void *); // Changed name
+    void *arg_ptr = va_arg(args_list, void *); 
     va_end(args_list);
 
     js_interposer_t *interposer = NULL;
@@ -806,6 +818,7 @@ int ioctl(int fd, unsigned long request, ...)
 
     if (interposer == NULL)
     {
+        // Pass through to real_ioctl, request is already ioctl_request_t
         return real_ioctl(fd, request, arg_ptr);
     }
 
@@ -819,7 +832,7 @@ int ioctl(int fd, unsigned long request, ...)
         return intercept_ev_ioctl(interposer, fd, request, arg_ptr);
     }
     else if (interposer->type == DEV_TYPE_EV && _IOC_TYPE(request) == 'H') { // For UHID /dev/hidraw* specific ioctls
-        interposer_log(LOG_WARN, "IOCTL(%s): HID ioctl 0x%lx received but not handled (pass to real_ioctl)", interposer->open_dev_name, request);
+        interposer_log(LOG_WARN, "IOCTL(%s): HID ioctl 0x%lx received but not handled (pass to real_ioctl)", interposer->open_dev_name, (unsigned long)request); // CASTED request
         // HID ioctls are complex, pass through if this were a hidraw device.
         // But we are emulating /dev/input/event*, so this shouldn't happen.
         // If it does, it implies application misidentified the device.
@@ -832,7 +845,7 @@ int ioctl(int fd, unsigned long request, ...)
             // Let's return 0 if no events are pending from Python side, or size of next event.
             // Simplest for now:
             interposer_log(LOG_INFO, "IOCTL(%s): FIONREAD (0x%08lx). (Returning 0, needs proper implementation if app relies on it)",
-                           interposer->open_dev_name, request);
+                           interposer->open_dev_name, (unsigned long)request); // CASTED request
             if (!arg_ptr) return -EINVAL;
             *(int*)arg_ptr = 0; // TODO: implement properly if needed by checking socket buffer
             return 0;
@@ -841,7 +854,7 @@ int ioctl(int fd, unsigned long request, ...)
 
 
     interposer_log(LOG_WARN, "IOCTL(%s): Mismatched ioctl type 0x%x for device type %d, or unhandled ioctl 0x%08lx. Passing to real_ioctl.",
-                   interposer->open_dev_name, _IOC_TYPE(request), interposer->type, request);
+                   interposer->open_dev_name, _IOC_TYPE(request), interposer->type, (unsigned long)request); // CASTED request
     // If ioctl type doesn't match device type, or it's an unhandled one,
     // it's unlikely real_ioctl on a socket fd will do anything useful for device ioctls.
     // But for generic fd ioctls (like FIONBIO), it might.
