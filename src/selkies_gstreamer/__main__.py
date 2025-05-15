@@ -3264,7 +3264,7 @@ class WebRTCSimpleServer:
             # Start the WebSocket server
             async with websockets.asyncio.server.serve(
                 handler, # Main WebSocket connection handler
-                self.addr,
+                "0.0.0.0",
                 self.port,
                 **server_options
             ) as self.server:
