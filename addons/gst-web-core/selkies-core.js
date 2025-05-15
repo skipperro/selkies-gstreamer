@@ -429,6 +429,7 @@ let manualHeight = null; // Will be loaded from localStorage
 let autoResizeHandler = null;
 let debouncedAutoResizeHandler = null;
 let originalWindowResizeHandler = null;
+let handleResizeUI_globalRef = null;
 
 // --- START VNC H.264 STRIPE DECODER ADDITIONS ---
 let vncStripeDecoders = {}; // Key: stripe_y_start, Value: { decoder: VideoDecoder, pendingChunks: [] }
@@ -1161,33 +1162,56 @@ function resetCanvasStyle(streamWidth, streamHeight) {
     console.log(`Reset canvas CSS style to 100% width/height, object-fit: contain. Buffer: ${streamWidth}x${streamHeight}`);
 }
 
-/** NEW HELPER FUNCTION
+/**
  * Enables the automatic resizing behavior based on window/container size.
  */
 function enableAutoResize() {
-    if (originalWindowResizeHandler && !window.onresize) { // Check if it's not already added
-        console.log("Re-enabling auto-resize listener.");
+    if (directManualLocalScalingHandler) {
+        console.log("Switching to Auto Mode: Removing direct manual local scaling listener.");
+        window.removeEventListener('resize', directManualLocalScalingHandler);
+    }
+
+    if (originalWindowResizeHandler) { 
+        console.log("Switching to Auto Mode: Adding original (auto) debounced resize listener.");
+        window.removeEventListener('resize', originalWindowResizeHandler); // Defensive removal
         window.addEventListener('resize', originalWindowResizeHandler);
-        // Trigger an immediate resize calculation after enabling
-        originalWindowResizeHandler();
-    } else if (window.onresize) {
-         console.log("Auto-resize listener already enabled.");
+
+        if (typeof handleResizeUI_globalRef === 'function') {
+             console.log("Triggering immediate auto-resize calculation for auto mode.");
+             handleResizeUI_globalRef();
+        } else {
+            console.warn("handleResizeUI function not directly callable from enableAutoResize. Auto-resize will occur on next event.");
+        }
+
     } else {
-        console.warn("Cannot enable auto-resize: Original handler not found.");
+        console.warn("Cannot enable auto-resize: originalWindowResizeHandler not found.");
     }
 }
 
-/** NEW HELPER FUNCTION
+const directManualLocalScalingHandler = () => {
+    if (window.isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
+        applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
+    }
+};
+
+/**
  * Disables the automatic resizing behavior.
  */
-function disableAutoResize() {
+function disableAutoResize() { 
     if (originalWindowResizeHandler) {
-        console.log("Disabling auto-resize listener.");
+        console.log("Switching to Manual Mode Local Scaling: Removing original (auto) resize listener.");
         window.removeEventListener('resize', originalWindowResizeHandler);
-        // Setting window.onresize = null might be needed if it was set directly
-        // window.onresize = null;
-    } else {
-        console.warn("Cannot disable auto-resize: Original handler not found.");
+    }
+
+    // Add the direct, non-debounced handler for manual local scaling
+    console.log("Switching to Manual Mode Local Scaling: Adding direct manual scaling listener.");
+    window.removeEventListener('resize', directManualLocalScalingHandler); // Defensive removal
+    window.addEventListener('resize', directManualLocalScalingHandler);
+
+    // Apply current manual style immediately to reflect the mode change and set initial view
+    if (window.isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
+        console.log("Applying current manual canvas style after enabling direct manual resize handler.");
+        applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
     }
 }
 
@@ -2221,7 +2245,7 @@ const initializeInput = () => {
     // Update canvas buffer and reset style for auto mode
     resetCanvasStyle(evenWidth, evenHeight); // Pass the new stream dimensions
   };
-
+  handleResizeUI_globalRef = handleResizeUI;
   // Store the debounced handler
   originalWindowResizeHandler = debounce(handleResizeUI, 500);
 
