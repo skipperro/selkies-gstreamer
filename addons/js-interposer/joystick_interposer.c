@@ -112,11 +112,9 @@ static int load_real_func(void (**target_func_ptr)(void), const char *name)
     if (*target_func_ptr != NULL)
         return 0;
     *target_func_ptr = dlsym(RTLD_NEXT, name);
-    if (*target_func_ptr == NULL) // Check against *target_func_ptr, not target_func_ptr itself
+    if (*target_func_ptr == NULL) 
     {
-        // Log as warning for optional functions like open64, error for essential ones if needed
-        // For now, consistently log as error and let the calling logic decide if it's fatal.
-        interposer_log(LOG_ERROR, "Error getting original '%s' function: %s", name, dlerror());
+        interposer_log(LOG_WARN, "Could not get original '%s' function: %s. This may be ok for optional functions.", name, dlerror());
         return -1;
     }
     return 0;
@@ -128,36 +126,34 @@ static int (*real_open64)(const char *pathname, int flags, ...) = NULL;
 static int (*real_ioctl)(int fd, ioctl_request_t request, ...) = NULL;
 static int (*real_epoll_ctl)(int epfd, int op, int fd, struct epoll_event *event) = NULL;
 static int (*real_close)(int fd) = NULL;
-// read is not explicitly interposed in the original, but good to have if needed for debugging
-// static ssize_t (*real_read)(int fd, void *buf, size_t count) = NULL;
 
-// Initialization function to load the real functions
 __attribute__((constructor)) void init_interposer()
 {
+    // Essential functions - log as error if not found
     if (load_real_func((void *)&real_open, "open") < 0) {
-        // This is critical, if open cannot be loaded, the interposer is mostly useless.
-        // Consider exiting or a more prominent error. For now, it logs.
+        interposer_log(LOG_ERROR, "CRITICAL: Failed to load real 'open'. Interposer may not function.");
     }
-    // Attempt to load open64. It's okay if this fails (real_open64 will remain NULL).
-    // The open64() wrapper will handle the fallback.
-    load_real_func((void *)&real_open64, "open64"); 
+    if (load_real_func((void *)&real_ioctl, "ioctl") < 0) {
+        interposer_log(LOG_ERROR, "CRITICAL: Failed to load real 'ioctl'. Interposer may not function.");
+    }
+     if (load_real_func((void *)&real_epoll_ctl, "epoll_ctl") < 0) {
+        interposer_log(LOG_ERROR, "CRITICAL: Failed to load real 'epoll_ctl'. Interposer may not function.");
+    }
+    if (load_real_func((void *)&real_close, "close") < 0) {
+        interposer_log(LOG_ERROR, "CRITICAL: Failed to load real 'close'. Interposer may not function.");
+    }
 
-    if (load_real_func((void *)&real_ioctl, "ioctl") < 0) { /* Similar critical consideration */ }
-    if (load_real_func((void *)&real_epoll_ctl, "epoll_ctl") < 0) { /* ... */ }
-    if (load_real_func((void *)&real_close, "close") < 0) { /* ... */ }
-    // load_real_func((void *)&real_read, "read");
+    // open64 is optional; real_open64 will remain NULL if not found.
+    // The warning from load_real_func is sufficient.
+    load_real_func((void *)&real_open64, "open64");
 }
 
-// Type definition for correction struct (from joystick.h, often empty or unused by modern drivers)
 typedef struct js_corr js_corr_t;
 
-
-// Constants from Python to define js_config_t structure
 #define CONTROLLER_NAME_MAX_LEN 255
 #define INTERPOSER_MAX_BTNS 512
 #define INTERPOSER_MAX_AXES 64
 
-// This structure MUST match the layout and size of the data sent by the Python server.
 typedef struct
 {
     char name[CONTROLLER_NAME_MAX_LEN]; 
@@ -171,11 +167,9 @@ typedef struct
     uint8_t final_alignment_padding[6];    
 } js_config_t;
 
-
-// Struct for storing information about each interposed joystick device.
 typedef struct
 {
-    uint8_t type; // DEV_TYPE_JS or DEV_TYPE_EV
+    uint8_t type; 
     char open_dev_name[255];
     char socket_path[255];
     int sockfd;
@@ -186,7 +180,6 @@ typedef struct
 #define DEV_TYPE_JS 0
 #define DEV_TYPE_EV 1
 
-// Min/max values for ABS axes
 #define ABS_AXIS_MIN_DEFAULT -32767
 #define ABS_AXIS_MAX_DEFAULT 32767
 #define ABS_TRIGGER_MIN_DEFAULT 0
@@ -325,11 +318,10 @@ int interposer_open_socket(js_interposer_t *interposer)
 
 int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
 {
-    if (!real_epoll_ctl) { // Should have been loaded by init_interposer
-         if (load_real_func((void *)&real_epoll_ctl, "epoll_ctl") < 0) {
-            errno = EFAULT; 
-            return -1;
-        }
+    if (!real_epoll_ctl) {
+        interposer_log(LOG_ERROR, "CRITICAL: real_epoll_ctl not loaded in epoll_ctl.");
+        errno = EFAULT; 
+        return -1;
     }
     if (op == EPOLL_CTL_ADD)
     {
@@ -374,10 +366,9 @@ int common_open_logic(const char *pathname, js_interposer_t **found_interposer) 
 
 int open(const char *pathname, int flags, ...)
 {
-    if (!real_open) { // Should have been loaded by init_interposer
-         if (load_real_func((void *)&real_open, "open") < 0) {
-            errno = EFAULT; return -1;
-        }
+    if (!real_open) {
+        interposer_log(LOG_ERROR, "CRITICAL: real_open not loaded in open.");
+        errno = EFAULT; return -1;
     }
 
     js_interposer_t *interposer = NULL;
@@ -398,18 +389,19 @@ int open(const char *pathname, int flags, ...)
     return result_fd;
 }
 
+// Undefine open64 if it's a macro, to prevent redefinition when we define our own open64.
+// This is common on systems where _LARGEFILE64_SOURCE makes open64 an alias for open.
+#ifdef open64
+#undef open64
+#endif
 // Interposer function for open64
 int open64(const char *pathname, int flags, ...)
 {
-    // real_open and real_open64 are attempted to be loaded in init_interposer.
-    // If real_open64 dlsym failed, real_open64 will be NULL.
-
     js_interposer_t *interposer = NULL;
-    int result_fd = common_open_logic(pathname, &interposer); // Handles interposed paths
+    int result_fd = common_open_logic(pathname, &interposer);
 
-    if (result_fd == -2) { // Not an interposed path, call the real underlying function
+    if (result_fd == -2) { // Not an interposed path
         mode_t mode = 0;
-        // Va_list handling must be done regardless of which real function is called
         if (flags & O_CREAT) {
             va_list args;
             va_start(args, flags);
@@ -417,25 +409,23 @@ int open64(const char *pathname, int flags, ...)
             va_end(args);
         }
 
-        if (real_open64) { // If open64 was found and loaded by init_interposer
+        if (real_open64) { // If real_open64 was successfully dlsym'd
             if (flags & O_CREAT) {
                 return real_open64(pathname, flags, mode);
             } else {
                 return real_open64(pathname, flags);
             }
         } else {
-            // open64 was not found (real_open64 is NULL). Fall back to real_open.
-            // The error for failing to dlsym "open64" would have been logged by load_real_func in init_interposer.
-            interposer_log(LOG_INFO, "real_open64 not available. Falling back to real_open for path: %s", pathname);
-            
+            // real_open64 is NULL (dlsym failed or it wasn't found).
+            // Fall back to real_open. A warning about "open64" not being found
+            // would have been logged by load_real_func in init_interposer.
+            interposer_log(LOG_INFO, "real_open64 not available, falling back to real_open for path: %s", pathname);
             if (!real_open) {
-                 // This is a critical state. init_interposer should have loaded real_open.
-                 // If an application calls open64 and real_open wasn't loaded, something is very wrong.
-                 interposer_log(LOG_ERROR, "CRITICAL: real_open is NULL in open64 fallback. Interposer init failed for 'open'.");
-                 errno = EFAULT; // Or some other suitable error indicating a severe problem.
-                 return -1;
+                // This is a very critical error, as real_open should always be available.
+                interposer_log(LOG_ERROR, "CRITICAL: real_open is NULL in open64 fallback. Interposer init likely failed for 'open'.");
+                errno = EFAULT;
+                return -1;
             }
-
             if (flags & O_CREAT) {
                 return real_open(pathname, flags, mode);
             } else {
@@ -443,18 +433,15 @@ int open64(const char *pathname, int flags, ...)
             }
         }
     }
-    // If result_fd is -1 (error in common_open_logic for an interposed path)
-    // or a valid fd from successful interposition, return it.
     return result_fd;
 }
 
 
 int close(int fd)
 {
-   if (!real_close) { // Should have been loaded by init_interposer
-         if (load_real_func((void *)&real_close, "close") < 0) {
-            errno = EFAULT; return -1;
-        }
+   if (!real_close) {
+        interposer_log(LOG_ERROR, "CRITICAL: real_close not loaded in close.");
+        errno = EFAULT; return -1;
     }
 
     js_interposer_t *interposer = NULL;
@@ -583,6 +570,9 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
             absinfo->fuzz = 0;
             absinfo->flat = 0;
         }
+        // Check if this abs_code is actually in our axes_map - not strictly necessary to fail if not,
+        // as some applications query all possible axes. We'll provide default values.
+        /*
         int found_axis = 0;
         for(i=0; i < interposer->js_config.num_axes; ++i) {
             if (interposer->js_config.axes_map[i] == abs_code) {
@@ -591,13 +581,16 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
             }
         }
         if(!found_axis) {
-            // Provide defaults even if not explicitly in our map, some apps query all.
+             // interposer_log(LOG_WARN, "IOCTL(%s): EVIOCGABS for unmapped axis 0x%02x", interposer->open_dev_name, abs_code);
         }
+        */
         interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGABS(0x%02x) (0x%08lx) min:%d max:%d", interposer->open_dev_name, abs_code, (unsigned long)request, absinfo->minimum, absinfo->maximum); 
         return 0; 
     }
 
-    unsigned long ul_request = (unsigned long)request; // For switch cases that use defined constants
+    // Cast request to unsigned long for switch statements using defined constants like EVIOCGVERSION
+    // These constants are typically unsigned long.
+    unsigned long ul_request = (unsigned long)request;
 
     switch (ul_request) 
     {
@@ -623,6 +616,10 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
         return 0;
     }
 
+    // For ioctls like EVIOCGNAME, EVIOCGPROP, EVIOCGKEY, EVIOCGBIT that encode size/type in the request number,
+    // we need to decode using _IOC_TYPE, _IOC_NR, _IOC_SIZE.
+    // The switch(ul_request) above handles exact matches for macros that don't encode variable sizes.
+
     if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) == 0x06) { // EVIOCGNAME base
         len = _IOC_SIZE(request);
         interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGNAME(%u) (0x%08lx) for name '%s'", interposer->open_dev_name, (unsigned int)len, (unsigned long)request, interposer->js_config.name); 
@@ -630,13 +627,13 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
             interposer_log(LOG_WARN, "IOCTL(%s): EVIOCGNAME called with NULL argument.", interposer->open_dev_name);
             return -EINVAL;
         }
-        if (len == 0) {
+        if (len == 0) { // Should not happen for EVIOCGNAME as it expects a buffer, but handle defensively.
             interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGNAME with len 0. Returning 0.", interposer->open_dev_name);
-            return 0;
+            return 0; // Or strlen of the name if that's the convention for "tell me how big"
         }
         strncpy((char *)arg, interposer->js_config.name, len - 1);
         ((char *)arg)[len - 1] = '\0';
-        return strlen((char *)arg);
+        return strlen((char *)arg); // Return length of string copied
     }
     
     if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) == 0x09) { // EVIOCGPROP base
@@ -644,7 +641,7 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
         interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGPROP(%d) (0x%08lx) (returning 0 props)", interposer->open_dev_name, len, (unsigned long)request); 
         if (!arg) return -EINVAL;
         if (len > 0) memset(arg, 0, len); 
-        return 0; 
+        return 0; // Number of bytes written (0 for no props)
     }
 
     if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) == 0x18) { // EVIOCGKEY base
@@ -655,7 +652,8 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
         return 0; 
     }
 
-    if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) >= 0x20 && _IOC_NR(request) < 0x40) {
+    // General EVIOCGBIT handling
+    if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) >= 0x20 && _IOC_NR(request) < 0x40) { // EVIOCGBIT range
         unsigned char ev_type_query = _IOC_NR(request) - 0x20;
         len = _IOC_SIZE(request);
         if (!arg) return -EINVAL;
@@ -664,44 +662,44 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
         interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGBIT for EV type 0x%02x, len %d (0x%08lx)",
                        interposer->open_dev_name, ev_type_query, len, (unsigned long)request); 
 
-        if (ev_type_query == 0) { 
-            if (EV_SYN < len * 8) ((unsigned char *)arg)[EV_SYN / 8] |= (1 << (EV_SYN % 8));
-            if (EV_KEY < len * 8) ((unsigned char *)arg)[EV_KEY / 8] |= (1 << (EV_KEY % 8));
-            if (EV_ABS < len * 8) ((unsigned char *)arg)[EV_ABS / 8] |= (1 << (EV_ABS % 8));
+        if (ev_type_query == 0) { // Query for supported event types (EV_SYN, EV_KEY, EV_ABS, etc.)
+            if (EV_SYN / 8 < len) ((unsigned char *)arg)[EV_SYN / 8] |= (1 << (EV_SYN % 8));
+            if (EV_KEY / 8 < len) ((unsigned char *)arg)[EV_KEY / 8] |= (1 << (EV_KEY % 8));
+            if (EV_ABS / 8 < len) ((unsigned char *)arg)[EV_ABS / 8] |= (1 << (EV_ABS % 8));
             return len; 
         }
-        else if (ev_type_query == EV_KEY) { 
+        else if (ev_type_query == EV_KEY) { // Query for supported key codes
             for (i = 0; i < interposer->js_config.num_btns; ++i) {
                 int key_code = interposer->js_config.btn_map[i];
-                if (key_code >= 0 && key_code < KEY_MAX && key_code < len * 8) { 
+                if (key_code >= 0 && key_code < KEY_MAX && (key_code / 8 < len)) { 
                     ((unsigned char *)arg)[key_code / 8] |= (1 << (key_code % 8));
                 }
             }
             return len;
         }
-        else if (ev_type_query == EV_ABS) { 
+        else if (ev_type_query == EV_ABS) { // Query for supported absolute axis codes
             for (i = 0; i < interposer->js_config.num_axes; ++i) {
                 int abs_code = interposer->js_config.axes_map[i];
-                 if (abs_code >= 0 && abs_code < ABS_MAX && abs_code < len * 8) { 
+                 if (abs_code >= 0 && abs_code < ABS_MAX && (abs_code / 8 < len)) { 
                     ((unsigned char *)arg)[abs_code / 8] |= (1 << (abs_code % 8));
                 }
             }
             return len;
         }
+        // Other types like EV_REL, EV_MSC, etc. will return an empty bitmask.
         return len; 
     }
 
-    interposer_log(LOG_WARN, "Unhandled EVDEV ioctl for %s: request 0x%08lx (Type 'E', NR 0x%02x)",
-                   interposer->open_dev_name, (unsigned long)request, _IOC_NR(request)); 
+    interposer_log(LOG_WARN, "Unhandled EVDEV ioctl for %s: request 0x%08lx (Type '%c', NR 0x%02x, Size %d)",
+                   interposer->open_dev_name, (unsigned long)request, _IOC_TYPE(request), _IOC_NR(request), _IOC_SIZE(request)); 
     return -ENOTTY; 
 }
 
 int ioctl(int fd, ioctl_request_t request, ...)
 {
-    if (!real_ioctl) { // Should have been loaded by init_interposer
-         if (load_real_func((void *)&real_ioctl, "ioctl") < 0) {
-             errno = EFAULT; return -1;
-        }
+    if (!real_ioctl) {
+        interposer_log(LOG_ERROR, "CRITICAL: real_ioctl not loaded in ioctl.");
+        errno = EFAULT; return -1;
     }
 
     va_list args_list; 
@@ -733,12 +731,13 @@ int ioctl(int fd, ioctl_request_t request, ...)
         return intercept_ev_ioctl(interposer, fd, request, arg_ptr);
     }
     else if (interposer->type == DEV_TYPE_EV && _IOC_TYPE(request) == 'H') { 
-        interposer_log(LOG_WARN, "IOCTL(%s): HID ioctl 0x%lx received but not handled (pass to real_ioctl)", interposer->open_dev_name, (unsigned long)request); 
-        return -ENOTTY;
+        interposer_log(LOG_WARN, "IOCTL(%s): HID ioctl 0x%lx received but not handled.", interposer->open_dev_name, (unsigned long)request); 
+        return -ENOTTY; // We are not a HID device
     }
-    else if (_IOC_TYPE(request) == 'f') { 
-        // Check if request is FIONREAD. Note FIONREAD might be an int or unsigned long depending on headers.
-        // Cast to unsigned long for comparison with defined FIONREAD to be safe if ioctl_request_t is int.
+    else if (_IOC_TYPE(request) == 'f') { // Typically fcntl commands, FIONREAD often 'f' or 't' (TIOCINQ)
+        // FIONREAD is 0x541B (TIOCINQ). _IOC_TYPE(0x541B) is 'T', _IOC_NR(0x541B) is 0x1B.
+        // Some systems define FIONREAD as _IOR('f', 127, int) -> type 'f', nr 127.
+        // So checking type 'f' is reasonable, but also check the specific request value.
         if ((unsigned long)request == FIONREAD) { 
             interposer_log(LOG_INFO, "IOCTL(%s): FIONREAD (0x%08lx). (Returning 0, needs proper implementation if app relies on it)",
                            interposer->open_dev_name, (unsigned long)request); 
@@ -748,7 +747,10 @@ int ioctl(int fd, ioctl_request_t request, ...)
         }
     }
 
-    interposer_log(LOG_WARN, "IOCTL(%s): Mismatched ioctl type 0x%x for device type %d, or unhandled ioctl 0x%08lx. Passing to real_ioctl.",
+    interposer_log(LOG_WARN, "IOCTL(%s): Mismatched ioctl type 0x%x for device type %d, or unhandled ioctl 0x%08lx. Passing to real_ioctl is unlikely to work as expected.",
                    interposer->open_dev_name, _IOC_TYPE(request), interposer->type, (unsigned long)request); 
+    // For unknown ioctls on our interposed fd (which is a socket),
+    // passing to real_ioctl(socket_fd, ...) will likely result in ENOTTY or EINVAL
+    // from the kernel if the ioctl is not socket-related.
     return real_ioctl(fd, request, arg_ptr); 
 }
