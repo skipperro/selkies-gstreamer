@@ -4085,7 +4085,7 @@ async def main():
     if args.mode == 'websockets' and initial_encoder in ["jpeg", "x264enc-striped"]:
         app = GSTWebRTCApp(
             event_loop, stun_servers, turn_servers, audio_channels, initial_fps,
-            'x264enc',
+            None,
             gpu_id, initial_video_bitrate, initial_audio_bitrate, keyframe_distance,
             congestion_control, video_packetloss_percent, audio_packetloss_percent,
             data_streaming_server=None, # Will be set below

@@ -1092,6 +1092,14 @@ class GSTWebRTCApp:
 
     async def start_websocket_video_pipeline(self):
         if self.mode == 'websockets':
+            # Hanle null on init
+            if self.encoder is None:
+                if self.pipeline:
+                    logger_gstwebrtc_app.info("Helper: Stopping existing video pipeline as self.encoder is None for websockets.")
+                    await asyncio.to_thread(self.pipeline.set_state, Gst.State.NULL)
+                    self.pipeline = None
+                self.pipeline_running = False
+                return
             logger_gstwebrtc_app.info("Helper: Starting WebSocket video pipeline.")
             try:
                 # Ensure any previous video pipeline is stopped
@@ -1226,6 +1234,8 @@ class GSTWebRTCApp:
                 )
 
     def check_plugins(self):
+        if self.encoder is None:
+            return
         required = [
             "opus",
             "nice",
@@ -1254,7 +1264,7 @@ class GSTWebRTCApp:
             "svtav1enc",
             "av1enc",
             "rav1enc",
-            "opusenc"
+            "opusenc",
         ]
         if self.encoder not in supported:
             raise GSTWebRTCAppError(
