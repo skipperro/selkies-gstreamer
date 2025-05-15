@@ -982,7 +982,7 @@ function Sidebar({ isOpen }) {
         ))}
       </div>
 
-      {isFilesModalOpen && ( <div className="files-modal"> <button className="files-modal-close" onClick={toggleFilesModal} aria-label="Close files modal">&times;</button> <iframe src="http://localhost:7860files" title="Downloadable Files" /> </div> )}
+      {isFilesModalOpen && ( <div className="files-modal"> <button className="files-modal-close" onClick={toggleFilesModal} aria-label="Close files modal">&times;</button> <iframe src="/files" title="Downloadable Files" /> </div> )}
       {isAppsModalOpen && ( <AppsModal isOpen={isAppsModalOpen} onClose={toggleAppsModal} t={t} /> )}
       
       {isMobile && (
