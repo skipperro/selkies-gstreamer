@@ -114,7 +114,6 @@ static int load_real_func(void (**target_func_ptr)(void), const char *name)
     *target_func_ptr = dlsym(RTLD_NEXT, name);
     if (*target_func_ptr == NULL) 
     {
-        interposer_log(LOG_WARN, "Could not get original '%s' function: %s. This may be ok for optional functions.", name, dlerror());
         return -1;
     }
     return 0;
