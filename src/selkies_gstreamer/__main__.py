@@ -61,7 +61,7 @@ import urllib.parse
 import websockets
 import websockets.asyncio.client
 import websockets.asyncio.server
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from datetime import datetime
 from queue import Queue
 from shutil import which
@@ -119,6 +119,11 @@ JPEG_QUALITY_DECREASE_STEP = 10
 DEFAULT_JPEG_QUALITY_SEVERE_LAG = 30
 DEFAULT_X264_CRF_SEVERE_LAG = 35 # Higher CRF = lower quality/complexity
 DEFAULT_GSTREAMER_BITRATE_SEVERE_LAG_KBPS = 2000
+
+# --- RTT Calculation Constants ---
+RTT_SMOOTHING_SAMPLES = 20  # Number of RTT samples for moving average
+SENT_FRAME_TIMESTAMP_HISTORY_SIZE = 1000 # Max entries for frame_id -> send_time map
+SENT_FRAMES_LOG_HISTORY_SECONDS = 5 # Duration for (send_time, frame_id) log
 
 # Thresholds for acting on consecutive reports
 CONSECUTIVE_LAG_REPORTS_THRESHOLD = 2 # Number of consecutive high lag reports to trigger action
@@ -678,6 +683,12 @@ class DataStreamingServer:
         self._previous_sent_id_for_stall_check = -1
         self._last_client_stable_report_time = 0.0 # Time client was last seen as stable
 
+        # --- RTT Calculation State ---
+        self._sent_frame_timestamps = OrderedDict() # Stores frame_id: send_timestamp
+        self._rtt_samples = deque(maxlen=RTT_SMOOTHING_SAMPLES)
+        self._smoothed_rtt_ms = 0.0
+        self._sent_frames_log = deque() # Stores (send_timestamp, frame_id) tuples
+
         # Store initial (target) and current encoder parameters for backpressure adjustments
         self._initial_jpeg_quality = 75 # Default, will be overridden
         self._current_jpeg_quality = 75
@@ -900,8 +911,18 @@ class DataStreamingServer:
                 data_logger.error(f"Error processing JPEG stripe in callback: {e}", exc_info=True)
         # No need to free result.data, the C library manages it
     def update_last_sent_frame_id(self, frame_id: int):
-        """Updates the last sent frame ID, handling wrap-around."""
+        """Updates the last sent frame ID, handling wrap-around, and records send time."""
         self._active_pipeline_last_sent_frame_id = frame_id
+        
+        # Record timestamp for RTT calculation and history
+        current_time = time.monotonic()
+        self._sent_frame_timestamps[frame_id] = current_time
+        if len(self._sent_frame_timestamps) > SENT_FRAME_TIMESTAMP_HISTORY_SIZE:
+            self._sent_frame_timestamps.popitem(last=False) # Prune oldest
+
+        if hasattr(self, '_sent_frames_log'): # Ensure deque is initialized
+             self._sent_frames_log.append((current_time, frame_id))
+        # Pruning for _sent_frames_log is handled by its maxlen property, set in ws_handler
 
     async def _start_jpeg_pipeline(self):
         """Starts the X11 JPEG screen capture pipeline."""
@@ -1247,6 +1268,12 @@ class DataStreamingServer:
         # --- End connection-specific state ---
         self.client_settings_received = asyncio.Event()
         initial_settings_processed = False
+        # Initialize _sent_frames_log with appropriate maxlen now that TARGET_FRAMERATE is set
+        self._sent_frames_log = deque(maxlen=int(TARGET_FRAMERATE * SENT_FRAMES_LOG_HISTORY_SECONDS))
+        # Reset RTT state for new connection
+        self._sent_frame_timestamps.clear()
+        self._rtt_samples.clear()
+        self._smoothed_rtt_ms = 0.0
         mode_message = f"MODE {self.mode}"
         try:
             await websocket.send(mode_message)
@@ -1753,7 +1780,16 @@ class DataStreamingServer:
                                 acked_frame_id = int(parts[1])
                                 self._client_acknowledged_frame_id = acked_frame_id
                                 self._last_client_acknowledged_frame_id_update_time = time.monotonic()
-                                # data_logger.debug(f"Client ACK received for frame_id: {acked_frame_id}")
+                                # RTT Calculation
+                                ack_time = time.monotonic()
+                                if acked_frame_id in self._sent_frame_timestamps:
+                                    send_time = self._sent_frame_timestamps[acked_frame_id]
+                                    rtt_sample_ms = (ack_time - send_time) * 1000.0
+                                    if rtt_sample_ms >= 0: # Ensure non-negative RTT
+                                        self._rtt_samples.append(rtt_sample_ms)
+                                        if self._rtt_samples:
+                                            self._smoothed_rtt_ms = sum(self._rtt_samples) / len(self._rtt_samples)
+                                    del self._sent_frame_timestamps[acked_frame_id]
                             else:
                                 data_logger.warning(f"Malformed CLIENT_FRAME_ACK: {message}")
                         except ValueError:
@@ -2413,8 +2449,32 @@ class DataStreamingServer:
                     self._previous_sent_id_for_stall_check = sent_id
                     continue
 
+                # Determine the server frame ID to compare against based on RTT/2
+                # Start with the actual latest sent_id as the default.
+                server_frame_id_for_comparison = sent_id 
+                if self._smoothed_rtt_ms > 0 and len(self._sent_frames_log) > 0:
+                    one_way_latency_s = (self._smoothed_rtt_ms / 1000.0) / 2.0
+                    target_past_timestamp = now - one_way_latency_s
+                    
+                    # Find the frame ID sent around target_past_timestamp
+                    # Iterate from newest to oldest in the log
+                    found_historical_frame = False
+                    for past_ts, past_frame_id in reversed(self._sent_frames_log):
+                        if past_ts <= target_past_timestamp:
+                            server_frame_id_for_comparison = past_frame_id
+                            found_historical_frame = True
+                            break
+                    if not found_historical_frame and self._sent_frames_log: # If target_past_timestamp is older than all log
+                        server_frame_id_for_comparison = self._sent_frames_log[0][1] # Use oldest available
+
+                    if server_frame_id_for_comparison != sent_id:
+                        data_logger.debug(
+                            f"RTT/2: Using historical server frame {server_frame_id_for_comparison} (latest was {sent_id}) "
+                            f"for delta, based on Smoothed RTT: {self._smoothed_rtt_ms:.2f}ms"
+                        )
+
                 # Calculate frame_delta considering wrap-around (uint16)
-                frame_delta = (sent_id - ack_id + 65536) % 65536
+                frame_delta = (server_frame_id_for_comparison - ack_id + 65536) % 65536
                 
                 # Stall detection
                 is_stalled = False
