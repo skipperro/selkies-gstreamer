@@ -11,6 +11,30 @@ logger = logging.getLogger("main")
 web_logger = logging.getLogger("web")
 data_logger = logging.getLogger("data_websocket") # Used for JPEG logs too
 
+# Gstreamer check
+GSTREAMER_AVAILABLE = True 
+try:
+    import gi
+    gi.require_version("GLib", "2.0")
+    gi.require_version("Gst", "1.0")
+    from gi.repository import Gst
+    fract = Gst.Fraction(60, 1)
+    del fract
+except Exception as e:
+    msg = """ERROR: could not find working GStreamer-Python installation.
+If GStreamer is installed at a certain location, set the path to the environment variable GSTREAMER_PATH, then make sure your environment is set correctly using the below commands (for Debian-like distributions):
+export GSTREAMER_PATH="${GSTREAMER_PATH:-$(pwd)}"
+export PATH="${GSTREAMER_PATH}/bin${PATH:+:${PATH}}"
+export LD_LIBRARY_PATH="${GSTREAMER_PATH}/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+export GST_PLUGIN_PATH="${GSTREAMER_PATH}/lib/x86_64-linux-gnu/gstreamer-1.0${GST_PLUGIN_PATH:+:${PATH}}"
+export GST_PLUGIN_SYSTEM_PATH="${XDG_DATA_HOME:-${HOME:-~}/.local/share}/gstreamer-1.0/plugins:/usr/lib/x86_64-linux-gnu/gstreamer-1.0${GST_PLUGIN_SYSTEM_PATH:+:${PATH}}"
+export GI_TYPELIB_PATH="${GSTREAMER_PATH}/lib/x86_64-linux-gnu/girepository-1.0:/usr/lib/x86_64-linux-gnu/girepository-1.0${GI_TYPELIB_PATH:+:${PATH}}"
+export PYTHONPATH="${GSTREAMER_PATH}/lib/python3/dist-packages${PYTHONPATH:+:${PATH}}"
+Replace "x86_64-linux-gnu" in other architectures manually or use "$(gcc -print-multiarch)" in place.
+"""
+    GSTREAMER_AVAILABLE = False
+
+
 import concurrent.futures
 import asyncio
 import argparse
@@ -1245,9 +1269,10 @@ class DataStreamingServer:
             supported_encoders.append('x264enc-striped')
             supported_encoders.append('jpeg')
 
-        for encoder_name in encoders_to_check:
-            if check_encoder_supported(encoder_name):
-                supported_encoders.append(encoder_name)
+        if GSTREAMER_AVAILABLE:
+            for encoder_name in encoders_to_check:
+                if check_encoder_supported(encoder_name):
+                    supported_encoders.append(encoder_name)
 
         server_settings_payload = {
             'type': 'server_settings',

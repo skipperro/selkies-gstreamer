@@ -10,35 +10,14 @@ import asyncio
 import json
 import struct
 
-try:
-    import gi
-    gi.require_version("GLib", "2.0")
-    gi.require_version("Gst", "1.0")
-    gi.require_version("GstRtp", "1.0")
-    gi.require_version("GstSdp", "1.0")
-    gi.require_version("GstWebRTC", "1.0")
-    from gi.repository import GLib, Gst, GstRtp, GstSdp, GstWebRTC
-    fract = Gst.Fraction(60, 1)
-    del fract
-except Exception as e:
-    msg = """ERROR: could not find working GStreamer-Python installation.
-If GStreamer is installed at a certain location, set the path to the environment variable GSTREAMER_PATH, then make sure your environment is set correctly using the below commands (for Debian-like distributions):
-export GSTREAMER_PATH="${GSTREAMER_PATH:-$(pwd)}"
-export PATH="${GSTREAMER_PATH}/bin${PATH:+:${PATH}}"
-export LD_LIBRARY_PATH="${GSTREAMER_PATH}/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-export GST_PLUGIN_PATH="${GSTREAMER_PATH}/lib/x86_64-linux-gnu/gstreamer-1.0${GST_PLUGIN_PATH:+:${PATH}}"
-export GST_PLUGIN_SYSTEM_PATH="${XDG_DATA_HOME:-${HOME:-~}/.local/share}/gstreamer-1.0/plugins:/usr/lib/x86_64-linux-gnu/gstreamer-1.0${GST_PLUGIN_SYSTEM_PATH:+:${PATH}}"
-export GI_TYPELIB_PATH="${GSTREAMER_PATH}/lib/x86_64-linux-gnu/girepository-1.0:/usr/lib/x86_64-linux-gnu/girepository-1.0${GI_TYPELIB_PATH:+:${PATH}}"
-export PYTHONPATH="${GSTREAMER_PATH}/lib/python3/dist-packages${PYTHONPATH:+:${PATH}}"
-Replace "x86_64-linux-gnu" in other architectures manually or use "$(gcc -print-multiarch)" in place.
-"""
-    logger_gstwebrtc_app = logging.getLogger("gstebrtc_app")
-    logger_gstwebrtc_app.error(msg)
-    logger_gstwebrtc_app.error(e)
-    sys.exit(1)
+import gi
+gi.require_version("GLib", "2.0")
+gi.require_version("Gst", "1.0")
+gi.require_version("GstRtp", "1.0")
+gi.require_version("GstSdp", "1.0")
+gi.require_version("GstWebRTC", "1.0")
+from gi.repository import GLib, Gst, GstRtp, GstSdp, GstWebRTC
 logger_gstwebrtc_app = logging.getLogger("gstebrtc_app")
-logger_gstwebrtc_app.info("GStreamer-Python install looks OK")
-
 
 class GSTWebRTCAppError(Exception):
     pass
