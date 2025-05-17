@@ -2475,9 +2475,8 @@ class DataStreamingServer:
 
                 # Calculate frame_delta considering wrap-around (uint16)
                 frame_delta = (server_frame_id_for_comparison - ack_id + 65536) % 65536
-                effective_lag_delta = frame_delta
-                if effective_lag_delta > 32768:
-                    effective_lag_delta = 0
+                if frame_delta > 32768:
+                    frame_delta = 0
  
                 # Stall detection
                 is_stalled = False
