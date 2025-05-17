@@ -2399,6 +2399,8 @@ class DataStreamingServer:
 
 
     async def _run_frame_backpressure_logic(self):
+        #####TEMPDISABLE####
+        return
         """Periodically checks frame ID delta and adjusts stream complexity."""
         data_logger.info("Frame ID-based backpressure logic task started.")
         self._last_adjustment_time = time.monotonic() # Initialize to prevent immediate adjustment
