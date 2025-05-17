@@ -878,7 +878,16 @@ export class Input {
         const down = (event.type === 'mousedown' ? 1 : 0);
         var mtype = "m";
         let canvas = document.getElementById('videoCanvas');
-
+        // Back and forward mouse macros
+        if (event.type === 'mousedown' || event.type === 'mouseup') {
+            if (event.button === 3) {
+                event.preventDefault();
+                console.debug('Input: Browser "Back" (mouse button 3) default action prevented.');
+            } else if (event.button === 4) {
+                event.preventDefault();
+                console.debug('Input: Browser "Forward" (mouse button 4) default action prevented.');
+            }
+        }
         if (down && event.button === 0 && event.ctrlKey && event.shiftKey) {
             const targetElement = event.target.requestPointerLock ? event.target : this.element;
             targetElement.requestPointerLock().catch(err => console.error("Pointer lock failed:", err));
@@ -1583,8 +1592,6 @@ export class Input {
 
         if ('ontouchstart' in window) {
             // Attach touch listeners to the element to handle interactions within it
-            // Use the refactored handler with multi-touch support
-            // Make touchstart/touchmove non-passive to allow preventDefault
             this.listeners_context.push(addListener(this.element, 'touchstart', this._handleTouchEvent, this, false));
             this.listeners_context.push(addListener(this.element, 'touchend', this._handleTouchEvent, this, false));
             this.listeners_context.push(addListener(this.element, 'touchmove', this._handleTouchEvent, this, false));
@@ -1702,15 +1709,11 @@ function addListener(obj, name, func, ctx, useCapture = false) {
         return null; // Return null or throw error
     }
     const newFunc = ctx ? func.bind(ctx) : func;
-    // Use options object for clarity, especially with capture/passive
     const options = {
         capture: useCapture,
-        // Make touchstart/touchmove non-passive to allow preventDefault
-        // Make wheel non-passive too
-        passive: !useCapture && !['wheel', 'touchmove', 'touchstart', 'mousedown', 'mousemove', 'mouseup', 'contextmenu'].includes(name)
     };
     obj.addEventListener(name, newFunc, options);
-    return [obj, name, newFunc, options]; // Store options for removal
+    return [obj, name, newFunc, options];
 }
 
 /**

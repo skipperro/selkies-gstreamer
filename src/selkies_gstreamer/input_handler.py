@@ -35,8 +35,6 @@ BTN_MOUSE = 0x110
 BTN_LEFT = 0x110
 BTN_RIGHT = 0x111
 BTN_MIDDLE = 0x112
-BTN_SIDE = 0x113
-BTN_EXTRA = 0x114
 
 # Gamepad Button Codes
 BTN_A = 0x130  # Or BTN_SOUTH
@@ -71,6 +69,11 @@ JS_EVENT_INIT = 0x80
 INTERPOSER_MAX_BTNS = 512
 INTERPOSER_MAX_AXES = 64
 CONTROLLER_NAME_MAX_LEN = 255 
+
+# For mouse input to send fake back and forward events
+KEYSYM_ALT_L = 0xFFE9     # Left Alt keysym
+KEYSYM_LEFT_ARROW = 0xFF51 # Left Arrow keysym
+KEYSYM_RIGHT_ARROW = 0xFF53# Right Arrow keysym
 
 class JsConfigCtypes(ctypes.Structure):
     _fields_ = [
@@ -844,34 +847,75 @@ class WebRTCInput:
             self.send_mouse(MOUSE_MOVE, (x, y))
         else:
             self.send_mouse(MOUSE_POSITION, (x, y))
-        if button_mask != self.button_mask:
-            max_buttons = 5
-            for i in range(0, max_buttons):
-                if (button_mask ^ self.button_mask) & (1 << i):
-                    action = MOUSE_BUTTON
-                    btn_action = MOUSE_BUTTON_PRESS
-                    btn_num = MOUSE_BUTTON_LEFT_ID
-                    if button_mask & (1 << i):
-                        btn_action = MOUSE_BUTTON_PRESS
-                    else:
-                        btn_action = MOUSE_BUTTON_RELEASE
-                    if i == 1:
-                        btn_num = MOUSE_BUTTON_MIDDLE_ID
-                    elif i == 2:
-                        btn_num = MOUSE_BUTTON_RIGHT_ID
-                    elif i == 3 and button_mask != 0:
-                        action = MOUSE_SCROLL_UP
-                    elif i == 4 and button_mask != 0:
-                        action = MOUSE_SCROLL_DOWN
-                    data = (btn_action, btn_num)
-                    if i == 3 or i == 4:
-                        for i in range(1, scroll_magnitude):
-                            self.send_mouse(action, data)
-                    self.send_mouse(action, data)
-            self.button_mask = button_mask
-        if not relative:
-            self.xdisplay.sync()
 
+        if button_mask != self.button_mask:
+            for bit_index in range(5): # Check bits 0 through 4
+                current_button_bit_value = (1 << bit_index)
+                button_state_changed = ((self.button_mask & current_button_bit_value) != \
+                                        (button_mask & current_button_bit_value))
+
+                if button_state_changed:
+                    is_pressed_now = (button_mask & current_button_bit_value) != 0
+                    
+                    action_to_send = None
+                    data_to_send = None
+                    is_scroll_action = False
+                    performed_keyboard_combo = False # Flag to skip mouse event sending
+
+                    if bit_index == 0: # Left button
+                        action_to_send = MOUSE_BUTTON
+                        data_to_send = (MOUSE_BUTTON_PRESS if is_pressed_now else MOUSE_BUTTON_RELEASE, MOUSE_BUTTON_LEFT_ID)
+                    elif bit_index == 1: # Middle button
+                        action_to_send = MOUSE_BUTTON
+                        data_to_send = (MOUSE_BUTTON_PRESS if is_pressed_now else MOUSE_BUTTON_RELEASE, MOUSE_BUTTON_MIDDLE_ID)
+                    elif bit_index == 2: # Right button
+                        action_to_send = MOUSE_BUTTON
+                        data_to_send = (MOUSE_BUTTON_PRESS if is_pressed_now else MOUSE_BUTTON_RELEASE, MOUSE_BUTTON_RIGHT_ID)
+                    
+                    elif bit_index == 3: # Client's Back button (mask 8) OR Scroll Down
+                        if scroll_magnitude > 0: # It's an actual scroll down event
+                            if is_pressed_now:
+                                action_to_send = MOUSE_SCROLL_DOWN
+                                is_scroll_action = True
+                        else: # scroll_magnitude is 0, so it's a "Back" action via Alt+Left
+                            if is_pressed_now: # Trigger on press
+                                if self.keyboard:
+                                    logger_webrtc_input.debug("Sending Alt+Left Arrow for Back")
+                                    self.send_x11_keypress(KEYSYM_ALT_L, down=True)
+                                    self.send_x11_keypress(KEYSYM_LEFT_ARROW, down=True)
+                                    self.send_x11_keypress(KEYSYM_LEFT_ARROW, down=False)
+                                    self.send_x11_keypress(KEYSYM_ALT_L, down=False)
+                                    performed_keyboard_combo = True
+                                else:
+                                    logger_webrtc_input.warning("Keyboard not available for Alt+Left.")
+                    elif bit_index == 4: # Client's Forward button (mask 16) OR Scroll Up
+                        if scroll_magnitude > 0: # It's an actual scroll up event
+                            if is_pressed_now:
+                                action_to_send = MOUSE_SCROLL_UP
+                                is_scroll_action = True
+                        else: # scroll_magnitude is 0, so it's a "Forward" action via Alt+Right
+                            if is_pressed_now: # Trigger on press
+                                if self.keyboard:
+                                    logger_webrtc_input.debug("Sending Alt+Right Arrow for Forward")
+                                    self.send_x11_keypress(KEYSYM_ALT_L, down=True)
+                                    self.send_x11_keypress(KEYSYM_RIGHT_ARROW, down=True)
+                                    self.send_x11_keypress(KEYSYM_RIGHT_ARROW, down=False)
+                                    self.send_x11_keypress(KEYSYM_ALT_L, down=False)
+                                    performed_keyboard_combo = True
+                                else:
+                                    logger_webrtc_input.warning("Keyboard not available for Alt+Right.")
+                    # Send the determined MOUSE action (if any and no keyboard combo was done)
+                    if not performed_keyboard_combo and action_to_send is not None:
+                        if is_scroll_action:
+                            for _ in range(max(1, scroll_magnitude)):
+                                self.send_mouse(action_to_send, None)
+                        else: # Regular button action
+                            self.send_mouse(action_to_send, data_to_send)
+                
+            self.button_mask = button_mask
+
+        if not relative and self.xdisplay:
+            self.xdisplay.sync()
     def read_clipboard(self):
         try:
             result = subprocess.run(("xsel", "--clipboard", "--output"), check=True, text=True, capture_output=True, timeout=1)
