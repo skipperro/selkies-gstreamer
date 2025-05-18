@@ -35,6 +35,8 @@ BTN_MOUSE = 0x110
 BTN_LEFT = 0x110
 BTN_RIGHT = 0x111
 BTN_MIDDLE = 0x112
+BTN_SIDE = 0x113
+BTN_EXTRA = 0x114
 
 # Gamepad Button Codes
 BTN_A = 0x130  # Or BTN_SOUTH
@@ -872,10 +874,10 @@ class WebRTCInput:
                         action_to_send = MOUSE_BUTTON
                         data_to_send = (MOUSE_BUTTON_PRESS if is_pressed_now else MOUSE_BUTTON_RELEASE, MOUSE_BUTTON_RIGHT_ID)
                     
-                    elif bit_index == 3: # Client's Back button (mask 8) OR Scroll Down
+                    elif bit_index == 3: # Client's Back button (mask 8) OR Scroll Up
                         if scroll_magnitude > 0: # It's an actual scroll down event
                             if is_pressed_now:
-                                action_to_send = MOUSE_SCROLL_DOWN
+                                action_to_send = MOUSE_SCROLL_UP
                                 is_scroll_action = True
                         else: # scroll_magnitude is 0, so it's a "Back" action via Alt+Left
                             if is_pressed_now: # Trigger on press
@@ -888,10 +890,10 @@ class WebRTCInput:
                                     performed_keyboard_combo = True
                                 else:
                                     logger_webrtc_input.warning("Keyboard not available for Alt+Left.")
-                    elif bit_index == 4: # Client's Forward button (mask 16) OR Scroll Up
+                    elif bit_index == 4: # Client's Forward button (mask 16) OR Scroll Down
                         if scroll_magnitude > 0: # It's an actual scroll up event
                             if is_pressed_now:
-                                action_to_send = MOUSE_SCROLL_UP
+                                action_to_send = MOUSE_SCROLL_DOWN
                                 is_scroll_action = True
                         else: # scroll_magnitude is 0, so it's a "Forward" action via Alt+Right
                             if is_pressed_now: # Trigger on press
