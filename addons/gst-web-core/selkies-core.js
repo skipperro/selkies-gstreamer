@@ -3402,26 +3402,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initializeUI();
 
-  // The initial values for settings are now loaded at the top of the file.
-  // The UI population happens within initializeUI using these loaded values.
-
-  // --- Redundant UI Population (Remove or Comment Out) ---
-  // These are now handled inside initializeUI or via the 'initialClientSettings' postMessage handler
-  /*
-  if (dev_mode) {
-      if (videoBitrateSelectElement) {
-          // ... (redundant population logic) ...
-      }
-      // ... (repeat for other elements like audio bitrate, encoder, framerate, buffer size, crf, clipboard) ...
-      updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive); // Keep these status updates
-      updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
-      updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
-      updateToggleButtonAppearance(gamepadToggleButtonElement, isGamepadEnabled);
-  }
-  */
-  // --- End Redundant UI Population ---
-
-
   videoElement.addEventListener('loadeddata', () => {
     if (clientMode === 'webrtc' && webrtc && webrtc.input) {
       webrtc.input.getCursorScaleFactor();
@@ -4720,6 +4700,15 @@ websocket.onopen = () => {
         updateToggleButtonAppearance(micToggleButtonElement, false);
     }
   };
+  // Reconnect on drop 
+  setInterval(() => {
+      if ( clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+        console.log(websocket)
+        console.log('connected')
+      } else {
+        location.reload()
+      }
+  }, 1000);
 });
 
 function cleanupVideoBuffer() {

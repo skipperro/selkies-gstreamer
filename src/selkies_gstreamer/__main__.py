@@ -2597,52 +2597,127 @@ class DataStreamingServer:
              data_logger.info("Frame ID-based backpressure logic task finished.")
 
     async def run_server(self):
-        """Starts the data WebSocket server."""
+        """Starts the data WebSocket server and attempts to keep it running."""
         self.stop_server = asyncio.Future()
-        try:
-            async with websockets.asyncio.server.serve(
-                self.ws_handler,
-                '0.0.0.0',
-                self.port,
-                compression=None
-            ) as self.server:
-                data_logger.info(
-                    f"Data WebSocket Server listening on port {self.port}"
+
+        while not self.stop_server.done():
+            _current_server_instance = None
+            wait_closed_task = None # Task for waiting on server closure
+            try:
+                async with websockets.asyncio.server.serve(
+                    self.ws_handler,
+                    '0.0.0.0',
+                    self.port,
+                    compression=None,
+                    ping_interval=20,
+                    ping_timeout=20
+                ) as server_obj:
+                    _current_server_instance = server_obj
+                    self.server = _current_server_instance # Make it accessible to stop()
+                    data_logger.info(
+                        f"Data WebSocket Server listening on port {self.port}"
+                    )
+
+                    # Create a task for wait_closed()
+                    wait_closed_task = asyncio.create_task(
+                        _current_server_instance.wait_closed(),
+                        name=f"DataServerWaitClosed-{self.port}"
+                    )
+
+                    # Wait for either the stop_server future or the wait_closed_task
+                    done, pending = await asyncio.wait(
+                        [self.stop_server, wait_closed_task],
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+
+                    if self.stop_server in done:
+                        data_logger.info("Data WebSocket Server received stop signal. Shutting down listener.")
+                        if wait_closed_task in pending:
+                            wait_closed_task.cancel()
+                            try:
+                                await wait_closed_task
+                            except asyncio.CancelledError:
+                                data_logger.debug(f"wait_closed_task for port {self.port} successfully cancelled.")
+                        break
+                    data_logger.warning(
+                        f"Data WebSocket Server on port {self.port} stopped unexpectedly. "
+                        "It will be restarted unless a global stop is in progress."
+                    )
+
+            except OSError as e:
+                data_logger.error(
+                    f"OSError starting Data WebSocket Server on port {self.port}: {e}. Retrying in 5 seconds..."
                 )
-                await self.stop_server
-        except OSError as e:
-             data_logger.error(f"Failed to start Data WebSocket Server on port {self.port}: {e}")
-             raise
-        except Exception as e:
-             data_logger.error(
-                 f"Exception starting Data WebSocket Server: {e}",
-                 exc_info=True
-             )
-             raise
+                try:
+                    await asyncio.wait_for(asyncio.shield(self.stop_server), timeout=5.0)
+                    if self.stop_server.done():
+                        data_logger.info("Stop signal received during OSError retry wait. Exiting run_server loop.")
+                        break
+                except asyncio.TimeoutError:
+                    pass
+            except asyncio.CancelledError:
+                data_logger.info(f"Data WebSocket Server run_server task for port {self.port} was cancelled. Exiting loop.")
+                if wait_closed_task and not wait_closed_task.done():
+                    wait_closed_task.cancel()
+                    try: await wait_closed_task
+                    except asyncio.CancelledError: pass
+                break
+            except Exception as e:
+                data_logger.error(
+                    f"Unhandled exception in Data WebSocket Server run_server attempt for port {self.port}: {e}. Retrying in 5 seconds...",
+                    exc_info=True
+                )
+                try:
+                    await asyncio.wait_for(asyncio.shield(self.stop_server), timeout=5.0)
+                    if self.stop_server.done():
+                        data_logger.info("Stop signal received during Exception retry wait. Exiting run_server loop.")
+                        break
+                except asyncio.TimeoutError:
+                    pass
+            finally:
+                if self.server is _current_server_instance:
+                    self.server = None
+                if wait_closed_task and not wait_closed_task.done():
+                    wait_closed_task.cancel()
+                    try:
+                        await wait_closed_task
+                    except asyncio.CancelledError:
+                        data_logger.debug(f"Ensured wait_closed_task for port {self.port} is cancelled in finally block.")
+        
+        data_logger.info(f"Data WebSocket Server run_server loop for port {self.port} has finished.")
 
     async def stop(self):
         """Stops the data WebSocket server."""
-        logger_signaling.info("Stopping Data WebSocket Server...") # logger_signaling is used in original
+        data_logger.info(f"Attempting to stop Data WebSocket Server on port {self.port}...")
         if self.stop_server is not None and not self.stop_server.done():
-            self.stop_server.set_result(True)
-        if self.server:
+            self.stop_server.set_result(True) # Signal the run_server loop to exit
+
+        server_to_close = self.server # Capture the current server instance
+        if server_to_close: # Check if a server instance is currently active
+            data_logger.info(f"Closing active listener for Data WebSocket Server on port {self.port}.")
+            server_to_close.close()
             try:
-                self.server.close()
-                await asyncio.wait_for(self.server.wait_closed(), timeout=2.0)
+                await asyncio.wait_for(server_to_close.wait_closed(), timeout=2.0)
+                data_logger.info(f"Active listener for Data WebSocket Server on port {self.port} closed.")
             except asyncio.TimeoutError:
-                 data_logger.warning("Timeout waiting for Data WebSocket server to close.")
+                 data_logger.warning(f"Timeout waiting for Data WebSocket server listener on port {self.port} to close.")
             except Exception as e:
                  data_logger.warning(
-                     f"Error waiting for Data WebSocket server to close: {e}"
+                     f"Error waiting for Data WebSocket server listener on port {self.port} to close: {e}"
                  )
-            self.server = None
+        else:
+            data_logger.info(f"No active listener found for Data WebSocket Server on port {self.port} during stop (already stopped or not started).")
+        
+        self.server = None # Ensure self.server is None after stop attempt
+
+        # Pipeline/capture cleanup
         if self.is_jpeg_capturing:
             data_logger.info("DataStreamingServer stopping: ensuring JPEG capture is also stopped.")
             await self._stop_jpeg_pipeline()
         if self.is_x264_striped_capturing:
             data_logger.info("DataStreamingServer stopping: ensuring x264-striped capture is also stopped.")
             await self._stop_x264_striped_pipeline()
-        data_logger.info("Data WebSocket Server Stopped.")
+        data_logger.info(f"Data WebSocket Server on port {self.port} stop procedure complete.")
 
 class WebRTCSimpleServer:
     """A simple WebRTC signaling server with HTTP file serving capabilities."""
