@@ -4703,8 +4703,7 @@ websocket.onopen = () => {
   // Reconnect on drop 
   setInterval(() => {
       if ( clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-        console.log(websocket)
-        console.log('connected')
+        // Pass
       } else {
         location.reload()
       }
