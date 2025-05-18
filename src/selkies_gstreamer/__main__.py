@@ -3847,7 +3847,7 @@ async def main():
     parser.add_argument(
         "--cursor_size",
         default=os.environ.get(
-            "SELKIES_CURSOR_SIZE", os.environ.get("XCURSOR_SIZE", "-1")
+            "SELKIES_CURSOR_SIZE", os.environ.get("XCURSOR_SIZE", "32")
         ),
         help="Cursor size in points for the local cursor, set instead XCURSOR_SIZE without of this argument to configure the cursor size for both the local and remote cursors",
     )
