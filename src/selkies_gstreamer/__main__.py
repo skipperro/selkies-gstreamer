@@ -794,7 +794,7 @@ class DataStreamingServer:
 
         display_width = getattr(self.app, 'display_width', 1024)
         display_height = getattr(self.app, 'display_height', 768)
-        target_fps = float(getattr(self.app, 'framerate', 30.0)) # Use app's framerate
+        target_fps = float(getattr(self.app, 'framerate', 60.0)) # Use app's framerate
 
         data_logger.info(f"Starting X11 x264-striped capture: {display_width}x{display_height} @ {target_fps}fps, output_mode=1")
         try:
@@ -947,7 +947,7 @@ class DataStreamingServer:
         # Get current dimensions from the app object (should be set by ws_handler before calling this)
         display_width = getattr(self.app, 'display_width', 1024) # Use user default
         display_height = getattr(self.app, 'display_height', 768) # Use user default
-        target_fps = float(getattr(self.app, 'framerate', 30.0))
+        target_fps = float(getattr(self.app, 'framerate', 60.0))
         data_logger.info(f"Starting X11 JPEG capture: {display_width}x{display_height} @ {target_fps}fps, Quality: {self._current_jpeg_quality}")
         try:
             # Configure capture settings
