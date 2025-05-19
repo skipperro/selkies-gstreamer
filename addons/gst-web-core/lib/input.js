@@ -3865,8 +3865,6 @@ body {
                 if (elapsedStriped >= fpsUpdateInterval) {
                   const stripedFps = (uniqueStripedFrameIdsThisPeriod.size * 1000) / elapsedStriped;
                   window.fps = Math.round(stripedFps);
-                  eunload ', cleanup);
-                  window.webrtcInput = null;
                   // Reset counters for the next period
                   uniqueStripedFrameIdsThisPeriod.clear();
                   lastStripedFpsUpdateTime = now;
@@ -4506,8 +4504,6 @@ body {
   let decoderAudio;
   let pipelineActive = true;
   let currentDecodeQueueSize = 0;
-eunload', cleanup);
-window.webrtcInput = null;
   const decoderConfig = {
     codec: 'opus',
     numberOfChannels: 2,
