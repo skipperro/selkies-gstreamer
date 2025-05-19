@@ -1,3 +1,8 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
@@ -19,10 +24,6 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  */
-
-// Set this to true to enable the dev dashboard layout
-var dev_mode = false;
-
 /**
  * @typedef {Object} WebRTCDemoSignalling
  * @property {function} ondebug - Callback fired when a new debug message is set.
@@ -51,59 +52,49 @@ export class WebRTCDemoSignalling {
      * @type {URL}
      */
     this._server = server;
-
     /**
      * @private
      * @type {number}
      */
     this.peer_id = peerId;
-
     /**
      * @private
      * @type {WebSocket}
      */
     this._ws_conn = null;
-
     /**
      * @event
      * @type {function}
      */
     this.onstatus = null;
-
     /**
      * @event
      * @type {function}
      */
     this.onerror = null;
-
     /**
      * @type {function}
      */
     this.ondebug = null;
-
     /**
      * @event
      * @type {function}
      */
     this.onice = null;
-
     /**
      * @event
      * @type {function}
      */
     this.onsdp = null;
-
     /**
      * @event
      * @type {function}
      */
     this.ondisconnect = null;
-
     /**
      * @type {string}
      */
     this.state = 'disconnected';
-
     /**
      * @type {number}
      */
@@ -113,7 +104,6 @@ export class WebRTCDemoSignalling {
      */
     this.webrtcInput = null;
   }
-
   /**
    * Sets status message.
    *
@@ -125,7 +115,6 @@ export class WebRTCDemoSignalling {
       this.onstatus(message);
     }
   }
-
   /**
    * Sets a debug message.
    * @private
@@ -136,7 +125,6 @@ export class WebRTCDemoSignalling {
       this.ondebug(message);
     }
   }
-
   /**
    * Sets error message.
    *
@@ -148,7 +136,6 @@ export class WebRTCDemoSignalling {
       this.onerror(message);
     }
   }
-
   /**
    * Sets SDP
    *
@@ -160,7 +147,6 @@ export class WebRTCDemoSignalling {
       this.onsdp(sdp);
     }
   }
-
   /**
    * Sets ICE
    *
@@ -172,7 +158,6 @@ export class WebRTCDemoSignalling {
       this.onice(icecandidate);
     }
   }
-
   /**
    * Fired whenever the signalling websocket is opened.
    * Sends the peer id to the signalling server.
@@ -191,7 +176,6 @@ export class WebRTCDemoSignalling {
     this._setStatus(`Registering with server, peer ID: ${this.peer_id}`);
     this.retry_count = 0;
   }
-
   /**
    * Fired whenever the signalling websocket emits and error.
    * Reconnects after 3 seconds.
@@ -214,7 +198,6 @@ export class WebRTCDemoSignalling {
       }, 3000);
     }
   }
-
   /**
    * Fired whenever a message is received from the signalling server.
    * Message types:
@@ -229,19 +212,16 @@ export class WebRTCDemoSignalling {
    */
   _onServerMessage(event) {
     this._setDebug(`server message: ${event.data}`);
-
     if (event.data === 'HELLO') {
       this._setStatus('Registered with server.');
       this._setStatus('Waiting for stream.');
       this.sendSessionRequest();
       return;
     }
-
     if (event.data.startsWith('ERROR')) {
       this._setStatus(`Error from server: ${event.data}`);
       return;
     }
-
     let msg;
     try {
       msg = JSON.parse(event.data);
@@ -253,7 +233,6 @@ export class WebRTCDemoSignalling {
       }
       return;
     }
-
     if (msg.sdp != null) {
       this._setSDP(new RTCSessionDescription(msg.sdp));
     } else if (msg.ice != null) {
@@ -263,7 +242,6 @@ export class WebRTCDemoSignalling {
       this._setError(`unhandled JSON message: ${msg}`);
     }
   }
-
   /**
    * Fired whenever the signalling websocket is closed.
    * Reconnects after 1 second.
@@ -278,7 +256,6 @@ export class WebRTCDemoSignalling {
       if (this.ondisconnect !== null) this.ondisconnect();
     }
   }
-
   /**
    * Initiates the connection to the signalling server.
    * After this is called, a series of handshakes occurs between the signalling
@@ -287,15 +264,12 @@ export class WebRTCDemoSignalling {
   connect() {
     this.state = 'connecting';
     this._setStatus('Connecting to server.');
-
     this._ws_conn = new WebSocket(this._server.href);
-
     this._ws_conn.addEventListener('open', this._onServerOpen.bind(this));
     this._ws_conn.addEventListener('error', this._onServerError.bind(this));
     this._ws_conn.addEventListener('message', this._onServerMessage.bind(this));
     this._ws_conn.addEventListener('close', this._onServerClose.bind(this));
   }
-
   /**
    * Closes connection to signalling server.
    * Triggers onServerClose event.
@@ -305,7 +279,6 @@ export class WebRTCDemoSignalling {
       this._ws_conn.close();
     }
   }
-
   /**
    * Send ICE candidate.
    *
@@ -314,41 +287,42 @@ export class WebRTCDemoSignalling {
   sendICE(ice) {
     if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
       this._setDebug(`sending ice candidate: ${JSON.stringify(ice)}`);
-      this._ws_conn.send(JSON.stringify({ ice }));
+      this._ws_conn.send(JSON.stringify({
+        ice
+      }));
     } else {
-       console.warn("Websocket not open, cannot send ICE candidate.");
+      console.warn("Websocket not open, cannot send ICE candidate.");
     }
   }
-
   /**
    * Send local session description.
    *
    * @param {RTCSessionDescription} sdp
    */
   sendSDP(sdp) {
-     if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
-        this._setDebug(`sending local sdp: ${JSON.stringify(sdp)}`);
-        this._ws_conn.send(JSON.stringify({ sdp }));
-     } else {
-        console.warn("Websocket not open, cannot send SDP.");
-     }
+    if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
+      this._setDebug(`sending local sdp: ${JSON.stringify(sdp)}`);
+      this._ws_conn.send(JSON.stringify({
+        sdp
+      }));
+    } else {
+      console.warn("Websocket not open, cannot send SDP.");
+    }
   }
-
   /**
    * Send SESSION request to the server to initiate WebRTC session.
    * @private
    */
   sendSessionRequest() {
-     if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
-        this._setDebug(
-          `Sending SESSION request to server, peer ID: ${this.peer_id}`
-        );
-        this._ws_conn.send(`SESSION ${this.peer_id}`);
-     } else {
-        console.warn("Websocket not open, cannot send SESSION request.");
-     }
+    if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
+      this._setDebug(
+        `Sending SESSION request to server, peer ID: ${this.peer_id}`
+      );
+      this._ws_conn.send(`SESSION ${this.peer_id}`);
+    } else {
+      console.warn("Websocket not open, cannot send SESSION request.");
+    }
   }
-
   /**
    * Sets the webrtc input object
    * @param {object} input - The webrtc.input object.
@@ -357,11 +331,15 @@ export class WebRTCDemoSignalling {
     this.webrtcInput = input;
   }
 }
-
-import { GamepadManager } from './lib/gamepad.js';
-import { Input } from './lib/input.js';
-import { WebRTCDemo } from './lib/webrtc.js';
-
+import {
+  GamepadManager
+} from './lib/gamepad.js';
+import {
+  Input
+} from './lib/input.js';
+import {
+  WebRTCDemo
+} from './lib/webrtc.js';
 let webrtc;
 let audio_webrtc;
 let signalling;
@@ -379,7 +357,6 @@ let audioWorkletNode;
 let audioWorkletProcessorPort;
 const audioBufferQueue = [];
 window.currentAudioBufferSize = 0;
-
 /** @type {VideoFrame[]} */
 let videoFrameBuffer = [];
 let jpegStripeRenderQueue = [];
@@ -388,7 +365,9 @@ let videoBufferSelectElement;
 let videoBufferDivElement;
 let serverClipboardTextareaElement;
 let serverClipboardContent = '';
-let triggerInitializeDecoder = () => { console.error("initializeDecoder function not yet assigned!"); };
+let triggerInitializeDecoder = () => {
+  console.error("initializeDecoder function not yet assigned!");
+};
 let isVideoPipelineActive = true;
 let isAudioPipelineActive = true;
 let isMicrophoneActive = false;
@@ -397,7 +376,6 @@ let gamepadStates = {};
 let lastReceivedVideoFrameId = -1;
 const GAMEPAD_VIS_THRESHOLD = 0.1;
 const STICK_VIS_MULTIPLIER = 10;
-
 // Microphone related resources
 let micStream = null;
 let micAudioContext = null;
@@ -416,7 +394,6 @@ const UPLOAD_CHUNK_SIZE = (1024 * 1024) - 1;
 const MAX_SIDEBAR_UPLOADS = 3;
 let uploadProgressContainerElement;
 let activeUploads = {};
-
 // Elements for resolution controls
 let manualWidthInput;
 let manualHeightInput;
@@ -430,13 +407,10 @@ let autoResizeHandler = null;
 let debouncedAutoResizeHandler = null;
 let originalWindowResizeHandler = null;
 let handleResizeUI_globalRef = null;
-
 // --- START VNC H.264 STRIPE DECODER ADDITIONS ---
 let vncStripeDecoders = {}; // Key: stripe_y_start, Value: { decoder: VideoDecoder, pendingChunks: [] }
 let vncStripeFrameMetadata = {}; // Key: chunkTimestamp, Value: { y: stripe_y_start, id: vncFrameID }
 let currentEncoderMode = 'x264enc-stiped'; // Default, will be updated from settings
-// --- END VNC H.264 STRIPE DECODER ADDITIONS ---
-
 window.onload = () => {
   'use strict';
 };
@@ -445,7 +419,6 @@ function getCookieValue(name) {
   const b = document.cookie.match(`(^|[^;]+)\\s*${name}\\s*=\\s*([^;]+)`);
   return b ? b.pop() : '';
 }
-
 const appName =
   window.location.pathname.endsWith('/') &&
   window.location.pathname.split('/')[1] || 'webrtc';
@@ -510,12 +483,10 @@ let frameCount = 0;
 let lastFpsUpdateTime = performance.now();
 let uniqueStripedFrameIdsThisPeriod = new Set();
 let lastStripedFpsUpdateTime = performance.now();
-
 let statusDisplayElement;
 let videoElement;
 let audioElement;
 let playButtonElement;
-let spinnerElement;
 let overlayInput;
 let videoBitrateSelectElement;
 let encoderSelectElement;
@@ -528,14 +499,12 @@ let videoToggleButtonElement;
 let audioToggleButtonElement;
 let gamepadToggleButtonElement;
 let micToggleButtonElement;
-
 const getIntParam = (key, default_value) => {
   const prefixedKey = `${appName}_${key}`;
   const value = window.localStorage.getItem(prefixedKey);
   // Return default_value if null or undefined, otherwise parse
   return (value === null || value === undefined) ? default_value : parseInt(value);
 };
-
 const setIntParam = (key, value) => {
   const prefixedKey = `${appName}_${key}`;
   if (value === null || value === undefined) {
@@ -544,7 +513,6 @@ const setIntParam = (key, value) => {
     window.localStorage.setItem(prefixedKey, value.toString());
   }
 };
-
 const getBoolParam = (key, default_value) => {
   const prefixedKey = `${appName}_${key}`;
   const v = window.localStorage.getItem(prefixedKey);
@@ -553,7 +521,6 @@ const getBoolParam = (key, default_value) => {
   }
   return v.toString().toLowerCase() === 'true';
 };
-
 const setBoolParam = (key, value) => {
   const prefixedKey = `${appName}_${key}`;
   if (value === null || value === undefined) {
@@ -562,22 +529,19 @@ const setBoolParam = (key, value) => {
     window.localStorage.setItem(prefixedKey, value.toString());
   }
 };
-
 const getStringParam = (key, default_value) => {
   const prefixedKey = `${appName}_${key}`;
   const value = window.localStorage.getItem(prefixedKey);
   return (value === null || value === undefined) ? default_value : value;
 };
-
 const setStringParam = (key, value) => {
   const prefixedKey = `${appName}_${key}`;
   if (value === null || value === undefined) {
-     window.localStorage.removeItem(prefixedKey);
+    window.localStorage.removeItem(prefixedKey);
   } else {
     window.localStorage.setItem(prefixedKey, value.toString());
   }
 };
-
 // --- Load Persisted Settings ---
 videoBitRate = getIntParam('videoBitRate', videoBitRate);
 videoFramerate = getIntParam('videoFramerate', videoFramerate);
@@ -593,12 +557,7 @@ isManualResolutionMode = getBoolParam('isManualResolutionMode', false);
 manualWidth = getIntParam('manualWidth', null);
 manualHeight = getIntParam('manualHeight', null);
 isGamepadEnabled = getBoolParam('isGamepadEnabled', true);
-// --- End Load Persisted Settings ---
-
-
 const getUsername = () => getCookieValue(`broker_${appName}`)?.split('#')[0] || 'webrtc';
-
-
 const enterFullscreen = () => {
   if (
     clientMode === 'webrtc' &&
@@ -614,7 +573,6 @@ const enterFullscreen = () => {
     window.webrtcInput.enterFullscreen();
   }
 };
-
 const playStream = () => {
   if (clientMode === 'webrtc') {
     webrtc.playStream();
@@ -623,9 +581,7 @@ const playStream = () => {
   showStart = false;
   playButtonElement.classList.add('hidden');
   statusDisplayElement.classList.add('hidden');
-  spinnerElement.classList.add('hidden');
 };
-
 const enableClipboard = () => {
   navigator.clipboard
     .readText()
@@ -641,7 +597,6 @@ const enableClipboard = () => {
       }
     });
 };
-
 const publish = () => {
   const data = {
     name: publishingAppName,
@@ -649,14 +604,13 @@ const publish = () => {
     description: publishingAppDescription,
     icon: publishingAppIcon,
   };
-
   fetch(`./publish/${appName}`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  })
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
     .then((response) => response.json())
     .then((response) => {
       if (response.code === 201) {
@@ -668,40 +622,27 @@ const publish = () => {
       }
     });
 };
-
 const updateStatusDisplay = () => {
   statusDisplayElement.textContent = loadingText;
 };
-
 const appendLogEntry = (message) => {
   logEntries.push(applyTimestamp(`[signalling] ${message}`));
   updateLogOutput();
 };
-
 const appendLogError = (message) => {
   logEntries.push(applyTimestamp(`[signalling] [ERROR] ${message}`));
   updateLogOutput();
 };
-
 const appendDebugEntry = (message) => {
   debugEntries.push(`[signalling] ${message}`);
   updateDebugOutput();
 };
-
-const updateLogOutput = () => {
-};
-
-const updateDebugOutput = () => {
-};
-
-const updatePublishingErrorDisplay = () => {
-};
-
+const updateLogOutput = () => {};
+const updateDebugOutput = () => {};
+const updatePublishingErrorDisplay = () => {};
 const roundDownToEven = (num) => {
-    return Math.floor(num / 2) * 2;
+  return Math.floor(num / 2) * 2;
 };
-
-
 const injectCSS = () => {
   const style = document.createElement('style');
   style.textContent = `
@@ -766,60 +707,12 @@ body {
     padding: 0;
     margin: 0;
 }
-.video-container .spinner-container,
 .video-container #playButton {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 10;
-}
-:root {
-  --spinner-size: 2rem;
-  --spinner-thickness: 0.25rem;
-  --spinner-color: #ffc000;
-  --spinner-track-color: rgba(255, 192, 0, 0.2);
-  --spinner-speed: 1s;
-  --spinner-bg-color: #fff;
-}
-.spinner-container {
-  width: var(--spinner-size);
-  height: var(--spinner-size);
-  position: relative;
-  border-radius: 50%;
-  background: conic-gradient(
-    var(--spinner-track-color) 0deg,
-    var(--spinner-color) 90deg,
-    var(--spinner-color) 360deg
-  );
-  -webkit-animation: spin var(--spinner-speed) linear infinite;
-  animation: spin var(--spinner-speed) linear infinite;
-}
-.spinner-container::before {
-  content: '';
-  position: absolute;
-  /* Center the inner circle */
-  top: var(--spinner-thickness);
-  left: var(--spinner-thickness);
-  right: var(--spinner-thickness);
-  bottom: var(--spinner-thickness);
-  border-radius: 50%;
-  background-color: var(--spinner-bg-color);
-}
-.spinner--hidden {
-  display: none;
-}
-@-webkit-keyframes spin {
-  to {
-    -webkit-transform: rotate(360deg);
-    transform: rotate(360deg);
-  }
-}
-@keyframes spin {
-  to {
-    -webkit-transform: rotate(360deg);
-    transform: rotate(360deg);
-  }
 }
 .hidden {
   display: none !important;
@@ -1031,56 +924,51 @@ body {
 }
   `;
   document.head.appendChild(style);
-
 };
 
 function updateToggleButtonAppearance(buttonElement, isActive) {
-    if (!buttonElement) return;
-    let label = 'Unknown';
-    if (buttonElement.id === 'videoToggleBtn') label = 'Video';
-    else if (buttonElement.id === 'audioToggleBtn') label = 'Audio';
-    else if (buttonElement.id === 'micToggleBtn') label = 'Microphone';
-    else if (buttonElement.id === 'gamepadToggleBtn') label = 'Gamepad';
-    if (isActive) {
-        buttonElement.textContent = `${label}: ON`;
-        buttonElement.classList.remove('inactive');
-        buttonElement.classList.add('active');
-    } else {
-        buttonElement.textContent = `${label}: OFF`;
-        buttonElement.classList.remove('active');
-        buttonElement.classList.add('inactive');
-    }
+  if (!buttonElement) return;
+  let label = 'Unknown';
+  if (buttonElement.id === 'videoToggleBtn') label = 'Video';
+  else if (buttonElement.id === 'audioToggleBtn') label = 'Audio';
+  else if (buttonElement.id === 'micToggleBtn') label = 'Microphone';
+  else if (buttonElement.id === 'gamepadToggleBtn') label = 'Gamepad';
+  if (isActive) {
+    buttonElement.textContent = `${label}: ON`;
+    buttonElement.classList.remove('inactive');
+    buttonElement.classList.add('active');
+  } else {
+    buttonElement.textContent = `${label}: OFF`;
+    buttonElement.classList.remove('active');
+    buttonElement.classList.add('inactive');
+  }
 }
-
 /** NEW HELPER FUNCTION
  * Sends the current resolution (manual or container-based) and pixel ratio to the server.
  * @param {number} width - The width to send.
  * @param {number} height - The height to send.
  */
 function sendResolutionToServer(width, height) {
-    const pixelRatio = window.devicePixelRatio;
-    const resString = `${width}x${height}`;
-
-    console.log(`Sending resolution to server: ${resString}, Pixel Ratio: ${pixelRatio}`);
-
-    if (clientMode === 'webrtc') {
-        if (webrtc && webrtc.sendDataChannelMessage) {
-            webrtc.sendDataChannelMessage(`r,${resString}`);
-            webrtc.sendDataChannelMessage(`s,${pixelRatio}`);
-        } else {
-            console.warn("Cannot send resolution via WebRTC: Data channel not ready.");
-        }
-    } else if (clientMode === 'websockets') {
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-            // Assuming WebSocket messages 'r,' and 's,' are handled similarly
-            websocket.send(`r,${resString}`);
-            websocket.send(`s,${pixelRatio}`);
-        } else {
-            console.warn("Cannot send resolution via WebSocket: Connection not open.");
-        }
+  const pixelRatio = window.devicePixelRatio;
+  const resString = `${width}x${height}`;
+  console.log(`Sending resolution to server: ${resString}, Pixel Ratio: ${pixelRatio}`);
+  if (clientMode === 'webrtc') {
+    if (webrtc && webrtc.sendDataChannelMessage) {
+      webrtc.sendDataChannelMessage(`r,${resString}`);
+      webrtc.sendDataChannelMessage(`s,${pixelRatio}`);
+    } else {
+      console.warn("Cannot send resolution via WebRTC: Data channel not ready.");
     }
+  } else if (clientMode === 'websockets') {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      // Assuming WebSocket messages 'r,' and 's,' are handled similarly
+      websocket.send(`r,${resString}`);
+      websocket.send(`s,${pixelRatio}`);
+    } else {
+      console.warn("Cannot send resolution via WebSocket: Connection not open.");
+    }
+  }
 }
-
 /** HELPER FUNCTION
  * Applies CSS styles to the canvas based on manual resolution settings and scaling preference.
  * @param {number} targetWidth - The desired internal width of the stream.
@@ -1088,144 +976,126 @@ function sendResolutionToServer(width, height) {
  * @param {boolean} scaleToFit - If true, scale visually while maintaining aspect ratio.
  */
 function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
-    if (!canvas || !canvas.parentElement) {
-        console.error("Cannot apply manual canvas style: Canvas or parent container not found.");
-        return;
-    }
-
-    // Set internal buffer size
-    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-        console.log(`Canvas internal buffer set to manual: ${targetWidth}x${targetHeight}`);
-    }
-
-    const container = canvas.parentElement;
-    const containerWidth = container.clientWidth;
-    const containerHeight = container.clientHeight;
-
-    if (scaleToFit) {
-        // Scale Locally (Maintain Aspect Ratio) - Checked
-        const targetAspectRatio = targetWidth / targetHeight;
-        const containerAspectRatio = containerWidth / containerHeight;
-        let cssWidth, cssHeight;
-        if (targetAspectRatio > containerAspectRatio) {
-            cssWidth = containerWidth;
-            cssHeight = containerWidth / targetAspectRatio;
-        } else {
-            cssHeight = containerHeight;
-            cssWidth = containerHeight * targetAspectRatio;
-        }
-        const topOffset = (containerHeight - cssHeight) / 2;
-        const leftOffset = (containerWidth - cssWidth) / 2;
-        canvas.style.position = 'absolute';
-        canvas.style.width = `${cssWidth}px`;
-        canvas.style.height = `${cssHeight}px`;
-        canvas.style.top = `${topOffset}px`;
-        canvas.style.left = `${leftOffset}px`;
-        canvas.style.objectFit = 'contain'; // Should be redundant if buffer matches target
-        console.log(`Applied manual style (Scaled): CSS ${cssWidth}x${cssHeight}, Buffer ${targetWidth}x${targetHeight}, Pos ${leftOffset},${topOffset}`);
+  if (!canvas || !canvas.parentElement) {
+    console.error("Cannot apply manual canvas style: Canvas or parent container not found.");
+    return;
+  }
+  // Set internal buffer size
+  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    console.log(`Canvas internal buffer set to manual: ${targetWidth}x${targetHeight}`);
+  }
+  const container = canvas.parentElement;
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+  if (scaleToFit) {
+    // Scale Locally (Maintain Aspect Ratio) - Checked
+    const targetAspectRatio = targetWidth / targetHeight;
+    const containerAspectRatio = containerWidth / containerHeight;
+    let cssWidth, cssHeight;
+    if (targetAspectRatio > containerAspectRatio) {
+      cssWidth = containerWidth;
+      cssHeight = containerWidth / targetAspectRatio;
     } else {
-        // Scale Locally - Unchecked (Exact resolution, top-left, overflow)
-        canvas.style.position = 'absolute';
-        canvas.style.width = `${targetWidth}px`; // CSS matches buffer
-        canvas.style.height = `${targetHeight}px`;// CSS matches buffer
-        canvas.style.top = '0px';
-        canvas.style.left = '0px';
-        canvas.style.objectFit = 'fill'; // Or 'none'
-        console.log(`Applied manual style (Exact): CSS ${targetWidth}x${targetHeight}, Buffer ${targetWidth}x${targetHeight}, Pos 0,0`);
+      cssHeight = containerHeight;
+      cssWidth = containerHeight * targetAspectRatio;
     }
-    canvas.style.display = 'block';
+    const topOffset = (containerHeight - cssHeight) / 2;
+    const leftOffset = (containerWidth - cssWidth) / 2;
+    canvas.style.position = 'absolute';
+    canvas.style.width = `${cssWidth}px`;
+    canvas.style.height = `${cssHeight}px`;
+    canvas.style.top = `${topOffset}px`;
+    canvas.style.left = `${leftOffset}px`;
+    canvas.style.objectFit = 'contain'; // Should be redundant if buffer matches target
+    console.log(`Applied manual style (Scaled): CSS ${cssWidth}x${cssHeight}, Buffer ${targetWidth}x${targetHeight}, Pos ${leftOffset},${topOffset}`);
+  } else {
+    // Scale Locally - Unchecked (Exact resolution, top-left, overflow)
+    canvas.style.position = 'absolute';
+    canvas.style.width = `${targetWidth}px`; // CSS matches buffer
+    canvas.style.height = `${targetHeight}px`; // CSS matches buffer
+    canvas.style.top = '0px';
+    canvas.style.left = '0px';
+    canvas.style.objectFit = 'fill'; // Or 'none'
+    console.log(`Applied manual style (Exact): CSS ${targetWidth}x${targetHeight}, Buffer ${targetWidth}x${targetHeight}, Pos 0,0`);
+  }
+  canvas.style.display = 'block';
 }
-
 /** HELPER FUNCTION
  * Resets the canvas CSS styles to default (fill container).
  */
 function resetCanvasStyle(streamWidth, streamHeight) {
-    if (!canvas) return;
-
-    // Set internal buffer size
-    if (canvas.width !== streamWidth || canvas.height !== streamHeight) {
-        canvas.width = streamWidth;
-        canvas.height = streamHeight;
-        console.log(`Canvas internal buffer reset to: ${streamWidth}x${streamHeight}`);
-    }
-
-    // Set CSS display style
-    canvas.style.position = 'absolute';
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-    canvas.style.top = '0px';
-    canvas.style.left = '0px';
-    canvas.style.objectFit = 'contain'; // Crucial for aspect ratio with 100%
-    canvas.style.display = 'block'; // Ensure it's visible
-    console.log(`Reset canvas CSS style to 100% width/height, object-fit: contain. Buffer: ${streamWidth}x${streamHeight}`);
+  if (!canvas) return;
+  // Set internal buffer size
+  if (canvas.width !== streamWidth || canvas.height !== streamHeight) {
+    canvas.width = streamWidth;
+    canvas.height = streamHeight;
+    console.log(`Canvas internal buffer reset to: ${streamWidth}x${streamHeight}`);
+  }
+  // Set CSS display style
+  canvas.style.position = 'absolute';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.top = '0px';
+  canvas.style.left = '0px';
+  canvas.style.objectFit = 'contain'; // Crucial for aspect ratio with 100%
+  canvas.style.display = 'block'; // Ensure it's visible
+  console.log(`Reset canvas CSS style to 100% width/height, object-fit: contain. Buffer: ${streamWidth}x${streamHeight}`);
 }
-
 /**
  * Enables the automatic resizing behavior based on window/container size.
  */
 function enableAutoResize() {
-    if (directManualLocalScalingHandler) {
-        console.log("Switching to Auto Mode: Removing direct manual local scaling listener.");
-        window.removeEventListener('resize', directManualLocalScalingHandler);
-    }
-
-    if (originalWindowResizeHandler) { 
-        console.log("Switching to Auto Mode: Adding original (auto) debounced resize listener.");
-        window.removeEventListener('resize', originalWindowResizeHandler); // Defensive removal
-        window.addEventListener('resize', originalWindowResizeHandler);
-
-        if (typeof handleResizeUI_globalRef === 'function') {
-             console.log("Triggering immediate auto-resize calculation for auto mode.");
-             handleResizeUI_globalRef();
-        } else {
-            console.warn("handleResizeUI function not directly callable from enableAutoResize. Auto-resize will occur on next event.");
-        }
-
+  if (directManualLocalScalingHandler) {
+    console.log("Switching to Auto Mode: Removing direct manual local scaling listener.");
+    window.removeEventListener('resize', directManualLocalScalingHandler);
+  }
+  if (originalWindowResizeHandler) {
+    console.log("Switching to Auto Mode: Adding original (auto) debounced resize listener.");
+    window.removeEventListener('resize', originalWindowResizeHandler); // Defensive removal
+    window.addEventListener('resize', originalWindowResizeHandler);
+    if (typeof handleResizeUI_globalRef === 'function') {
+      console.log("Triggering immediate auto-resize calculation for auto mode.");
+      handleResizeUI_globalRef();
     } else {
-        console.warn("Cannot enable auto-resize: originalWindowResizeHandler not found.");
+      console.warn("handleResizeUI function not directly callable from enableAutoResize. Auto-resize will occur on next event.");
     }
+  } else {
+    console.warn("Cannot enable auto-resize: originalWindowResizeHandler not found.");
+  }
 }
-
 const directManualLocalScalingHandler = () => {
-    if (window.isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
-        applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
-    }
+  if (window.isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
+    applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
+  }
 };
-
 /**
  * Disables the automatic resizing behavior.
  */
-function disableAutoResize() { 
-    if (originalWindowResizeHandler) {
-        console.log("Switching to Manual Mode Local Scaling: Removing original (auto) resize listener.");
-        window.removeEventListener('resize', originalWindowResizeHandler);
-    }
-
-    // Add the direct, non-debounced handler for manual local scaling
-    console.log("Switching to Manual Mode Local Scaling: Adding direct manual scaling listener.");
-    window.removeEventListener('resize', directManualLocalScalingHandler); // Defensive removal
-    window.addEventListener('resize', directManualLocalScalingHandler);
-
-    // Apply current manual style immediately to reflect the mode change and set initial view
-    if (window.isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
-        console.log("Applying current manual canvas style after enabling direct manual resize handler.");
-        applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
-    }
+function disableAutoResize() {
+  if (originalWindowResizeHandler) {
+    console.log("Switching to Manual Mode Local Scaling: Removing original (auto) resize listener.");
+    window.removeEventListener('resize', originalWindowResizeHandler);
+  }
+  // Add the direct, non-debounced handler for manual local scaling
+  console.log("Switching to Manual Mode Local Scaling: Adding direct manual scaling listener.");
+  window.removeEventListener('resize', directManualLocalScalingHandler); // Defensive removal
+  window.addEventListener('resize', directManualLocalScalingHandler);
+  // Apply current manual style immediately to reflect the mode change and set initial view
+  if (window.isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
+    console.log("Applying current manual canvas style after enabling direct manual resize handler.");
+    applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
+  }
 }
-
 const initializeUI = () => {
   injectCSS();
   document.title = `Selkies - ${appName}`;
   window.addEventListener('requestFileUpload', handleRequestFileUpload);
   const appDiv = document.getElementById('app');
   if (!appDiv) {
-      console.error("FATAL: Could not find #app element.");
-      return;
-  }
-  if (dev_mode) {
-      appDiv.classList.add('dev-mode');
+    console.error("FATAL: Could not find #app element.");
+    return;
   }
   const videoContainer = document.createElement('div');
   videoContainer.className = 'video-container';
@@ -1253,21 +1123,17 @@ const initializeUI = () => {
     canvas.id = 'videoCanvas';
   }
   videoContainer.appendChild(canvas);
-
   // --- Initialize Canvas & Resize based on loaded settings ---
   if (isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
-      applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
-      disableAutoResize(); // Start disabled if manual mode is loaded
-      console.log(`Initialized UI in Manual Resolution Mode: ${manualWidth}x${manualHeight}, ScaleLocally: ${scaleLocallyManual}`);
+    applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
+    disableAutoResize(); // Start disabled if manual mode is loaded
+    console.log(`Initialized UI in Manual Resolution Mode: ${manualWidth}x${manualHeight}, ScaleLocally: ${scaleLocallyManual}`);
   } else {
-      const initialStreamWidth = 1024; // Default if auto-size can't be determined yet
-      const initialStreamHeight = 768;
-      resetCanvasStyle(initialStreamWidth, initialStreamHeight);
-      // Auto-resize will be enabled later in initializeInput if needed
-      console.log("Initialized UI in Auto Resolution Mode (defaulting to 1024x768 for now)");
+    const initialStreamWidth = 1024; // Default if auto-size can't be determined yet
+    const initialStreamHeight = 768;
+    resetCanvasStyle(initialStreamWidth, initialStreamHeight);
+    console.log("Initialized UI in Auto Resolution Mode (defaulting to 1024x768 for now)");
   }
-  // --- End Initialize Canvas & Resize ---
-
   canvasContext = canvas.getContext('2d');
   if (!canvasContext) {
     console.error('Failed to get 2D rendering context');
@@ -1278,11 +1144,6 @@ const initializeUI = () => {
   audioElement.autoplay = true;
   audioElement.playsInline = true;
   videoContainer.appendChild(audioElement);
-  spinnerElement = document.createElement('div');
-  spinnerElement.id = 'spinner';
-  spinnerElement.className = 'spinner-container';
-  spinnerElement.classList.toggle('hidden', showStart);
-  //videoContainer.appendChild(spinnerElement);
   playButtonElement = document.createElement('button');
   playButtonElement.id = 'playButton';
   playButtonElement.textContent = 'Play Stream';
@@ -1298,637 +1159,29 @@ const initializeUI = () => {
   document.body.appendChild(hiddenFileInput);
   hiddenFileInput.addEventListener('change', handleFileInputChange);
   if (!document.getElementById('keyboard-input-assist')) {
-      const keyboardInputAssist = document.createElement('input');
-      keyboardInputAssist.type = 'text';
-      keyboardInputAssist.id = 'keyboard-input-assist';
-      // Apply hiding styles directly
-      keyboardInputAssist.style.position = 'absolute';
-      keyboardInputAssist.style.left = '-9999px';
-      keyboardInputAssist.style.top = '-9999px';
-      keyboardInputAssist.style.width = '1px';
-      keyboardInputAssist.style.height = '1px';
-      keyboardInputAssist.style.opacity = '0';
-      keyboardInputAssist.style.border = '0';
-      keyboardInputAssist.style.padding = '0';
-      keyboardInputAssist.style.caretColor = 'transparent';
-      // Accessibility and browser hints
-      keyboardInputAssist.setAttribute('aria-hidden', 'true');
-      keyboardInputAssist.setAttribute('autocomplete', 'off');
-      keyboardInputAssist.setAttribute('autocorrect', 'off');
-      keyboardInputAssist.setAttribute('autocapitalize', 'off');
-      keyboardInputAssist.setAttribute('spellcheck', 'false');
-      document.body.appendChild(keyboardInputAssist); // Append to body
-      console.log("Dynamically added #keyboard-input-assist element.");
+    const keyboardInputAssist = document.createElement('input');
+    keyboardInputAssist.type = 'text';
+    keyboardInputAssist.id = 'keyboard-input-assist';
+    // Apply hiding styles directly
+    keyboardInputAssist.style.position = 'absolute';
+    keyboardInputAssist.style.left = '-9999px';
+    keyboardInputAssist.style.top = '-9999px';
+    keyboardInputAssist.style.width = '1px';
+    keyboardInputAssist.style.height = '1px';
+    keyboardInputAssist.style.opacity = '0';
+    keyboardInputAssist.style.border = '0';
+    keyboardInputAssist.style.padding = '0';
+    keyboardInputAssist.style.caretColor = 'transparent';
+    // Accessibility and browser hints
+    keyboardInputAssist.setAttribute('aria-hidden', 'true');
+    keyboardInputAssist.setAttribute('autocomplete', 'off');
+    keyboardInputAssist.setAttribute('autocorrect', 'off');
+    keyboardInputAssist.setAttribute('autocapitalize', 'off');
+    keyboardInputAssist.setAttribute('spellcheck', 'false');
+    document.body.appendChild(keyboardInputAssist); // Append to body
+    console.log("Dynamically added #keyboard-input-assist element.");
   }
-
-  if (dev_mode) {
-    // --- Existing Dev Sidebar Elements ---
-    videoToggleButtonElement = document.createElement('button');
-    videoToggleButtonElement.id = 'videoToggleBtn';
-    videoToggleButtonElement.className = 'toggle-button';
-    updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
-    sidebarDiv.appendChild(videoToggleButtonElement);
-    videoToggleButtonElement.addEventListener('click', () => {
-        const newState = !isVideoPipelineActive;
-        window.postMessage({ type: 'pipelineControl', pipeline: 'video', enabled: newState }, window.location.origin);
-    });
-    audioToggleButtonElement = document.createElement('button');
-    audioToggleButtonElement.id = 'audioToggleBtn';
-    audioToggleButtonElement.className = 'toggle-button';
-    updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
-    sidebarDiv.appendChild(audioToggleButtonElement);
-    audioToggleButtonElement.addEventListener('click', () => {
-        const newState = !isAudioPipelineActive;
-        window.postMessage({ type: 'pipelineControl', pipeline: 'audio', enabled: newState }, window.location.origin);
-    });
-    micToggleButtonElement = document.createElement('button');
-    micToggleButtonElement.id = 'micToggleBtn';
-    micToggleButtonElement.className = 'toggle-button';
-    updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
-    sidebarDiv.appendChild(micToggleButtonElement);
-    micToggleButtonElement.addEventListener('click', () => {
-        const newState = !isMicrophoneActive;
-        window.postMessage({ type: 'pipelineControl', pipeline: 'microphone', enabled: newState }, window.location.origin);
-    });
-    const fullscreenButton = document.createElement('button');
-    fullscreenButton.id = 'fullscreenBtn';
-    fullscreenButton.textContent = 'Enter Fullscreen';
-    sidebarDiv.appendChild(fullscreenButton);
-    fullscreenButton.addEventListener('click', () => {
-        window.postMessage({ type: 'requestFullscreen' }, window.location.origin);
-    });
-    gamepadToggleButtonElement = document.createElement('button');
-    gamepadToggleButtonElement.id = 'gamepadToggleBtn';
-    gamepadToggleButtonElement.className = 'toggle-button';
-    updateToggleButtonAppearance(gamepadToggleButtonElement, isGamepadEnabled); // Use loaded value
-    sidebarDiv.appendChild(gamepadToggleButtonElement);
-    const gamepadVisContainer = document.createElement('div');
-    gamepadVisContainer.id = 'gamepad-visualization-container';
-    gamepadVisContainer.className = 'dev-setting-item';
-    const gamepadVisLabel = document.createElement('label');
-    gamepadVisLabel.textContent = 'Gamepad 0 Input:';
-    gamepadVisContainer.appendChild(gamepadVisLabel);
-    const gamepadSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    gamepadSVG.setAttribute('viewBox', '0 0 260 100');
-    gamepadSVG.setAttribute('width', '100%');
-    gamepadSVG.setAttribute('height', '100');
-    gamepadSVG.id = 'gamepad-svg-vis';
-    gamepadSVG.innerHTML = `
-        <style>
-            .gp-vis-base { fill: #555; stroke: #888; stroke-width: 0.5; }
-            .gp-vis-button { fill: #8ecae6; stroke: #a1d8f0; stroke-width: 0.5; transition: fill 0.05s linear; }
-            .gp-vis-stick-base { fill: #2a527a; }
-            .gp-vis-stick-top { fill: #6699cc; stroke: #8cb3d9; stroke-width: 0.5; transition: transform 0.05s linear; }
-            .gp-vis-dpad { fill: #8ecae6; stroke: #a1d8f0; stroke-width: 0.5; transition: fill 0.05s linear; }
-            .gp-vis-trigger {
-                fill: #8ecae6;
-                stroke: #a1d8f0;
-                stroke-width: 0.5;
-                transition: opacity 0.05s linear;
-            }
-            .gp-vis-bumper { fill: #8ecae6; stroke: #a1d8f0; stroke-width: 0.5; transition: fill 0.05s linear; }
-            .gp-vis-button-pressed,
-            .gp-vis-dpad-pressed,
-            .gp-vis-bumper-pressed {
-                fill: #4a90e2;
-            }
-        </style>
-        <!-- Base Rectangle -->
-        <rect class="gp-vis-base" x="30" y="10" width="200" height="80" rx="10" ry="10" />
-        <!-- Bumpers -->
-        <rect id="gp-vis-btn-4" class="gp-vis-bumper" x="40" y="0" width="40" height="8" rx="2" />
-        <rect id="gp-vis-btn-5" class="gp-vis-bumper" x="180" y="0" width="40" height="8" rx="2" />
-        <!-- Triggers -->
-        <rect id="gp-vis-btn-6" class="gp-vis-trigger" x="40" y="10" width="40" height="10" rx="2" />
-        <rect id="gp-vis-btn-7" class="gp-vis-trigger" x="180" y="10" width="40" height="10" rx="2" />
-        <!-- Face Buttons -->
-        <circle id="gp-vis-btn-0" class="gp-vis-button" cx="185" cy="55" r="6" /> <!-- A -->
-        <circle id="gp-vis-btn-1" class="gp-vis-button" cx="205" cy="40" r="6" /> <!-- B -->
-        <circle id="gp-vis-btn-2" class="gp-vis-button" cx="165" cy="40" r="6" /> <!-- X -->
-        <circle id="gp-vis-btn-3" class="gp-vis-button" cx="185" cy="25" r="6" /> <!-- Y -->
-        <!-- Special Buttons -->
-        <rect id="gp-vis-btn-8" class="gp-vis-button" x="105" y="25" width="10" height="5" /> <!-- Back -->
-        <rect id="gp-vis-btn-9" class="gp-vis-button" x="145" y="25" width="10" height="5" /> <!-- Start -->
-        <!-- D-Pad -->
-        <rect id="gp-vis-btn-12" class="gp-vis-dpad" x="70" y="50" width="10" height="10" /> <!-- Up -->
-        <rect id="gp-vis-btn-13" class="gp-vis-dpad" x="70" y="70" width="10" height="10" /> <!-- Down -->
-        <rect id="gp-vis-btn-14" class="gp-vis-dpad" x="60" y="60" width="10" height="10" /> <!-- Left -->
-        <rect id="gp-vis-btn-15" class="gp-vis-dpad" x="80" y="60" width="10" height="10" /> <!-- Right -->
-        <!-- Sticks -->
-        <circle class="gp-vis-stick-base" cx="75" cy="30" r="12" />
-        <circle id="gp-vis-stick-left" class="gp-vis-stick-top" cx="75" cy="30" r="8" />
-        <circle id="gp-vis-btn-10" class="gp-vis-button" cx="75" cy="30" r="3" /> <!-- Left Stick Press -->
-        <circle class="gp-vis-stick-base" cx="155" cy="65" r="12" />
-        <circle id="gp-vis-stick-right" class="gp-vis-stick-top" cx="155" cy="65" r="8" />
-        <circle id="gp-vis-btn-11" class="gp-vis-button" cx="155" cy="65" r="3" /> <!-- Right Stick Press -->
-    `;
-    gamepadVisContainer.appendChild(gamepadSVG);
-    sidebarDiv.appendChild(gamepadVisContainer);
-    gamepadToggleButtonElement.addEventListener('click', () => {
-        const newState = !isGamepadEnabled;
-        console.log(`Dev Sidebar: Toggling gamepad ${newState ? 'ON' : 'OFF'}. Sending via window.postMessage.`);
-        window.postMessage({ type: 'gamepadControl', enabled: newState }, window.location.origin);
-    });
-    advancedAudioSettingsBtnElement = document.createElement('button');
-    advancedAudioSettingsBtnElement.id = 'advancedAudioSettingsBtn';
-    advancedAudioSettingsBtnElement.textContent = 'Advanced Audio Settings';
-    sidebarDiv.appendChild(advancedAudioSettingsBtnElement);
-    advancedAudioSettingsBtnElement.addEventListener('click', handleAdvancedAudioClick);
-    audioDeviceSettingsDivElement = document.createElement('div');
-    audioDeviceSettingsDivElement.id = 'audio-device-settings';
-    audioDeviceSettingsDivElement.className = 'dev-setting-item hidden';
-    sidebarDiv.appendChild(audioDeviceSettingsDivElement);
-    const inputDeviceLabel = document.createElement('label');
-    inputDeviceLabel.textContent = 'Audio Input (Microphone):';
-    inputDeviceLabel.htmlFor = 'audioInputSelect';
-    audioDeviceSettingsDivElement.appendChild(inputDeviceLabel);
-    audioInputSelectElement = document.createElement('select');
-    audioInputSelectElement.id = 'audioInputSelect';
-    audioDeviceSettingsDivElement.appendChild(audioInputSelectElement);
-    audioInputSelectElement.addEventListener('change', handleAudioDeviceChange);
-    const outputDeviceLabel = document.createElement('label');
-    outputDeviceLabel.textContent = 'Audio Output (Speaker):';
-    outputDeviceLabel.htmlFor = 'audioOutputSelect';
-    outputDeviceLabel.id = 'audioOutputLabel';
-    audioDeviceSettingsDivElement.appendChild(outputDeviceLabel);
-    audioOutputSelectElement = document.createElement('select');
-    audioOutputSelectElement.id = 'audioOutputSelect';
-    audioDeviceSettingsDivElement.appendChild(audioOutputSelectElement);
-    audioOutputSelectElement.addEventListener('change', handleAudioDeviceChange);
-
-    const resolutionContainer = document.createElement('div');
-    resolutionContainer.className = 'dev-setting-item';
-    resolutionContainer.style.borderTop = '1px solid #555';
-    resolutionContainer.style.paddingTop = '10px';
-    resolutionContainer.style.marginTop = '10px';
-
-    const resLabel = document.createElement('label');
-    resLabel.textContent = 'Manual Resolution Control:';
-    resolutionContainer.appendChild(resLabel);
-
-    const widthContainer = document.createElement('div');
-    widthContainer.style.display = 'flex';
-    widthContainer.style.alignItems = 'center';
-    widthContainer.style.marginBottom = '5px';
-    const widthLabel = document.createElement('label');
-    widthLabel.textContent = 'Width:';
-    widthLabel.style.marginRight = '5px';
-    widthLabel.style.width = '50px'; // Align labels
-    manualWidthInput = document.createElement('input');
-    manualWidthInput.className = 'allow-native-input';
-    manualWidthInput.type = 'number';
-    manualWidthInput.id = 'manualWidthInput';
-    manualWidthInput.min = '1';
-    manualWidthInput.step = '2'; // Encourage even numbers
-    manualWidthInput.placeholder = 'e.g., 1920';
-    manualWidthInput.style.flexGrow = '1';
-    manualWidthInput.style.padding = '4px';
-    manualWidthInput.style.backgroundColor = '#333';
-    manualWidthInput.style.color = '#eee';
-    manualWidthInput.style.border = '1px solid #555';
-    manualWidthInput.value = (isManualResolutionMode && manualWidth) ? manualWidth : ''; // Set initial value
-    widthContainer.appendChild(widthLabel);
-    widthContainer.appendChild(manualWidthInput);
-    resolutionContainer.appendChild(widthContainer);
-
-    const heightContainer = document.createElement('div');
-    heightContainer.style.display = 'flex';
-    heightContainer.style.alignItems = 'center';
-    heightContainer.style.marginBottom = '5px';
-    const heightLabel = document.createElement('label');
-    heightLabel.textContent = 'Height:';
-    heightLabel.style.marginRight = '5px';
-    heightLabel.style.width = '50px'; // Align labels
-    manualHeightInput = document.createElement('input');
-    manualHeightInput.className = 'allow-native-input';
-    manualHeightInput.type = 'number';
-    manualHeightInput.id = 'manualHeightInput';
-    manualHeightInput.min = '1';
-    manualHeightInput.step = '2'; // Encourage even numbers
-    manualHeightInput.placeholder = 'e.g., 1080';
-    manualHeightInput.style.flexGrow = '1';
-    manualHeightInput.style.padding = '4px';
-    manualHeightInput.style.backgroundColor = '#333';
-    manualHeightInput.style.color = '#eee';
-    manualHeightInput.style.border = '1px solid #555';
-    manualHeightInput.value = (isManualResolutionMode && manualHeight) ? manualHeight : ''; // Set initial value
-    heightContainer.appendChild(heightLabel);
-    heightContainer.appendChild(manualHeightInput);
-    resolutionContainer.appendChild(heightContainer);
-    const presetContainer = document.createElement('div');
-    presetContainer.className = 'dev-setting-item'; // Use existing class for spacing/style
-    presetContainer.style.marginBottom = '10px'; // Add some space before manual inputs
-
-    const presetLabel = document.createElement('label');
-    presetLabel.textContent = 'Preset:';
-    presetLabel.htmlFor = 'resolutionPresetSelect';
-    presetContainer.appendChild(presetLabel);
-
-    const resolutionPresetSelect = document.createElement('select');
-    resolutionPresetSelect.id = 'resolutionPresetSelect';
-    resolutionPresetSelect.style.width = '100%'; // Make it full width like other selects
-    resolutionPresetSelect.style.padding = '5px';
-    resolutionPresetSelect.style.backgroundColor = '#333';
-    resolutionPresetSelect.style.color = '#eee';
-    resolutionPresetSelect.style.border = '1px solid #555';
-    resolutionPresetSelect.style.marginTop = '3px'; // Small space below label
-    const showKeyboardButton = document.createElement('button');
-    showKeyboardButton.id = 'devShowKeyboardButton';
-    showKeyboardButton.textContent = 'Show Virtual Keyboard';
-    showKeyboardButton.addEventListener('click', () => {
-        console.log("Dev Sidebar: Show Keyboard button clicked. Posting 'showVirtualKeyboard' message.");
-        window.postMessage({ type: 'showVirtualKeyboard' }, window.location.origin);
-    });
-    sidebarDiv.appendChild(showKeyboardButton);
-    const showFilesButton = document.createElement('button');
-    showFilesButton.id = 'devShowFilesButton';
-    showFilesButton.textContent = 'Desktop Files';
-    showFilesButton.addEventListener('click', () => {
-        window.open("files/");
-    });
-    sidebarDiv.appendChild(showFilesButton);
-    // Define common resolutions [width, height, label]
-    const commonResolutions = [
-        { value: "", text: "-- Select Preset --" }, // Default option
-        { value: "1920x1080", text: "1920 x 1080 (FHD)" },
-        { value: "1280x720", text: "1280 x 720 (HD)" },
-        { value: "1366x768", text: "1366 x 768 (Laptop)" },
-        { value: "1920x1200", text: "1920 x 1200 (16:10)" },
-        { value: "2560x1440", text: "2560 x 1440 (QHD)" },
-        { value: "3840x2160", text: "3840 x 2160 (4K UHD)" },
-        { value: "1024x768", text: "1024 x 768 (XGA 4:3)" },
-        { value: "800x600", text: "800 x 600 (SVGA 4:3)" },
-        { value: "640x480", text: "640 x 480 (VGA 4:3)" },
-        { value: "320x240", text: "320 x 240 (QVGA 4:3)" },
-    ];
-
-    // Populate the dropdown
-    commonResolutions.forEach((res, index) => {
-        const option = document.createElement('option');
-        option.value = res.value;
-        option.textContent = res.text;
-        if (index === 0) {
-            option.disabled = true; // Disable the placeholder
-            option.selected = true; // Make it selected by default
-        }
-        resolutionPresetSelect.appendChild(option);
-    });
-
-    // Add event listener for the dropdown
-    resolutionPresetSelect.addEventListener('change', (event) => {
-        const selectedValue = event.target.value;
-        if (!selectedValue) {
-            return;
-        }
-
-        const parts = selectedValue.split('x');
-        if (parts.length === 2) {
-            const width = parseInt(parts[0], 10);
-            const height = parseInt(parts[1], 10);
-
-            if (!isNaN(width) && width > 0 && !isNaN(height) && height > 0) {
-                console.log(`Dev Sidebar: Preset selected: ${width}x${height}. Updating inputs and posting message.`);
-
-                // Update the manual input boxes visually
-                manualWidthInput.value = width;
-                manualHeightInput.value = height;
-
-                // Post the message to trigger the same logic as the button
-                window.postMessage({ type: 'setManualResolution', width: width, height: height }, window.location.origin);
-
-            } else {
-                console.error("Error parsing selected resolution preset:", selectedValue);
-            }
-        }
-    });
-
-    presetContainer.appendChild(resolutionPresetSelect);
-    resolutionContainer.insertBefore(presetContainer, widthContainer);
-    const scaleContainer = document.createElement('div');
-    scaleContainer.style.display = 'flex';
-    scaleContainer.style.alignItems = 'center';
-    scaleContainer.style.marginBottom = '10px';
-    scaleLocallyCheckbox = document.createElement('input');
-    scaleLocallyCheckbox.type = 'checkbox';
-    scaleLocallyCheckbox.id = 'scaleLocallyCheckbox';
-    scaleLocallyCheckbox.checked = scaleLocallyManual; // Set initial state from persisted value
-    scaleLocallyCheckbox.style.marginRight = '8px';
-    const scaleLabel = document.createElement('label');
-    scaleLabel.textContent = 'Scale Locally (Maintain Aspect Ratio)';
-    scaleLabel.htmlFor = 'scaleLocallyCheckbox';
-    scaleContainer.appendChild(scaleLocallyCheckbox);
-    scaleContainer.appendChild(scaleLabel);
-    resolutionContainer.appendChild(scaleContainer);
-
-    setResolutionButton = document.createElement('button');
-    setResolutionButton.id = 'setResolutionBtn';
-    setResolutionButton.textContent = 'Set Manual Resolution';
-    resolutionContainer.appendChild(setResolutionButton);
-
-    resetResolutionButton = document.createElement('button');
-    resetResolutionButton.id = 'resetResolutionBtn';
-    resetResolutionButton.textContent = 'Reset to Window Size';
-    resolutionContainer.appendChild(resetResolutionButton);
-
-    sidebarDiv.appendChild(resolutionContainer);
-
-    scaleLocallyCheckbox.addEventListener('change', (event) => {
-        const isChecked = event.target.checked;
-        console.log(`Dev Sidebar: Scale Locally checkbox changed to ${isChecked}. Posting message.`);
-        window.postMessage({ type: 'setScaleLocally', value: isChecked }, window.location.origin);
-    });
-
-    setResolutionButton.addEventListener('click', () => {
-        const widthVal = manualWidthInput.value.trim();
-        const heightVal = manualHeightInput.value.trim();
-        const width = parseInt(widthVal, 10);
-        const height = parseInt(heightVal, 10);
-
-        if (isNaN(width) || width <= 0 || isNaN(height) || height <= 0) {
-            alert('Please enter valid positive integers for Width and Height.');
-            console.error('Invalid manual resolution input:', { widthVal, heightVal });
-            return;
-        }
-
-        console.log(`Dev Sidebar: Set Resolution button clicked. Width: ${width}, Height: ${height}. Posting message.`);
-        window.postMessage({ type: 'setManualResolution', width: width, height: height }, window.location.origin);
-    });
-
-    resetResolutionButton.addEventListener('click', () => {
-        console.log('Dev Sidebar: Reset Resolution button clicked. Posting message.');
-        window.postMessage({ type: 'resetResolutionToWindow' }, window.location.origin);
-        manualWidthInput.value = '';
-        manualHeightInput.value = '';
-    });
-    const encoderContainer = document.createElement('div');
-    encoderContainer.className = 'dev-setting-item';
-    const encoderLabel = document.createElement('label');
-    encoderLabel.textContent = 'Encoder:';
-    encoderLabel.htmlFor = 'encoderSelect';
-    encoderContainer.appendChild(encoderLabel);
-    encoderSelectElement = document.createElement('select');
-    encoderSelectElement.id = 'encoderSelect';
-    const encoders = [
-        'x264enc-striped',
-        'nvh264enc',
-        'x264enc',
-        'jpeg',
-        'vah264enc',
-        'openh264enc'
-    ];
-    encoders.forEach(encoder => {
-        const option = document.createElement('option');
-        option.value = encoder;
-        option.textContent = encoder;
-        encoderSelectElement.appendChild(option);
-    });
-    encoderContainer.appendChild(encoderSelectElement);
-    sidebarDiv.appendChild(encoderContainer);
-    encoderSelectElement.addEventListener('change', (event) => {
-        const selectedEncoder = event.target.value;
-        console.log(`Dev Sidebar: Encoder selected: ${selectedEncoder}. Sending via window.postMessage.`);
-        window.postMessage({ type: 'settings', settings: { encoder: selectedEncoder } }, window.location.origin);
-    });
-    const framerateContainer = document.createElement('div');
-    framerateContainer.className = 'dev-setting-item';
-    const framerateLabel = document.createElement('label');
-    framerateLabel.textContent = 'Frames per second:';
-    framerateLabel.htmlFor = 'framerateSelect';
-    framerateContainer.appendChild(framerateLabel);
-    framerateSelectElement = document.createElement('select');
-    framerateSelectElement.id = 'framerateSelect';
-    const framerates = [
-        8, 12, 15, 24, 25, 30, 48, 50, 60, 90, 100, 120, 144
-    ];
-    framerates.forEach(rate => {
-        const option = document.createElement('option');
-        option.value = rate.toString();
-        option.textContent = `${rate} FPS`;
-        framerateSelectElement.appendChild(option);
-    });
-    framerateContainer.appendChild(framerateSelectElement);
-    sidebarDiv.appendChild(framerateContainer);
-    framerateSelectElement.addEventListener('change', (event) => {
-        const selectedFramerate = parseInt(event.target.value, 10);
-        if (!isNaN(selectedFramerate)) {
-            console.log(`Dev Sidebar: Framerate selected: ${selectedFramerate}. Sending via window.postMessage.`);
-            window.postMessage({ type: 'settings', settings: { videoFramerate: selectedFramerate } }, window.location.origin);
-        }
-    });
-    const crfContainer = document.createElement('div');
-    crfContainer.className = 'dev-setting-item';
-    const crfLabel = document.createElement('label');
-    crfLabel.textContent = 'Video CRF (Quality):';
-    crfLabel.htmlFor = 'crfSelect';
-    crfContainer.appendChild(crfLabel);
-    crfSelectElement = document.createElement('select');
-    crfSelectElement.id = 'crfSelect';
-    const crfValues = [1, 10, 20, 25, 30, 35, 40, 45, 50]; // Adjusted to include common values like 25, 35, 45
-    crfValues.forEach(value => {
-        const option = document.createElement('option');
-        option.value = value.toString();
-        let qualityLabel = `${value}`;
-        if (value === 1) qualityLabel += ' (Lossless)';
-        else if (value <= 15) qualityLabel += ' (High)';
-        else if (value <= 28) qualityLabel += ' (Medium)';
-        else if (value <= 40) qualityLabel += ' (Low)';
-        else qualityLabel += ' (Poor)';
-        option.textContent = qualityLabel;
-        crfSelectElement.appendChild(option);
-    });
-    crfContainer.appendChild(crfSelectElement);
-    sidebarDiv.appendChild(crfContainer);
-    crfSelectElement.addEventListener('change', (event) => {
-        const selectedCRF = parseInt(event.target.value, 10);
-        if (!isNaN(selectedCRF)) {
-            console.log(`Dev Sidebar: CRF selected: ${selectedCRF}. Sending via window.postMessage.`);
-            window.postMessage({ type: 'settings', settings: { videoCRF: selectedCRF } }, window.location.origin);
-        }
-    });
-    const bitrateContainer = document.createElement('div');
-    bitrateContainer.className = 'dev-setting-item';
-    const bitrateLabel = document.createElement('label');
-    bitrateLabel.textContent = 'Video Bitrate (KBs):';
-    bitrateLabel.htmlFor = 'videoBitrateSelect';
-    bitrateContainer.appendChild(bitrateLabel);
-    videoBitrateSelectElement = document.createElement('select');
-    videoBitrateSelectElement.id = 'videoBitrateSelect';
-    const bitrates = [
-        1000, 2000, 4000, 8000, 10000, 12000, 14000, 16000, 18000, 20000,
-        25000, 30000, 35000, 40000, 45000, 50000,
-        60000, 70000, 80000, 90000, 100000
-    ];
-    bitrates.forEach(bitrate => {
-        const option = document.createElement('option');
-        option.value = bitrate.toString();
-        option.textContent = `${bitrate} KBs`;
-        videoBitrateSelectElement.appendChild(option);
-    });
-    bitrateContainer.appendChild(videoBitrateSelectElement);
-    sidebarDiv.appendChild(bitrateContainer);
-    videoBitrateSelectElement.addEventListener('change', (event) => {
-        const selectedBitrate = parseInt(event.target.value, 10);
-        if (!isNaN(selectedBitrate)) {
-            console.log(`Dev Sidebar: Video Bitrate selected: ${selectedBitrate}. Sending via window.postMessage.`);
-            window.postMessage({ type: 'settings', settings: { videoBitRate: selectedBitrate } }, window.location.origin);
-        }
-    });
-    const videoBufferContainer = document.createElement('div');
-    videoBufferContainer.className = 'dev-setting-item';
-    const videoBufferLabel = document.createElement('label');
-    videoBufferLabel.textContent = 'Video Buffer Size (frames):';
-    videoBufferLabel.htmlFor = 'videoBufferSelect';
-    videoBufferContainer.appendChild(videoBufferLabel);
-    videoBufferSelectElement = document.createElement('select');
-    videoBufferSelectElement.id = 'videoBufferSelect';
-    for (let i = 0; i <= 15; i++) {
-        const option = document.createElement('option');
-        option.value = i.toString();
-        option.textContent = i === 0 ? '0 (Immediate)' : `${i} frames`;
-        videoBufferSelectElement.appendChild(option);
-    }
-    videoBufferContainer.appendChild(videoBufferSelectElement);
-    sidebarDiv.appendChild(videoBufferContainer);
-    videoBufferSelectElement.addEventListener('change', (event) => {
-        const selectedSize = parseInt(event.target.value, 10);
-        if (!isNaN(selectedSize)) {
-            videoBufferSize = selectedSize;
-            setIntParam('videoBufferSize', videoBufferSize);
-            console.log(`Dev Sidebar: Video buffer size set to ${videoBufferSize} frames via UI`);
-        }
-    });
-    const clipboardContainer = document.createElement('div');
-    clipboardContainer.className = 'dev-clipboard-item';
-    const clipboardLabel = document.createElement('label');
-    clipboardLabel.textContent = 'Server Clipboard:';
-    clipboardLabel.htmlFor = 'serverClipboardTextarea';
-    clipboardContainer.appendChild(clipboardLabel);
-    serverClipboardTextareaElement = document.createElement('textarea');
-    serverClipboardTextareaElement.className = 'allow-native-input';
-    serverClipboardTextareaElement.id = 'serverClipboardTextarea';
-    serverClipboardTextareaElement.value = serverClipboardContent;
-    serverClipboardTextareaElement.addEventListener('blur', (event) => {
-        const newClipboardText = event.target.value;
-        console.log(`Dev Sidebar: Clipboard text changed (blur). Sending via window.postMessage.`);
-        window.postMessage({ type: 'clipboardUpdateFromUI', text: newClipboardText }, window.location.origin);
-    });
-    clipboardContainer.appendChild(serverClipboardTextareaElement);
-    sidebarDiv.appendChild(clipboardContainer);
-    const systemStatsLabel = document.createElement('label');
-    systemStatsLabel.textContent = 'System Stats:';
-    sidebarDiv.appendChild(systemStatsLabel);
-    systemStatsDivElement = document.createElement('div');
-    systemStatsDivElement.id = 'system-stats-div';
-    systemStatsDivElement.className = 'dev-stats-item';
-    systemStatsDivElement.textContent = 'Waiting for data...';
-    sidebarDiv.appendChild(systemStatsDivElement);
-    const gpuStatsLabel = document.createElement('label');
-    gpuStatsLabel.textContent = 'GPU Stats:';
-    sidebarDiv.appendChild(gpuStatsLabel);
-    gpuStatsDivElement = document.createElement('div');
-    gpuStatsDivElement.id = 'gpu-stats-div';
-    gpuStatsDivElement.className = 'dev-stats-item';
-    gpuStatsDivElement.textContent = 'Waiting for data...';
-    sidebarDiv.appendChild(gpuStatsDivElement);
-    const fpsLabel = document.createElement('label');
-    fpsLabel.textContent = 'Client FPS:';
-    sidebarDiv.appendChild(fpsLabel);
-    fpsCounterDivElement = document.createElement('div');
-    fpsCounterDivElement.id = 'fps-counter-div';
-    fpsCounterDivElement.className = 'dev-stats-item';
-    fpsCounterDivElement.textContent = `FPS: ${window.fps}`;
-    sidebarDiv.appendChild(fpsCounterDivElement);
-    const audioBufferLabel = document.createElement('label');
-    audioBufferLabel.textContent = 'Audio Buffer Size (buffers):';
-    sidebarDiv.appendChild(audioBufferLabel);
-    audioBufferDivElement = document.createElement('div');
-    audioBufferDivElement.id = 'audio-buffer-div';
-    audioBufferDivElement.className = 'dev-stats-item';
-    audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize}`;
-    sidebarDiv.appendChild(audioBufferDivElement);
-    const videoBufferDisplayLabel = document.createElement('label');
-    videoBufferDisplayLabel.textContent = 'Video Buffer Size (current):';
-    sidebarDiv.appendChild(videoBufferDisplayLabel);
-    videoBufferDivElement = document.createElement('div');
-    videoBufferDivElement.id = 'video-buffer-div';
-    videoBufferDivElement.className = 'dev-stats-item';
-    videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
-    sidebarDiv.appendChild(videoBufferDivElement);
-    uploadProgressContainerElement = document.createElement('div');
-    uploadProgressContainerElement.id = 'upload-progress-container';
-    sidebarDiv.appendChild(uploadProgressContainerElement);
-    const uploadButton = document.createElement('button');
-    uploadButton.id = 'devUploadButton';
-    uploadButton.textContent = 'Upload File(s)';
-    uploadButton.addEventListener('click', () => {
-        console.log("Dev sidebar upload button clicked, dispatching requestFileUpload event.");
-        window.dispatchEvent(new CustomEvent('requestFileUpload'));
-    });
-    sidebarDiv.appendChild(uploadButton);
-    const commandTestContainer = document.createElement('div');
-    commandTestContainer.className = 'dev-setting-item'; // Reuse existing class for styling
-    commandTestContainer.style.borderTop = '1px solid #555';
-    commandTestContainer.style.paddingTop = '10px';
-    commandTestContainer.style.marginTop = '10px';
-
-    const commandLabel = document.createElement('label');
-    commandLabel.textContent = 'Send Raw Command:';
-    commandLabel.htmlFor = 'devCommandInput';
-    commandTestContainer.appendChild(commandLabel);
-
-    const commandInput = document.createElement('input');
-    commandInput.type = 'text';
-    commandInput.id = 'devCommandInput';
-    commandInput.className = 'allow-native-input';
-    commandInput.placeholder = 'Enter command string';
-    commandInput.style.width = '100%';
-    commandInput.style.padding = '5px';
-    commandInput.style.backgroundColor = '#333';
-    commandInput.style.color = '#eee';
-    commandInput.style.border = '1px solid #555';
-    commandInput.style.boxSizing = 'border-box';
-    commandInput.style.marginBottom = '5px';
-    commandTestContainer.appendChild(commandInput);
-
-    const sendCommandButton = document.createElement('button');
-    sendCommandButton.id = 'devSendCommandButton';
-    sendCommandButton.textContent = 'Send Command';
-    sendCommandButton.addEventListener('click', () => {
-        const commandString = commandInput.value.trim();
-        if (commandString) {
-            console.log(`Dev Sidebar: Sending command "${commandString}" via window.postMessage.`);
-            window.postMessage({ type: 'command', value: commandString }, window.location.origin);
-            commandInput.value = ''; // Clear input after sending
-        } else {
-            console.warn('Dev Sidebar: Command input is empty, not sending.');
-            alert('Please enter a command string.');
-        }
-    });
-    commandTestContainer.appendChild(sendCommandButton);
-    sidebarDiv.appendChild(commandTestContainer);
-
-  } // End if(dev_mode)
-
   appDiv.appendChild(videoContainer);
-  if (dev_mode) {
-    appDiv.appendChild(sidebarDiv);
-  }
-
-  // --- Set initial UI values from loaded settings ---
-  if (dev_mode) {
-      // Bitrates, Framerate, Encoder, CRF, Buffer Size
-      if (videoBitrateSelectElement) videoBitrateSelectElement.value = videoBitRate.toString();
-      if (encoderSelectElement) encoderSelectElement.value = currentEncoderMode;
-      if (framerateSelectElement) framerateSelectElement.value = videoFramerate.toString();
-      if (crfSelectElement) crfSelectElement.value = videoCRF.toString();
-      if (videoBufferSelectElement) videoBufferSelectElement.value = videoBufferSize.toString();
-      // Manual Resolution related UI is handled earlier during canvas setup
-      // Gamepad toggle button is handled earlier
-      // Scale Locally checkbox is handled earlier
-      if (serverClipboardTextareaElement) serverClipboardTextareaElement.value = serverClipboardContent; // Likely empty at this stage
-  }
-  // --- End Set initial UI values ---
-
   updateStatusDisplay();
   updateLogOutput();
   updateDebugOutput();
@@ -1937,65 +1190,59 @@ const initializeUI = () => {
   if (clientMode === 'websockets') {
     playButtonElement.classList.add('hidden');
     statusDisplayElement.classList.remove('hidden');
-    spinnerElement.classList.remove('hidden');
   }
 };
-
 // --- START VNC H.264 STRIPE DECODER FUNCTIONS ---
 /**
  * Clears all active VNC stripe decoders and associated metadata.
  * Called when switching away from VNC mode, on resize, or pipeline stop.
  */
 function clearAllVncStripeDecoders() {
-    console.log("Clearing all VNC stripe decoders.");
-    for (const yPos in vncStripeDecoders) {
-        if (vncStripeDecoders.hasOwnProperty(yPos)) {
-            const decoderInfo = vncStripeDecoders[yPos];
-            if (decoderInfo.decoder && decoderInfo.decoder.state !== "closed") {
-                try {
-                    decoderInfo.decoder.close();
-                    console.log(`Closed VNC stripe decoder for Y=${yPos}`);
-                } catch (e) {
-                    console.error(`Error closing VNC stripe decoder for Y=${yPos}:`, e);
-                }
-            }
+  console.log("Clearing all VNC stripe decoders.");
+  for (const yPos in vncStripeDecoders) {
+    if (vncStripeDecoders.hasOwnProperty(yPos)) {
+      const decoderInfo = vncStripeDecoders[yPos];
+      if (decoderInfo.decoder && decoderInfo.decoder.state !== "closed") {
+        try {
+          decoderInfo.decoder.close();
+          console.log(`Closed VNC stripe decoder for Y=${yPos}`);
+        } catch (e) {
+          console.error(`Error closing VNC stripe decoder for Y=${yPos}:`, e);
         }
+      }
     }
-    vncStripeDecoders = {};
-    vncStripeFrameMetadata = {}; // Also clear metadata for pending/decoded frames
-    console.log("All VNC stripe decoders and metadata cleared.");
+  }
+  vncStripeDecoders = {};
+  vncStripeFrameMetadata = {}; // Also clear metadata for pending/decoded frames
+  console.log("All VNC stripe decoders and metadata cleared.");
 }
-
 /**
  * Processes any pending H.264 chunks for a specific stripe's decoder.
  * This is typically called after the decoder has successfully configured.
  * @param {number} stripe_y_start The Y-offset of the stripe.
  */
 function processPendingChunksForStripe(stripe_y_start) {
-    const decoderInfo = vncStripeDecoders[stripe_y_start];
-    if (!decoderInfo || decoderInfo.decoder.state !== "configured" || !decoderInfo.pendingChunks) {
-        return;
+  const decoderInfo = vncStripeDecoders[stripe_y_start];
+  if (!decoderInfo || decoderInfo.decoder.state !== "configured" || !decoderInfo.pendingChunks) {
+    return;
+  }
+  console.log(`Processing ${decoderInfo.pendingChunks.length} pending chunks for stripe Y=${stripe_y_start}`);
+  while (decoderInfo.pendingChunks.length > 0) {
+    const pending = decoderInfo.pendingChunks.shift();
+    const chunk = new EncodedVideoChunk({
+      type: pending.type,
+      timestamp: pending.timestamp,
+      data: pending.data
+    });
+    try {
+      decoderInfo.decoder.decode(chunk);
+    } catch (e) {
+      console.error(`Error decoding pending chunk for stripe Y=${stripe_y_start}:`, e, chunk);
+      // If decode fails, might need to reset this specific decoder
+      // decoderInfo.decoder.reset(); // Or close and re-create on next key frame
     }
-
-    console.log(`Processing ${decoderInfo.pendingChunks.length} pending chunks for stripe Y=${stripe_y_start}`);
-    while (decoderInfo.pendingChunks.length > 0) {
-        const pending = decoderInfo.pendingChunks.shift();
-
-        const chunk = new EncodedVideoChunk({
-            type: pending.type,
-            timestamp: pending.timestamp,
-            data: pending.data
-        });
-        try {
-            decoderInfo.decoder.decode(chunk);
-        } catch (e) {
-            console.error(`Error decoding pending chunk for stripe Y=${stripe_y_start}:`, e, chunk);
-            // If decode fails, might need to reset this specific decoder
-            // decoderInfo.decoder.reset(); // Or close and re-create on next key frame
-        }
-    }
+  }
 }
-
 /**
  * Handles a decoded VideoFrame from a VNC stripe decoder.
  * Draws the frame onto the main canvas at the correct Y-offset.
@@ -2006,170 +1253,181 @@ window.vncStripesArrivedThisPeriod = 0;
 window.lastVncStripeRateLogTime = performance.now();
 window.VNC_STRIPE_LOG_INTERVAL_MS = 1000;
 let decodedStripesQueue = [];
+
 function handleDecodedVncStripeFrame(yPos, vncFrameID, frame) { // vncFrameID can be omitted if not used
-    decodedStripesQueue.push({ yPos, frame, vncFrameID });
+  decodedStripesQueue.push({
+    yPos,
+    frame,
+    vncFrameID
+  });
 }
-
 async function handleAdvancedAudioClick() {
-    console.log("Advanced Audio Settings button clicked.");
-    if (!audioDeviceSettingsDivElement || !audioInputSelectElement || !audioOutputSelectElement) {
-        console.error("Audio device UI elements not found in dev sidebar.");
-        return;
-    }
-    // Check if the settings are currently hidden
-    const isHidden = audioDeviceSettingsDivElement.classList.contains('hidden');
-    if (isHidden) {
-        console.log("Settings are hidden, attempting to show and populate...");
-        // Check for setSinkId support for output selection
-        const supportsSinkId = typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
-        const outputLabel = document.getElementById('audioOutputLabel');
-        if (!supportsSinkId) {
-            console.warn('Browser does not support selecting audio output device (setSinkId). Hiding output selection.');
-            if (outputLabel) outputLabel.classList.add('hidden');
-            audioOutputSelectElement.classList.add('hidden');
-            return;
-        } else {
-            if (outputLabel) outputLabel.classList.remove('hidden');
-            audioOutputSelectElement.classList.remove('hidden');
-        }
-        try {
-            // Request temporary microphone permission to get device labels
-            console.log("Requesting microphone permission for device listing...");
-            const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            tempStream.getTracks().forEach(track => track.stop());
-            console.log("Microphone permission granted or already available (temporary stream stopped).");
-            console.log("Enumerating media devices...");
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            console.log("Devices found:", devices);
-            // Clear existing options
-            audioInputSelectElement.innerHTML = '';
-            audioOutputSelectElement.innerHTML = '';
-            // Populate dropdowns
-            let inputCount = 0;
-            let outputCount = 0;
-            devices.forEach(device => {
-                if (device.kind === 'audioinput') {
-                    inputCount++;
-                    const option = document.createElement('option');
-                    option.value = device.deviceId;
-                    option.textContent = device.label || `Microphone ${inputCount}`;
-                    audioInputSelectElement.appendChild(option);
-                } else if (device.kind === 'audiooutput' && supportsSinkId) {
-                    outputCount++;
-                    const option = document.createElement('option');
-                    option.value = device.deviceId;
-                    option.textContent = device.label || `Speaker ${outputCount}`;
-                    audioOutputSelectElement.appendChild(option);
-                }
-            });
-
-            console.log(`Populated ${inputCount} input devices and ${outputCount} output devices.`);
-            // Make the container visible
-            audioDeviceSettingsDivElement.classList.remove('hidden');
-
-        } catch (err) {
-            console.error('Error getting media devices or permissions:', err);
-            // Keep it hidden and inform the user
-            audioDeviceSettingsDivElement.classList.add('hidden');
-            alert(`Could not list audio devices. Please ensure microphone permissions are granted.\nError: ${err.message || err.name}`);
-        }
+  console.log("Advanced Audio Settings button clicked.");
+  if (!audioDeviceSettingsDivElement || !audioInputSelectElement || !audioOutputSelectElement) {
+    console.error("Audio device UI elements not found in dev sidebar.");
+    return;
+  }
+  // Check if the settings are currently hidden
+  const isHidden = audioDeviceSettingsDivElement.classList.contains('hidden');
+  if (isHidden) {
+    console.log("Settings are hidden, attempting to show and populate...");
+    // Check for setSinkId support for output selection
+    const supportsSinkId = typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
+    const outputLabel = document.getElementById('audioOutputLabel');
+    if (!supportsSinkId) {
+      console.warn('Browser does not support selecting audio output device (setSinkId). Hiding output selection.');
+      if (outputLabel) outputLabel.classList.add('hidden');
+      audioOutputSelectElement.classList.add('hidden');
+      return;
     } else {
-        console.log("Settings are visible, hiding...");
-        audioDeviceSettingsDivElement.classList.add('hidden');
+      if (outputLabel) outputLabel.classList.remove('hidden');
+      audioOutputSelectElement.classList.remove('hidden');
     }
+    try {
+      // Request temporary microphone permission to get device labels
+      console.log("Requesting microphone permission for device listing...");
+      const tempStream = await navigator.mediaDevices.getUserMedia({
+        audio: true
+      });
+      tempStream.getTracks().forEach(track => track.stop());
+      console.log("Microphone permission granted or already available (temporary stream stopped).");
+      console.log("Enumerating media devices...");
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      console.log("Devices found:", devices);
+      // Clear existing options
+      audioInputSelectElement.innerHTML = '';
+      audioOutputSelectElement.innerHTML = '';
+      // Populate dropdowns
+      let inputCount = 0;
+      let outputCount = 0;
+      devices.forEach(device => {
+        if (device.kind === 'audioinput') {
+          inputCount++;
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          option.textContent = device.label || `Microphone ${inputCount}`;
+          audioInputSelectElement.appendChild(option);
+        } else if (device.kind === 'audiooutput' && supportsSinkId) {
+          outputCount++;
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          option.textContent = device.label || `Speaker ${outputCount}`;
+          audioOutputSelectElement.appendChild(option);
+        }
+      });
+      console.log(`Populated ${inputCount} input devices and ${outputCount} output devices.`);
+      // Make the container visible
+      audioDeviceSettingsDivElement.classList.remove('hidden');
+    } catch (err) {
+      console.error('Error getting media devices or permissions:', err);
+      // Keep it hidden and inform the user
+      audioDeviceSettingsDivElement.classList.add('hidden');
+      alert(`Could not list audio devices. Please ensure microphone permissions are granted.\nError: ${err.message || err.name}`);
+    }
+  } else {
+    console.log("Settings are visible, hiding...");
+    audioDeviceSettingsDivElement.classList.add('hidden');
+  }
 }
 
 function handleAudioDeviceChange(event) {
-    const selectedDeviceId = event.target.value;
-    const isInput = event.target.id === 'audioInputSelect';
-    const contextType = isInput ? 'input' : 'output';
-    console.log(`Dev Sidebar: Audio device selected - Type: ${contextType}, ID: ${selectedDeviceId}. Posting message...`);
-    window.postMessage({
-        type: 'audioDeviceSelected',
-        context: contextType,
-        deviceId: selectedDeviceId
-    }, window.location.origin);
+  const selectedDeviceId = event.target.value;
+  const isInput = event.target.id === 'audioInputSelect';
+  const contextType = isInput ? 'input' : 'output';
+  console.log(`Dev Sidebar: Audio device selected - Type: ${contextType}, ID: ${selectedDeviceId}. Posting message...`);
+  window.postMessage({
+    type: 'audioDeviceSelected',
+    context: contextType,
+    deviceId: selectedDeviceId
+  }, window.location.origin);
 }
 
 function handleRequestFileUpload() {
-    const hiddenInput = document.getElementById('globalFileInput');
-    if (!hiddenInput) {
-        console.error("Global file input not found!");
-        return;
-    }
-    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-        console.warn("WebSocket is not open. File upload cannot be initiated.");
-        return;
-    }
-    console.log("Triggering click on hidden file input.");
-    hiddenInput.click();
+  const hiddenInput = document.getElementById('globalFileInput');
+  if (!hiddenInput) {
+    console.error("Global file input not found!");
+    return;
+  }
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+    console.warn("WebSocket is not open. File upload cannot be initiated.");
+    return;
+  }
+  console.log("Triggering click on hidden file input.");
+  hiddenInput.click();
 }
-
 async function handleFileInputChange(event) {
-    const files = event.target.files;
-    if (!files || files.length === 0) {
-        // Clear the input value in case the user cancels
-        event.target.value = null;
-        return;
+  const files = event.target.files;
+  if (!files || files.length === 0) {
+    // Clear the input value in case the user cancels
+    event.target.value = null;
+    return;
+  }
+  console.log(`File input changed, processing ${files.length} files sequentially.`);
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+    console.error("WebSocket is not open. Cannot upload selected files.");
+    // Maybe post an error message?
+    window.postMessage({
+      type: 'fileUpload',
+      payload: {
+        status: 'error',
+        fileName: 'N/A',
+        message: "WebSocket not open for upload."
+      }
+    }, window.location.origin);
+    event.target.value = null;
+    return;
+  }
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const pathToSend = file.name;
+      console.log(`Uploading file ${i + 1}/${files.length}: ${pathToSend}`);
+      // Await the upload of each file before starting the next
+      await uploadFileObject(file, pathToSend);
     }
-
-    console.log(`File input changed, processing ${files.length} files sequentially.`);
-
-    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-         console.error("WebSocket is not open. Cannot upload selected files.");
-         // Maybe post an error message?
-         window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: "WebSocket not open for upload." } }, window.location.origin);
-         event.target.value = null;
-         return;
+    console.log("Finished processing all files from input.");
+  } catch (error) {
+    const errorMsg = `An error occurred during the file input upload process: ${error.message || error}`;
+    console.error(errorMsg);
+    window.postMessage({
+      type: 'fileUpload',
+      payload: {
+        status: 'error',
+        fileName: 'N/A',
+        message: errorMsg
+      }
+    }, window.location.origin);
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      try {
+        websocket.send(`FILE_UPLOAD_ERROR:GENERAL:File input processing failed`);
+      } catch (_) {}
     }
-
-    try {
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const pathToSend = file.name;
-            console.log(`Uploading file ${i + 1}/${files.length}: ${pathToSend}`);
-            // Await the upload of each file before starting the next
-            await uploadFileObject(file, pathToSend);
-        }
-        console.log("Finished processing all files from input.");
-    } catch (error) {
-        const errorMsg = `An error occurred during the file input upload process: ${error.message || error}`;
-        console.error(errorMsg);
-         window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: errorMsg } }, window.location.origin);
-         if (websocket && websocket.readyState === WebSocket.OPEN) {
-              try { websocket.send(`FILE_UPLOAD_ERROR:GENERAL:File input processing failed`); } catch (_) {}
-         }
-    } finally {
-         event.target.value = null;
-    }
+  } finally {
+    event.target.value = null;
+  }
 }
-
 const startStream = () => {
   if (streamStarted) return;
   streamStarted = true;
-  spinnerElement.classList.add('hidden');
   statusDisplayElement.classList.add('hidden');
   playButtonElement.classList.add('hidden');
 };
 
 function debounce(func, delay) {
   let timeoutId;
-  return function (...args) {
+  return function(...args) {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => {
       func.apply(this, args);
     }, delay);
   };
 }
-
 const initializeInput = () => {
   if (inputInitialized) {
     return;
   }
   inputInitialized = true;
-
   let inputInstance;
-
   const websocketSendInput = (message) => {
     if (
       clientMode === 'websockets' &&
@@ -2179,13 +1437,11 @@ const initializeInput = () => {
       websocket.send(message);
     }
   };
-
   const webrtcSendInput = (message) => {
     if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
       webrtc.sendDataChannelMessage(message);
     }
   };
-
   let sendInputFunction;
   if (clientMode === 'websockets') {
     sendInputFunction = websocketSendInput;
@@ -2194,1096 +1450,619 @@ const initializeInput = () => {
   } else {
     sendInputFunction = () => {};
   }
-
   inputInstance = new Input(overlayInput, sendInputFunction);
-
   // This function now calculates the container size for auto-resize purposes
   inputInstance.getWindowResolution = () => {
-     const videoContainer = document.querySelector('.video-container');
-     if (!videoContainer) {
-          console.warn('video-container not found, using window size for resolution.');
-          // Return raw window size, let the caller handle rounding if needed
-          return [window.innerWidth, window.innerHeight];
-     }
-     const videoContainerRect = videoContainer.getBoundingClientRect();
-     // Return raw container size, let the caller handle rounding if needed
-     return [videoContainerRect.width, videoContainerRect.height];
+    const videoContainer = document.querySelector('.video-container');
+    if (!videoContainer) {
+      console.warn('video-container not found, using window size for resolution.');
+      // Return raw window size, let the caller handle rounding if needed
+      return [window.innerWidth, window.innerHeight];
+    }
+    const videoContainerRect = videoContainer.getBoundingClientRect();
+    // Return raw container size, let the caller handle rounding if needed
+    return [videoContainerRect.width, videoContainerRect.height];
   };
-
-
   inputInstance.ongamepadconnected = (gamepad_id) => {
     gamepad.gamepadState = 'connected';
     gamepad.gamepadName = gamepad_id;
     if (window.webrtcInput && window.webrtcInput.gamepadManager) {
-        if (!isGamepadEnabled) {
-            window.webrtcInput.gamepadManager.disable();
-        }
+      if (!isGamepadEnabled) {
+        window.webrtcInput.gamepadManager.disable();
+      }
     } else {
-        console.error("Gamepad connected callback fired, but gamepadManager instance not found on webrtcInput.");
+      console.error("Gamepad connected callback fired, but gamepadManager instance not found on webrtcInput.");
     }
   };
-
   inputInstance.ongamepaddisconnected = () => {
     gamepad.gamepadState = 'disconnected';
     gamepad.gamepadName = 'none';
   };
   inputInstance.attach();
-
   // Define the actual resize logic
   const handleResizeUI = () => {
     if (window.isManualResolutionMode) {
-        console.log("Auto-resize skipped: Manual resolution mode active.");
-        return;
+      console.log("Auto-resize skipped: Manual resolution mode active.");
+      return;
     }
     console.log("Auto-resize triggered.");
     const windowResolution = inputInstance.getWindowResolution();
     const evenWidth = roundDownToEven(windowResolution[0]);
     const evenHeight = roundDownToEven(windowResolution[1]);
-
     sendResolutionToServer(evenWidth, evenHeight);
-
     // Update canvas buffer and reset style for auto mode
     resetCanvasStyle(evenWidth, evenHeight); // Pass the new stream dimensions
   };
   handleResizeUI_globalRef = handleResizeUI;
   // Store the debounced handler
   originalWindowResizeHandler = debounce(handleResizeUI, 500);
-
   // Add the listener only if NOT in manual mode initially
   if (!window.isManualResolutionMode) {
-      console.log("Initializing Input: Attaching auto-resize listener.");
-      window.addEventListener('resize', originalWindowResizeHandler);
-      // Trigger initial resize calculation if not in manual mode
-      handleResizeUI();
+    console.log("Initializing Input: Attaching auto-resize listener.");
+    window.addEventListener('resize', originalWindowResizeHandler);
+    // Trigger initial resize calculation if not in manual mode
+    handleResizeUI();
   } else {
-       console.log("Initializing Input: Manual resolution mode active, skipping initial auto-resize listener attachment.");
+    console.log("Initializing Input: Manual resolution mode active, skipping initial auto-resize listener attachment.");
   }
-
-
   if (clientMode === 'webrtc') {
     if (webrtc) {
       webrtc.input = inputInstance;
     }
   }
-
   overlayInput.addEventListener('dragover', handleDragOver);
   overlayInput.addEventListener('drop', handleDrop);
-
   window.webrtcInput = inputInstance;
   const keyboardInputAssist = document.getElementById('keyboard-input-assist');
   if (keyboardInputAssist && inputInstance) { // Check if both exist
-      keyboardInputAssist.addEventListener('input', (event) => {
-          const typedString = keyboardInputAssist.value;
-          console.log(`Input event on assist: Value="${typedString}"`);
-
-          if (typedString) {
-              inputInstance._typeString(typedString);
-              keyboardInputAssist.value = ''; // Clear after processing
-          }
-      });
-
-      keyboardInputAssist.addEventListener('keydown', (event) => {
-           if (event.key === 'Enter' || event.keyCode === 13) {
-               console.log("Enter keydown detected on assist input.");
-               const enterKeysym = 0xFF0D;
-               inputInstance._guac_press(enterKeysym);
-               setTimeout(() => inputInstance._guac_release(enterKeysym), 5);
-               event.preventDefault();
-               keyboardInputAssist.value = '';
-           }
-           else if (event.key === 'Backspace' || event.keyCode === 8) {
-               console.log("Backspace keydown detected on assist input.");
-               const backspaceKeysym = 0xFF08;
-               inputInstance._guac_press(backspaceKeysym);
-               setTimeout(() => inputInstance._guac_release(backspaceKeysym), 5);
-               event.preventDefault();
-           }
-      });
-
-      console.log("Added 'input' and 'keydown' listeners to #keyboard-input-assist.");
-
+    keyboardInputAssist.addEventListener('input', (event) => {
+      const typedString = keyboardInputAssist.value;
+      console.log(`Input event on assist: Value="${typedString}"`);
+      if (typedString) {
+        inputInstance._typeString(typedString);
+        keyboardInputAssist.value = ''; // Clear after processing
+      }
+    });
+    keyboardInputAssist.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.keyCode === 13) {
+        console.log("Enter keydown detected on assist input.");
+        const enterKeysym = 0xFF0D;
+        inputInstance._guac_press(enterKeysym);
+        setTimeout(() => inputInstance._guac_release(enterKeysym), 5);
+        event.preventDefault();
+        keyboardInputAssist.value = '';
+      } else if (event.key === 'Backspace' || event.keyCode === 8) {
+        console.log("Backspace keydown detected on assist input.");
+        const backspaceKeysym = 0xFF08;
+        inputInstance._guac_press(backspaceKeysym);
+        setTimeout(() => inputInstance._guac_release(backspaceKeysym), 5);
+        event.preventDefault();
+      }
+    });
+    console.log("Added 'input' and 'keydown' listeners to #keyboard-input-assist.");
   } else {
-      console.error("Could not add listeners to keyboard assist: Element or Input handler instance not found inside initializeInput.");
+    console.error("Could not add listeners to keyboard assist: Element or Input handler instance not found inside initializeInput.");
   }
 };
-
 /**
  * Attempts to apply the preferredOutputDeviceId to the playback audio context
  * and the audio element.
  */
 async function applyOutputDevice() {
-    if (!preferredOutputDeviceId) {
-        console.log("No preferred output device set, using default.");
-        return;
-    }
-
-    const supportsSinkId = (typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype) ||
-                           (audioElement && typeof audioElement.setSinkId === 'function');
-
-    if (!supportsSinkId) {
-        console.warn("Browser does not support setSinkId, cannot apply output device preference.");
-        // Hide the output selection UI elements if they exist and haven't been hidden already
-        if (audioOutputSelectElement) audioOutputSelectElement.classList.add('hidden');
-        const outputLabel = document.getElementById('audioOutputLabel');
-        if (outputLabel) outputLabel.classList.add('hidden');
-        return;
-    }
-
-    // Apply to Playback AudioContext
-    if (audioContext) {
-        if (audioContext.state === 'running') {
-            try {
-                // Check if the current sinkId is already the preferred one
-                await audioContext.setSinkId(preferredOutputDeviceId);
-                console.log(`Playback AudioContext output set to device: ${preferredOutputDeviceId}`);
-            } catch (err) {
-                console.error(`Error setting sinkId on Playback AudioContext (ID: ${preferredOutputDeviceId}): ${err.name}`, err);
-            }
-        } else {
-             console.warn(`Playback AudioContext not running (state: ${audioContext.state}), cannot set sinkId yet.`);
-        }
+  if (!preferredOutputDeviceId) {
+    console.log("No preferred output device set, using default.");
+    return;
+  }
+  const supportsSinkId = (typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype) ||
+    (audioElement && typeof audioElement.setSinkId === 'function');
+  if (!supportsSinkId) {
+    console.warn("Browser does not support setSinkId, cannot apply output device preference.");
+    // Hide the output selection UI elements if they exist and haven't been hidden already
+    if (audioOutputSelectElement) audioOutputSelectElement.classList.add('hidden');
+    const outputLabel = document.getElementById('audioOutputLabel');
+    if (outputLabel) outputLabel.classList.add('hidden');
+    return;
+  }
+  // Apply to Playback AudioContext
+  if (audioContext) {
+    if (audioContext.state === 'running') {
+      try {
+        // Check if the current sinkId is already the preferred one
+        await audioContext.setSinkId(preferredOutputDeviceId);
+        console.log(`Playback AudioContext output set to device: ${preferredOutputDeviceId}`);
+      } catch (err) {
+        console.error(`Error setting sinkId on Playback AudioContext (ID: ${preferredOutputDeviceId}): ${err.name}`, err);
+      }
     } else {
-        console.log("Playback AudioContext doesn't exist yet, sinkId will be applied on initialization.");
+      console.warn(`Playback AudioContext not running (state: ${audioContext.state}), cannot set sinkId yet.`);
     }
-
-    // Apply to <audio> element (for redundancy or direct playback scenarios)
-    if (audioElement && typeof audioElement.setSinkId === 'function') {
-        try {
-            if (audioElement.sinkId !== preferredOutputDeviceId) {
-                await audioElement.setSinkId(preferredOutputDeviceId);
-                console.log(`<audio> element output set to device: ${preferredOutputDeviceId}`);
-            }
-        } catch (err) {
-            console.error(`Error setting sinkId on <audio> element (ID: ${preferredOutputDeviceId}): ${err.name}`, err);
-        }
+  } else {
+    console.log("Playback AudioContext doesn't exist yet, sinkId will be applied on initialization.");
+  }
+  // Apply to <audio> element (for redundancy or direct playback scenarios)
+  if (audioElement && typeof audioElement.setSinkId === 'function') {
+    try {
+      if (audioElement.sinkId !== preferredOutputDeviceId) {
+        await audioElement.setSinkId(preferredOutputDeviceId);
+        console.log(`<audio> element output set to device: ${preferredOutputDeviceId}`);
+      }
+    } catch (err) {
+      console.error(`Error setting sinkId on <audio> element (ID: ${preferredOutputDeviceId}): ${err.name}`, err);
     }
+  }
 }
-
-
 window.addEventListener('message', receiveMessage, false);
 
-function updateSidebarUploadProgress(payload) {
-    if (!dev_mode || !uploadProgressContainerElement) return;
-
-    const { status, fileName, progress, fileSize, message: errorMessage } = payload;
-    const existingUpload = activeUploads[fileName];
-
-    if (status === 'start') {
-        if (Object.keys(activeUploads).length >= MAX_SIDEBAR_UPLOADS) {
-            console.warn(`Dev Sidebar: Max upload items (${MAX_SIDEBAR_UPLOADS}) reached. Ignoring: ${fileName}`);
-            return; // Don't add more than the max
-        }
-        if (existingUpload) {
-            console.warn(`Dev Sidebar: Upload already started for ${fileName}. Ignoring duplicate start.`);
-            return;
-        }
-
-        const item = document.createElement('div');
-        item.className = 'upload-progress-item';
-        item.dataset.fileName = fileName; // Store filename for later retrieval
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'file-name';
-        nameSpan.textContent = fileName;
-        nameSpan.title = fileName; // Show full name on hover
-        item.appendChild(nameSpan);
-
-        const barOuter = document.createElement('div');
-        barOuter.className = 'upload-progress-bar-outer';
-        const barInner = document.createElement('div');
-        barInner.className = 'upload-progress-bar-inner';
-        barOuter.appendChild(barInner);
-        item.appendChild(barOuter);
-
-        uploadProgressContainerElement.appendChild(item);
-        activeUploads[fileName] = { element: item, progress: 0 };
-        console.log(`Dev Sidebar: Added progress for ${fileName}`);
-
-    } else if (existingUpload) {
-        const { element } = existingUpload;
-        const barInner = element.querySelector('.upload-progress-bar-inner');
-
-        if (status === 'progress') {
-            if (barInner) {
-                barInner.style.width = `${progress}%`;
-            }
-            activeUploads[fileName].progress = progress;
-        } else if (status === 'end') {
-            if (barInner) {
-                barInner.style.width = '100%';
-            }
-            element.classList.add('complete');
-            console.log(`Dev Sidebar: Completed ${fileName}`);
-            // Remove after a delay
-            setTimeout(() => {
-                element.classList.add('fade-out');
-                setTimeout(() => {
-                    if (element.parentNode) {
-                        element.parentNode.removeChild(element);
-                    }
-                    delete activeUploads[fileName];
-                    console.log(`Dev Sidebar: Removed progress for ${fileName}`);
-                }, 500); // Matches fade-out transition
-            }, 2000); // Keep completed item visible for 2 seconds
-        } else if (status === 'error') {
-             if (barInner) {
-                 barInner.style.width = '100%'; // Visually indicate error
-             }
-             element.classList.add('error');
-             const nameSpan = element.querySelector('.file-name');
-             if (nameSpan) {
-                 nameSpan.textContent = `${fileName} (Error)`;
-                 nameSpan.title = `Error: ${errorMessage || 'Unknown error'}`;
-             }
-             console.error(`Dev Sidebar: Error uploading ${fileName}: ${errorMessage}`);
-             // Remove after a delay
-             setTimeout(() => {
-                 element.classList.add('fade-out');
-                 setTimeout(() => {
-                    if (element.parentNode) {
-                        element.parentNode.removeChild(element);
-                    }
-                    delete activeUploads[fileName];
-                    console.log(`Dev Sidebar: Removed error progress for ${fileName}`);
-                 }, 500);
-             }, 5000); // Keep error item visible for 5 seconds
-        }
-    } else {
-        console.warn(`Dev Sidebar: Received '${status}' for unknown upload: ${fileName}`);
-    }
-}
-
 function postSidebarButtonUpdate() {
-    // Gather current states
-    const updatePayload = {
-        type: 'sidebarButtonStatusUpdate',
-        video: isVideoPipelineActive,
-        audio: isAudioPipelineActive,
-        microphone: isMicrophoneActive,
-        gamepad: isGamepadEnabled
-    };
-    console.log('Posting sidebarButtonStatusUpdate:', updatePayload);
-    window.postMessage(updatePayload, window.location.origin);
+  // Gather current states
+  const updatePayload = {
+    type: 'sidebarButtonStatusUpdate',
+    video: isVideoPipelineActive,
+    audio: isAudioPipelineActive,
+    microphone: isMicrophoneActive,
+    gamepad: isGamepadEnabled
+  };
+  console.log('Posting sidebarButtonStatusUpdate:', updatePayload);
+  window.postMessage(updatePayload, window.location.origin);
 }
 
 function receiveMessage(event) {
-    // 1. Origin Check (Security)
-    if (event.origin !== window.location.origin) {
-        console.warn(`Received message from unexpected origin: ${event.origin}. Expected ${window.location.origin}. Ignoring.`);
-        return;
-    }
-
-    const message = event.data;
-
-    // 2. Message Type Check (Basic Validation)
-    if (typeof message !== 'object' || message === null) {
-        console.warn('Received non-object message via window.postMessage:', message);
-        return;
-    }
-
-    if (!message.type) {
-        console.warn('Received message without a type property:', message);
-        return;
-    }
-
-    // 3. Message Handling based on type
-
-    switch (message.type) {
-        case 'setScaleLocally':
-            if (typeof message.value === 'boolean') {
-                scaleLocallyManual = message.value;
-                setBoolParam('scaleLocallyManual', scaleLocallyManual); // Persist the setting
-                console.log(`Set scaleLocallyManual to ${scaleLocallyManual} and persisted.`);
-                // If we are currently in manual mode, re-apply the style immediately
-                if (window.isManualResolutionMode && manualWidth !== null && manualHeight !== null) {
-                    console.log("Applying new scaling style in manual mode.");
-                    applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
-                }
-                // Update checkbox UI element if it exists (safety check)
-                if (dev_mode && scaleLocallyCheckbox && scaleLocallyCheckbox.checked !== scaleLocallyManual) {
-                    scaleLocallyCheckbox.checked = scaleLocallyManual;
-                }
-            } else {
-                console.warn("Invalid value received for setScaleLocally:", message.value);
-            }
-            break;
-
-        case 'showVirtualKeyboard':
-            console.log("Received 'showVirtualKeyboard' message.");
-            const kbdAssistInput = document.getElementById('keyboard-input-assist');
-            if (kbdAssistInput) {
-                kbdAssistInput.value = '';
-                kbdAssistInput.focus();
-                console.log("Focused #keyboard-input-assist element.");
-            } else {
-                console.error("Could not find #keyboard-input-assist element to focus.");
-            }
-            break;
-
-        case 'setManualResolution':
-            // Validation already happened in the UI event listener, but double-check here
-            const width = parseInt(message.width, 10);
-            const height = parseInt(message.height, 10);
-
-            if (isNaN(width) || width <= 0 || isNaN(height) || height <= 0) {
-                console.error('Received invalid width/height for setManualResolution:', message);
-                break;
-            }
-
-            console.log(`Setting manual resolution: ${width}x${height}`);
-            window.isManualResolutionMode = true;
-            manualWidth = roundDownToEven(width);
-            manualHeight = roundDownToEven(height);
-            console.log(`Rounded resolution to even numbers: ${manualWidth}x${manualHeight}`);
-
-            // --- Persist Manual Resolution Settings ---
-            setIntParam('manualWidth', manualWidth);
-            setIntParam('manualHeight', manualHeight);
-            setBoolParam('isManualResolutionMode', true);
-            // --- End Persist ---
-
-            disableAutoResize(); // Stop listening to window resize
-            sendResolutionToServer(manualWidth, manualHeight); // Send new res to server
-            applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual); // Apply local styling
-
-            // --- VNC STRIPE CHANGE ---
-            if (currentEncoderMode === 'x264enc-striped') {
-                console.log("Clearing VNC stripe decoders due to manual resolution change.");
-                clearAllVncStripeDecoders();
-                if (canvasContext) canvasContext.setTransform(1, 0, 0, 1, 0, 0); canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-            }
-            // --- END VNC STRIPE CHANGE ---
-
-
-            // Visually update input fields if they differ from rounded values
-            if (dev_mode) {
-                if (manualWidthInput.value !== manualWidth.toString()) manualWidthInput.value = manualWidth;
-                if (manualHeightInput.value !== manualHeight.toString()) manualHeightInput.value = manualHeight;
-            }
-            break;
-
-        case 'resetResolutionToWindow':
-            console.log("Resetting resolution to window size.");
-            window.isManualResolutionMode = false;
-            manualWidth = null;
-            manualHeight = null;
-
-            // --- Clear Persisted Manual Resolution Settings ---
-            setIntParam('manualWidth', null);
-            setIntParam('manualHeight', null);
-            setBoolParam('isManualResolutionMode', false);
-            // --- End Clear Persist ---
-
-            // Calculate current auto-resolution
-            const currentWindowRes = window.webrtcInput ? window.webrtcInput.getWindowResolution() : [window.innerWidth, window.innerHeight];
-            const autoWidth = roundDownToEven(currentWindowRes[0]);
-            const autoHeight = roundDownToEven(currentWindowRes[1]);
-            resetCanvasStyle(autoWidth, autoHeight); // Reset local canvas styling first
-
-            // --- VNC STRIPE CHANGE ---
-            if (currentEncoderMode === 'x264enc-striped') {
-                console.log("Clearing VNC stripe decoders due to resolution reset to window.");
-                clearAllVncStripeDecoders();
-                if (canvasContext) canvasContext.setTransform(1, 0, 0, 1, 0, 0); canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-            }
-            // --- END VNC STRIPE CHANGE ---
-
-            enableAutoResize(); // Re-enable listener and trigger immediate resize
-            break;
-
-        case 'clipboardContentUpdate':
-            if (dev_mode) {
-                serverClipboardContent = message.text;
-                 if(serverClipboardTextareaElement) serverClipboardTextareaElement.value = message.text;
-                console.log('Updated dev sidebar clipboard textarea from server.');
-             }
-             break;
-        case 'settings':
-            console.log('Received settings message:', message.settings);
-            handleSettingsMessage(message.settings);
-            break;
-
-        case 'getStats':
-            console.log('Received getStats message.');
-            sendStatsMessage();
-            break;
-
-        case 'clipboardUpdateFromUI':
-            console.log('Received clipboardUpdateFromUI message.');
-            const newClipboardText = message.text;
-            if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-                try {
-                    const encodedText = btoa(newClipboardText); // Base64 encode
-                    const clipboardMessage = `cw,${encodedText}`; // Prepend type
-                    websocket.send(clipboardMessage);
-                    console.log(`Sent clipboard update from UI to server: cw,...`);
-                } catch (e) {
-                    console.error('Failed to encode or send clipboard text from UI:', e);
-                }
-            } else if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-                try {
-                    const encodedText = btoa(newClipboardText); // Base64 encode
-                    const clipboardMessage = `cw,${encodedText}`; // Prepend type
-                    webrtc.sendDataChannelMessage(clipboardMessage);
-                    console.log(`Sent clipboard update from UI to server via WebRTC: cw,...`);
-                } catch (e) {
-                    console.error('Failed to encode or send clipboard text from UI via WebRTC:', e);
-                }
-            }
-             else {
-                console.warn('Cannot send clipboard update from UI: Not connected.');
-            }
-            break;
-
-        case 'pipelineStatusUpdate':
-            console.log('Received pipelineStatusUpdate message:', message);
-            let stateChangedFromStatus = false;
-            if (message.video !== undefined && isVideoPipelineActive !== message.video) {
-                console.log(`pipelineStatusUpdate: Updating isVideoPipelineActive to ${message.video}`);
-                isVideoPipelineActive = message.video;
-                stateChangedFromStatus = true;
-            }
-            if (message.audio !== undefined && isAudioPipelineActive !== message.audio) {
-                console.log(`pipelineStatusUpdate: Updating isAudioPipelineActive to ${message.audio}`);
-                isAudioPipelineActive = message.audio;
-                stateChangedFromStatus = true;
-            }
-            if (message.microphone !== undefined && isMicrophoneActive !== message.microphone) {
-                console.log(`pipelineStatusUpdate: Updating isMicrophoneActive to ${message.microphone}`);
-                isMicrophoneActive = message.microphone;
-                stateChangedFromStatus = true;
-            }
-            if (message.gamepad !== undefined && isGamepadEnabled !== message.gamepad) {
-                console.log(`pipelineStatusUpdate: Updating isGamepadEnabled to ${message.gamepad}`);
-                isGamepadEnabled = message.gamepad;
-                stateChangedFromStatus = true;
-            }
-
-            if (stateChangedFromStatus) {
-                console.log("pipelineStatusUpdate: State changed, posting sidebar button update.");
-                postSidebarButtonUpdate();
-            } else {
-                 console.log("pipelineStatusUpdate: No relevant state change detected.");
-            }
-            break;
-
-        case 'fileUpload':
-            console.log('Received fileUpload message:', message.payload);
-            updateSidebarUploadProgress(message.payload);
-            break;
-
-        case 'pipelineControl':
-            console.log(`Received pipeline control message: pipeline=${message.pipeline}, enabled=${message.enabled}`);
-            const pipeline = message.pipeline;
-            const desiredState = message.enabled;
-            let stateChangedFromControl = false;
-
-            if (pipeline === 'video' || pipeline === 'audio') {
-                let wsMessage = '';
-                if (pipeline === 'video') {
-                    if (isVideoPipelineActive !== desiredState) {
-                        isVideoPipelineActive = desiredState;
-                        console.log(`pipelineControl: Immediately updating isVideoPipelineActive to ${isVideoPipelineActive}`);
-                        stateChangedFromControl = true;
-                        if (!isVideoPipelineActive) {
-                            cleanupVideoBuffer();
-                            // --- VNC STRIPE CHANGE ---
-                            if (currentEncoderMode === 'x264enc-striped') {
-                                console.log("Video pipeline stopped in VNC mode, clearing stripe decoders.");
-                                clearAllVncStripeDecoders();
-                            }
-                            // --- END VNC STRIPE CHANGE ---
-                        }
-                        wsMessage = desiredState ? 'START_VIDEO' : 'STOP_VIDEO';
-                    }
-                } else if (pipeline === 'audio') {
-                     if (isAudioPipelineActive !== desiredState) {
-                        isAudioPipelineActive = desiredState;
-                        console.log(`pipelineControl: Immediately updating isAudioPipelineActive to ${isAudioPipelineActive}`);
-                        stateChangedFromControl = true;
-                        wsMessage = desiredState ? 'START_AUDIO' : 'STOP_AUDIO';
-                        if (audioDecoderWorker) {
-                            audioDecoderWorker.postMessage({ type: 'updatePipelineStatus', data: { isActive: isAudioPipelineActive } });
-                        }
-                     }
-                }
-                if (stateChangedFromControl) {
-                    postSidebarButtonUpdate();
-                }
-                if (wsMessage && clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-                    console.log(`pipelineControl: Sending ${wsMessage} via websocket.`);
-                    websocket.send(wsMessage);
-                } else if (wsMessage) {
-                     console.warn(`Cannot send ${pipeline} pipelineControl command: Not in websockets mode or websocket not open.`);
-                }
-
-            } else if (pipeline === 'microphone') {
-                if (desiredState) {
-                    startMicrophoneCapture();
-                } else {
-                    stopMicrophoneCapture();
-                }
-            } else {
-                 console.warn(`Received pipelineControl message for unknown pipeline: ${pipeline}`);
-            }
-            break;
-
-        case 'sidebarButtonStatusUpdate':
-            console.log('Received sidebarButtonStatusUpdate:', message);
-            if (dev_mode) {
-                console.log('Dev mode enabled, updating sidebar button appearances.');
-                if (message.video !== undefined && videoToggleButtonElement) {
-                     updateToggleButtonAppearance(videoToggleButtonElement, message.video);
-                }
-                if (message.audio !== undefined && audioToggleButtonElement) {
-                    updateToggleButtonAppearance(audioToggleButtonElement, message.audio);
-                }
-                 if (message.microphone !== undefined && micToggleButtonElement) {
-                    updateToggleButtonAppearance(micToggleButtonElement, message.microphone);
-                }
-                 if (message.gamepad !== undefined && gamepadToggleButtonElement) {
-                    updateToggleButtonAppearance(gamepadToggleButtonElement, message.gamepad);
-                }
-            } else {
-                 console.log('Dev mode not enabled, skipping sidebar button UI update.');
-            }
-            break;
-
-        case 'audioDeviceSelected':
-            console.log('Received audioDeviceSelected message:', message);
-            const { context, deviceId } = message;
-            if (!deviceId) {
-                console.warn("Received audioDeviceSelected message without a deviceId.");
-                break;
-            }
-            if (context === 'input') {
-                console.log(`Setting preferred input device to: ${deviceId}`);
-                if (dev_mode && audioInputSelectElement && audioInputSelectElement.value !== deviceId) {
-                    audioInputSelectElement.value = deviceId;
-                }
-                if (preferredInputDeviceId !== deviceId) {
-                     preferredInputDeviceId = deviceId;
-                     if (isMicrophoneActive) {
-                         console.log("Microphone is active, restarting to apply new input device...");
-                         stopMicrophoneCapture();
-                         setTimeout(startMicrophoneCapture, 150);
-                     }
-                }
-            } else if (context === 'output') {
-                 console.log(`Setting preferred output device to: ${deviceId}`);
-                 if (dev_mode && audioOutputSelectElement && audioOutputSelectElement.value !== deviceId) {
-                     audioOutputSelectElement.value = deviceId;
-                 }
-                 if (preferredOutputDeviceId !== deviceId) {
-                     preferredOutputDeviceId = deviceId;
-                     applyOutputDevice();
-                 }
-            } else {
-                console.warn(`Unknown context in audioDeviceSelected message: ${context}`);
-            }
-            break;
-
-        case 'gamepadControl':
-            console.log(`Received gamepad control message: enabled=${message.enabled}`);
-            const newGamepadState = message.enabled;
-            if (isGamepadEnabled !== newGamepadState) {
-                isGamepadEnabled = newGamepadState;
-                setBoolParam('isGamepadEnabled', isGamepadEnabled); // Persist gamepad state
-                postSidebarButtonUpdate(); // Post update for UI consistency
-
-                if (window.webrtcInput && window.webrtcInput.gamepadManager) {
-                    if (isGamepadEnabled) {
-                        window.webrtcInput.gamepadManager.enable();
-                        console.log("Gamepad input enabled.");
-                    } else {
-                        window.webrtcInput.gamepadManager.disable();
-                        console.log("Gamepad input disabled.");
-                    }
-                } else {
-                    console.warn("Could not toggle gamepad state: window.webrtcInput or gamepadManager not found.");
-                }
-            }
-            break;
-
-        case 'gamepadButtonUpdate':
-        case 'gamepadAxisUpdate':
-             if (message.gamepadIndex === 0) {
-                 if (!gamepadStates[0]) gamepadStates[0] = { buttons: {}, axes: {} };
-                 if (message.type === 'gamepadButtonUpdate') {
-                     const { buttonIndex, value } = message;
-                     if (!gamepadStates[0].buttons) gamepadStates[0].buttons = {};
-                     gamepadStates[0].buttons[buttonIndex] = value;
-                 } else {
-                     const { axisIndex, value } = message;
-                     if (!gamepadStates[0].axes) gamepadStates[0].axes = {};
-                     const clampedValue = Math.max(-1, Math.min(1, value));
-                     gamepadStates[0].axes[axisIndex] = clampedValue;
-                 }
-                 updateGamepadVisuals(0);
-             }
-            break;
-
-        case 'requestFullscreen':
-            console.log('Received requestFullscreen message. Calling enterFullscreen().');
-            enterFullscreen();
-            break;
-
-        case 'serverSettings':
-            if (dev_mode) {
-                console.log('Received server_settings payload:', message);
-                // --- Handle Encoders Setting ---
-                if (message && message.hasOwnProperty('encoders') && Array.isArray(message.encoders)) {
-                    const serverSupportedEncoders = message.encoders;
-                    console.log('Server supported encoders:', serverSupportedEncoders);
-
-                    // Ensure encoderSelectElement is available
-                    if (typeof encoderSelectElement !== 'undefined' && encoderSelectElement) {
-                        // Clear existing options from the dropdown
-                        while (encoderSelectElement.firstChild) {
-                            encoderSelectElement.removeChild(encoderSelectElement.firstChild);
-                        }
-                        // Populate dropdown with encoders sent by the server
-                        if (serverSupportedEncoders.length > 0) {
-                            serverSupportedEncoders.forEach(encoder => {
-                                const option = document.createElement('option');
-                                option.value = encoder;
-                                option.textContent = encoder;
-                                encoderSelectElement.appendChild(option);
-                            });
-                            // Set currentEncoderMode if it's in the list, otherwise default to first
-                            if (serverSupportedEncoders.includes(currentEncoderMode)) {
-                                encoderSelectElement.value = currentEncoderMode;
-                            } else {
-                                encoderSelectElement.value = serverSupportedEncoders[0];
-                                // Post a settings message to sync currentEncoderMode with the new default
-                                window.postMessage({ type: 'settings', settings: { encoder: serverSupportedEncoders[0] } }, window.location.origin);
-                            }
-                            console.log('Encoder dropdown updated with server-provided options.');
-                        } else {
-                            // Handle the case where the server provides an empty list of encoders
-                            const option = document.createElement('option');
-                            option.value = ""; // No value
-                            option.textContent = "No encoders available from server";
-                            option.disabled = true; // Make it unselectable
-                            encoderSelectElement.appendChild(option);
-                            console.warn('Server provided an empty list of encoders.');
-                        }
-                    } else {
-                        console.warn('encoderSelectElement is not defined or not found. Cannot update encoder dropdown.');
-                    }
-                } else {
-                    console.log('No "encoders" array found in server_settings payload, or it is not an array. Encoder dropdown will not be updated by the server.');
-                }
-            }
-            break;
-        case 'command':
-            if (typeof message.value === 'string') {
-                const commandString = message.value;
-                console.log(`Received 'command' message with value: "${commandString}". Forwarding to WebSocket.`);
-                if (websocket && websocket.readyState === WebSocket.OPEN) {
-                    try {
-                        websocket.send(`cmd,${commandString}`);
-                        console.log(`Sent command to server via WebSocket: cmd,${commandString}`);
-                    } catch (e) {
-                        console.error('Failed to send command via WebSocket:', e);
-                    }
-                } else {
-                    console.warn('Cannot send command: WebSocket is not open or not available.');
-                }
-            } else {
-                console.warn("Received 'command' message without a string value:", message);
-            }
-            break;
-        case 'initialClientSettings':
-            if (dev_mode) {
-                console.log('Received initialClientSettings message, populating dev UI.');
-                const receivedSettings = message.settings;
-                const settingsPrefix = `${appName}_`;
-
-                for (const key in receivedSettings) {
-                    if (Object.hasOwnProperty.call(receivedSettings, key) && key.startsWith(settingsPrefix)) {
-                        const settingName = key.substring(settingsPrefix.length);
-                        const value = receivedSettings[key]; // Value is a string from localStorage
-
-                        // console.log(`Populating UI for setting: ${settingName}, value: ${value}`); // Verbose log
-
-                        switch (settingName) {
-                            case 'videoBitRate':
-                                if (videoBitrateSelectElement) videoBitrateSelectElement.value = value;
-                                break;
-                            case 'videoFramerate':
-                                if (framerateSelectElement) framerateSelectElement.value = value;
-                                break;
-                            case 'videoCRF':
-                                if (crfSelectElement) crfSelectElement.value = value;
-                                break;
-                            case 'encoder':
-                                if (encoderSelectElement) encoderSelectElement.value = value;
-                                break;
-                            case 'videoBufferSize':
-                                if (videoBufferSelectElement) videoBufferSelectElement.value = value;
-                                break;
-                            case 'scaleLocallyManual':
-                                if (scaleLocallyCheckbox) scaleLocallyCheckbox.checked = (value === 'true');
-                                break;
-                            case 'isManualResolutionMode':
-                                // This boolean primarily controls logic, UI fields (width/height) are separate
-                                break;
-                            case 'manualWidth':
-                                if (manualWidthInput) manualWidthInput.value = (value && value !== 'null') ? value : '';
-                                break;
-                            case 'manualHeight':
-                                if (manualHeightInput) manualHeightInput.value = (value && value !== 'null') ? value : '';
-                                break;
-                            case 'isGamepadEnabled':
-                                if (gamepadToggleButtonElement) {
-                                    const isActive = (value === 'true');
-                                    updateToggleButtonAppearance(gamepadToggleButtonElement, isActive);
-                                }
-                                break;
-                            // Add cases for other persisted settings if needed (resizeRemote, debug, turnSwitch have side effects like reload)
-                            case 'resizeRemote':
-                            case 'debug':
-                            case 'turnSwitch':
-                                // These usually trigger reloads or have immediate effects, not just UI population.
-                                // No direct UI element to populate here.
-                                break;
-                            default:
-                                // console.warn(`No UI population logic for received setting: ${settingName}`);
-                                break;
-                        }
-                    }
-                }
-                 console.log('Finished populating dev UI from initialClientSettings.');
-            } else {
-                 console.log('Received initialClientSettings but dev_mode is off. Ignoring UI population.');
-            }
-            break;
-
-        default:
-            console.warn('Received unknown message type via window.postMessage:', message.type, message);
-            break;
-    }
-
-}
-
-function updateGamepadVisuals(gamepadIndex) {
-    if (gamepadIndex !== 0 || !dev_mode) return; // Only visualize the first gamepad
-
-    const state = gamepadStates[0];
-    if (!state) return; // No state for this gamepad yet
-
-    const svg = document.getElementById('gamepad-svg-vis');
-    if (!svg) return; // SVG not found
-
-    // --- Update Buttons (including bumpers, dpad, stick clicks) ---
-    for (let i = 0; i <= 15; i++) { // Standard buttons 0-15
-        const buttonElement = svg.querySelector(`#gp-vis-btn-${i}`);
-        if (buttonElement) {
-            const value = state.buttons?.[i] || 0;
-            const pressed = value > GAMEPAD_VIS_THRESHOLD;
-
-            // Special handling for Triggers (opacity)
-            if (i === 6 || i === 7) { // LT (6), RT (7)
-                 buttonElement.style.opacity = 0.5 + (value * 0.5);
-            }
-            // Handling for Bumpers, DPad, Face Buttons, Stick Clicks (toggle class)
-            else if ([0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15].includes(i)) {
-                if (pressed) {
-                    // Use specific classes based on type for potential style differences
-                    if (i >= 12) buttonElement.classList.add('gp-vis-dpad-pressed');
-                    else if (i === 4 || i === 5) buttonElement.classList.add('gp-vis-bumper-pressed');
-                    else buttonElement.classList.add('gp-vis-button-pressed');
-                } else {
-                    buttonElement.classList.remove('gp-vis-button-pressed', 'gp-vis-dpad-pressed', 'gp-vis-bumper-pressed');
-                }
-            }
+  // 1. Origin Check (Security)
+  if (event.origin !== window.location.origin) {
+    console.warn(`Received message from unexpected origin: ${event.origin}. Expected ${window.location.origin}. Ignoring.`);
+    return;
+  }
+  const message = event.data;
+  // 2. Message Type Check (Basic Validation)
+  if (typeof message !== 'object' || message === null) {
+    console.warn('Received non-object message via window.postMessage:', message);
+    return;
+  }
+  if (!message.type) {
+    console.warn('Received message without a type property:', message);
+    return;
+  }
+  // 3. Message Handling based on type
+  switch (message.type) {
+    case 'setScaleLocally':
+      if (typeof message.value === 'boolean') {
+        scaleLocallyManual = message.value;
+        setBoolParam('scaleLocallyManual', scaleLocallyManual); // Persist the setting
+        console.log(`Set scaleLocallyManual to ${scaleLocallyManual} and persisted.`);
+        // If we are currently in manual mode, re-apply the style immediately
+        if (window.isManualResolutionMode && manualWidth !== null && manualHeight !== null) {
+          console.log("Applying new scaling style in manual mode.");
+          applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
         }
-    }
-
-    // --- Update Sticks ---
-    const leftStickElement = svg.querySelector('#gp-vis-stick-left');
-    const rightStickElement = svg.querySelector('#gp-vis-stick-right');
-
-    if (leftStickElement) {
-        const x = state.axes?.[0] || 0; // Axis 0: Left Stick X
-        const y = state.axes?.[1] || 0; // Axis 1: Left Stick Y
-        const translateX = x * STICK_VIS_MULTIPLIER;
-        const translateY = y * STICK_VIS_MULTIPLIER;
-        leftStickElement.style.transform = `translate(${translateX}px, ${translateY}px)`;
-    }
-
-    if (rightStickElement) {
-        const x = state.axes?.[2] || 0; // Axis 2: Right Stick X
-        const y = state.axes?.[3] || 0; // Axis 3: Right Stick Y
-        const translateX = x * STICK_VIS_MULTIPLIER;
-        const translateY = y * STICK_VIS_MULTIPLIER;
-        rightStickElement.style.transform = `translate(${translateX}px, ${translateY}px)`;
-    }
+      } else {
+        console.warn("Invalid value received for setScaleLocally:", message.value);
+      }
+      break;
+    case 'showVirtualKeyboard':
+      console.log("Received 'showVirtualKeyboard' message.");
+      const kbdAssistInput = document.getElementById('keyboard-input-assist');
+      if (kbdAssistInput) {
+        kbdAssistInput.value = '';
+        kbdAssistInput.focus();
+        console.log("Focused #keyboard-input-assist element.");
+      } else {
+        console.error("Could not find #keyboard-input-assist element to focus.");
+      }
+      break;
+    case 'setManualResolution':
+      // Validation already happened in the UI event listener, but double-check here
+      const width = parseInt(message.width, 10);
+      const height = parseInt(message.height, 10);
+      if (isNaN(width) || width <= 0 || isNaN(height) || height <= 0) {
+        console.error('Received invalid width/height for setManualResolution:', message);
+        break;
+      }
+      console.log(`Setting manual resolution: ${width}x${height}`);
+      window.isManualResolutionMode = true;
+      manualWidth = roundDownToEven(width);
+      manualHeight = roundDownToEven(height);
+      console.log(`Rounded resolution to even numbers: ${manualWidth}x${manualHeight}`);
+      setIntParam('manualWidth', manualWidth);
+      setIntParam('manualHeight', manualHeight);
+      setBoolParam('isManualResolutionMode', true);
+      disableAutoResize(); // Stop listening to window resize
+      sendResolutionToServer(manualWidth, manualHeight); // Send new res to server
+      applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual); // Apply local styling
+      if (currentEncoderMode === 'x264enc-striped') {
+        console.log("Clearing VNC stripe decoders due to manual resolution change.");
+        clearAllVncStripeDecoders();
+        if (canvasContext) canvasContext.setTransform(1, 0, 0, 1, 0, 0);
+        canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      break;
+    case 'resetResolutionToWindow':
+      console.log("Resetting resolution to window size.");
+      window.isManualResolutionMode = false;
+      manualWidth = null;
+      manualHeight = null;
+      // --- Clear Persisted Manual Resolution Settings ---
+      setIntParam('manualWidth', null);
+      setIntParam('manualHeight', null);
+      setBoolParam('isManualResolutionMode', false);
+      // Calculate current auto-resolution
+      const currentWindowRes = window.webrtcInput ? window.webrtcInput.getWindowResolution() : [window.innerWidth, window.innerHeight];
+      const autoWidth = roundDownToEven(currentWindowRes[0]);
+      const autoHeight = roundDownToEven(currentWindowRes[1]);
+      resetCanvasStyle(autoWidth, autoHeight); // Reset local canvas styling first
+      if (currentEncoderMode === 'x264enc-striped') {
+        console.log("Clearing VNC stripe decoders due to resolution reset to window.");
+        clearAllVncStripeDecoders();
+        if (canvasContext) canvasContext.setTransform(1, 0, 0, 1, 0, 0);
+        canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      enableAutoResize(); // Re-enable listener and trigger immediate resize
+      break;
+    case 'settings':
+      console.log('Received settings message:', message.settings);
+      handleSettingsMessage(message.settings);
+      break;
+    case 'getStats':
+      console.log('Received getStats message.');
+      sendStatsMessage();
+      break;
+    case 'clipboardUpdateFromUI':
+      console.log('Received clipboardUpdateFromUI message.');
+      const newClipboardText = message.text;
+      if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+        try {
+          const encodedText = btoa(newClipboardText); // Base64 encode
+          const clipboardMessage = `cw,${encodedText}`; // Prepend type
+          websocket.send(clipboardMessage);
+          console.log(`Sent clipboard update from UI to server: cw,...`);
+        } catch (e) {
+          console.error('Failed to encode or send clipboard text from UI:', e);
+        }
+      } else if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+        try {
+          const encodedText = btoa(newClipboardText); // Base64 encode
+          const clipboardMessage = `cw,${encodedText}`; // Prepend type
+          webrtc.sendDataChannelMessage(clipboardMessage);
+          console.log(`Sent clipboard update from UI to server via WebRTC: cw,...`);
+        } catch (e) {
+          console.error('Failed to encode or send clipboard text from UI via WebRTC:', e);
+        }
+      } else {
+        console.warn('Cannot send clipboard update from UI: Not connected.');
+      }
+      break;
+    case 'pipelineStatusUpdate':
+      console.log('Received pipelineStatusUpdate message:', message);
+      let stateChangedFromStatus = false;
+      if (message.video !== undefined && isVideoPipelineActive !== message.video) {
+        console.log(`pipelineStatusUpdate: Updating isVideoPipelineActive to ${message.video}`);
+        isVideoPipelineActive = message.video;
+        stateChangedFromStatus = true;
+      }
+      if (message.audio !== undefined && isAudioPipelineActive !== message.audio) {
+        console.log(`pipelineStatusUpdate: Updating isAudioPipelineActive to ${message.audio}`);
+        isAudioPipelineActive = message.audio;
+        stateChangedFromStatus = true;
+      }
+      if (message.microphone !== undefined && isMicrophoneActive !== message.microphone) {
+        console.log(`pipelineStatusUpdate: Updating isMicrophoneActive to ${message.microphone}`);
+        isMicrophoneActive = message.microphone;
+        stateChangedFromStatus = true;
+      }
+      if (message.gamepad !== undefined && isGamepadEnabled !== message.gamepad) {
+        console.log(`pipelineStatusUpdate: Updating isGamepadEnabled to ${message.gamepad}`);
+        isGamepadEnabled = message.gamepad;
+        stateChangedFromStatus = true;
+      }
+      if (stateChangedFromStatus) {
+        console.log("pipelineStatusUpdate: State changed, posting sidebar button update.");
+        postSidebarButtonUpdate();
+      } else {
+        console.log("pipelineStatusUpdate: No relevant state change detected.");
+      }
+      break;
+    case 'fileUpload':
+      console.log('Received fileUpload message:', message.payload);
+      updateSidebarUploadProgress(message.payload);
+      break;
+    case 'pipelineControl':
+      console.log(`Received pipeline control message: pipeline=${message.pipeline}, enabled=${message.enabled}`);
+      const pipeline = message.pipeline;
+      const desiredState = message.enabled;
+      let stateChangedFromControl = false;
+      if (pipeline === 'video' || pipeline === 'audio') {
+        let wsMessage = '';
+        if (pipeline === 'video') {
+          if (isVideoPipelineActive !== desiredState) {
+            isVideoPipelineActive = desiredState;
+            console.log(`pipelineControl: Immediately updating isVideoPipelineActive to ${isVideoPipelineActive}`);
+            stateChangedFromControl = true;
+            if (!isVideoPipelineActive) {
+              cleanupVideoBuffer();
+              if (currentEncoderMode === 'x264enc-striped') {
+                console.log("Video pipeline stopped in VNC mode, clearing stripe decoders.");
+                clearAllVncStripeDecoders();
+              }
+            }
+            wsMessage = desiredState ? 'START_VIDEO' : 'STOP_VIDEO';
+          }
+        } else if (pipeline === 'audio') {
+          if (isAudioPipelineActive !== desiredState) {
+            isAudioPipelineActive = desiredState;
+            console.log(`pipelineControl: Immediately updating isAudioPipelineActive to ${isAudioPipelineActive}`);
+            stateChangedFromControl = true;
+            wsMessage = desiredState ? 'START_AUDIO' : 'STOP_AUDIO';
+            if (audioDecoderWorker) {
+              audioDecoderWorker.postMessage({
+                type: 'updatePipelineStatus',
+                data: {
+                  isActive: isAudioPipelineActive
+                }
+              });
+            }
+          }
+        }
+        if (stateChangedFromControl) {
+          postSidebarButtonUpdate();
+        }
+        if (wsMessage && clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+          console.log(`pipelineControl: Sending ${wsMessage} via websocket.`);
+          websocket.send(wsMessage);
+        } else if (wsMessage) {
+          console.warn(`Cannot send ${pipeline} pipelineControl command: Not in websockets mode or websocket not open.`);
+        }
+      } else if (pipeline === 'microphone') {
+        if (desiredState) {
+          startMicrophoneCapture();
+        } else {
+          stopMicrophoneCapture();
+        }
+      } else {
+        console.warn(`Received pipelineControl message for unknown pipeline: ${pipeline}`);
+      }
+      break;
+    case 'audioDeviceSelected':
+      console.log('Received audioDeviceSelected message:', message);
+      const {
+        context, deviceId
+      } = message;
+      if (!deviceId) {
+        console.warn("Received audioDeviceSelected message without a deviceId.");
+        break;
+      }
+      if (context === 'input') {
+        console.log(`Setting preferred input device to: ${deviceId}`);
+        if (preferredInputDeviceId !== deviceId) {
+          preferredInputDeviceId = deviceId;
+          if (isMicrophoneActive) {
+            console.log("Microphone is active, restarting to apply new input device...");
+            stopMicrophoneCapture();
+            setTimeout(startMicrophoneCapture, 150);
+          }
+        }
+      } else if (context === 'output') {
+        console.log(`Setting preferred output device to: ${deviceId}`);
+        if (preferredOutputDeviceId !== deviceId) {
+          preferredOutputDeviceId = deviceId;
+          applyOutputDevice();
+        }
+      } else {
+        console.warn(`Unknown context in audioDeviceSelected message: ${context}`);
+      }
+      break;
+    case 'gamepadControl':
+      console.log(`Received gamepad control message: enabled=${message.enabled}`);
+      const newGamepadState = message.enabled;
+      if (isGamepadEnabled !== newGamepadState) {
+        isGamepadEnabled = newGamepadState;
+        setBoolParam('isGamepadEnabled', isGamepadEnabled); // Persist gamepad state
+        postSidebarButtonUpdate(); // Post update for UI consistency
+        if (window.webrtcInput && window.webrtcInput.gamepadManager) {
+          if (isGamepadEnabled) {
+            window.webrtcInput.gamepadManager.enable();
+            console.log("Gamepad input enabled.");
+          } else {
+            window.webrtcInput.gamepadManager.disable();
+            console.log("Gamepad input disabled.");
+          }
+        } else {
+          console.warn("Could not toggle gamepad state: window.webrtcInput or gamepadManager not found.");
+        }
+      }
+      break;
+    case 'gamepadButtonUpdate':
+    case 'gamepadAxisUpdate':
+      if (message.gamepadIndex === 0) {
+        if (!gamepadStates[0]) gamepadStates[0] = {
+          buttons: {},
+          axes: {}
+        };
+        if (message.type === 'gamepadButtonUpdate') {
+          const {
+            buttonIndex,
+            value
+          } = message;
+          if (!gamepadStates[0].buttons) gamepadStates[0].buttons = {};
+          gamepadStates[0].buttons[buttonIndex] = value;
+        } else {
+          const {
+            axisIndex,
+            value
+          } = message;
+          if (!gamepadStates[0].axes) gamepadStates[0].axes = {};
+          const clampedValue = Math.max(-1, Math.min(1, value));
+          gamepadStates[0].axes[axisIndex] = clampedValue;
+        }
+        updateGamepadVisuals(0);
+      }
+      break;
+    case 'requestFullscreen':
+      console.log('Received requestFullscreen message. Calling enterFullscreen().');
+      enterFullscreen();
+      break;
+    case 'command':
+      if (typeof message.value === 'string') {
+        const commandString = message.value;
+        console.log(`Received 'command' message with value: "${commandString}". Forwarding to WebSocket.`);
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+          try {
+            websocket.send(`cmd,${commandString}`);
+            console.log(`Sent command to server via WebSocket: cmd,${commandString}`);
+          } catch (e) {
+            console.error('Failed to send command via WebSocket:', e);
+          }
+        } else {
+          console.warn('Cannot send command: WebSocket is not open or not available.');
+        }
+      } else {
+        console.warn("Received 'command' message without a string value:", message);
+      }
+      break;
+    default:
+      break;
+  }
 }
 
 function handleSettingsMessage(settings) {
-
   console.log('Applying settings:', settings);
-
   if (settings.videoBitRate !== undefined) {
     videoBitRate = parseInt(settings.videoBitRate);
     setIntParam('videoBitRate', videoBitRate); // Save to localStorage
-
-    // Update UI dropdown if in dev mode
-    if (dev_mode && videoBitrateSelectElement) {
-         videoBitrateSelectElement.value = videoBitRate.toString();
-         let optionExists = false;
-         for (let i = 0; i < videoBitrateSelectElement.options.length; i++) {
-             if (videoBitrateSelectElement.options[i].value === videoBitRate.toString()) {
-                 optionExists = true;
-                 break;
-             }
-         }
-         // Add option if it doesn't exist
-         if (!optionExists) {
-             console.warn(`Received video bitrate ${videoBitRate} kbit/s from settings is not in dropdown options. Adding it.`);
-             const option = document.createElement('option');
-             option.value = videoBitRate.toString();
-             option.textContent = `${videoBitRate} kbit/s (custom)`;
-             videoBitrateSelectElement.insertBefore(option, videoBitrateSelectElement.firstChild);
-             videoBitrateSelectElement.value = videoBitRate.toString(); // Ensure the new option is selected
-         }
-    }
-
     // Send to server
     if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
       webrtc.sendDataChannelMessage(`vb,${videoBitRate}`);
-       console.log(`Sent video bitrate ${videoBitRate} kbit/s to server via DataChannel.`);
+      console.log(`Sent video bitrate ${videoBitRate} kbit/s to server via DataChannel.`);
     } else if (clientMode === 'websockets') {
-       if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
-            console.log(`Sent websocket message: ${message}`);
-            websocket.send(message);
-       } else {
-           console.warn("Websocket connection not open, cannot send video bitrate setting.");
-       }
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else {
+        console.warn("Websocket connection not open, cannot send video bitrate setting.");
+      }
     }
   }
-
   if (settings.videoFramerate !== undefined) {
     videoFramerate = parseInt(settings.videoFramerate);
     setIntParam('videoFramerate', videoFramerate); // Save to localStorage
-
-     // Update UI dropdown if in dev mode
-    if (dev_mode && framerateSelectElement) {
-        framerateSelectElement.value = videoFramerate.toString();
-         let optionExists = false;
-         for (let i = 0; i < framerateSelectElement.options.length; i++) {
-             if (framerateSelectElement.options[i].value === videoFramerate.toString()) {
-                 optionExists = true;
-                 break;
-             }
-         }
-         // Add option if it doesn't exist
-         if (!optionExists) {
-             console.warn(`Received video framerate ${videoFramerate} FPS from settings is not in dropdown options. Adding it.`);
-             const option = document.createElement('option');
-             option.value = videoFramerate.toString();
-             option.textContent = `${videoFramerate} FPS (custom)`;
-             framerateSelectElement.insertBefore(option, framerateSelectElement.firstChild);
-             framerateSelectElement.value = videoFramerate.toString(); // Ensure the new option is selected
-         }
-    }
-
     // Send to server
     if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
       webrtc.sendDataChannelMessage(`_arg_fps,${videoFramerate}`);
       console.log(`Sent video framerate ${videoFramerate} FPS to server via DataChannel (_arg_fps).`);
     } else if (clientMode === 'websockets') {
-       if (websocket && websocket.readyState === WebSocket.OPEN) {
-           const message = `SET_FRAMERATE,${videoFramerate}`;
-           console.log(`Sent websocket message: ${message}`);
-           websocket.send(message);
-       } else {
-           console.warn("Websocket connection not open, cannot send framerate setting.");
-       }
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        const message = `SET_FRAMERATE,${videoFramerate}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else {
+        console.warn("Websocket connection not open, cannot send framerate setting.");
+      }
     }
   }
-
   if (settings.resizeRemote !== undefined) {
     resizeRemote = settings.resizeRemote;
     setBoolParam('resizeRemote', resizeRemote); // Save to localStorage
-
     // Send to server (requires calculating resolution)
     const videoContainer = document.querySelector('.video-container');
     let res;
     if (!videoContainer) {
-         console.warn('video-container not found, using window size for resizeRemote resolution.');
-         res = `${roundDownToEven(window.innerWidth)}x${roundDownToEven(window.innerHeight)}`;
+      console.warn('video-container not found, using window size for resizeRemote resolution.');
+      res = `${roundDownToEven(window.innerWidth)}x${roundDownToEven(window.innerHeight)}`;
     } else {
-        const videoContainerRect = videoContainer.getBoundingClientRect();
-        const evenWidth = roundDownToEven(videoContainerRect.width);
-        const evenHeight = roundDownToEven(videoContainerRect.height);
-        res = `${evenWidth}x${evenHeight}`;
+      const videoContainerRect = videoContainer.getBoundingClientRect();
+      const evenWidth = roundDownToEven(videoContainerRect.width);
+      const evenHeight = roundDownToEven(videoContainerRect.height);
+      res = `${evenWidth}x${evenHeight}`;
     }
-
     if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-       webrtc.sendDataChannelMessage(`_arg_resize,${resizeRemote},${res}`);
-       console.log(`Sent resizeRemote ${resizeRemote} with resolution ${res} to server via DataChannel.`);
+      webrtc.sendDataChannelMessage(`_arg_resize,${resizeRemote},${res}`);
+      console.log(`Sent resizeRemote ${resizeRemote} with resolution ${res} to server via DataChannel.`);
     } else if (clientMode === 'websockets') {
-       console.warn("ResizeRemote setting received, but not sending to server in websockets mode (not implemented).");
+      console.warn("ResizeRemote setting received, but not sending to server in websockets mode (not implemented).");
     }
   }
-
   if (settings.encoder !== undefined) {
-      const newEncoderSetting = settings.encoder;
-      const oldEncoderActual = currentEncoderMode; // Capture global state before update
-
-      currentEncoderMode = newEncoderSetting; // Update global state
-      setStringParam('encoder', currentEncoderMode); // Persist the new encoder setting
-
-      // Update UI dropdown if in dev mode
-      if (dev_mode && encoderSelectElement) {
-          encoderSelectElement.value = currentEncoderMode;
-          let optionExists = false;
-          for (let i = 0; i < encoderSelectElement.options.length; i++) {
-              if (encoderSelectElement.options[i].value === currentEncoderMode) {
-                  optionExists = true;
-                  break;
-              }
-          }
-          // Add option if it doesn't exist
-          if (!optionExists) {
-              console.warn(`Received encoder ${currentEncoderMode} from settings is not in dropdown options. Adding it.`);
-              const option = document.createElement('option');
-              option.value = currentEncoderMode;
-              option.textContent = `${currentEncoderMode} (custom)`;
-              encoderSelectElement.insertBefore(option, encoderSelectElement.firstChild);
-              encoderSelectElement.value = currentEncoderMode; // Ensure the new option is selected
-          }
+    const newEncoderSetting = settings.encoder;
+    const oldEncoderActual = currentEncoderMode; // Capture global state before update
+    currentEncoderMode = newEncoderSetting; // Update global state
+    setStringParam('encoder', currentEncoderMode); // Persist the new encoder setting
+    // Send to server
+    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+      webrtc.sendDataChannelMessage(`enc,${currentEncoderMode}`);
+      console.log(`Sent encoder ${currentEncoderMode} to server via DataChannel.`);
+    } else if (clientMode === 'websockets') {
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        const message = `SET_ENCODER,${currentEncoderMode}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else {
+        console.warn("Websocket connection not open, cannot send encoder setting.");
       }
-
-      // Send to server
-      if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-          webrtc.sendDataChannelMessage(`enc,${currentEncoderMode}`);
-          console.log(`Sent encoder ${currentEncoderMode} to server via DataChannel.`);
-      } else if (clientMode === 'websockets') {
-          if (websocket && websocket.readyState === WebSocket.OPEN) {
-              const message = `SET_ENCODER,${currentEncoderMode}`;
-              console.log(`Sent websocket message: ${message}`);
-              websocket.send(message);
-          } else {
-              console.warn("Websocket connection not open, cannot send encoder setting.");
-          }
+    }
+    if (oldEncoderActual === 'x264enc-striped' && currentEncoderMode !== 'x264enc-striped') {
+      clearAllVncStripeDecoders();
+      console.log("Switched away from x264enc-striped, cleared stripe decoders.");
+      // If switching to a mode that uses the main 'decoder', ensure it's ready or reinitialized
+      if (currentEncoderMode === 'x264enc' && (!decoder || decoder.state === 'closed')) {
+        triggerInitializeDecoder(); // For full-frame H.264
       }
-
-      if (oldEncoderActual === 'x264enc-striped' && currentEncoderMode !== 'x264enc-striped') {
-          clearAllVncStripeDecoders();
-          console.log("Switched away from x264enc-striped, cleared stripe decoders.");
-          // If switching to a mode that uses the main 'decoder', ensure it's ready or reinitialized
-          if (currentEncoderMode === 'x264enc' && (!decoder || decoder.state === 'closed')) {
-              triggerInitializeDecoder(); // For full-frame H.264
-          }
-      } else if (currentEncoderMode === 'x264enc-striped' && oldEncoderActual !== 'x264enc-striped') {
-          if (canvasContext) {
-              canvasContext.setTransform(1, 0, 0, 1, 0, 0);
-              canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-              console.log("Switched to x264enc-striped, cleared canvas.");
-          }
-          // Close the main full-frame decoder if it's active, as VNC stripes use their own
-          if (decoder && decoder.state !== 'closed') {
-              console.log("Switching to VNC mode, closing main video decoder.");
-              decoder.close();
-              decoder = null;
-          }
+    } else if (currentEncoderMode === 'x264enc-striped' && oldEncoderActual !== 'x264enc-striped') {
+      if (canvasContext) {
+        canvasContext.setTransform(1, 0, 0, 1, 0, 0);
+        canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+        console.log("Switched to x264enc-striped, cleared canvas.");
       }
-
-      // Existing JPEG switch logic (mostly for canvas sizing)
-      if (currentEncoderMode === 'jpeg' && oldEncoderActual !== 'jpeg') {
-          console.log("Encoder changed to JPEG. Ensuring canvas buffer is correctly sized.");
-          let currentTargetWidth, currentTargetHeight;
-          if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
-              currentTargetWidth = manualWidth;
-              currentTargetHeight = manualHeight;
-              console.log(`JPEG Switch: Using manual resolution for canvas buffer: ${currentTargetWidth}x${currentTargetHeight}`);
-              applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, scaleLocallyManual);
-          } else {
-              if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
-                  const currentWindowRes = window.webrtcInput.getWindowResolution();
-                  currentTargetWidth = roundDownToEven(currentWindowRes[0]);
-                  currentTargetHeight = roundDownToEven(currentWindowRes[1]);
-                  console.log(`JPEG Switch: Using auto (window) resolution for canvas buffer: ${currentTargetWidth}x${currentTargetHeight}`);
-                  resetCanvasStyle(currentTargetWidth, currentTargetHeight);
-              } else {
-                  console.warn("Cannot determine auto resolution for JPEG switch: webrtcInput or getWindowResolution not available.");
-              }
-          }
+      // Close the main full-frame decoder if it's active, as VNC stripes use their own
+      if (decoder && decoder.state !== 'closed') {
+        console.log("Switching to VNC mode, closing main video decoder.");
+        decoder.close();
+        decoder = null;
       }
+    }
+    // Existing JPEG switch logic (mostly for canvas sizing)
+    if (currentEncoderMode === 'jpeg' && oldEncoderActual !== 'jpeg') {
+      console.log("Encoder changed to JPEG. Ensuring canvas buffer is correctly sized.");
+      let currentTargetWidth, currentTargetHeight;
+      if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
+        currentTargetWidth = manualWidth;
+        currentTargetHeight = manualHeight;
+        console.log(`JPEG Switch: Using manual resolution for canvas buffer: ${currentTargetWidth}x${currentTargetHeight}`);
+        applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, scaleLocallyManual);
+      } else {
+        if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
+          const currentWindowRes = window.webrtcInput.getWindowResolution();
+          currentTargetWidth = roundDownToEven(currentWindowRes[0]);
+          currentTargetHeight = roundDownToEven(currentWindowRes[1]);
+          console.log(`JPEG Switch: Using auto (window) resolution for canvas buffer: ${currentTargetWidth}x${currentTargetHeight}`);
+          resetCanvasStyle(currentTargetWidth, currentTargetHeight);
+        } else {
+          console.warn("Cannot determine auto resolution for JPEG switch: webrtcInput or getWindowResolution not available.");
+        }
+      }
+    }
   }
-
-
   if (settings.videoBufferSize !== undefined) {
     videoBufferSize = parseInt(settings.videoBufferSize);
     setIntParam('videoBufferSize', videoBufferSize); // Save to localStorage
     console.log(`Applied Video buffer size setting: ${videoBufferSize} frames.`);
-
-     // Update UI dropdown if in dev mode
-     if (dev_mode && videoBufferSelectElement) {
-         videoBufferSelectElement.value = videoBufferSize.toString();
-          let optionExists = false;
-          for (let i = 0; i < videoBufferSelectElement.options.length; i++) {
-              if (videoBufferSelectElement.options[i].value === videoBufferSize.toString()) {
-                  optionExists = true;
-                  break;
-              }
-          }
-           // Add option if it doesn't exist
-          if (!optionExists) {
-              console.warn(`Received video buffer size ${videoBufferSize} from settings is not in dropdown options. Adding it.`);
-              const option = document.createElement('option');
-              option.value = videoBufferSize.toString();
-              option.textContent = `${videoBufferSize} frames (custom)`;
-              videoBufferSelectElement.insertBefore(option, videoBufferSelectElement.firstChild);
-              videoBufferSelectElement.value = videoBufferSize.toString(); // Ensure the new option is selected
-          }
-     }
   }
-
   if (settings.videoCRF !== undefined) {
     videoCRF = parseInt(settings.videoCRF, 10);
     setIntParam('videoCRF', videoCRF); // Save to localStorage
     console.log(`Applied Video CRF setting: ${videoCRF}.`);
-    // Update UI dropdown if in dev mode
-    if (dev_mode && crfSelectElement) {
-        crfSelectElement.value = videoCRF.toString();
-        let optionExists = false;
-        for (let i = 0; i < crfSelectElement.options.length; i++) {
-            if (crfSelectElement.options[i].value === videoCRF.toString()) {
-                optionExists = true;
-                break;
-            }
-        }
-        // Add option if it doesn't exist (less likely for fixed options but good practice)
-        if (!optionExists) {
-            console.warn(`Received video CRF ${videoCRF} from settings is not in dropdown options. Adding it.`);
-            const option = document.createElement('option');
-            option.value = videoCRF.toString();
-            option.textContent = `${videoCRF} (custom)`;
-            crfSelectElement.insertBefore(option, crfSelectElement.firstChild);
-            crfSelectElement.value = videoCRF.toString(); // Ensure the new option is selected
-        }
-    }
     // Send to server via WebSocket
     if (clientMode === 'websockets') {
-       if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const message = `SET_CRF,${videoCRF}`;
-            console.log(`Sent websocket message: ${message}`);
-            websocket.send(message);
-       } else {
-           console.warn("Websocket connection not open, cannot send CRF setting.");
-       }
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        const message = `SET_CRF,${videoCRF}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else {
+        console.warn("Websocket connection not open, cannot send CRF setting.");
+      }
     } else {
-       // Note: No equivalent WebRTC data channel message specified in the prompt
-       console.warn("CRF setting received, but not sending to server in webrtc mode (not implemented/specified).");
+      // Note: No equivalent WebRTC data channel message specified in the prompt
+      console.warn("CRF setting received, but not sending to server in webrtc mode (not implemented/specified).");
     }
   }
-
   if (settings.turnSwitch !== undefined) {
     turnSwitch = settings.turnSwitch;
     setBoolParam('turnSwitch', turnSwitch); // Save to localStorage
@@ -3299,7 +2078,7 @@ function handleSettingsMessage(settings) {
   if (settings.debug !== undefined) {
     debug = settings.debug;
     setBoolParam('debug', debug); // Save to localStorage
-     console.log(`Applied debug setting: ${debug}. Reloading...`);
+    console.log(`Applied debug setting: ${debug}. Reloading...`);
     if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
       console.log('WebRTC not connected, skipping immediate reload.');
       return; // Important to return if not reloading, to process other settings
@@ -3322,57 +2101,54 @@ function sendStatsMessage() {
     isAudioPipelineActive: isAudioPipelineActive,
     isMicrophoneActive: isMicrophoneActive,
   };
-   if (typeof encoderName !== 'undefined') { // encoderName is not defined in this scope, maybe currentEncoderMode?
-       stats.encoderName = currentEncoderMode;
-   }
-  window.parent.postMessage({ type: 'stats', data: stats }, window.location.origin);
+  if (typeof encoderName !== 'undefined') { // encoderName is not defined in this scope, maybe currentEncoderMode?
+    stats.encoderName = currentEncoderMode;
+  }
+  window.parent.postMessage({
+    type: 'stats',
+    data: stats
+  }, window.location.origin);
   console.log('Sent stats message via window.postMessage:', stats);
 }
-
-
-
 document.addEventListener('DOMContentLoaded', () => {
   async function initializeDecoder() {
     if (decoder && decoder.state !== 'closed') {
-        console.warn("VideoDecoder already exists, closing before re-initializing.");
-        decoder.close();
+      console.warn("VideoDecoder already exists, closing before re-initializing.");
+      decoder.close();
     }
-
     // --- START: Dynamic Dimension Calculation ---
     let targetWidth = 1280; // Default fallback width
     let targetHeight = 720; // Default fallback height
-
     if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
-        // Use manually set resolution if active and valid
-        targetWidth = manualWidth;
-        targetHeight = manualHeight;
-        console.log(`[initializeDecoder] Using manual resolution for config: ${targetWidth}x${targetHeight}`);
+      // Use manually set resolution if active and valid
+      targetWidth = manualWidth;
+      targetHeight = manualHeight;
+      console.log(`[initializeDecoder] Using manual resolution for config: ${targetWidth}x${targetHeight}`);
     } else if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
-        try {
-            const currentRes = window.webrtcInput.getWindowResolution();
-            const autoWidth = roundDownToEven(currentRes[0]);
-            const autoHeight = roundDownToEven(currentRes[1]);
-            if (autoWidth > 0 && autoHeight > 0) {
-                targetWidth = autoWidth;
-                targetHeight = autoHeight;
-                console.log(`[initializeDecoder] Using auto resolution for config: ${targetWidth}x${targetHeight}`);
-            } else {
-                 console.warn(`[initializeDecoder] Auto resolution gave invalid dimensions (${autoWidth}x${autoHeight}), falling back to defaults.`);
-            }
-        } catch (e) {
-            console.error("[initializeDecoder] Error getting auto resolution:", e, "Falling back to defaults.");
+      try {
+        const currentRes = window.webrtcInput.getWindowResolution();
+        const autoWidth = roundDownToEven(currentRes[0]);
+        const autoHeight = roundDownToEven(currentRes[1]);
+        if (autoWidth > 0 && autoHeight > 0) {
+          targetWidth = autoWidth;
+          targetHeight = autoHeight;
+          console.log(`[initializeDecoder] Using auto resolution for config: ${targetWidth}x${targetHeight}`);
+        } else {
+          console.warn(`[initializeDecoder] Auto resolution gave invalid dimensions (${autoWidth}x${autoHeight}), falling back to defaults.`);
         }
+      } catch (e) {
+        console.error("[initializeDecoder] Error getting auto resolution:", e, "Falling back to defaults.");
+      }
     } else {
-        console.warn("[initializeDecoder] Cannot determine manual or auto resolution, falling back to defaults (1280x720). Input handler might not be ready.");
+      console.warn("[initializeDecoder] Cannot determine manual or auto resolution, falling back to defaults (1280x720). Input handler might not be ready.");
     }
-
     decoder = new VideoDecoder({
       output: handleDecodedFrame,
       error: (e) => {
         console.error('VideoDecoder error:', e.message);
         if (e.message.includes('fatal') || decoder.state === 'closed' || decoder.state === 'unconfigured') {
-            console.warn('Attempting to reset VideoDecoder due to error or bad state.');
-            initializeDecoder();
+          console.warn('Attempting to reset VideoDecoder due to error or bad state.');
+          initializeDecoder();
         }
       },
     });
@@ -3383,37 +2159,32 @@ document.addEventListener('DOMContentLoaded', () => {
       codedHeight: targetHeight,
       optimizeForLatency: true,
     };
-
     try {
       const support = await VideoDecoder.isConfigSupported(decoderConfig);
       if (support.supported) {
-          decoder.configure(decoderConfig);
-          // Log the config that was *actually* used
-          console.log('Main VideoDecoder configured successfully with config:', decoderConfig);
+        decoder.configure(decoderConfig);
+        // Log the config that was *actually* used
+        console.log('Main VideoDecoder configured successfully with config:', decoderConfig);
       } else {
-          console.error('Main VideoDecoder configuration not supported:', support, decoderConfig);
-          decoder = null;
+        console.error('Main VideoDecoder configuration not supported:', support, decoderConfig);
+        decoder = null;
       }
     } catch (e) {
       console.error('Error configuring Main VideoDecoder with config:', e, decoderConfig);
       decoder = null;
     }
   }
-
   initializeUI();
-
   videoElement.addEventListener('loadeddata', () => {
     if (clientMode === 'webrtc' && webrtc && webrtc.input) {
       webrtc.input.getCursorScaleFactor();
     }
   });
-
   const pathname = window.location.pathname.substring(
     0,
     window.location.pathname.lastIndexOf('/') + 1
   );
   const protocol = location.protocol === 'http:' ? 'ws://' : 'wss://';
-
   audio_signalling = new WebRTCDemoSignalling(
     new URL(
       `${protocol}${window.location.host}${pathname}${appName}/signalling/`
@@ -3422,20 +2193,17 @@ document.addEventListener('DOMContentLoaded', () => {
   );
   audio_webrtc = new WebRTCDemo(audio_signalling, audioElement, 3);
   audio_signalling.setInput(audio_webrtc.input);
-
   window.applyTimestamp = (msg) => {
     const now = new Date();
     const ts = `${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`;
     return `[${ts}] ${msg}`;
   };
-
   audio_signalling.onstatus = (message) => {
     loadingText = message;
     appendLogEntry(message);
     updateStatusDisplay();
   };
   audio_signalling.onerror = appendLogError;
-
   audio_signalling.ondisconnect = () => {
     const checkconnect = status === 'checkconnect';
     status = 'connecting';
@@ -3445,13 +2213,11 @@ document.addEventListener('DOMContentLoaded', () => {
     status = 'checkconnect';
     if (!checkconnect && signalling) signalling.disconnect();
   };
-
   const setupWebRTCMode = () => {
     if (metricsIntervalId) {
-        clearInterval(metricsIntervalId);
-        metricsIntervalId = null;
+      clearInterval(metricsIntervalId);
+      metricsIntervalId = null;
     }
-
     signalling = new WebRTCDemoSignalling(
       new URL(
         `${protocol}${window.location.host}${pathname}${appName}/signalling/`
@@ -3459,16 +2225,13 @@ document.addEventListener('DOMContentLoaded', () => {
       1
     );
     webrtc = new WebRTCDemo(signalling, videoElement, 1);
-
     signalling.setInput(webrtc.input);
-
     signalling.onstatus = (message) => {
       loadingText = message;
       appendLogEntry(message);
       updateStatusDisplay();
     };
     signalling.onerror = appendLogError;
-
     signalling.ondisconnect = () => {
       const checkconnect = status === 'checkconnect';
       status = 'connecting';
@@ -3480,7 +2243,6 @@ document.addEventListener('DOMContentLoaded', () => {
       status = 'checkconnect';
       if (!checkconnect) audio_signalling.disconnect();
     };
-
     webrtc.onstatus = (message) => {
       appendLogEntry(applyTimestamp(`[webrtc] ${message}`));
     };
@@ -3493,7 +2255,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!videoElement.paused) {
           playButtonElement.classList.add('hidden');
           statusDisplayElement.classList.add('hidden');
-          spinnerElement.classList.add('hidden');
         }
         if (webrtc && webrtc.peerConnection) {
           webrtc.peerConnection.getReceivers().forEach((receiver) => {
@@ -3513,19 +2274,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       status =
-        videoConnected === 'connected' && audioConnected === 'connected'
-          ? state
-          : videoConnected === 'connected'
-          ? audioConnected
-          : videoConnected;
+        videoConnected === 'connected' && audioConnected === 'connected' ?
+        state :
+        videoConnected === 'connected' ?
+        audioConnected :
+        videoConnected;
       updateStatusDisplay();
     };
     webrtc.ondatachannelopen = initializeInput;
-
     webrtc.ondatachannelclose = () => {
       if (webrtc && webrtc.input) webrtc.input.detach();
     };
-
     webrtc.onclipboardcontent = (content) => {
       navigator.clipboard
         .writeText(content)
@@ -3534,7 +2293,6 @@ document.addEventListener('DOMContentLoaded', () => {
             webrtc._setStatus(`Could not copy text to clipboard: ${err}`);
         });
     };
-
     webrtc.oncursorchange = (handle, curdata, hotspot, override) => {
       if (parseInt(handle, 10) === 0) {
         overlayInput.style.cursor = 'auto';
@@ -3558,15 +2316,12 @@ document.addEventListener('DOMContentLoaded', () => {
         overlayInput.style.cursor = cursor_url;
       }
     };
-
     webrtc.onsystemaction = (action) => {
       if (webrtc) webrtc._setStatus(`Executing system action: ${action}`);
     };
-
     webrtc.onlatencymeasurement = (latency_ms) => {
       serverLatency = latency_ms * 2.0;
     };
-
     if (debug) {
       webrtc.ondebug = (message) => {
         appendDebugEntry(applyTimestamp(`[webrtc] ${message}`));
@@ -3580,12 +2335,10 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
   };
-
   audio_webrtc.onstatus = (message) => {
     appendLogEntry(applyTimestamp(`[audio webrtc] ${message}`));
   };
   audio_webrtc.onerror = appendLogError;
-
   audio_webrtc.onconnectionstatechange = (state) => {
     audioConnected = state;
     if (audioConnected === 'connected') {
@@ -3607,11 +2360,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     status =
-      audioConnected === 'connected' && videoConnected === 'connected'
-        ? state
-        : audioConnected === 'connected'
-        ? videoConnected
-        : audioConnected;
+      audioConnected === 'connected' && videoConnected === 'connected' ?
+      state :
+      audioConnected === 'connected' ?
+      videoConnected :
+      audioConnected;
     updateStatusDisplay();
   };
   if (debug) {
@@ -3622,7 +2375,6 @@ document.addEventListener('DOMContentLoaded', () => {
       appendDebugEntry(applyTimestamp(`[audio webrtc] ${message}`));
     };
   }
-
   window.addEventListener('focus', () => {
     if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage)
       webrtc.sendDataChannelMessage('kr');
@@ -3632,7 +2384,6 @@ document.addEventListener('DOMContentLoaded', () => {
       websocket.readyState === WebSocket.OPEN
     )
       websocket.send('kr');
-
     navigator.clipboard
       .readText()
       .then((text) => {
@@ -3664,99 +2415,88 @@ document.addEventListener('DOMContentLoaded', () => {
     )
       websocket.send('kr');
   });
-
   document.addEventListener('visibilitychange', () => {
     if (clientMode !== 'websockets') return;
-
     if (document.hidden) {
-        console.log('Tab is hidden, stopping video pipeline.');
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-            if (isVideoPipelineActive) {
-                websocket.send('STOP_VIDEO');
-                isVideoPipelineActive = false; // Assume it stops
-                window.postMessage({ type: 'pipelineStatusUpdate', video: false }, window.location.origin);
-                console.log("Tab hidden in VNC mode, clearing stripe decoders.");
-                clearAllVncStripeDecoders();
-            } else {
-                 console.log('Video pipeline already stopped, not sending STOP_VIDEO.');
-            }
+      console.log('Tab is hidden, stopping video pipeline.');
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        if (isVideoPipelineActive) {
+          websocket.send('STOP_VIDEO');
+          isVideoPipelineActive = false; // Assume it stops
+          window.postMessage({
+            type: 'pipelineStatusUpdate',
+            video: false
+          }, window.location.origin);
+          console.log("Tab hidden in VNC mode, clearing stripe decoders.");
+          clearAllVncStripeDecoders();
         } else {
-            console.warn('Websocket not open, cannot send STOP_VIDEO.');
+          console.log('Video pipeline already stopped, not sending STOP_VIDEO.');
         }
-        cleanupVideoBuffer();
-
+      } else {
+        console.warn('Websocket not open, cannot send STOP_VIDEO.');
+      }
+      cleanupVideoBuffer();
     } else {
-        console.log('Tab is visible, starting video pipeline.');
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-            if (!isVideoPipelineActive) { // Only start if it was stopped
-                websocket.send('START_VIDEO');
-                 isVideoPipelineActive = true; // Assume it starts
-                 window.postMessage({ type: 'pipelineStatusUpdate', video: true }, window.location.origin);
-                 // If switching to VNC mode and tab becomes visible, canvas might need a clear
-                 if (currentEncoderMode === 'x264enc-striped' && canvasContext) {
-                     canvasContext.setTransform(1, 0, 0, 1, 0, 0);
-                     canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-                 }
-            } else {
-                console.log('Video pipeline already started, not sending START_VIDEO.');
-            }
+      console.log('Tab is visible, starting video pipeline.');
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        if (!isVideoPipelineActive) { // Only start if it was stopped
+          websocket.send('START_VIDEO');
+          isVideoPipelineActive = true; // Assume it starts
+          window.postMessage({
+            type: 'pipelineStatusUpdate',
+            video: true
+          }, window.location.origin);
+          // If switching to VNC mode and tab becomes visible, canvas might need a clear
+          if (currentEncoderMode === 'x264enc-striped' && canvasContext) {
+            canvasContext.setTransform(1, 0, 0, 1, 0, 0);
+            canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+          }
         } else {
-            console.warn('Websocket not open, cannot send START_VIDEO.');
+          console.log('Video pipeline already started, not sending START_VIDEO.');
         }
+      } else {
+        console.warn('Websocket not open, cannot send START_VIDEO.');
+      }
     }
   });
-
   async function decodeAndQueueJpegStripe(startY, jpegData) {
-      if (typeof ImageDecoder === 'undefined') {
-          console.warn('ImageDecoder API not supported. Cannot decode JPEG stripes.');
-          return;
-      }
-      try {
-          const imageDecoder = new ImageDecoder({
-              data: jpegData,
-              type: 'image/jpeg'
-          });
-          const result = await imageDecoder.decode();
-          jpegStripeRenderQueue.push({ image: result.image, startY: startY });
-
-          imageDecoder.close();
-
-      } catch (error) {
-          console.error('Error decoding JPEG stripe:', error, 'startY:', startY, 'dataLength:', jpegData.byteLength);
-      }
+    if (typeof ImageDecoder === 'undefined') {
+      console.warn('ImageDecoder API not supported. Cannot decode JPEG stripes.');
+      return;
+    }
+    try {
+      const imageDecoder = new ImageDecoder({
+        data: jpegData,
+        type: 'image/jpeg'
+      });
+      const result = await imageDecoder.decode();
+      jpegStripeRenderQueue.push({
+        image: result.image,
+        startY: startY
+      });
+      imageDecoder.close();
+    } catch (error) {
+      console.error('Error decoding JPEG stripe:', error, 'startY:', startY, 'dataLength:', jpegData.byteLength);
+    }
   }
-
-
   /**
    * Handles a decoded video frame from the decoder.
    * Adds the frame to the videoFrameBuffer.
    * @param {VideoFrame} frame
    */
   function handleDecodedFrame(frame) {
-      if (document.hidden) {
-        console.log('Tab is hidden, dropping video frame.');
-        frame.close();
-        if (dev_mode && videoBufferDivElement) {
-            videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames (Tab Hidden)`;
-        }
-        return;
-      }
-
-      if (!isVideoPipelineActive && clientMode === 'websockets') {
-           console.log('Video pipeline inactive, dropping video frame.');
-           frame.close();
-           if (dev_mode && videoBufferDivElement) {
-               videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames (Pipeline Inactive)`;
-           }
-           return;
-      }
-
-      videoFrameBuffer.push(frame);
-      if (dev_mode && videoBufferDivElement) {
-          videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
-      }
+    if (document.hidden) {
+      console.log('Tab is hidden, dropping video frame.');
+      frame.close();
+      return;
+    }
+    if (!isVideoPipelineActive && clientMode === 'websockets') {
+      console.log('Video pipeline inactive, dropping video frame.');
+      frame.close();
+      return;
+    }
+    videoFrameBuffer.push(frame);
   }
-
   triggerInitializeDecoder = initializeDecoder;
   console.log("initializeDecoder function assigned to triggerInitializeDecoder.");
   /**
@@ -3765,109 +2505,89 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function paintVideoFrame() {
     if (!canvas || !canvasContext) {
-        requestAnimationFrame(paintVideoFrame);
-        return;
+      requestAnimationFrame(paintVideoFrame);
+      return;
     }
-
     let videoPaintedThisFrame = false;
     let jpegPaintedThisFrame = false;
-
     // --- VNC STRIPE CHANGE: Conditional processing based on mode ---
     if (currentEncoderMode === 'x264enc-striped') {
-        let paintedSomethingThisCycle = false;
-        for (const stripeData of decodedStripesQueue) {
-            canvasContext.drawImage(stripeData.frame, 0, stripeData.yPos);
-            stripeData.frame.close(); // Close frame AFTER drawing
-            paintedSomethingThisCycle = true;
-        }
-        decodedStripesQueue = []; // Clear the queue
-
-        if (paintedSomethingThisCycle && !streamStarted) {
-            startStream();
-        }
+      let paintedSomethingThisCycle = false;
+      for (const stripeData of decodedStripesQueue) {
+        canvasContext.drawImage(stripeData.frame, 0, stripeData.yPos);
+        stripeData.frame.close(); // Close frame AFTER drawing
+        paintedSomethingThisCycle = true;
+      }
+      decodedStripesQueue = []; // Clear the queue
+      if (paintedSomethingThisCycle && !streamStarted) {
+        startStream();
+      }
     } else if (currentEncoderMode === 'jpeg') {
-        // JPEG Stripe Rendering (additive)
-        if (canvasContext && jpegStripeRenderQueue.length > 0) {
-            if ((canvas.width === 0 || canvas.height === 0) || (canvas.width === 300 && canvas.height === 150)) {
-                const firstStripe = jpegStripeRenderQueue[0];
-                if (firstStripe && firstStripe.image && (firstStripe.startY + firstStripe.image.height > canvas.height || firstStripe.image.width > canvas.width)) {
-                    console.warn(`[paintVideoFrame] Canvas dimensions (${canvas.width}x${canvas.height}) may be too small for JPEG stripes.`);
-                }
-            }
-
-            while (jpegStripeRenderQueue.length > 0) {
-                const segment = jpegStripeRenderQueue.shift();
-                if (segment && segment.image) {
-                    try {
-                        canvasContext.drawImage(segment.image, 0, segment.startY);
-                        segment.image.close();
-                        jpegPaintedThisFrame = true;
-                    } catch (e) {
-                        console.error("[paintVideoFrame] Error drawing JPEG segment:", e, segment);
-                        if (segment.image && typeof segment.image.close === 'function') {
-                            segment.image.close();
-                        }
-                    }
-                }
-            }
-            if (jpegPaintedThisFrame && !streamStarted) {
-                startStream();
-                initializeInput();
-            }
+      // JPEG Stripe Rendering (additive)
+      if (canvasContext && jpegStripeRenderQueue.length > 0) {
+        if ((canvas.width === 0 || canvas.height === 0) || (canvas.width === 300 && canvas.height === 150)) {
+          const firstStripe = jpegStripeRenderQueue[0];
+          if (firstStripe && firstStripe.image && (firstStripe.startY + firstStripe.image.height > canvas.height || firstStripe.image.width > canvas.width)) {
+            console.warn(`[paintVideoFrame] Canvas dimensions (${canvas.width}x${canvas.height}) may be too small for JPEG stripes.`);
+          }
         }
+        while (jpegStripeRenderQueue.length > 0) {
+          const segment = jpegStripeRenderQueue.shift();
+          if (segment && segment.image) {
+            try {
+              canvasContext.drawImage(segment.image, 0, segment.startY);
+              segment.image.close();
+              jpegPaintedThisFrame = true;
+            } catch (e) {
+              console.error("[paintVideoFrame] Error drawing JPEG segment:", e, segment);
+              if (segment.image && typeof segment.image.close === 'function') {
+                segment.image.close();
+              }
+            }
+          }
+        }
+        if (jpegPaintedThisFrame && !streamStarted) {
+          startStream();
+          initializeInput();
+        }
+      }
     } else { // Default to full-frame video (e.g., x264enc, nvh264enc)
-        if (!document.hidden && isVideoPipelineActive && videoFrameBuffer.length > videoBufferSize) {
-            const frameToPaint = videoFrameBuffer.shift();
-            if (frameToPaint) {
-                canvasContext.drawImage(frameToPaint, 0, 0);
-                frameToPaint.close();
-                videoPaintedThisFrame = true;
-                frameCount++;
-                if (!streamStarted) {
-                    startStream();
-                    initializeInput();
-                }
-            }
+      if (!document.hidden && isVideoPipelineActive && videoFrameBuffer.length > videoBufferSize) {
+        const frameToPaint = videoFrameBuffer.shift();
+        if (frameToPaint) {
+          canvasContext.drawImage(frameToPaint, 0, 0);
+          frameToPaint.close();
+          videoPaintedThisFrame = true;
+          frameCount++;
+          if (!streamStarted) {
+            startStream();
+            initializeInput();
+          }
         }
+      }
     }
-    // --- END VNC STRIPE CHANGE ---
-
-    // Update buffer display if not painted (for non-VNC modes)
-    if (currentEncoderMode !== 'x264enc-striped' && !videoPaintedThisFrame && !jpegPaintedThisFrame) {
-        if (dev_mode && videoBufferDivElement) {
-            let reason = "";
-            if(document.hidden) reason = "(Tab Hidden)";
-            else if (!isVideoPipelineActive) reason = "(Pipeline Inactive)";
-            else if (videoFrameBuffer.length <= videoBufferSize) reason = `(Buffer: ${videoFrameBuffer.length}/${videoBufferSize})`;
-            videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames ${reason}`;
-        }
-    }
-
     requestAnimationFrame(paintVideoFrame);
   }
-
   async function initializeAudio() {
     if (!audioContext) {
       const contextOptions = {
-          sampleRate: 48000,
+        sampleRate: 48000,
       };
-
-      audioContext = new (window.AudioContext || window.webkitAudioContext)(contextOptions);
+      audioContext = new(window.AudioContext || window.webkitAudioContext)(contextOptions);
       console.log(
         'Playback AudioContext initialized with options:', contextOptions,
         'Actual sampleRate:', audioContext.sampleRate,
         'Initial state:', audioContext.state
       );
-       // Handle state changes (e.g., if it starts suspended and resumes later)
-       audioContext.onstatechange = () => {
-           console.log(`Playback AudioContext state changed to: ${audioContext.state}`);
-           // Re-apply sinkId if it becomes running, in case it wasn't set before
-           if (audioContext.state === 'running') {
-               applyOutputDevice();
-           }
-       };
+      // Handle state changes (e.g., if it starts suspended and resumes later)
+      audioContext.onstatechange = () => {
+        console.log(`Playback AudioContext state changed to: ${audioContext.state}`);
+        // Re-apply sinkId if it becomes running, in case it wasn't set before
+        if (audioContext.state === 'running') {
+          applyOutputDevice();
+        }
+      };
     }
-
     try {
       const audioWorkletProcessorCode = `
         class AudioFrameProcessor extends AudioWorkletProcessor {
@@ -3954,304 +2674,277 @@ document.addEventListener('DOMContentLoaded', () => {
       URL.revokeObjectURL(audioWorkletURL);
       audioWorkletNode = new AudioWorkletNode(
         audioContext,
-        'audio-frame-processor',
-        {
+        'audio-frame-processor', {
           numberOfOutputs: 1,
           outputChannelCount: [2],
         }
       );
       audioWorkletProcessorPort = audioWorkletNode.port;
-
       audioWorkletProcessorPort.onmessage = (event) => {
-          if (event.data.type === 'audioBufferSize') {
-              window.currentAudioBufferSize = event.data.size;
-          }
+        if (event.data.type === 'audioBufferSize') {
+          window.currentAudioBufferSize = event.data.size;
+        }
       };
-
-
       audioWorkletNode.connect(audioContext.destination);
       console.log('Playback AudioWorkletProcessor initialized and connected.');
-
       await applyOutputDevice();
-
       if (audioDecoderWorker) { // Terminate existing worker if any
         console.warn("[Main] Terminating existing audio decoder worker before creating a new one.");
-        audioDecoderWorker.postMessage({ type: 'close' }); // Ask it to clean up
+        audioDecoderWorker.postMessage({
+          type: 'close'
+        }); // Ask it to clean up
         // Give it a moment to close gracefully before forceful termination
         await new Promise(resolve => setTimeout(resolve, 50));
         if (audioDecoderWorker) audioDecoderWorker.terminate();
         audioDecoderWorker = null;
       }
-
-      const audioDecoderWorkerBlob = new Blob([audioDecoderWorkerCode], { type: 'application/javascript' });
+      const audioDecoderWorkerBlob = new Blob([audioDecoderWorkerCode], {
+        type: 'application/javascript'
+      });
       const audioDecoderWorkerURL = URL.createObjectURL(audioDecoderWorkerBlob);
       audioDecoderWorker = new Worker(audioDecoderWorkerURL);
       URL.revokeObjectURL(audioDecoderWorkerURL); // Clean up blob URL
-
       audioDecoderWorker.onmessage = (event) => {
-        const { type, reason, message } = event.data;
+        const {
+          type,
+          reason,
+          message
+        } = event.data;
         if (type === 'decoderInitFailed') {
-            console.error(`[Main] Audio Decoder Worker failed to initialize: ${reason}`);
-            // Potentially try to re-initialize or disable audio pipeline
+          console.error(`[Main] Audio Decoder Worker failed to initialize: ${reason}`);
+          // Potentially try to re-initialize or disable audio pipeline
         } else if (type === 'decoderError') {
-            console.error(`[Main] Audio Decoder Worker reported error: ${message}`);
+          console.error(`[Main] Audio Decoder Worker reported error: ${message}`);
         } else if (type === 'decoderInitialized') {
-            console.log('[Main] Audio Decoder Worker confirmed its decoder is initialized.');
+          console.log('[Main] Audio Decoder Worker confirmed its decoder is initialized.');
         } else if (type === 'decodedAudioData') {
-            const pcmBufferFromWorker = event.data.pcmBuffer;
-            // --- NEW: Handle decoded PCM data from worker ---
-            if (pcmBufferFromWorker && audioWorkletProcessorPort && audioContext && audioContext.state === 'running') {
-                if (window.currentAudioBufferSize < 10) { // Check AudioWorklet buffer before posting
-                    audioWorkletProcessorPort.postMessage({ audioData: pcmBufferFromWorker }, [pcmBufferFromWorker]);
-                } else {
-                    // console.warn(`[Main] AudioWorklet buffer full (${window.currentAudioBufferSize}). Dropping PCM from worker.`);
-                    // The pcmBuffer is not used, will be garbage collected.
-                }
-            } else if (!audioWorkletProcessorPort || !audioContext || audioContext.state !== 'running') {
-                // console.warn('[Main] AudioWorklet not ready for PCM data from worker. Dropping.');
+          const pcmBufferFromWorker = event.data.pcmBuffer;
+          // --- NEW: Handle decoded PCM data from worker ---
+          if (pcmBufferFromWorker && audioWorkletProcessorPort && audioContext && audioContext.state === 'running') {
+            if (window.currentAudioBufferSize < 10) { // Check AudioWorklet buffer before posting
+              audioWorkletProcessorPort.postMessage({
+                audioData: pcmBufferFromWorker
+              }, [pcmBufferFromWorker]);
+            } else {
+              // console.warn(`[Main] AudioWorklet buffer full (${window.currentAudioBufferSize}). Dropping PCM from worker.`);
+              // The pcmBuffer is not used, will be garbage collected.
             }
+          } else if (!audioWorkletProcessorPort || !audioContext || audioContext.state !== 'running') {
+            // console.warn('[Main] AudioWorklet not ready for PCM data from worker. Dropping.');
+          }
         }
       };
       audioDecoderWorker.onerror = (error) => {
         console.error('[Main] Uncaught error in Audio Decoder Worker:', error.message, error);
         if (audioDecoderWorker) {
-            audioDecoderWorker.terminate(); // Terminate on unhandled error
-            audioDecoderWorker = null;
+          audioDecoderWorker.terminate(); // Terminate on unhandled error
+          audioDecoderWorker = null;
         }
         // Consider re-initializing the entire audio pipeline or notifying user
       };
-
       // Send the AudioWorklet port to the worker.
       // Crucially, also send the current pipeline status.
       if (audioWorkletProcessorPort) {
-          audioDecoderWorker.postMessage({
-            type: 'init',
-            data: {
-              initialPipelineStatus: isAudioPipelineActive // Send current status
-            }
-          });
-          console.log('[Main] Audio Decoder Worker created and init message sent with AudioWorklet port.');
+        audioDecoderWorker.postMessage({
+          type: 'init',
+          data: {
+            initialPipelineStatus: isAudioPipelineActive // Send current status
+          }
+        });
+        console.log('[Main] Audio Decoder Worker created and init message sent with AudioWorklet port.');
       } else {
-          console.error("[Main] audioWorkletProcessorPort is null, cannot initialize audioDecoderWorker correctly.");
+        console.error("[Main] audioWorkletProcessorPort is null, cannot initialize audioDecoderWorker correctly.");
       }
-
     } catch (error) {
       console.error('Error initializing Playback AudioWorklet:', error);
       if (audioContext && audioContext.state !== 'closed') {
-          audioContext.close(); // Clean up context if worklet failed
+        audioContext.close(); // Clean up context if worklet failed
       }
       audioContext = null;
       audioWorkletNode = null;
       audioWorkletProcessorPort = null;
     }
   }
-
-
   async function initializeDecoderAudio() {
     if (audioDecoderWorker) {
       console.log('[Main] Requesting Audio Decoder Worker to reinitialize its decoder.');
-      audioDecoderWorker.postMessage({ type: 'reinitialize' });
+      audioDecoderWorker.postMessage({
+        type: 'reinitialize'
+      });
     } else {
       console.warn('[Main] Cannot initialize decoder audio: Audio Decoder Worker not available. Call initializeAudio() first.');
       // If in websockets mode and the worker isn't up, try to start the full audio init.
       if (clientMode === 'websockets' && !audioContext) {
-          console.log('[Main] Audio context missing, attempting to initialize full audio pipeline for websockets.');
-          await initializeAudio(); // This will create the worker and send init.
+        console.log('[Main] Audio context missing, attempting to initialize full audio pipeline for websockets.');
+        await initializeAudio(); // This will create the worker and send init.
       }
     }
   }
-
   const ws_protocol = location.protocol === 'http:' ? 'ws://' : 'wss://';
   const websocketEndpointURL = new URL(
     `${ws_protocol}${window.location.host}${pathname}websockets`
   );
   websocket = new WebSocket(websocketEndpointURL.href);
   websocket.binaryType = 'arraybuffer';
-
   const sendClientMetrics = () => {
-      if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-          if (audioWorkletProcessorPort) { // Playback worklet port
-               audioWorkletProcessorPort.postMessage({ type: 'getBufferSize' });
-          }
-
-          // --- FPS Calculation Logic ---
-          const now = performance.now();
-          const elapsedStriped = now - lastStripedFpsUpdateTime;
-          const elapsedFullFrame = now - lastFpsUpdateTime;
-          const fpsUpdateInterval = 1000; // ms
-
-          // Check if we received striped frames with IDs recently
-          if (uniqueStripedFrameIdsThisPeriod.size > 0) {
-              if (elapsedStriped >= fpsUpdateInterval) {
-                  const stripedFps = (uniqueStripedFrameIdsThisPeriod.size * 1000) / elapsedStriped;
-                  window.fps = Math.round(stripedFps);
-                  // Reset counters for the next period
-                  uniqueStripedFrameIdsThisPeriod.clear();
-                  lastStripedFpsUpdateTime = now;
-                  frameCount = 0; // Reset full frame count too, as striped mode is active
-                  lastFpsUpdateTime = now;
-              }
-              // If interval not reached, window.fps retains previous value
-          }
-          // Else, check if we painted full frames recently
-          else if (frameCount > 0) {
-               if (elapsedFullFrame >= fpsUpdateInterval) {
-                   const fullFrameFps = (frameCount * 1000) / elapsedFullFrame;
-                   window.fps = Math.round(fullFrameFps);
-                   // Reset counters for the next period
-                   frameCount = 0;
-                   lastFpsUpdateTime = now;
-                   uniqueStripedFrameIdsThisPeriod.clear(); // Reset striped count too
-                   lastStripedFpsUpdateTime = now;
-               }
-              // If interval not reached, window.fps retains previous value
-          }
-          // Else (neither striped nor full frames processed recently)
-          else {
-               // If enough time has passed since *either* last update, reset FPS to 0
-               if (elapsedStriped >= fpsUpdateInterval && elapsedFullFrame >= fpsUpdateInterval) {
-                   window.fps = 0;
-                   // Reset timers anyway
-                   lastFpsUpdateTime = now;
-                   lastStripedFpsUpdateTime = now;
-               }
-          }
-          // --- End FPS Calculation Logic ---
-
-
-          try {
-              // Send the calculated FPS
-              websocket.send('cfps,' + window.fps);
-              if (lastReceivedVideoFrameId !== -1) { // Only send if we've received a frame
-                  websocket.send(`CLIENT_FRAME_ACK ${lastReceivedVideoFrameId}`);
-              }
-          } catch (error) {
-              console.error('[websockets] Error sending client metrics:', error);
-          }
+    if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+      if (audioWorkletProcessorPort) { // Playback worklet port
+        audioWorkletProcessorPort.postMessage({
+          type: 'getBufferSize'
+        });
       }
-
-      // Update Dev Sidebar UI
-      if (dev_mode) {
-          if (fpsCounterDivElement) {
-              fpsCounterDivElement.textContent = `Client FPS: ${window.fps}`;
-          }
-          if (audioBufferDivElement) {
-               audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize} buffers`;
-          }
+      // --- FPS Calculation Logic ---
+      const now = performance.now();
+      const elapsedStriped = now - lastStripedFpsUpdateTime;
+      const elapsedFullFrame = now - lastFpsUpdateTime;
+      const fpsUpdateInterval = 1000; // ms
+      // Check if we received striped frames with IDs recently
+      if (uniqueStripedFrameIdsThisPeriod.size > 0) {
+        if (elapsedStriped >= fpsUpdateInterval) {
+          const stripedFps = (uniqueStripedFrameIdsThisPeriod.size * 1000) / elapsedStriped;
+          window.fps = Math.round(stripedFps);
+          // Reset counters for the next period
+          uniqueStripedFrameIdsThisPeriod.clear();
+          lastStripedFpsUpdateTime = now;
+          frameCount = 0; // Reset full frame count too, as striped mode is active
+          lastFpsUpdateTime = now;
+        }
+        // If interval not reached, window.fps retains previous value
       }
+      // Else, check if we painted full frames recently
+      else if (frameCount > 0) {
+        if (elapsedFullFrame >= fpsUpdateInterval) {
+          const fullFrameFps = (frameCount * 1000) / elapsedFullFrame;
+          window.fps = Math.round(fullFrameFps);
+          // Reset counters for the next period
+          frameCount = 0;
+          lastFpsUpdateTime = now;
+          uniqueStripedFrameIdsThisPeriod.clear(); // Reset striped count too
+          lastStripedFpsUpdateTime = now;
+        }
+        // If interval not reached, window.fps retains previous value
+      }
+      // Else (neither striped nor full frames processed recently)
+      else {
+        // If enough time has passed since *either* last update, reset FPS to 0
+        if (elapsedStriped >= fpsUpdateInterval && elapsedFullFrame >= fpsUpdateInterval) {
+          window.fps = 0;
+          // Reset timers anyway
+          lastFpsUpdateTime = now;
+          lastStripedFpsUpdateTime = now;
+        }
+      }
+      try {
+        // Send the calculated FPS
+        websocket.send('cfps,' + window.fps);
+        if (lastReceivedVideoFrameId !== -1) { // Only send if we've received a frame
+          websocket.send(`CLIENT_FRAME_ACK ${lastReceivedVideoFrameId}`);
+        }
+      } catch (error) {
+        console.error('[websockets] Error sending client metrics:', error);
+      }
+    }
   };
-
-websocket.onopen = () => {
+  websocket.onopen = () => {
     console.log('[websockets] Connection opened!');
     isVideoPipelineActive = true; // Assume pipelines start active on new connection
     isAudioPipelineActive = true;
-    window.postMessage({ type: 'pipelineStatusUpdate', video: true, audio: true }, window.location.origin);
+    window.postMessage({
+      type: 'pipelineStatusUpdate',
+      video: true,
+      audio: true
+    }, window.location.origin);
     isMicrophoneActive = false; // Mic should always start off
     updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
-
     const settingsPrefix = `${appName}_`;
     const settingsToSend = {};
     let foundSettings = false;
-
     // --- Collect ALL settings from localStorage ---
     for (const key in localStorage) {
-        if (Object.hasOwnProperty.call(localStorage, key) && key.startsWith(settingsPrefix)) {
-            const settingValue = localStorage.getItem(key); // Get raw string value
-            // Use the full key (including prefix) for sending
-            settingsToSend[key] = settingValue;
-            foundSettings = true;
-        }
+      if (Object.hasOwnProperty.call(localStorage, key) && key.startsWith(settingsPrefix)) {
+        const settingValue = localStorage.getItem(key); // Get raw string value
+        // Use the full key (including prefix) for sending
+        settingsToSend[key] = settingValue;
+        foundSettings = true;
+      }
     }
-    // --- End Collect Settings ---
-
     if (foundSettings) {
-        try {
-            const settingsJson = JSON.stringify(settingsToSend);
-            const message = `SETTINGS,${settingsJson}`;
-            websocket.send(message);
-            console.log('[websockets] Sent stored settings to server:', settingsToSend);
-
-            // --- Send settings via postMessage ---
-            window.postMessage({ type: 'initialClientSettings', settings: settingsToSend }, window.location.origin);
-            console.log('[client] Posted initial settings via window.postMessage:', settingsToSend);
-            // --- End Send postMessage ---
-
-        } catch (e) {
-            console.error('[websockets] Error sending stored settings:', e);
-        }
+      try {
+        const settingsJson = JSON.stringify(settingsToSend);
+        const message = `SETTINGS,${settingsJson}`;
+        websocket.send(message);
+        console.log('[websockets] Sent stored settings to server:', settingsToSend);
+        // --- Send settings via postMessage ---
+        window.postMessage({
+          type: 'initialClientSettings',
+          settings: settingsToSend
+        }, window.location.origin);
+        console.log('[client] Posted initial settings via window.postMessage:', settingsToSend);
+      } catch (e) {
+        console.error('[websockets] Error sending stored settings:', e);
+      }
     } else {
-        try {
-            const message = 'SETTINGS,{}';
-            websocket.send(message);
-            console.log('[websockets] Sent blank settings to server (no settings found in localStorage).');
-
-             // --- Send blank settings via postMessage ---
-            window.postMessage({ type: 'initialClientSettings', settings: {} }, window.location.origin);
-            console.log('[client] Posted blank initial settings via window.postMessage.');
-             // --- End Send postMessage ---
-
-        } catch (e) {
-            console.error('[websockets] Error sending blank settings:', e);
-        }
+      try {
+        const message = 'SETTINGS,{}';
+        websocket.send(message);
+        console.log('[websockets] Sent blank settings to server (no settings found in localStorage).');
+        // --- Send blank settings via postMessage ---
+        window.postMessage({
+          type: 'initialClientSettings',
+          settings: {}
+        }, window.location.origin);
+        console.log('[client] Posted blank initial settings via window.postMessage.');
+      } catch (e) {
+        console.error('[websockets] Error sending blank settings:', e);
+      }
     }
-
     if (metricsIntervalId === null) {
-        metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
-        console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
+      metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
+      console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
     }
-
-     // --- Send initial resolution based on loaded mode ---
-     if (isManualResolutionMode && manualWidth != null && manualHeight != null) {
-        console.log("[websockets] Manual mode active on connect, sending stored manual resolution.");
-        sendResolutionToServer(manualWidth, manualHeight);
-     } else {
-        const videoContainer = document.querySelector('.video-container');
-        let initialWidth, initialHeight;
-        if (videoContainer) {
-            const rect = videoContainer.getBoundingClientRect();
-            initialWidth = roundDownToEven(rect.width);
-            initialHeight = roundDownToEven(rect.height);
-        } else {
-            console.warn("Websocket Open: video-container not found for initial resolution, using window.");
-            initialWidth = roundDownToEven(window.innerWidth);
-            initialHeight = roundDownToEven(window.innerHeight);
-        }
-        console.log("[websockets] Auto mode active on connect, sending container/window resolution.");
-        sendResolutionToServer(initialWidth, initialHeight);
-     }
-     // --- End Send initial resolution ---
-
-     // Request clipboard content
-     websocket.send('cr');
-     console.log('[websockets] Sent clipboard request (cr) to server.');
-
+    // --- Send initial resolution based on loaded mode ---
+    if (isManualResolutionMode && manualWidth != null && manualHeight != null) {
+      console.log("[websockets] Manual mode active on connect, sending stored manual resolution.");
+      sendResolutionToServer(manualWidth, manualHeight);
+    } else {
+      const videoContainer = document.querySelector('.video-container');
+      let initialWidth, initialHeight;
+      if (videoContainer) {
+        const rect = videoContainer.getBoundingClientRect();
+        initialWidth = roundDownToEven(rect.width);
+        initialHeight = roundDownToEven(rect.height);
+      } else {
+        console.warn("Websocket Open: video-container not found for initial resolution, using window.");
+        initialWidth = roundDownToEven(window.innerWidth);
+        initialHeight = roundDownToEven(window.innerHeight);
+      }
+      console.log("[websockets] Auto mode active on connect, sending container/window resolution.");
+      sendResolutionToServer(initialWidth, initialHeight);
+    }
+    // Request clipboard content
+    websocket.send('cr');
+    console.log('[websockets] Sent clipboard request (cr) to server.');
   };
-
   websocket.onmessage = (event) => {
     if (event.data instanceof ArrayBuffer) {
       if (clientMode === 'websockets') {
         const arrayBuffer = event.data;
         const dataView = new DataView(arrayBuffer);
-
         if (arrayBuffer.byteLength < 1) {
-             console.warn('Received empty binary message, ignoring.');
-             return;
+          console.warn('Received empty binary message, ignoring.');
+          return;
         }
-
         const dataTypeByte = dataView.getUint8(0);
         // console.log("Received binary data, type:", dataTypeByte); // Less verbose log
-
         if (dataTypeByte === 0) { // Full H.264 frame (non-VNC)
           if (arrayBuffer.byteLength < 4) {
-               console.warn('Received short video message (type 0), ignoring.');
-               return;
+            console.warn('Received short video message (type 0), ignoring.');
+            return;
           }
           const frameTypeFlag = dataView.getUint8(1);
           lastReceivedVideoFrameId = dataView.getUint16(2, false);
           const videoDataArrayBuffer = arrayBuffer.slice(4);
-
           if (!isVideoPipelineActive) return;
-
           if (decoder && decoder.state === 'configured') {
             const chunk = new EncodedVideoChunk({
               type: frameTypeFlag === 1 ? 'key' : 'delta',
@@ -4259,371 +2952,378 @@ websocket.onopen = () => {
               data: videoDataArrayBuffer,
             });
             try {
-                   decoder.decode(chunk);
+              decoder.decode(chunk);
             } catch (e) {
               console.error('Video Decoding error:', e);
               if (decoder.state === 'closed' || decoder.state === 'unconfigured') {
-                   console.warn("Video Decoder is closed or unconfigured, reinitializing...");
-                   initializeDecoder();
+                console.warn("Video Decoder is closed or unconfigured, reinitializing...");
+                initializeDecoder();
               }
             }
           } else {
             console.warn('Video Decoder not ready or not configured yet, video frame dropped.');
-             if (!decoder || decoder.state === 'closed') initializeDecoder();
+            if (!decoder || decoder.state === 'closed') initializeDecoder();
           }
         } else if (dataTypeByte === 1) { // Audio frame
           const AUDIO_BUFFER_THRESHOLD = 5;
           if (window.currentAudioBufferSize >= AUDIO_BUFFER_THRESHOLD) {
-              // console.warn(`Playback Audio buffer (${window.currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`);
-              return;
+            // console.warn(`Playback Audio buffer (${window.currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`);
+            return;
           }
           if (!isAudioPipelineActive) return;
           if (audioDecoderWorker) {
             // Ensure audioContext is running, as it's a prerequisite for AudioWorklet
             if (audioContext && audioContext.state !== 'running') {
-                // console.warn(`[Main] Playback AudioContext is ${audioContext.state}, attempting resume before sending to worker.`);
-                audioContext.resume().catch(e => console.error("[Main] Error resuming audio context on audio frame arrival", e));
+              // console.warn(`[Main] Playback AudioContext is ${audioContext.state}, attempting resume before sending to worker.`);
+              audioContext.resume().catch(e => console.error("[Main] Error resuming audio context on audio frame arrival", e));
             }
-
-            // IMPORTANT: Determine the correct slice for your Opus data.
-            // If server sends: [1-byte type][Opus Data], then .slice(1)
-            // If server sends: [1-byte type][1-byte other][Opus Data], then .slice(2)
-            // The original code had .slice(2) with a comment about 1 byte type & 1 byte unused/type.
-            // Let's assume .slice(2) was correct based on that comment.
             const opusDataArrayBuffer = arrayBuffer.slice(2);
-
             if (opusDataArrayBuffer.byteLength > 0) {
-                 audioDecoderWorker.postMessage({
-                    type: 'decode',
-                    data: {
-                        opusBuffer: opusDataArrayBuffer,
-                        timestamp: performance.now() * 1000 // Provide a timestamp
-                    }
-                 }, [opusDataArrayBuffer]); // Transfer the ArrayBuffer
+              audioDecoderWorker.postMessage({
+                type: 'decode',
+                data: {
+                  opusBuffer: opusDataArrayBuffer,
+                  timestamp: performance.now() * 1000 // Provide a timestamp
+                }
+              }, [opusDataArrayBuffer]); // Transfer the ArrayBuffer
             } else {
-                console.warn('[Main] Received audio frame with no Opus data after slicing.');
+              console.warn('[Main] Received audio frame with no Opus data after slicing.');
             }
           } else {
-             console.warn('[Main] Audio Decoder Worker not available, audio frame dropped. Attempting to initialize audio pipeline.');
-             if (clientMode === 'websockets') {
-                initializeAudio().then(() => { // initializeAudio is async
-                    if(audioDecoderWorker) { // Check if worker got created
-                        const opusDataArrayBuffer = arrayBuffer.slice(2); // Use consistent slicing
-                        if (opusDataArrayBuffer.byteLength > 0) {
-                            audioDecoderWorker.postMessage({
-                                type: 'decode',
-                                data: {
-                                    opusBuffer: opusDataArrayBuffer,
-                                    timestamp: performance.now() * 1000
-                                }
-                            }, [opusDataArrayBuffer]);
-                        }
-                    }
-                }).catch(err => console.error("[Main] Error during fallback audio initialization:", err));
-             }
+            console.warn('[Main] Audio Decoder Worker not available, audio frame dropped. Attempting to initialize audio pipeline.');
+            if (clientMode === 'websockets') {
+              initializeAudio().then(() => { // initializeAudio is async
+                if (audioDecoderWorker) { // Check if worker got created
+                  const opusDataArrayBuffer = arrayBuffer.slice(2); // Use consistent slicing
+                  if (opusDataArrayBuffer.byteLength > 0) {
+                    audioDecoderWorker.postMessage({
+                      type: 'decode',
+                      data: {
+                        opusBuffer: opusDataArrayBuffer,
+                        timestamp: performance.now() * 1000
+                      }
+                    }, [opusDataArrayBuffer]);
+                  }
+                }
+              }).catch(err => console.error("[Main] Error during fallback audio initialization:", err));
+            }
           }
         } else if (dataTypeByte === 0x02) { // Microphone data from server (should not happen)
-            console.log('Received unexpected microphone data (type 0x02) from server.');
+          console.log('Received unexpected microphone data (type 0x02) from server.');
         } else if (dataTypeByte === 0x03) { // JPEG Stripe
-            // 1 (type) + 1 + 2 + 2 = 6 bytes. Payload from byte 6.
-            if (arrayBuffer.byteLength < 6) { // Check against original assumption
-                console.warn('[websockets] Received short JPEG stripe message (type 0x03), ignoring.');
-                return;
-            }
-            const stripe_y_start = dataView.getUint16(4, false); // Original offset 4, Big Endiani
-            lastReceivedVideoFrameId = dataView.getUint16(2, false);
-            const jpegDataBuffer = arrayBuffer.slice(6);
-
-            if (jpegDataBuffer.byteLength === 0) {
-                console.warn('[websockets] Received JPEG stripe (type 0x03) with no image data, ignoring.');
-                return;
-            }
-            decodeAndQueueJpegStripe(stripe_y_start, jpegDataBuffer);
+          // 1 (type) + 1 + 2 + 2 = 6 bytes. Payload from byte 6.
+          if (arrayBuffer.byteLength < 6) { // Check against original assumption
+            console.warn('[websockets] Received short JPEG stripe message (type 0x03), ignoring.');
+            return;
+          }
+          const stripe_y_start = dataView.getUint16(4, false); // Original offset 4, Big Endiani
+          lastReceivedVideoFrameId = dataView.getUint16(2, false);
+          const jpegDataBuffer = arrayBuffer.slice(6);
+          if (jpegDataBuffer.byteLength === 0) {
+            console.warn('[websockets] Received JPEG stripe (type 0x03) with no image data, ignoring.');
+            return;
+          }
+          decodeAndQueueJpegStripe(stripe_y_start, jpegDataBuffer);
         }
         // --- START VNC H.264 STRIPE (0x04) HANDLING ---
         else if (dataTypeByte === 0x04) { // H.264 VNC Stripe
-            if (!isVideoPipelineActive) {
-                // console.log("VNC Stripe (0x04) received, but video pipeline inactive. Discarding.");
-                return;
-            }
-
-            if (typeof window.vncStripesArrivedThisPeriod !== 'undefined') {
-                window.vncStripesArrivedThisPeriod++;
-            }
-
-            const EXPECTED_HEADER_LENGTH = 10;
-
-            if (arrayBuffer.byteLength < EXPECTED_HEADER_LENGTH) { // Correct check
-                console.warn(`[websockets] Received short H.264 VNC stripe (type 0x04), length ${arrayBuffer.byteLength}, expected at least ${EXPECTED_HEADER_LENGTH}. Ignoring.`);
-                return;
-            }
-
-            const video_frame_type_byte = dataView.getUint8(1);
-            const vncFrameID = dataView.getUint16(2, false);
-            lastReceivedVideoFrameId = vncFrameID;
-            uniqueStripedFrameIdsThisPeriod.add(lastReceivedVideoFrameId);
-            const vncStripeYStart = dataView.getUint16(4, false);
-            const stripeWidth = dataView.getUint16(6, false);
-            const stripeHeight = dataView.getUint16(8, false);
-            const h264Payload = arrayBuffer.slice(EXPECTED_HEADER_LENGTH);
-
-            if (h264Payload.byteLength === 0) {
-                console.warn(`[websockets] Received H.264 VNC stripe (type 0x04) for Y=${vncStripeYStart} with no payload, ignoring.`);
-                return;
-            }
-
-            let decoderInfo = vncStripeDecoders[vncStripeYStart];
-            const chunkType = (video_frame_type_byte === 0x01) ? 'key' : 'delta';
-
-            if (!decoderInfo) {
-                const newStripeDecoder = new VideoDecoder({
-                    output: handleDecodedVncStripeFrame.bind(null, vncStripeYStart, vncFrameID),
-                    error: (e) => {
-                        console.error(`Error in VideoDecoder for VNC stripe Y=${vncStripeYStart} (FrameID: ${vncFrameID}):`, e.message);
-                    }
-                });
-                const decoderConfig = {
-                    codec: 'avc1.42E01E',
-                    codedWidth: stripeWidth,
-                    codedHeight: stripeHeight,
-                    optimizeForLatency: true,
-                };
-
-                vncStripeDecoders[vncStripeYStart] = { decoder: newStripeDecoder, pendingChunks: [] };
-                decoderInfo = vncStripeDecoders[vncStripeYStart];
-                VideoDecoder.isConfigSupported(decoderConfig)
-                    .then(support => {
-                        if (support.supported) {
-                            // Return the promise from configure() to chain it
-                            return newStripeDecoder.configure(decoderConfig);
-                        } else {
-                            console.error(`Decoder config not supported for VNC stripe Y=${vncStripeYStart}:`, decoderConfig, support);
-                            // Clean up if config not supported
-                            if (vncStripeDecoders[vncStripeYStart] && vncStripeDecoders[vncStripeYStart].decoder === newStripeDecoder) {
-                                delete vncStripeDecoders[vncStripeYStart];
-                            }
-                            return Promise.reject(new Error("Configuration not supported")); // Propagate error
-                        }
-                    })
-                    .then(() => {
-                        // This .then() block executes ONLY if configure() was successful
-                        console.log(`VideoDecoder successfully configured for VNC stripe Y=${vncStripeYStart}`);
-                        // Now it's safe to process any chunks that were queued while configuring
-                        processPendingChunksForStripe(vncStripeYStart);
-                    })
-                    .catch(e => {
-                        console.error(`Error during support check or configuration for VNC stripe Y=${vncStripeYStart}:`, e);
-                        // Ensure cleanup if configuration failed after being added to vncStripeDecoders
-                        if (vncStripeDecoders[vncStripeYStart] && vncStripeDecoders[vncStripeYStart].decoder === newStripeDecoder) {
-                            try {
-                                if (newStripeDecoder.state !== 'closed') newStripeDecoder.close();
-                            } catch (closeError) { /* ignore */ }
-                            delete vncStripeDecoders[vncStripeYStart];
-                        }
-                    });
-            }
-
-            // Decoder exists, queue or decode the chunk
-            if (decoderInfo) { // Check again as async configure might have failed and deleted it
-                const chunkTimestamp = performance.now() * 1000; // Microseconds, unique
-                const chunkData = {
-                    type: chunkType,
-                    timestamp: chunkTimestamp,
-                    data: h264Payload
-                };
-
-                if (decoderInfo.decoder.state === "configured") {
-                    const chunk = new EncodedVideoChunk({
-                        type: chunkType,
-                        timestamp: chunkTimestamp,
-                        data: h264Payload
-                    });
-                    try {
-                        decoderInfo.decoder.decode(chunk);
-                    } catch (e) {
-                        console.error(`Error decoding chunk for VNC stripe Y=${vncStripeYStart}:`, e, chunk);
-                    }
-                } else { // "unconfigured" or "configuring"
-                    // console.log(`VNC stripe Y=${vncStripeYStart} decoder not configured yet, adding to pending chunks.`);
-                    decoderInfo.pendingChunks.push(chunkData);
+          if (!isVideoPipelineActive) {
+            // console.log("VNC Stripe (0x04) received, but video pipeline inactive. Discarding.");
+            return;
+          }
+          if (typeof window.vncStripesArrivedThisPeriod !== 'undefined') {
+            window.vncStripesArrivedThisPeriod++;
+          }
+          const EXPECTED_HEADER_LENGTH = 10;
+          if (arrayBuffer.byteLength < EXPECTED_HEADER_LENGTH) { // Correct check
+            console.warn(`[websockets] Received short H.264 VNC stripe (type 0x04), length ${arrayBuffer.byteLength}, expected at least ${EXPECTED_HEADER_LENGTH}. Ignoring.`);
+            return;
+          }
+          const video_frame_type_byte = dataView.getUint8(1);
+          const vncFrameID = dataView.getUint16(2, false);
+          lastReceivedVideoFrameId = vncFrameID;
+          uniqueStripedFrameIdsThisPeriod.add(lastReceivedVideoFrameId);
+          const vncStripeYStart = dataView.getUint16(4, false);
+          const stripeWidth = dataView.getUint16(6, false);
+          const stripeHeight = dataView.getUint16(8, false);
+          const h264Payload = arrayBuffer.slice(EXPECTED_HEADER_LENGTH);
+          if (h264Payload.byteLength === 0) {
+            console.warn(`[websockets] Received H.264 VNC stripe (type 0x04) for Y=${vncStripeYStart} with no payload, ignoring.`);
+            return;
+          }
+          let decoderInfo = vncStripeDecoders[vncStripeYStart];
+          const chunkType = (video_frame_type_byte === 0x01) ? 'key' : 'delta';
+          if (!decoderInfo) {
+            const newStripeDecoder = new VideoDecoder({
+              output: handleDecodedVncStripeFrame.bind(null, vncStripeYStart, vncFrameID),
+              error: (e) => {
+                console.error(`Error in VideoDecoder for VNC stripe Y=${vncStripeYStart} (FrameID: ${vncFrameID}):`, e.message);
+              }
+            });
+            const decoderConfig = {
+              codec: 'avc1.42E01E',
+              codedWidth: stripeWidth,
+              codedHeight: stripeHeight,
+              optimizeForLatency: true,
+            };
+            vncStripeDecoders[vncStripeYStart] = {
+              decoder: newStripeDecoder,
+              pendingChunks: []
+            };
+            decoderInfo = vncStripeDecoders[vncStripeYStart];
+            VideoDecoder.isConfigSupported(decoderConfig)
+              .then(support => {
+                if (support.supported) {
+                  // Return the promise from configure() to chain it
+                  return newStripeDecoder.configure(decoderConfig);
+                } else {
+                  console.error(`Decoder config not supported for VNC stripe Y=${vncStripeYStart}:`, decoderConfig, support);
+                  // Clean up if config not supported
+                  if (vncStripeDecoders[vncStripeYStart] && vncStripeDecoders[vncStripeYStart].decoder === newStripeDecoder) {
+                    delete vncStripeDecoders[vncStripeYStart];
+                  }
+                  return Promise.reject(new Error("Configuration not supported")); // Propagate error
                 }
+              })
+              .then(() => {
+                // This .then() block executes ONLY if configure() was successful
+                console.log(`VideoDecoder successfully configured for VNC stripe Y=${vncStripeYStart}`);
+                // Now it's safe to process any chunks that were queued while configuring
+                processPendingChunksForStripe(vncStripeYStart);
+              })
+              .catch(e => {
+                console.error(`Error during support check or configuration for VNC stripe Y=${vncStripeYStart}:`, e);
+                // Ensure cleanup if configuration failed after being added to vncStripeDecoders
+                if (vncStripeDecoders[vncStripeYStart] && vncStripeDecoders[vncStripeYStart].decoder === newStripeDecoder) {
+                  try {
+                    if (newStripeDecoder.state !== 'closed') newStripeDecoder.close();
+                  } catch (closeError) {
+                    /* ignore */
+                  }
+                  delete vncStripeDecoders[vncStripeYStart];
+                }
+              });
+          }
+          // Decoder exists, queue or decode the chunk
+          if (decoderInfo) { // Check again as async configure might have failed and deleted it
+            const chunkTimestamp = performance.now() * 1000; // Microseconds, unique
+            const chunkData = {
+              type: chunkType,
+              timestamp: chunkTimestamp,
+              data: h264Payload
+            };
+            if (decoderInfo.decoder.state === "configured") {
+              const chunk = new EncodedVideoChunk({
+                type: chunkType,
+                timestamp: chunkTimestamp,
+                data: h264Payload
+              });
+              try {
+                decoderInfo.decoder.decode(chunk);
+              } catch (e) {
+                console.error(`Error decoding chunk for VNC stripe Y=${vncStripeYStart}:`, e, chunk);
+              }
+            } else { // "unconfigured" or "configuring"
+              // console.log(`VNC stripe Y=${vncStripeYStart} decoder not configured yet, adding to pending chunks.`);
+              decoderInfo.pendingChunks.push(chunkData);
             }
-        }
-        // --- END VNC H.264 STRIPE (0x04) HANDLING ---
-        else {
+          }
+        } else {
           console.warn('Unknown binary data payload type received:', dataTypeByte);
         }
       }
     } else if (typeof event.data === 'string') {
       if (clientMode === 'websockets') {
-         if (event.data.startsWith('{')) {
-           let obj;
-           try {
-              obj = JSON.parse(event.data);
-           } catch (e) {
-              console.error('Error parsing JSON message from server:', e, 'Message:', event.data);
-              return;
-           }
-
-           if (obj.type === 'system_stats') {
-             window.system_stats = obj;
-             if (dev_mode && systemStatsDivElement) {
-               systemStatsDivElement.textContent = JSON.stringify(obj, null, 2);
-             }
-           } else if (obj.type === 'gpu_stats') {
-             window.gpu_stats = obj;
-             if (dev_mode && gpuStatsDivElement) {
-               gpuStatsDivElement.textContent = JSON.stringify(obj, null, 2);
-             }
-           } else if (obj.type === 'server_settings') {
-             window.postMessage({ type: 'serverSettings', encoders: obj.encoders }, window.location.origin);
-           } else if (obj.type === 'server_apps') {
-             if (obj.apps && Array.isArray(obj.apps)) {
-               console.log('[websockets] Received server_apps:', obj.apps);
-               window.postMessage({ type: 'systemApps', apps: obj.apps }, window.location.origin);
-             } else {
-               console.warn('[websockets] Received server_apps message without a valid "apps" array:', obj);
-             }
-           } else if (obj.type === 'pipeline_status') {
-                console.log('Received pipeline status confirmation from server:', obj);
-                let statusChanged = false;
-                if (obj.video !== undefined && obj.video !== isVideoPipelineActive) {
-                    isVideoPipelineActive = obj.video;
-                    statusChanged = true;
-                    if (!isVideoPipelineActive && currentEncoderMode === 'x264enc-striped') {
-                        clearAllVncStripeDecoders(); // Clear if VNC video is stopped by server
-                    }
-                }
-                 if (obj.audio !== undefined && obj.audio !== isAudioPipelineActive) {
-                    isAudioPipelineActive = obj.audio;
-                    statusChanged = true;
-                    if (audioDecoderWorker) {
-                        audioDecoderWorker.postMessage({ type: 'updatePipelineStatus', data: { isActive: isAudioPipelineActive } });
-                    }
-                }
-                if (statusChanged) {
-                     window.postMessage({ type: 'pipelineStatusUpdate', video: isVideoPipelineActive, audio: isAudioPipelineActive }, window.location.origin);
-                }
-           }
-           else {
-             console.warn(`Received unexpected JSON message type from server: ${obj.type}`, obj);
-           }
-
-         } else if (event.data.startsWith('cursor,')) {
-           try {
-             const cursorData = JSON.parse(event.data.substring(7));
-             if (parseInt(cursorData.handle, 10) === 0) {
-               overlayInput.style.cursor = 'auto';
-               return;
-             }
-             const cursor_url = `url('data:image/png;base64,${cursorData.curdata}')`;
-             let cursorStyle = cursor_url;
-             if (cursorData.hotspot) {
-               cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
-             } else {
-               cursorStyle += ', auto';
-             }
-             overlayInput.style.cursor = cursorStyle;
-           } catch (e) {
-             console.error('Error parsing cursor data:', e);
-           }
-         } else if (event.data.startsWith('clipboard,')) {
-           try {
-             const clipboardDataBase64 = event.data.substring(10);
-             const clipboardData = atob(clipboardDataBase64);
-             navigator.clipboard.writeText(clipboardData).catch((err) => {
-               console.error('Could not copy text to clipboard: ' + err);
-             });
-             window.postMessage({ type: 'clipboardContentUpdate', text: clipboardData }, window.location.origin);
-           } catch (e) {
-             console.error('Error processing clipboard data:', e);
-           }
-         } else if (event.data.startsWith('system,')) {
-             try {
-                 const systemMsg = JSON.parse(event.data.substring(7));
-                 if (systemMsg.action === 'reload') {
-                     console.log('Received system reload action, reloading window.');
-                     window.location.reload();
-                 }
-             } catch (e) {
-                 console.error('Error parsing system data:', e);
-             }
-         }
-         else if (event.data === 'VIDEO_STARTED' && !isVideoPipelineActive) {
-             console.log('Received VIDEO_STARTED confirmation.');
-             isVideoPipelineActive = true;
-             window.postMessage({ type: 'pipelineStatusUpdate', video: true }, window.location.origin);
-         } else if (event.data === 'VIDEO_STOPPED' && isVideoPipelineActive) {
-             console.log('Received VIDEO_STOPPED confirmation.');
-             isVideoPipelineActive = false;
-             window.postMessage({ type: 'pipelineStatusUpdate', video: false }, window.location.origin);
-             cleanupVideoBuffer();
-             if (currentEncoderMode === 'x264enc-striped') { // Also clear VNC decoders
-                 clearAllVncStripeDecoders();
-             }
-         } else if (event.data === 'AUDIO_STARTED' && !isAudioPipelineActive) {
-             console.log('Received AUDIO_STARTED confirmation.');
-             isAudioPipelineActive = true;
-             window.postMessage({ type: 'pipelineStatusUpdate', audio: true }, window.location.origin);
-             if (audioDecoderWorker) {
-                 audioDecoderWorker.postMessage({ type: 'updatePipelineStatus', data: { isActive: true } });
-             }
-         } else if (event.data === 'AUDIO_STOPPED' && isAudioPipelineActive) {
-             console.log('Received AUDIO_STOPPED confirmation.');
-             isAudioPipelineActive = false;
-             window.postMessage({ type: 'pipelineStatusUpdate', audio: false }, window.location.origin);
-             if (audioDecoderWorker) {
-                 audioDecoderWorker.postMessage({ type: 'updatePipelineStatus', data: { isActive: false } });
-             }
-         }
-         else {
-            if (window.webrtcInput && window.webrtcInput.on_message) {
-               const handled = window.webrtcInput.on_message(event.data);
-               if (!handled) {
-                   // console.warn('Received unhandled string message (not input):', event.data);
-               }
+        if (event.data.startsWith('{')) {
+          let obj;
+          try {
+            obj = JSON.parse(event.data);
+          } catch (e) {
+            console.error('Error parsing JSON message from server:', e, 'Message:', event.data);
+            return;
+          }
+          if (obj.type === 'system_stats') {
+            window.system_stats = obj;
+          } else if (obj.type === 'gpu_stats') {
+            window.gpu_stats = obj;
+          } else if (obj.type === 'server_settings') {
+            window.postMessage({
+              type: 'serverSettings',
+              encoders: obj.encoders
+            }, window.location.origin);
+          } else if (obj.type === 'server_apps') {
+            if (obj.apps && Array.isArray(obj.apps)) {
+              console.log('[websockets] Received server_apps:', obj.apps);
+              window.postMessage({
+                type: 'systemApps',
+                apps: obj.apps
+              }, window.location.origin);
             } else {
-               // console.warn('Received unhandled string message (no input handler):', event.data);
+              console.warn('[websockets] Received server_apps message without a valid "apps" array:', obj);
             }
-         }
+          } else if (obj.type === 'pipeline_status') {
+            console.log('Received pipeline status confirmation from server:', obj);
+            let statusChanged = false;
+            if (obj.video !== undefined && obj.video !== isVideoPipelineActive) {
+              isVideoPipelineActive = obj.video;
+              statusChanged = true;
+              if (!isVideoPipelineActive && currentEncoderMode === 'x264enc-striped') {
+                clearAllVncStripeDecoders(); // Clear if VNC video is stopped by server
+              }
+            }
+            if (obj.audio !== undefined && obj.audio !== isAudioPipelineActive) {
+              isAudioPipelineActive = obj.audio;
+              statusChanged = true;
+              if (audioDecoderWorker) {
+                audioDecoderWorker.postMessage({
+                  type: 'updatePipelineStatus',
+                  data: {
+                    isActive: isAudioPipelineActive
+                  }
+                });
+              }
+            }
+            if (statusChanged) {
+              window.postMessage({
+                type: 'pipelineStatusUpdate',
+                video: isVideoPipelineActive,
+                audio: isAudioPipelineActive
+              }, window.location.origin);
+            }
+          } else {
+            console.warn(`Received unexpected JSON message type from server: ${obj.type}`, obj);
+          }
+        } else if (event.data.startsWith('cursor,')) {
+          try {
+            const cursorData = JSON.parse(event.data.substring(7));
+            if (parseInt(cursorData.handle, 10) === 0) {
+              overlayInput.style.cursor = 'auto';
+              return;
+            }
+            const cursor_url = `url('data:image/png;base64,${cursorData.curdata}')`;
+            let cursorStyle = cursor_url;
+            if (cursorData.hotspot) {
+              cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
+            } else {
+              cursorStyle += ', auto';
+            }
+            overlayInput.style.cursor = cursorStyle;
+          } catch (e) {
+            console.error('Error parsing cursor data:', e);
+          }
+        } else if (event.data.startsWith('clipboard,')) {
+          try {
+            const clipboardDataBase64 = event.data.substring(10);
+            const clipboardData = atob(clipboardDataBase64);
+            navigator.clipboard.writeText(clipboardData).catch((err) => {
+              console.error('Could not copy text to clipboard: ' + err);
+            });
+            window.postMessage({
+              type: 'clipboardContentUpdate',
+              text: clipboardData
+            }, window.location.origin);
+          } catch (e) {
+            console.error('Error processing clipboard data:', e);
+          }
+        } else if (event.data.startsWith('system,')) {
+          try {
+            const systemMsg = JSON.parse(event.data.substring(7));
+            if (systemMsg.action === 'reload') {
+              console.log('Received system reload action, reloading window.');
+              window.location.reload();
+            }
+          } catch (e) {
+            console.error('Error parsing system data:', e);
+          }
+        } else if (event.data === 'VIDEO_STARTED' && !isVideoPipelineActive) {
+          console.log('Received VIDEO_STARTED confirmation.');
+          isVideoPipelineActive = true;
+          window.postMessage({
+            type: 'pipelineStatusUpdate',
+            video: true
+          }, window.location.origin);
+        } else if (event.data === 'VIDEO_STOPPED' && isVideoPipelineActive) {
+          console.log('Received VIDEO_STOPPED confirmation.');
+          isVideoPipelineActive = false;
+          window.postMessage({
+            type: 'pipelineStatusUpdate',
+            video: false
+          }, window.location.origin);
+          cleanupVideoBuffer();
+          if (currentEncoderMode === 'x264enc-striped') { // Also clear VNC decoders
+            clearAllVncStripeDecoders();
+          }
+        } else if (event.data === 'AUDIO_STARTED' && !isAudioPipelineActive) {
+          console.log('Received AUDIO_STARTED confirmation.');
+          isAudioPipelineActive = true;
+          window.postMessage({
+            type: 'pipelineStatusUpdate',
+            audio: true
+          }, window.location.origin);
+          if (audioDecoderWorker) {
+            audioDecoderWorker.postMessage({
+              type: 'updatePipelineStatus',
+              data: {
+                isActive: true
+              }
+            });
+          }
+        } else if (event.data === 'AUDIO_STOPPED' && isAudioPipelineActive) {
+          console.log('Received AUDIO_STOPPED confirmation.');
+          isAudioPipelineActive = false;
+          window.postMessage({
+            type: 'pipelineStatusUpdate',
+            audio: false
+          }, window.location.origin);
+          if (audioDecoderWorker) {
+            audioDecoderWorker.postMessage({
+              type: 'updatePipelineStatus',
+              data: {
+                isActive: false
+              }
+            });
+          }
+        } else {
+          if (window.webrtcInput && window.webrtcInput.on_message) {
+            const handled = window.webrtcInput.on_message(event.data);
+            if (!handled) {
+              // console.warn('Received unhandled string message (not input):', event.data);
+            }
+          } else {
+            // console.warn('Received unhandled string message (no input handler):', event.data);
+          }
+        }
       } else if (event.data === 'MODE websockets') {
         clientMode = 'websockets';
         console.log('[websockets] Switched to websockets mode.');
         if (currentEncoderMode !== 'x264enc-striped') { // Only init main decoder if not in VNC mode
-            initializeDecoder();
+          initializeDecoder();
         }
         initializeDecoderAudio();
         initializeInput();
-
         if (playButtonElement) playButtonElement.classList.add('hidden');
         if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
-        //if (spinnerElement) spinnerElement.classList.remove('hidden');
-
         console.log('Starting video painting loop (requestAnimationFrame).');
         requestAnimationFrame(paintVideoFrame);
-
         if (websocket && websocket.readyState === WebSocket.OPEN) {
-            websocket.send('cr');
-            console.log('[websockets] Sent clipboard request (cr) to server.');
-             if (!document.hidden && !isVideoPipelineActive) websocket.send('START_VIDEO');
-             if (!isAudioPipelineActive) websocket.send('START_AUDIO');
+          websocket.send('cr');
+          console.log('[websockets] Sent clipboard request (cr) to server.');
+          if (!document.hidden && !isVideoPipelineActive) websocket.send('START_VIDEO');
+          if (!isAudioPipelineActive) websocket.send('START_AUDIO');
         }
-
-
       } else if (event.data === 'MODE webrtc') {
         clientMode = 'webrtc';
         console.log('[websockets] Switched to webrtc mode.');
         if (metricsIntervalId) {
-            clearInterval(metricsIntervalId);
-            metricsIntervalId = null;
-            console.log('[websockets] Stopped client metrics interval for webrtc mode.');
+          clearInterval(metricsIntervalId);
+          metricsIntervalId = null;
+          console.log('[websockets] Stopped client metrics interval for webrtc mode.');
         }
         if (decoder) decoder.close(); // Close main full-frame decoder
         clearAllVncStripeDecoders(); // Clear VNC decoders when switching mode
         cleanupVideoBuffer();
         cleanupJpegStripeQueue();
         stopMicrophoneCapture();
-
         setupWebRTCMode();
         fetch('./turn')
           .then((response) => response.json())
@@ -4631,17 +3331,13 @@ websocket.onopen = () => {
             turnSwitch = getBoolParam('turnSwitch', turnSwitch);
             audio_webrtc.forceTurn = turnSwitch;
             audio_webrtc.rtcPeerConfig = config;
-
             const windowResolution =
-              (clientMode === 'webrtc' && webrtc && webrtc.input)
-                ? webrtc.input.getWindowResolution()
-                : [roundDownToEven(window.innerWidth), roundDownToEven(window.innerHeight)];
-
+              (clientMode === 'webrtc' && webrtc && webrtc.input) ?
+              webrtc.input.getWindowResolution() : [roundDownToEven(window.innerWidth), roundDownToEven(window.innerHeight)];
             if (!scaleLocallyManual) {
               videoElement.style.width = `${windowResolution[0] / window.devicePixelRatio}px`;
               videoElement.style.height = `${windowResolution[1] / window.devicePixelRatio}px`;
             }
-
             if (config.iceServers.length > 1) {
               appendDebugEntry(
                 applyTimestamp(
@@ -4653,7 +3349,6 @@ websocket.onopen = () => {
             } else {
               appendDebugEntry(applyTimestamp('[app] no TURN servers found.'));
             }
-
             audio_webrtc.connect();
             webrtc.forceTurn = turnSwitch;
             webrtc.rtcPeerConfig = config;
@@ -4662,91 +3357,86 @@ websocket.onopen = () => {
       }
     }
   };
-
   websocket.onerror = (event) => {
     console.error('[websockets] Error:', event);
     if (metricsIntervalId) {
-        clearInterval(metricsIntervalId);
-        metricsIntervalId = null;
-        console.log('[websockets] Stopped client metrics interval due to error.');
+      clearInterval(metricsIntervalId);
+      metricsIntervalId = null;
+      console.log('[websockets] Stopped client metrics interval due to error.');
     }
   };
-
   websocket.onclose = (event) => {
     console.log('[websockets] Connection closed', event);
     if (metricsIntervalId) {
-        clearInterval(metricsIntervalId);
-        metricsIntervalId = null;
-        console.log('[websockets] Stopped client metrics interval due to close.');
+      clearInterval(metricsIntervalId);
+      metricsIntervalId = null;
+      console.log('[websockets] Stopped client metrics interval due to close.');
     }
     cleanupVideoBuffer();
     cleanupJpegStripeQueue();
-    if(decoder) decoder.close();
+    if (decoder) decoder.close();
     clearAllVncStripeDecoders(); // VNC decoders on close
     decoder = null;
     if (audioDecoderWorker) {
-        console.log('[websockets] Closing: Terminating Audio Decoder Worker.');
-        audioDecoderWorker.postMessage({ type: 'close' });
-        audioDecoderWorker = null;
+      console.log('[websockets] Closing: Terminating Audio Decoder Worker.');
+      audioDecoderWorker.postMessage({
+        type: 'close'
+      });
+      audioDecoderWorker = null;
     }
     stopMicrophoneCapture();
     isVideoPipelineActive = false;
     isAudioPipelineActive = false;
     isMicrophoneActive = false;
-    window.postMessage({ type: 'pipelineStatusUpdate', video: false, audio: false }, window.location.origin);
-    if (dev_mode) {
-        updateToggleButtonAppearance(videoToggleButtonElement, false);
-        updateToggleButtonAppearance(audioToggleButtonElement, false);
-        updateToggleButtonAppearance(micToggleButtonElement, false);
-    }
+    window.postMessage({
+      type: 'pipelineStatusUpdate',
+      video: false,
+      audio: false
+    }, window.location.origin);
   };
   // Reconnect on drop 
   setInterval(() => {
-      if ( clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-        // Pass
-      } else {
-        location.reload()
-      }
+    if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+      // Pass
+    } else {
+      location.reload()
+    }
   }, 1000);
 });
 
 function cleanupVideoBuffer() {
-    let closedCount = 0;
-    while(videoFrameBuffer.length > 0) {
-        const frame = videoFrameBuffer.shift();
-        try {
-            frame.close();
-            closedCount++;
-        } catch (e) {
-            // Ignore errors closing already closed frames
-        }
+  let closedCount = 0;
+  while (videoFrameBuffer.length > 0) {
+    const frame = videoFrameBuffer.shift();
+    try {
+      frame.close();
+      closedCount++;
+    } catch (e) {
+      // Ignore errors closing already closed frames
     }
-     if (closedCount > 0) console.log(`Cleanup: Closed ${closedCount} video frames from main buffer.`);
-
-     if (dev_mode && videoBufferDivElement) {
-        videoBufferDivElement.textContent = `Video Buffer: ${videoFrameBuffer.length} frames`;
-     }
+  }
+  if (closedCount > 0) console.log(`Cleanup: Closed ${closedCount} video frames from main buffer.`);
 }
 
 function cleanupJpegStripeQueue() {
-    let closedCount = 0;
-    while (jpegStripeRenderQueue.length > 0) {
-        const segment = jpegStripeRenderQueue.shift();
-        if (segment && segment.image && typeof segment.image.close === 'function') {
-            try {
-                segment.image.close();
-                closedCount++;
-            } catch (e) { /* ignore */ }
-        }
+  let closedCount = 0;
+  while (jpegStripeRenderQueue.length > 0) {
+    const segment = jpegStripeRenderQueue.shift();
+    if (segment && segment.image && typeof segment.image.close === 'function') {
+      try {
+        segment.image.close();
+        closedCount++;
+      } catch (e) {
+        /* ignore */
+      }
     }
-    if (closedCount > 0) console.log(`Cleanup: Closed ${closedCount} JPEG stripe images.`);
+  }
+  if (closedCount > 0) console.log(`Cleanup: Closed ${closedCount} JPEG stripe images.`);
 }
-
 const audioDecoderWorkerCode = `
   let decoderAudio;
   let pipelineActive = true;
   let currentDecodeQueueSize = 0;
-
   const decoderConfig = {
     codec: 'opus',
     numberOfChannels: 2,
@@ -4796,7 +3486,6 @@ const audioDecoderWorkerCode = `
     }
   }
 
-  // --- CORRECTED ASYNC VERSION ---
   async function handleDecodedAudioFrameInWorker(frame) {
     currentDecodeQueueSize = Math.max(0, currentDecodeQueueSize - 1);
 
@@ -4851,7 +3540,6 @@ const audioDecoderWorkerCode = `
       }
     }
   }
-  // --- END CORRECTED ASYNC VERSION ---
 
   self.onmessage = async (event) => {
     const { type, data } = event.data;
@@ -4930,7 +3618,6 @@ const audioDecoderWorkerCode = `
     }
   };
 `;
-
 // --- Microphone Worklet Code ---
 const micWorkletProcessorCode = `
 class MicWorkletProcessor extends AudioWorkletProcessor {
@@ -4954,260 +3641,242 @@ class MicWorkletProcessor extends AudioWorkletProcessor {
 
 registerProcessor('mic-worklet-processor', MicWorkletProcessor);
 `;
-
-
 async function startMicrophoneCapture() {
-    // Check if already active or prerequisites missing
-    if (isMicrophoneActive || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        if (!isMicrophoneActive) {
-             console.warn('getUserMedia not supported or mediaDevices not available.');
-             // Ensure state reflects reality and trigger UI update
-             isMicrophoneActive = false;
-             postSidebarButtonUpdate(); // Post update even on failure to start due to lack of support
-        } else {
-            console.warn('Microphone already active.');
-            postSidebarButtonUpdate();
-        }
-        return; // Exit if already active or not supported
+  // Check if already active or prerequisites missing
+  if (isMicrophoneActive || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    if (!isMicrophoneActive) {
+      console.warn('getUserMedia not supported or mediaDevices not available.');
+      // Ensure state reflects reality and trigger UI update
+      isMicrophoneActive = false;
+      postSidebarButtonUpdate(); // Post update even on failure to start due to lack of support
+    } else {
+      console.warn('Microphone already active.');
+      postSidebarButtonUpdate();
     }
-
-    console.log('Attempting to start microphone capture...');
-
-    // Define constraints variable here to be accessible in catch block
-    let constraints;
+    return; // Exit if already active or not supported
+  }
+  console.log('Attempting to start microphone capture...');
+  // Define constraints variable here to be accessible in catch block
+  let constraints;
+  try {
+    // 1. Get Microphone Stream with selected device preference
+    constraints = { // Assign to the outer scope variable
+      audio: {
+        deviceId: preferredInputDeviceId ? {
+          exact: preferredInputDeviceId
+        } : undefined,
+        sampleRate: 24000,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
+    };
+    console.log("Requesting microphone with constraints:", JSON.stringify(constraints.audio));
+    micStream = await navigator.mediaDevices.getUserMedia(constraints);
+    console.log('Microphone access granted.');
+    // Log actual settings and update preferred device if needed
+    const audioTracks = micStream.getAudioTracks();
+    if (audioTracks.length > 0) {
+      const settings = audioTracks[0].getSettings();
+      console.log("Actual microphone settings obtained:", settings);
+      if (!preferredInputDeviceId && settings.deviceId) {
+        console.log(`Default input device resolved to: ${settings.deviceId} (${settings.label || 'No Label'})`);
+        preferredInputDeviceId = settings.deviceId;
+      }
+      // Log if the requested sample rate was achieved
+      if (settings.sampleRate && settings.sampleRate !== 24000) {
+        console.warn(`Requested sampleRate 24000 but got ${settings.sampleRate}`);
+      }
+    }
+    // 2. Create *separate* AudioContext for Microphone
+    if (micAudioContext && micAudioContext.state !== 'closed') {
+      console.warn("Closing existing micAudioContext before creating a new one.");
+      await micAudioContext.close();
+      micAudioContext = null; // Clear reference
+    }
+    micAudioContext = new AudioContext({
+      sampleRate: 24000
+    }); // Use the requested sample rate
+    console.log('Microphone AudioContext created. Initial State:', micAudioContext.state, 'Sample Rate:', micAudioContext.sampleRate);
+    if (micAudioContext.state === 'suspended') {
+      console.log('Mic AudioContext is suspended, attempting resume...');
+      await micAudioContext.resume();
+      console.log('Mic AudioContext resumed. New State:', micAudioContext.state);
+    }
+    // Check if the actual context sample rate matches requested
+    if (micAudioContext.sampleRate !== 24000) {
+      console.warn(`Requested AudioContext sampleRate 24000 but created context has ${micAudioContext.sampleRate}`);
+    }
+    // 3. Add MicWorkletProcessor Module (Ensure micWorkletProcessorCode is defined)
+    if (typeof micWorkletProcessorCode === 'undefined' || !micWorkletProcessorCode) {
+      throw new Error("micWorkletProcessorCode is not defined. Cannot add AudioWorklet module.");
+    }
+    const micWorkletBlob = new Blob([micWorkletProcessorCode], {
+      type: 'application/javascript'
+    }); // Use correct MIME type
+    const micWorkletURL = URL.createObjectURL(micWorkletBlob);
     try {
-        // 1. Get Microphone Stream with selected device preference
-        constraints = { // Assign to the outer scope variable
-            audio: {
-                deviceId: preferredInputDeviceId ? { exact: preferredInputDeviceId } : undefined,
-                sampleRate: 24000,
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            },
-            video: false
-        };
-        console.log("Requesting microphone with constraints:", JSON.stringify(constraints.audio));
-        micStream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log('Microphone access granted.');
-
-        // Log actual settings and update preferred device if needed
-        const audioTracks = micStream.getAudioTracks();
-        if (audioTracks.length > 0) {
-             const settings = audioTracks[0].getSettings();
-             console.log("Actual microphone settings obtained:", settings);
-             if (!preferredInputDeviceId && settings.deviceId) {
-                  console.log(`Default input device resolved to: ${settings.deviceId} (${settings.label || 'No Label'})`);
-                  preferredInputDeviceId = settings.deviceId;
-             }
-             // Log if the requested sample rate was achieved
-             if (settings.sampleRate && settings.sampleRate !== 24000) {
-                 console.warn(`Requested sampleRate 24000 but got ${settings.sampleRate}`);
-             }
-        }
-
-        // 2. Create *separate* AudioContext for Microphone
-        if (micAudioContext && micAudioContext.state !== 'closed') {
-            console.warn("Closing existing micAudioContext before creating a new one.");
-            await micAudioContext.close();
-            micAudioContext = null; // Clear reference
-        }
-        micAudioContext = new AudioContext({ sampleRate: 24000 }); // Use the requested sample rate
-        console.log('Microphone AudioContext created. Initial State:', micAudioContext.state, 'Sample Rate:', micAudioContext.sampleRate);
-        if (micAudioContext.state === 'suspended') {
-            console.log('Mic AudioContext is suspended, attempting resume...');
-            await micAudioContext.resume();
-            console.log('Mic AudioContext resumed. New State:', micAudioContext.state);
-        }
-        // Check if the actual context sample rate matches requested
-        if (micAudioContext.sampleRate !== 24000) {
-             console.warn(`Requested AudioContext sampleRate 24000 but created context has ${micAudioContext.sampleRate}`);
-        }
-
-        // 3. Add MicWorkletProcessor Module (Ensure micWorkletProcessorCode is defined)
-        if (typeof micWorkletProcessorCode === 'undefined' || !micWorkletProcessorCode) {
-            throw new Error("micWorkletProcessorCode is not defined. Cannot add AudioWorklet module.");
-        }
-        const micWorkletBlob = new Blob([micWorkletProcessorCode], { type: 'application/javascript' }); // Use correct MIME type
-        const micWorkletURL = URL.createObjectURL(micWorkletBlob);
-        try {
-            await micAudioContext.audioWorklet.addModule(micWorkletURL);
-            console.log('Microphone AudioWorklet module added.');
-        } finally {
-            URL.revokeObjectURL(micWorkletURL); // Revoke URL immediately after addModule promise resolves/rejects
-        }
-
-
-        // 4. Create Source and Worklet Nodes
-        micSourceNode = micAudioContext.createMediaStreamSource(micStream);
-        micWorkletNode = new AudioWorkletNode(micAudioContext, 'mic-worklet-processor'); // Ensure this name matches registerProcessor
-        console.log('Microphone source and worklet nodes created.');
-
-        // 5. Set up WebSocket message handler for processed audio
-        micWorkletNode.port.onmessage = (event) => {
-            const pcm16Buffer = event.data;
-            const wsState = websocket ? websocket.readyState : 'No WebSocket';
-
-            if (websocket && websocket.readyState === WebSocket.OPEN && isMicrophoneActive) {
-                if (!pcm16Buffer || !(pcm16Buffer instanceof ArrayBuffer) || pcm16Buffer.byteLength === 0) {
-                    return;
-                }
-
-                // Message format: 1 byte type (0x02) + PCM data
-                const messageBuffer = new ArrayBuffer(1 + pcm16Buffer.byteLength);
-                const messageView = new DataView(messageBuffer);
-                messageView.setUint8(0, 0x02); // Type byte for PCM audio
-                new Uint8Array(messageBuffer, 1).set(new Uint8Array(pcm16Buffer)); // Copy PCM data
-
-                try {
-                    websocket.send(messageBuffer);
-                } catch (e) {
-                    console.error("Error sending microphone data via websocket:", e);
-                }
-            } else if (!isMicrophoneActive) {
-                // console.log("Microphone inactive, dropping message from worklet."); // Can be noisy
-            } else {
-                console.warn("WebSocket not open or null, cannot send microphone data. State:", wsState);
-            }
-        };
-        micWorkletNode.port.onmessageerror = (event) => {
-             console.error("Error receiving message from mic worklet:", event);
-        };
-
-        // 6. Connect the nodes
-        micSourceNode.connect(micWorkletNode);
-        console.log('Microphone nodes connected.');
-
-        // 7. Update State and Trigger UI Update via postMessage
-        isMicrophoneActive = true;
-        postSidebarButtonUpdate(); // Post message to update UI
-        console.log('Microphone capture started successfully.');
-
-    } catch (error) {
-        console.error('Failed to start microphone capture:', error);
-        if (constraints) { // Log constraints if they were defined
-             console.error('Error occurred after requesting constraints:', JSON.stringify(constraints.audio));
-        }
-        if (error.name === 'NotAllowedError') {
-             alert("Microphone access was denied. Please grant permission in your browser settings.");
-        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-             alert("No microphone found, or the selected microphone is unavailable. Please check your hardware and browser settings.");
-             // Clear preference if specific device failed
-             if (preferredInputDeviceId) {
-                 console.warn(`Failed to find preferred device ${preferredInputDeviceId}. Clearing preference.`);
-                 preferredInputDeviceId = null;
-             }
-        } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-             alert("Could not read from the microphone. It might be in use by another application or there could be a hardware issue.");
-        } else if (error.name === 'OverconstrainedError') {
-             alert(`Could not satisfy microphone requirements (e.g., sample rate ${constraints?.audio?.sampleRate}). Try default settings.`);
-             console.error("OverconstrainedError details:", error.constraint);
-        } else if (error.message.includes("addModule")) {
-             alert("Failed to load audio processing module. Please check console for details.");
-        } else {
-             alert(`An unexpected error occurred while starting the microphone: ${error.message}`);
-        }
-
-        // Clean up any resources that might have been partially created
-        stopMicrophoneCapture();
-
-        // Ensure state reflects failure and trigger UI update via postMessage
-        isMicrophoneActive = false;
-        postSidebarButtonUpdate(); // Post message to update UI to reflect failure
+      await micAudioContext.audioWorklet.addModule(micWorkletURL);
+      console.log('Microphone AudioWorklet module added.');
+    } finally {
+      URL.revokeObjectURL(micWorkletURL); // Revoke URL immediately after addModule promise resolves/rejects
     }
+    // 4. Create Source and Worklet Nodes
+    micSourceNode = micAudioContext.createMediaStreamSource(micStream);
+    micWorkletNode = new AudioWorkletNode(micAudioContext, 'mic-worklet-processor'); // Ensure this name matches registerProcessor
+    console.log('Microphone source and worklet nodes created.');
+    // 5. Set up WebSocket message handler for processed audio
+    micWorkletNode.port.onmessage = (event) => {
+      const pcm16Buffer = event.data;
+      const wsState = websocket ? websocket.readyState : 'No WebSocket';
+      if (websocket && websocket.readyState === WebSocket.OPEN && isMicrophoneActive) {
+        if (!pcm16Buffer || !(pcm16Buffer instanceof ArrayBuffer) || pcm16Buffer.byteLength === 0) {
+          return;
+        }
+        // Message format: 1 byte type (0x02) + PCM data
+        const messageBuffer = new ArrayBuffer(1 + pcm16Buffer.byteLength);
+        const messageView = new DataView(messageBuffer);
+        messageView.setUint8(0, 0x02); // Type byte for PCM audio
+        new Uint8Array(messageBuffer, 1).set(new Uint8Array(pcm16Buffer)); // Copy PCM data
+        try {
+          websocket.send(messageBuffer);
+        } catch (e) {
+          console.error("Error sending microphone data via websocket:", e);
+        }
+      } else if (!isMicrophoneActive) {
+        // console.log("Microphone inactive, dropping message from worklet."); // Can be noisy
+      } else {
+        console.warn("WebSocket not open or null, cannot send microphone data. State:", wsState);
+      }
+    };
+    micWorkletNode.port.onmessageerror = (event) => {
+      console.error("Error receiving message from mic worklet:", event);
+    };
+    // 6. Connect the nodes
+    micSourceNode.connect(micWorkletNode);
+    console.log('Microphone nodes connected.');
+    // 7. Update State and Trigger UI Update via postMessage
+    isMicrophoneActive = true;
+    postSidebarButtonUpdate(); // Post message to update UI
+    console.log('Microphone capture started successfully.');
+  } catch (error) {
+    console.error('Failed to start microphone capture:', error);
+    if (constraints) { // Log constraints if they were defined
+      console.error('Error occurred after requesting constraints:', JSON.stringify(constraints.audio));
+    }
+    if (error.name === 'NotAllowedError') {
+      alert("Microphone access was denied. Please grant permission in your browser settings.");
+    } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+      alert("No microphone found, or the selected microphone is unavailable. Please check your hardware and browser settings.");
+      // Clear preference if specific device failed
+      if (preferredInputDeviceId) {
+        console.warn(`Failed to find preferred device ${preferredInputDeviceId}. Clearing preference.`);
+        preferredInputDeviceId = null;
+      }
+    } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+      alert("Could not read from the microphone. It might be in use by another application or there could be a hardware issue.");
+    } else if (error.name === 'OverconstrainedError') {
+      alert(`Could not satisfy microphone requirements (e.g., sample rate ${constraints?.audio?.sampleRate}). Try default settings.`);
+      console.error("OverconstrainedError details:", error.constraint);
+    } else if (error.message.includes("addModule")) {
+      alert("Failed to load audio processing module. Please check console for details.");
+    } else {
+      alert(`An unexpected error occurred while starting the microphone: ${error.message}`);
+    }
+    // Clean up any resources that might have been partially created
+    stopMicrophoneCapture();
+    // Ensure state reflects failure and trigger UI update via postMessage
+    isMicrophoneActive = false;
+    postSidebarButtonUpdate(); // Post message to update UI to reflect failure
+  }
 }
 
 function stopMicrophoneCapture() {
-    // Only proceed if the microphone is actually active
-    if (!isMicrophoneActive && !micStream && !micAudioContext) { // Check all relevant states
-        // console.log('Stop capture called, but microphone appears to be already inactive or not initialized.');
-        if (isMicrophoneActive) { // If state is true but resources are null, correct state.
-             isMicrophoneActive = false;
-             postSidebarButtonUpdate();
-        }
-        return;
+  // Only proceed if the microphone is actually active
+  if (!isMicrophoneActive && !micStream && !micAudioContext) { // Check all relevant states
+    // console.log('Stop capture called, but microphone appears to be already inactive or not initialized.');
+    if (isMicrophoneActive) { // If state is true but resources are null, correct state.
+      isMicrophoneActive = false;
+      postSidebarButtonUpdate();
     }
-
-    console.log('Stopping microphone capture...');
-
-    // 1. Stop MediaStream Tracks
-    if (micStream) {
-        micStream.getTracks().forEach(track => {
-            track.stop();
-            console.log(`Microphone track stopped: ${track.kind} (${track.label})`);
-        });
-        micStream = null; // Clear the reference
+    return;
+  }
+  console.log('Stopping microphone capture...');
+  // 1. Stop MediaStream Tracks
+  if (micStream) {
+    micStream.getTracks().forEach(track => {
+      track.stop();
+      console.log(`Microphone track stopped: ${track.kind} (${track.label})`);
+    });
+    micStream = null; // Clear the reference
+  } else {
+    // console.log('No active microphone stream (micStream) found to stop tracks for.');
+  }
+  // 2. Disconnect Nodes (Disconnect in reverse order: worklet first)
+  if (micWorkletNode) {
+    // Remove listeners first to prevent potential errors during/after disconnect
+    micWorkletNode.port.onmessage = null;
+    micWorkletNode.port.onmessageerror = null;
+    try {
+      micWorkletNode.disconnect();
+      console.log('Microphone worklet node disconnected.');
+    } catch (e) {
+      console.warn("Error disconnecting worklet node (already disconnected?):", e);
+    }
+    micWorkletNode = null; // Clear reference
+  } else {
+    // console.log('No microphone worklet node (micWorkletNode) found to disconnect.');
+  }
+  if (micSourceNode) {
+    try {
+      micSourceNode.disconnect();
+      console.log('Microphone source node disconnected.');
+    } catch (e) {
+      console.warn("Error disconnecting source node (already disconnected?):", e);
+    }
+    micSourceNode = null; // Clear reference
+  } else {
+    // console.log('No microphone source node (micSourceNode) found to disconnect.');
+  }
+  // 3. Close Microphone AudioContext
+  if (micAudioContext) {
+    if (micAudioContext.state !== 'closed') {
+      console.log(`Closing microphone AudioContext (State: ${micAudioContext.state})...`);
+      micAudioContext.close().then(() => {
+        console.log('Microphone AudioContext closed successfully.');
+      }).catch(e => {
+        console.error('Error closing microphone AudioContext:', e);
+      }).finally(() => {
+        micAudioContext = null; // Clear reference after attempt
+      });
     } else {
-        // console.log('No active microphone stream (micStream) found to stop tracks for.');
+      // console.log('Microphone AudioContext already closed.');
+      micAudioContext = null; // Ensure reference is cleared
     }
-
-    // 2. Disconnect Nodes (Disconnect in reverse order: worklet first)
-    if (micWorkletNode) {
-        // Remove listeners first to prevent potential errors during/after disconnect
-        micWorkletNode.port.onmessage = null;
-        micWorkletNode.port.onmessageerror = null;
-        try {
-            micWorkletNode.disconnect();
-            console.log('Microphone worklet node disconnected.');
-        } catch (e) { console.warn("Error disconnecting worklet node (already disconnected?):", e); }
-        micWorkletNode = null; // Clear reference
-    } else {
-        // console.log('No microphone worklet node (micWorkletNode) found to disconnect.');
-    }
-
-    if (micSourceNode) {
-        try {
-            micSourceNode.disconnect();
-            console.log('Microphone source node disconnected.');
-        } catch (e) { console.warn("Error disconnecting source node (already disconnected?):", e); }
-        micSourceNode = null; // Clear reference
-    } else {
-        // console.log('No microphone source node (micSourceNode) found to disconnect.');
-    }
-
-
-    // 3. Close Microphone AudioContext
-    if (micAudioContext) {
-        if (micAudioContext.state !== 'closed') {
-            console.log(`Closing microphone AudioContext (State: ${micAudioContext.state})...`);
-            micAudioContext.close().then(() => {
-                console.log('Microphone AudioContext closed successfully.');
-            }).catch(e => {
-                console.error('Error closing microphone AudioContext:', e);
-            }).finally(() => {
-                 micAudioContext = null; // Clear reference after attempt
-            });
-        } else {
-             // console.log('Microphone AudioContext already closed.');
-             micAudioContext = null; // Ensure reference is cleared
-        }
-    } else {
-        // console.log('No microphone AudioContext (micAudioContext) found to close.');
-    }
-
-    // 4. Update State and Trigger UI Update via postMessage
-    if (isMicrophoneActive) { // Only update if state was true
-        isMicrophoneActive = false;
-        postSidebarButtonUpdate(); // Post message to update UI
-        console.log('Microphone capture stopped state updated and UI update posted.');
-    }
+  } else {
+    // console.log('No microphone AudioContext (micAudioContext) found to close.');
+  }
+  // 4. Update State and Trigger UI Update via postMessage
+  if (isMicrophoneActive) { // Only update if state was true
+    isMicrophoneActive = false;
+    postSidebarButtonUpdate(); // Post message to update UI
+    console.log('Microphone capture stopped state updated and UI update posted.');
+  }
 }
 
 function cleanup() {
   if (metricsIntervalId) {
-      clearInterval(metricsIntervalId);
-      metricsIntervalId = null;
-      console.log('Cleanup: Stopped client metrics interval.');
+    clearInterval(metricsIntervalId);
+    metricsIntervalId = null;
+    console.log('Cleanup: Stopped client metrics interval.');
   }
-
   if (window.isCleaningUp) return;
   window.isCleaningUp = true;
   console.log("Cleanup: Starting cleanup process...");
-
   // Stop microphone first
   stopMicrophoneCapture();
-
   if (clientMode === 'webrtc' && signalling) {
     signalling.disconnect();
     signalling = null;
@@ -5230,49 +3899,44 @@ function cleanup() {
     websocket.onerror = null;
     websocket.onclose = null;
     if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) {
-        websocket.close();
-        console.log("Cleanup: Closed websocket connection.");
+      websocket.close();
+      console.log("Cleanup: Closed websocket connection.");
     }
     websocket = null;
   }
   // Cleanup Playback Audio Context
   if (audioContext) {
-      if (audioContext.state !== 'closed') {
-           console.log(`Cleanup: Closing Playback AudioContext (state: ${audioContext.state})`);
-           audioContext.close().then(() => console.log('Cleanup: Playback AudioContext closed.')).catch(e => console.error('Cleanup: Error closing Playback AudioContext:', e));
-      }
-      audioContext = null;
-      audioWorkletNode = null;
-      audioWorkletProcessorPort = null;
-      audioBufferQueue.length = 0;
-      window.currentAudioBufferSize = 0;
-      if (audioDecoderWorker) {
-        console.log("Cleanup: Terminating Audio Decoder Worker.");
-        audioDecoderWorker.postMessage({ type: 'close' }); // Ask worker to close its decoder
-        audioDecoderWorker = null;
-      }
+    if (audioContext.state !== 'closed') {
+      console.log(`Cleanup: Closing Playback AudioContext (state: ${audioContext.state})`);
+      audioContext.close().then(() => console.log('Cleanup: Playback AudioContext closed.')).catch(e => console.error('Cleanup: Error closing Playback AudioContext:', e));
+    }
+    audioContext = null;
+    audioWorkletNode = null;
+    audioWorkletProcessorPort = null;
+    audioBufferQueue.length = 0;
+    window.currentAudioBufferSize = 0;
+    if (audioDecoderWorker) {
+      console.log("Cleanup: Terminating Audio Decoder Worker.");
+      audioDecoderWorker.postMessage({
+        type: 'close'
+      }); // Ask worker to close its decoder
+      audioDecoderWorker = null;
+    }
   }
   if (decoder) { // Main full-frame decoder
-       if (decoder.state !== 'closed') {
-          decoder.close();
-          console.log("Cleanup: Closed Main VideoDecoder.");
-       }
-      decoder = null;
+    if (decoder.state !== 'closed') {
+      decoder.close();
+      console.log("Cleanup: Closed Main VideoDecoder.");
+    }
+    decoder = null;
   }
-
-  // --- VNC STRIPE CHANGE: Add cleanups ---
   cleanupVideoBuffer(); // For main video frames
   cleanupJpegStripeQueue(); // For JPEG stripes
   clearAllVncStripeDecoders(); // For H.264 VNC stripes
-  // --- END VNC STRIPE CHANGE ---
-
-
   // Reset audio device preferences
   preferredInputDeviceId = null;
   preferredOutputDeviceId = null;
   console.log("Cleanup: Reset preferred audio device IDs.");
-
-
   status = 'connecting';
   loadingText = '';
   showStart = true;
@@ -5281,40 +3945,23 @@ function cleanup() {
   if (statusDisplayElement) statusDisplayElement.textContent = 'Connecting...';
   if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
   if (playButtonElement) playButtonElement.classList.remove('hidden');
-  //if (spinnerElement) spinnerElement.classList.remove('hidden');
   if (overlayInput) overlayInput.style.cursor = 'auto';
   serverClipboardContent = '';
-  if (dev_mode && serverClipboardTextareaElement) {
-      serverClipboardTextareaElement.value = serverClipboardContent;
-  }
   isVideoPipelineActive = true; // Reset to default assumption
   isAudioPipelineActive = true; // Reset to default assumption
   isMicrophoneActive = false; // Always starts off
-
   connectionStat.connectionStatType = 'unknown';
   connectionStat.connectionLatency = 0;
   // ... (rest of connectionStat resets) ...
   gamepad.gamepadState = 'disconnected';
   gamepad.gamepadName = 'none';
   // ... (rest of state variable resets) ...
-
   window.fps = 0;
   frameCount = 0;
   lastFpsUpdateTime = performance.now();
-  if (dev_mode) {
-      if (fpsCounterDivElement) fpsCounterDivElement.textContent = `Client FPS: ${window.fps}`;
-      if (audioBufferDivElement) audioBufferDivElement.textContent = `Audio Buffer: ${window.currentAudioBufferSize} buffers`;
-      updateToggleButtonAppearance(videoToggleButtonElement, isVideoPipelineActive);
-      updateToggleButtonAppearance(audioToggleButtonElement, isAudioPipelineActive);
-      updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
-      updateToggleButtonAppearance(gamepadToggleButtonElement, isGamepadEnabled);
-  }
-
-   console.log("Cleanup: Finished cleanup process.");
-   window.isCleaningUp = false;
+  console.log("Cleanup: Finished cleanup process.");
+  window.isCleaningUp = false;
 }
-
-
 /**
  * Handles the 'dragover' event to allow dropping.
  * @param {DragEvent} ev
@@ -5323,7 +3970,6 @@ function handleDragOver(ev) {
   ev.preventDefault(); // Necessary to allow dropping
   ev.dataTransfer.dropEffect = 'copy';
 }
-
 /**
  * Handles the 'drop' event on the overlayInput element.
  * Collects entries first, then processes sequentially using async/await.
@@ -5332,19 +3978,22 @@ function handleDragOver(ev) {
 async function handleDrop(ev) {
   ev.preventDefault();
   ev.stopPropagation();
-
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
     const errorMsg = "WebSocket is not open. Cannot upload files.";
     console.error(errorMsg);
     // Send error message to window if needed
-    window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: errorMsg } }, window.location.origin);
+    window.postMessage({
+      type: 'fileUpload',
+      payload: {
+        status: 'error',
+        fileName: 'N/A',
+        message: errorMsg
+      }
+    }, window.location.origin);
     return;
   }
-
   console.log("File(s) dropped, collecting entries...");
-
   const entriesToProcess = []; // Array to hold valid entries
-
   if (ev.dataTransfer.items) {
     // Synchronously collect all entries from the item list
     for (let i = 0; i < ev.dataTransfer.items.length; i++) {
@@ -5353,36 +4002,43 @@ async function handleDrop(ev) {
       if (entry) {
         entriesToProcess.push(entry); // Add the entry to our array
       } else {
-         console.warn("Could not get FileSystemEntry for dropped item.", item);
+        console.warn("Could not get FileSystemEntry for dropped item.", item);
       }
     }
   } else {
     for (let i = 0; i < ev.dataTransfer.files.length; i++) {
-        console.warn("Legacy file drop detected. Handling files directly.");
+      console.warn("Legacy file drop detected. Handling files directly.");
     }
     if (entriesToProcess.length === 0 && ev.dataTransfer.files.length > 0) {
-        console.log("Processing legacy files sequentially.");
-        try {
-            for (let i = 0; i < ev.dataTransfer.files.length; i++) {
-                await uploadFileObject(ev.dataTransfer.files[i], ev.dataTransfer.files[i].name);
-            }
-             console.log("Finished processing all legacy files.");
-        } catch (error) {
-             const errorMsg = `An error occurred during the legacy file upload process: ${error.message || error}`;
-             console.error(errorMsg);
-             window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: errorMsg } }, window.location.origin);
-             if (websocket && websocket.readyState === WebSocket.OPEN) {
-                  try { websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Legacy processing failed`); } catch (_) {}
-             }
-        } finally {
-            // No explicit cleanup needed here for legacy files
+      console.log("Processing legacy files sequentially.");
+      try {
+        for (let i = 0; i < ev.dataTransfer.files.length; i++) {
+          await uploadFileObject(ev.dataTransfer.files[i], ev.dataTransfer.files[i].name);
         }
-        return;
+        console.log("Finished processing all legacy files.");
+      } catch (error) {
+        const errorMsg = `An error occurred during the legacy file upload process: ${error.message || error}`;
+        console.error(errorMsg);
+        window.postMessage({
+          type: 'fileUpload',
+          payload: {
+            status: 'error',
+            fileName: 'N/A',
+            message: errorMsg
+          }
+        }, window.location.origin);
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+          try {
+            websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Legacy processing failed`);
+          } catch (_) {}
+        }
+      } finally {
+        // No explicit cleanup needed here for legacy files
+      }
+      return;
     }
   }
-
   console.log(`Collected ${entriesToProcess.length} entries to process sequentially.`);
-
   // Now, sequentially process the entries from our stable array
   try {
     for (const entry of entriesToProcess) {
@@ -5392,28 +4048,35 @@ async function handleDrop(ev) {
     }
     console.log("Finished processing all collected entries.");
   } catch (error) {
-      const errorMsg = `An error occurred during the sequential upload process: ${error.message || error}`;
-      console.error(errorMsg);
-      window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: 'N/A', message: errorMsg } }, window.location.origin);
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-           try { websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Processing failed`); } catch (_) {}
+    const errorMsg = `An error occurred during the sequential upload process: ${error.message || error}`;
+    console.error(errorMsg);
+    window.postMessage({
+      type: 'fileUpload',
+      payload: {
+        status: 'error',
+        fileName: 'N/A',
+        message: errorMsg
       }
+    }, window.location.origin);
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      try {
+        websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Processing failed`);
+      } catch (_) {}
+    }
   } finally {
-      console.log("Upload process finished.");
+    console.log("Upload process finished.");
   }
 }
-
 /**
  * Promisified version of entry.file()
  * @param {FileSystemFileEntry} fileEntry
  * @returns {Promise<File>}
  */
 function getFileFromEntry(fileEntry) {
-    return new Promise((resolve, reject) => {
-        fileEntry.file(resolve, reject);
-    });
+  return new Promise((resolve, reject) => {
+    fileEntry.file(resolve, reject);
+  });
 }
-
 /**
  * Recursively handles a dropped FileSystemEntry (file or directory) sequentially.
  * @param {FileSystemEntry} entry
@@ -5422,18 +4085,27 @@ async function handleDroppedEntry(entry) {
   if (entry.isFile) {
     const pathName = entry.fullPath || entry.name; // Use fullPath if available
     try {
-        // Get the file object using the promisified helper
-        const file = await getFileFromEntry(entry);
-        // Await the upload of this file, passing the path
-        await uploadFileObject(file, pathName);
+      // Get the file object using the promisified helper
+      const file = await getFileFromEntry(entry);
+      // Await the upload of this file, passing the path
+      await uploadFileObject(file, pathName);
     } catch (err) {
-        const errorMsg = `Error getting or uploading file from entry ${pathName}: ${err.message || err}`;
-        console.error(errorMsg);
-        window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathName, message: errorMsg } }, window.location.origin);
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-             try { websocket.send(`FILE_UPLOAD_ERROR:${pathName}:Failed to get/upload file`); } catch (_) {}
+      const errorMsg = `Error getting or uploading file from entry ${pathName}: ${err.message || err}`;
+      console.error(errorMsg);
+      window.postMessage({
+        type: 'fileUpload',
+        payload: {
+          status: 'error',
+          fileName: pathName,
+          message: errorMsg
         }
-        throw err;
+      }, window.location.origin);
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        try {
+          websocket.send(`FILE_UPLOAD_ERROR:${pathName}:Failed to get/upload file`);
+        } catch (_) {}
+      }
+      throw err;
     }
   } else if (entry.isDirectory) {
     const dirPath = entry.fullPath || entry.name;
@@ -5443,7 +4115,6 @@ async function handleDroppedEntry(entry) {
     await readDirectoryEntries(dirReader);
   }
 }
-
 /**
  * Promisified version of dirReader.readEntries()
  * Reads one batch of entries.
@@ -5451,31 +4122,27 @@ async function handleDroppedEntry(entry) {
  * @returns {Promise<FileSystemEntry[]>}
  */
 function readEntriesPromise(dirReader) {
-    return new Promise((resolve, reject) => {
-        dirReader.readEntries(resolve, reject);
-    });
+  return new Promise((resolve, reject) => {
+    dirReader.readEntries(resolve, reject);
+  });
 }
-
-
 /**
  * Recursively reads and processes all entries in a directory sequentially.
  * @param {FileSystemDirectoryReader} dirReader
  */
 async function readDirectoryEntries(dirReader) {
-    let entries;
-    do {
-        // Await reading a batch of entries
-        entries = await readEntriesPromise(dirReader);
-        if (entries.length > 0) {
-            // Process each entry in the batch sequentially
-            for (const entry of entries) {
-                await handleDroppedEntry(entry);
-            }
-        }
-    } while (entries.length > 0);
+  let entries;
+  do {
+    // Await reading a batch of entries
+    entries = await readEntriesPromise(dirReader);
+    if (entries.length > 0) {
+      // Process each entry in the batch sequentially
+      for (const entry of entries) {
+        await handleDroppedEntry(entry);
+      }
+    }
+  } while (entries.length > 0);
 }
-
-
 /**
  * Uploads a single File object by chunking it. Returns a Promise.
  * Sends start, progress, end, and error messages via window.postMessage.
@@ -5484,105 +4151,164 @@ async function readDirectoryEntries(dirReader) {
  * @returns {Promise<void>} Resolves when upload is complete, rejects on error.
  */
 function uploadFileObject(file, pathToSend) {
-    // Wrap in a Promise
-    return new Promise((resolve, reject) => {
-        if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-            const errorMsg = `WebSocket closed before file ${pathToSend} could be uploaded.`;
-            console.error(errorMsg);
-            // Send error message to window
-            window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
-            reject(new Error(errorMsg));
-            return;
+  // Wrap in a Promise
+  return new Promise((resolve, reject) => {
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+      const errorMsg = `WebSocket closed before file ${pathToSend} could be uploaded.`;
+      console.error(errorMsg);
+      // Send error message to window
+      window.postMessage({
+        type: 'fileUpload',
+        payload: {
+          status: 'error',
+          fileName: pathToSend,
+          message: errorMsg
         }
-
-        console.log(`Starting upload for: ${pathToSend} (${file.size} bytes)`);
-        // Send START message via window.postMessage
-        window.postMessage({ type: 'fileUpload', payload: { status: 'start', fileName: pathToSend, fileSize: file.size } }, window.location.origin);
-
-        websocket.send(`FILE_UPLOAD_START:${pathToSend}:${file.size}`);
-
-        let offset = 0;
-        const reader = new FileReader();
-
-        reader.onload = function(e) {
-            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-                const errorMsg = `WebSocket closed during upload of ${pathToSend}. Aborting.`;
-                console.error(errorMsg);
-                // Send error message to window
-                window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
-                reject(new Error(errorMsg));
-                return;
+      }, window.location.origin);
+      reject(new Error(errorMsg));
+      return;
+    }
+    console.log(`Starting upload for: ${pathToSend} (${file.size} bytes)`);
+    // Send START message via window.postMessage
+    window.postMessage({
+      type: 'fileUpload',
+      payload: {
+        status: 'start',
+        fileName: pathToSend,
+        fileSize: file.size
+      }
+    }, window.location.origin);
+    websocket.send(`FILE_UPLOAD_START:${pathToSend}:${file.size}`);
+    let offset = 0;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+        const errorMsg = `WebSocket closed during upload of ${pathToSend}. Aborting.`;
+        console.error(errorMsg);
+        // Send error message to window
+        window.postMessage({
+          type: 'fileUpload',
+          payload: {
+            status: 'error',
+            fileName: pathToSend,
+            message: errorMsg
+          }
+        }, window.location.origin);
+        reject(new Error(errorMsg));
+        return;
+      }
+      if (e.target.error) {
+        const errorMsg = `Error reading file ${pathToSend}: ${e.target.error}`;
+        console.error(errorMsg);
+        // Send error message to window
+        window.postMessage({
+          type: 'fileUpload',
+          payload: {
+            status: 'error',
+            fileName: pathToSend,
+            message: errorMsg
+          }
+        }, window.location.origin);
+        // Try to notify server before rejecting
+        try {
+          websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:${e.target.error}`);
+        } catch (_) {}
+        reject(e.target.error);
+        return;
+      }
+      try {
+        const prefixedView = new Uint8Array(1 + e.target.result.byteLength);
+        prefixedView[0] = 0x01; // Data type for file chunk
+        prefixedView.set(new Uint8Array(e.target.result), 1);
+        websocket.send(prefixedView.buffer);
+        offset += e.target.result.byteLength;
+        // Calculate and send PROGRESS message via window.postMessage
+        const progress = file.size > 0 ? Math.round((offset / file.size) * 100) : 100;
+        window.postMessage({
+          type: 'fileUpload',
+          payload: {
+            status: 'progress',
+            fileName: pathToSend,
+            progress: progress,
+            fileSize: file.size
+          }
+        }, window.location.origin);
+        if (offset < file.size) {
+          readChunk(offset); // Read next chunk
+        } else {
+          console.log(`Finished uploading ${pathToSend}`);
+          websocket.send(`FILE_UPLOAD_END:${pathToSend}`);
+          window.postMessage({
+            type: 'fileUpload',
+            payload: {
+              status: 'end',
+              fileName: pathToSend,
+              fileSize: file.size
             }
-            if (e.target.error) {
-                const errorMsg = `Error reading file ${pathToSend}: ${e.target.error}`;
-                console.error(errorMsg);
-                 // Send error message to window
-                window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
-                // Try to notify server before rejecting
-                try { websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:${e.target.error}`); } catch (_) {}
-                reject(e.target.error);
-                return;
-            }
-
-            try {
-                const prefixedView = new Uint8Array(1 + e.target.result.byteLength);
-                prefixedView[0] = 0x01; // Data type for file chunk
-                prefixedView.set(new Uint8Array(e.target.result), 1);
-                websocket.send(prefixedView.buffer);
-                offset += e.target.result.byteLength;
-
-                // Calculate and send PROGRESS message via window.postMessage
-                const progress = file.size > 0 ? Math.round((offset / file.size) * 100) : 100;
-                window.postMessage({ type: 'fileUpload', payload: { status: 'progress', fileName: pathToSend, progress: progress, fileSize: file.size } }, window.location.origin);
-
-                if (offset < file.size) {
-                    readChunk(offset); // Read next chunk
-                } else {
-                    console.log(`Finished uploading ${pathToSend}`);
-                    websocket.send(`FILE_UPLOAD_END:${pathToSend}`);
-                    window.postMessage({ type: 'fileUpload', payload: { status: 'end', fileName: pathToSend, fileSize: file.size } }, window.location.origin);
-                    resolve();
-                }
-            } catch (wsError) {
-                const errorMsg = `WebSocket error sending chunk for ${pathToSend}: ${wsError}`;
-                console.error(errorMsg);
-                window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
-                try { websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:WebSocket send failed`); } catch (_) {}
-                reject(wsError);
-            }
-        };
-
-        reader.onerror = function(e) {
-            const errorMsg = `FileReader error for ${pathToSend}: ${e.target.error}`;
-            console.error(errorMsg);
-            // Send error message to window
-            window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
-             if (websocket && websocket.readyState === WebSocket.OPEN) {
-                try { websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:${e.target.error}`); } catch (_) {}
-             }
-            reject(e.target.error);
-        };
-
-        function readChunk(startOffset) {
-            // Check websocket state *before* reading next chunk
-            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-                 const errorMsg = `WebSocket closed before reading next chunk for ${pathToSend}. Aborting.`;
-                 console.error(errorMsg);
-                 // Send error message to window
-                 window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: errorMsg } }, window.location.origin);
-                 reject(new Error(errorMsg));
-                 return;
-            }
-            const endOffset = Math.min(startOffset + UPLOAD_CHUNK_SIZE, file.size);
-            const slice = file.slice(startOffset, endOffset);
-            reader.readAsArrayBuffer(slice);
+          }, window.location.origin);
+          resolve();
         }
+      } catch (wsError) {
+        const errorMsg = `WebSocket error sending chunk for ${pathToSend}: ${wsError}`;
+        console.error(errorMsg);
+        window.postMessage({
+          type: 'fileUpload',
+          payload: {
+            status: 'error',
+            fileName: pathToSend,
+            message: errorMsg
+          }
+        }, window.location.origin);
+        try {
+          websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:WebSocket send failed`);
+        } catch (_) {}
+        reject(wsError);
+      }
+    };
+    reader.onerror = function(e) {
+      const errorMsg = `FileReader error for ${pathToSend}: ${e.target.error}`;
+      console.error(errorMsg);
+      // Send error message to window
+      window.postMessage({
+        type: 'fileUpload',
+        payload: {
+          status: 'error',
+          fileName: pathToSend,
+          message: errorMsg
+        }
+      }, window.location.origin);
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        try {
+          websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:${e.target.error}`);
+        } catch (_) {}
+      }
+      reject(e.target.error);
+    };
 
-        // Start reading the first chunk
-        readChunk(0);
-    });
+    function readChunk(startOffset) {
+      // Check websocket state *before* reading next chunk
+      if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+        const errorMsg = `WebSocket closed before reading next chunk for ${pathToSend}. Aborting.`;
+        console.error(errorMsg);
+        // Send error message to window
+        window.postMessage({
+          type: 'fileUpload',
+          payload: {
+            status: 'error',
+            fileName: pathToSend,
+            message: errorMsg
+          }
+        }, window.location.origin);
+        reject(new Error(errorMsg));
+        return;
+      }
+      const endOffset = Math.min(startOffset + UPLOAD_CHUNK_SIZE, file.size);
+      const slice = file.slice(startOffset, endOffset);
+      reader.readAsArrayBuffer(slice);
+    }
+    // Start reading the first chunk
+    readChunk(0);
+  });
 }
-
 window.addEventListener('beforeunload', cleanup);
-
 window.webrtcInput = null;
