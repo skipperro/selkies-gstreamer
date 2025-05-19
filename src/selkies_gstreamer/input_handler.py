@@ -1,3 +1,22 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#   http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 import ctypes
 import logging
 import struct
@@ -90,9 +109,6 @@ class JsConfigCtypes(ctypes.Structure):
         ("final_alignment_padding", ctypes.c_uint8 * 6) # NEW FIELD
     ]
 
-    # Optional: Add a method to pack to bytes using struct module,
-    # ensuring the format string matches this ctypes layout.
-    # This is more for ensuring consistency if you were to use ctypes for packing.
     def pack_to_bytes(self):
         # This format string MUST exactly match the order and types in _fields_
         # and the C struct, assuming standard C packing ('=').
@@ -219,12 +235,7 @@ def normalize_axis_value(client_value, is_trigger, is_hat):
     if is_trigger: # Client sends 0.0 to 1.0
         # Map 0..1 to EVDEV trigger range (e.g., 0..255 or 0..ABS_MAX_VAL)
         # For JS, triggers are often also -32k to 32k, or 0 to 32k.
-        # Let's use 0 to ABS_MAX_VAL for EVDEV triggers, and map to full range for JS for now.
-        # EVDEV:
-        # return int(ABS_TRIGGER_MIN_VAL + client_value * (ABS_TRIGGER_MAX_VAL - ABS_TRIGGER_MIN_VAL))
-        # JS (and simpler EVDEV if driver expects full range for triggers like ABS_Z):
         return int(ABS_MIN_VAL + client_value * (ABS_MAX_VAL - ABS_MIN_VAL)) # Map 0..1 to -32k..+32k
-                                                                            # Or 0..1 to 0..+32k: round(client_value * ABS_MAX_VAL)
     # Regular axis: client sends -1.0 to 1.0
     return int(ABS_MIN_VAL + ((client_value + 1) / 2) * (ABS_MAX_VAL - ABS_MIN_VAL))
 

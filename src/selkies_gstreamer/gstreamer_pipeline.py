@@ -1882,7 +1882,7 @@ class GSTWebRTCApp:
         if audio_only:
             self.build_audio_pipeline()
         else:
-            self.build_video_pipeline() # This will now use the conditional cudaconvert logic
+            self.build_video_pipeline()
         res = self.pipeline.set_state(Gst.State.PLAYING)
         if res != Gst.StateChangeReturn.SUCCESS:
             raise GSTWebRTCAppError(
