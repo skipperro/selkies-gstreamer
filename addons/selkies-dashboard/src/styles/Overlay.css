@@ -1,7 +1,7 @@
 /* src/styles/Overlay.css */
 
+/* This div exists within the #dashboard-root portal element. */
 .dashboard-overlay-container {
-  /* This div exists within the #dashboard-root portal element. */
 }
 
 /* --- Theme Variables --- */
@@ -40,8 +40,8 @@
     /* Notification specific */
     --notification-progress-bg: #5a606b;
     --notification-progress-fill: var(--sidebar-header-color);
-    --notification-success-color: #2ecc71; /* Green */
-    --notification-error-color: #e74c3c; /* Red */
+    --notification-success-color: #2ecc71;
+    --notification-error-color: #e74c3c;
     --notification-shadow: rgba(0, 0, 0, 0.3);
     --notification-close-hover-bg: rgba(255, 255, 255, 0.1);
 }
@@ -69,21 +69,21 @@
     --tooltip-text: #ffffff;
     --tooltip-border: #555;
 
-     /* Slider specific variables */
+    /* Slider specific variables */
     --slider-track-color: var(--item-border);
     --slider-thumb-color: var(--sidebar-header-color);
 
     /* Notification specific */
     --notification-progress-bg: #e0e0e0;
     --notification-progress-fill: var(--sidebar-header-color);
-    --notification-success-color: #27ae60; /* Slightly darker green */
-    --notification-error-color: #c0392b; /* Slightly darker red */
+    --notification-success-color: #27ae60;
+    --notification-error-color: #c0392b;
     --notification-shadow: rgba(0, 0, 0, 0.15);
     --notification-close-hover-bg: rgba(0, 0, 0, 0.08);
 }
 
-
-/* Styles for the Sidebar */
+/* --- Sidebar General Styles --- */
+/* Styles for the main sidebar container. */
 .sidebar {
   position: fixed;
   top: 0;
@@ -103,12 +103,13 @@
   font-size: 14px;
 }
 
-/* State when the sidebar is open */
+/* State when the sidebar is open. */
 .sidebar.is-open {
   transform: translateX(0);
 }
 
-/* Sidebar Header */
+/* --- Sidebar Header --- */
+/* Styles for the header section of the sidebar. */
 .sidebar-header {
     display: flex;
     justify-content: space-between;
@@ -118,11 +119,14 @@
     border-bottom: 1px solid var(--sidebar-border);
 }
 
+/* Container for header control buttons like theme toggle and fullscreen. */
 .header-controls {
     display: flex;
     align-items: center;
     gap: 10px;
 }
+
+/* Generic action button style within the header. */
 .header-action-button {
     background: none;
     border: none;
@@ -146,12 +150,14 @@
     display: block;
 }
 
+/* Sidebar main title. */
 .sidebar h2 {
     margin: 0;
     font-size: 1.5em;
     color: var(--sidebar-header-color);
 }
 
+/* Sidebar section titles. */
 .sidebar h3 {
     margin-top: 0;
     margin-bottom: 10px;
@@ -159,7 +165,11 @@
     color: var(--sidebar-header-color);
 }
 
-/* Theme Toggle Button */
+/* --- Theme Toggle Button --- */
+/* Styles for the theme toggle switch.
+   Position is relative for absolutely positioned icons.
+   Padding provides space for icons. Box-sizing includes padding in dimensions.
+   Overflow hidden clips icons during transition. */
 .theme-toggle {
     width: 40px;
     height: 20px;
@@ -175,65 +185,35 @@
     overflow: hidden;
 }
 
-.sidebar-action-buttons {
-    display: flex;
-    justify-content: space-around; /* Distribute buttons evenly */
-    align-items: center;
-    margin-bottom: 20px; /* Space before the next section */
-    padding: 10px 0; /* Some vertical padding */
-    border-bottom: 1px solid var(--sidebar-border); /* Optional separator */
-}
-
-.action-button {
-    display: flex; /* Center icon inside */
-    align-items: center;
-    justify-content: center;
-    width: 40px; /* Square-ish */
-    height: 40px;
-    padding: 0; /* Remove default padding */
-    border: 1px solid var(--item-border);
-    border-radius: 8px; /* Rounded corners */
-    background-color: var(--input-bg); /* Default OFF background (grayish) */
-    color: var(--sidebar-text); /* Default icon color */
-    cursor: pointer;
-    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out;
-    outline: none;
-}
-
-.action-button svg {
-    /* SVG is controlled by parent's color property */
-    fill: currentColor;
-    width: 60%; /* Adjust icon size within button */
-    height: 60%;
-    pointer-events: none; /* Prevent SVG from capturing clicks */
-}
-
-.action-button:hover {
-    border-color: var(--sidebar-header-color); /* Highlight border on hover */
-    background-color: var(--section-bg); /* Slightly different background on hover */
-}
-
-.action-button.active {
-    background-color: var(--sidebar-header-color); /* ON background (blueish) */
-    color: var(--button-text); /* Icon color when ON (often contrast like white/black) */
-    border-color: var(--sidebar-header-color);
-}
-
-/* Ensure active hover is distinct if needed */
-.action-button.active:hover {
-     background-color: var(--button-hover-bg); /* Use button hover color */
-     border-color: var(--button-hover-bg);
-}
-
-/* Style for the icons inside the toggle */
+/* Styles for the sun/moon icons within the theme toggle.
+   Vertically centers the 16px icon in the 20px toggle height. */
 .theme-toggle .icon {
     position: absolute;
     width: 16px;
     height: 16px;
+    top: 2px;
     transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
-/* Initial position for moon (visible in dark mode) */
+/* Ensures SVG parts (path, circle) use the 'color' property
+   set on .moon-icon/.sun-icon via currentColor. */
+.theme-toggle .icon path,
+.theme-toggle .icon circle {
+    fill: currentColor;
+}
+
+/* Styles SVG lines, primarily for the sun icon's rays.
+   Adjust stroke-width if rays are too thick/thin. */
+.theme-toggle .icon line {
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* Initial position for moon icon (visible in dark mode).
+   Positioned from the left edge of the toggle's padding box.
+   Color var sets 'currentColor' for the moon SVG. */
 .theme-toggle .moon-icon {
     left: 2px;
     opacity: 1;
@@ -241,7 +221,9 @@
     color: var(--icon-moon-color);
 }
 
-/* Initial position for sun (hidden in dark mode) */
+/* Initial position for sun icon (hidden in dark mode).
+   Starts at the same position as moon, then moved right by its own width.
+   Color var sets 'currentColor' for the sun SVG. */
 .theme-toggle .sun-icon {
     left: 2px;
     opacity: 0;
@@ -249,12 +231,15 @@
     color: var(--icon-sun-color);
 }
 
-/* State when the toggle is in light mode */
+/* State when the toggle is in light mode (when .theme-toggle has .light class).
+   Moon moves from 2px to 18px (2px + 16px) and fades out. */
 .theme-toggle.light .moon-icon {
     opacity: 0;
     transform: translateX(100%);
 }
 
+/* Sun icon becomes visible, positioned from the right edge.
+   Transform ensures it's at its defined 'right: 2px' position. */
 .theme-toggle.light .sun-icon {
     opacity: 1;
     left: auto;
@@ -262,26 +247,130 @@
     transform: translateX(0);
 }
 
-
-/* Section Styling */
-.sidebar-section {
+/* --- Sidebar Action Buttons (e.g., for Apps, Files) --- */
+/* Container for main action buttons like "Open Apps", "Open Files".
+   Distributes buttons evenly. Adds space and a separator. */
+.sidebar-action-buttons {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
     margin-bottom: 20px;
-    padding: 15px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--sidebar-border);
+}
+
+/* Individual action button style.
+   Centers icon, square-ish, default OFF background. */
+.action-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid var(--item-border);
+    border-radius: 8px;
+    background-color: var(--input-bg);
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    outline: none;
+}
+
+/* SVG icon within an action button.
+   Controlled by parent's color, adjusts size, prevents SVG click capture. */
+.action-button svg {
+    fill: currentColor;
+    width: 60%;
+    height: 60%;
+    pointer-events: none;
+}
+
+/* Hover state for action buttons. Highlights border, changes background. */
+.action-button:hover {
+    border-color: var(--sidebar-header-color);
+    background-color: var(--section-bg);
+}
+
+/* Active state for action buttons (e.g., when a modal is open).
+   Uses ON background color and contrasting icon color. */
+.action-button.active {
+    background-color: var(--sidebar-header-color);
+    color: var(--button-text);
+    border-color: var(--sidebar-header-color);
+}
+
+/* Hover state for active action buttons. Uses button hover color. */
+.action-button.active:hover {
+     background-color: var(--button-hover-bg);
+     border-color: var(--button-hover-bg);
+}
+
+/* --- Collapsible Sidebar Sections --- */
+/* General styling for a collapsible section in the sidebar. */
+.sidebar-section {
+    margin-bottom: 10px;
+    padding: 0;
     border-radius: 8px;
     background-color: var(--section-bg);
     border: 1px solid var(--item-border);
+    overflow: hidden;
 }
 
-/* Setting Item Styling */
+/* Header part of a collapsible section.
+   Clickable to toggle, prevents text selection. */
+.sidebar-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s ease;
+}
+
+/* Subtle hover effect for section headers. */
+.sidebar-section-header:hover {
+    background-color: rgba(128, 128, 128, 0.1);
+}
+
+/* Title within the section header. Removes default h3 margins. */
+.sidebar-section-header h3 {
+    margin: 0;
+    font-size: 1.2em;
+    color: var(--sidebar-header-color);
+}
+
+/* Toggle icon (e.g., caret) for collapsible sections.
+   Aligns SVG, matches text color, adds space from title. */
+.section-toggle-icon {
+    display: flex;
+    align-items: center;
+    color: var(--sidebar-text);
+    margin-left: 10px;
+}
+
+/* Content area of a collapsible section.
+   Padded, with extra space below the header. */
+.sidebar-section-content {
+    padding: 15px;
+    padding-top: 10px;
+}
+
+/* --- Settings Items within Sections --- */
+/* Styling for individual setting items (e.g., label + input). */
 .dev-setting-item {
     margin-bottom: 15px;
     display: flex;
     flex-direction: column;
     gap: 5px;
-    background-color: var(--section-bg);
+}
+/* Ensure setting items within collapsible sections have transparent background. */
+.sidebar-section-content .dev-setting-item {
+    background-color: transparent;
 }
 
-/* Styles for labels */
+/* Common style for labels of settings and gauges. */
 .dev-setting-item label,
 .gauge-label {
     font-weight: bold;
@@ -289,9 +378,11 @@
     color: var(--sidebar-text);
 }
 
-
-/* Style for the specific Encoder select element */
-.dev-setting-item #encoderSelect {
+/* Style for select elements like #encoderSelect.
+   Custom arrow SVG for dark theme. */
+.dev-setting-item #encoderSelect,
+.dev-setting-item #resolutionPresetSelect,
+.dev-setting-item .audio-device-select {
     width: 100%;
     padding: 8px;
     border: 1px solid var(--input-border);
@@ -303,7 +394,6 @@
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
-    /* Custom arrow SVG for dark theme */
     background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23abb2bf%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
     background-repeat: no-repeat;
     background-position: right 8px top 50%;
@@ -311,30 +401,39 @@
     transition: border-color 0.2s ease;
 }
 
-/* Custom arrow color and explicit colors for light theme select */
-.theme-light .dev-setting-item #encoderSelect {
-     /* Custom arrow SVG for light theme */
+/* Custom arrow SVG for light theme select elements. */
+.theme-light .dev-setting-item #encoderSelect,
+.theme-light .dev-setting-item #resolutionPresetSelect,
+.theme-light .dev-setting-item .audio-device-select {
      background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%22292.4%22%3E%3Cpath%20fill%3D%22%23333%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
      background-color: var(--input-bg);
      color: var(--input-text);
 }
 
-/* Hover state for select */
-.dev-setting-item #encoderSelect:hover {
+/* Hover state for select elements. */
+.dev-setting-item #encoderSelect:hover,
+.dev-setting-item #resolutionPresetSelect:hover,
+.dev-setting-item .audio-device-select:hover {
     border-color: var(--sidebar-header-color);
 }
 
-/* Focus state for select */
-.dev-setting-item #encoderSelect:focus {
+/* Focus state for select elements. */
+.dev-setting-item #encoderSelect:focus,
+.dev-setting-item #resolutionPresetSelect:focus,
+.dev-setting-item .audio-device-select:focus {
    outline: none;
    border-color: var(--sidebar-header-color);
    box-shadow: none;
 }
 
+/* Disabled state for audio device select elements. */
+.dev-setting-item .audio-device-select:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
 
 /* --- Slider Specific Styles --- */
-
-/* Style for the range input element */
+/* Style for range input elements (sliders). */
 .dev-setting-item input[type="range"] {
     flex-grow: 1;
     -webkit-appearance: none;
@@ -345,12 +444,12 @@
     height: 20px;
 }
 
-/* Remove focus outline in some browsers */
+/* Remove focus outline for sliders. */
 .dev-setting-item input[type="range"]:focus {
     outline: none;
 }
 
-/* Style the slider track (Webkit - Chrome, Safari) */
+/* Slider track style for Webkit browsers. */
 .dev-setting-item input[type="range"]::-webkit-slider-runnable-track {
     width: 100%;
     height: 8px;
@@ -359,7 +458,7 @@
     transition: background 0.3s ease;
 }
 
-/* Style the slider thumb (Webkit - Chrome, Safari) */
+/* Slider thumb style for Webkit browsers. */
 .dev-setting-item input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
@@ -376,8 +475,7 @@
     box-shadow: 0 0 4px rgba(var(--sidebar-header-color), 0.5);
 }
 
-
-/* Style the slider track (Mozilla - Firefox) */
+/* Slider track style for Mozilla Firefox. */
 .dev-setting-item input[type="range"]::-moz-range-track {
     width: 100%;
     height: 8px;
@@ -386,7 +484,7 @@
     transition: background 0.3s ease;
 }
 
-/* Style the slider thumb (Mozilla - Firefox) */
+/* Slider thumb style for Mozilla Firefox. */
 .dev-setting-item input[type="range"]::-moz-range-thumb {
     width: 16px;
     height: 16px;
@@ -400,9 +498,8 @@
      box-shadow: 0 0 4px rgba(var(--sidebar-header-color), 0.5);
 }
 
-
 /* --- Gauge Specific Styles --- */
-/* Container for grouping gauges */
+/* Container for grouping multiple gauges. */
 .stats-gauges {
     display: flex;
     justify-content: space-around;
@@ -410,10 +507,15 @@
     flex-wrap: wrap;
     color: var(--sidebar-text);
     padding: 5px 0;
-    background-color: var(--section-bg);
+}
+/* Ensure gauges within collapsible sections have transparent background. */
+.sidebar-section-content .stats-gauges {
+    background-color: transparent;
+    padding: 5px 0 0 0;
+    margin-bottom: 0;
 }
 
-/* Individual gauge container (SVG + Label) */
+/* Individual gauge container (SVG + Label). */
 .gauge-container {
     display: flex;
     flex-direction: column;
@@ -424,13 +526,13 @@
     cursor: help;
 }
 
-/* Style for the SVG text inside the gauge */
+/* Style for the SVG text element inside the gauge. */
 .gauge-container svg text {
    fill: var(--sidebar-text);
    pointer-events: none;
 }
 
-/* Style for the label below the gauge */
+/* Style for the label displayed below the gauge. */
 .gauge-label {
     margin-top: 5px;
     font-weight: bold;
@@ -440,8 +542,8 @@
     pointer-events: none;
 }
 
-
 /* --- Tooltip Styles --- */
+/* Styles for tooltips, e.g., for gauges. */
 .gauge-tooltip {
     position: fixed;
     padding: 8px 12px;
@@ -456,7 +558,8 @@
     transform: translate(-50%, -100%);
 }
 
-/* Styles for the Toggle Handle */
+/* --- Sidebar Toggle Handle --- */
+/* Styles for the handle to open/close the sidebar. */
 .toggle-handle {
   position: fixed;
   top: 50%;
@@ -471,7 +574,7 @@
   justify-content: center;
 }
 
-/* Visual indicator for the toggle handle */
+/* Visual indicator for the toggle handle. */
 .toggle-indicator {
     width: 5px;
     height: 40px;
@@ -479,7 +582,8 @@
     border-radius: 3px;
 }
 
-/* Basic body styling to prevent horizontal scrollbar caused by off-screen fixed elements */
+/* --- Global and Root Styles --- */
+/* Basic body styling to prevent horizontal scrollbar. */
 body {
   margin: 0;
   padding: 0;
@@ -488,136 +592,91 @@ body {
   color: var(--sidebar-text);
 }
 
-/* Apply theme variables to the body as well for general page styles if needed */
+/* Apply theme variables to the root dashboard element for general page styles. */
 #dashboard-root.theme-dark {
 }
 #dashboard-root.theme-light {
 }
 
-/* Ensure the #dashboard-root element created in main.jsx has a high z-index */
+/* Ensure the #dashboard-root portal element has a high z-index. */
 #dashboard-root {
     z-index: 1000;
 }
 
-.sidebar-section {
-    margin-bottom: 10px;
-    padding: 0;
-    border-radius: 8px;
-    background-color: var(--section-bg);
-    border: 1px solid var(--item-border);
-    overflow: hidden;
-}
-
-.sidebar-section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 15px;
-    cursor: pointer;
-    user-select: none; /* Prevent text selection on click */
-    transition: background-color 0.2s ease;
-}
-
-.sidebar-section-header:hover {
-    background-color: rgba(128, 128, 128, 0.1); /* Subtle hover effect */
-}
-
-.sidebar-section-header h3 {
-    margin: 0; /* Remove default h3 margins */
-    font-size: 1.2em;
-    color: var(--sidebar-header-color);
-}
-
-.section-toggle-icon {
-    display: flex; /* Helps align the SVG */
-    align-items: center;
-    color: var(--sidebar-text); /* Make caret color match text */
-    margin-left: 10px; /* Space between title and caret */
-}
-
-.sidebar-section-content {
-    padding: 15px; /* Add padding to the content area */
-    padding-top: 10px; /* Add a bit of space below the header */
-}
-
-/* --- Ensure existing styles work with new structure --- */
-/* Adjust padding/margin for items inside the content if needed */
-.sidebar-section-content .dev-setting-item {
-    background-color: transparent; /* Inherit from section */
-}
-
-.sidebar-section-content .stats-gauges {
-    background-color: transparent; /* Inherit from section */
-    padding: 5px 0 0 0;
-    margin-bottom: 0;
-}
-
-/* Container for the clipboard label and textarea */
+/* --- Clipboard Section Styles --- */
+/* Container for the clipboard label and textarea.
+   Consistent spacing, inherits section background. */
 .dashboard-clipboard-item {
-    margin-bottom: 15px; /* Consistent spacing like other items */
+    margin-bottom: 15px;
     display: flex;
     flex-direction: column;
-    gap: 5px; /* Space between label and textarea */
-    background-color: transparent; /* Inherit from section background */
+    gap: 5px;
+    background-color: transparent;
 }
 
-/* Label for the clipboard textarea */
+/* Label for the clipboard textarea, matches other labels. */
 .dashboard-clipboard-item label {
     font-weight: bold;
-    font-size: 0.9em; /* Match other labels */
+    font-size: 0.9em;
     color: var(--sidebar-text);
 }
 
-/* The clipboard textarea itself */
+/* The clipboard textarea itself.
+   Includes padding/border in width, consistent styling, vertical resize. */
 .dashboard-clipboard-item textarea {
     width: 100%;
-    box-sizing: border-box; /* Include padding and border in width */
-    padding: 8px; /* Consistent padding */
+    box-sizing: border-box;
+    padding: 8px;
     border: 1px solid var(--input-border);
-    border-radius: 8px; /* Consistent border radius */
+    border-radius: 8px;
     background-color: var(--input-bg);
     color: var(--input-text);
     font-size: 0.9em;
     font-family: monospace;
-    resize: vertical; /* Allow vertical resizing */
-    min-height: 80px; /* Give it a decent minimum height */
-    transition: border-color 0.2s ease, background-color 0.2s ease; /* Smooth transitions */
+    resize: vertical;
+    min-height: 80px;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
-/* Hover state for the textarea */
+/* Hover state for the textarea, highlights border. */
 .dashboard-clipboard-item textarea:hover {
-    border-color: var(--sidebar-header-color); /* Highlight border on hover */
+    border-color: var(--sidebar-header-color);
 }
 
-/* Focus state for the textarea */
+/* Focus state for the textarea, removes outline, highlights border. */
 .dashboard-clipboard-item textarea:focus {
-   outline: none; /* Remove default browser outline */
-   border-color: var(--sidebar-header-color); /* Highlight border on focus */
+   outline: none;
+   border-color: var(--sidebar-header-color);
 }
 
-/* Placeholder text styling (optional, but good for themes) */
+/* Placeholder text styling for the textarea. */
 .dashboard-clipboard-item textarea::placeholder {
     color: var(--sidebar-text);
-    opacity: 0.6; /* Make placeholder less prominent */
+    opacity: 0.6;
 }
 
-/* Specific placeholder styles for light theme if needed */
+/* Specific placeholder styles for light theme if needed. */
 .theme-light .dashboard-clipboard-item textarea::placeholder {
     color: var(--sidebar-text);
     opacity: 0.6;
 }
 
+/* --- Gamepad Visualizer Styles --- */
+/* Container for a single gamepad visualizer instance.
+   Adds space and a separator between multiple gamepads. */
 .gamepad-visualizer-instance {
-    margin-bottom: 20px; /* Space between multiple gamepads */
+    margin-bottom: 20px;
     padding-bottom: 15px;
-    border-bottom: 1px dashed var(--item-border); /* Separator */
+    border-bottom: 1px dashed var(--item-border);
 }
+/* Removes bottom margin/border for the last gamepad instance. */
 .gamepad-visualizer-instance:last-child {
     margin-bottom: 0;
     padding-bottom: 0;
-    border-bottom: none; /* No border for the last one */
+    border-bottom: none;
 }
 
+/* Title for a gamepad visualizer instance. */
 .gamepad-visualizer-instance h4 {
     margin-top: 0;
     margin-bottom: 10px;
@@ -626,20 +685,22 @@ body {
     font-weight: normal;
 }
 
-/* The main SVG container */
+/* The main SVG container for gamepad visualization.
+   Uses input background for contrast, prevents extra space below. */
 .gamepad-svg-vis {
-    background-color: var(--input-bg); /* Use input background for contrast */
+    background-color: var(--input-bg);
     border-radius: 5px;
-    display: block; /* Prevent extra space below */
+    display: block;
     border: 1px solid var(--item-border);
 }
 
-/* SVG Element Styles (Copied and adapted from original core script) */
+/* Base style for SVG elements in gamepad visualizer. */
 .gp-vis-base {
     fill: #555;
     stroke: #888;
     stroke-width: 0.5;
 }
+/* Style for buttons, d-pad, bumpers in gamepad visualizer. */
 .gp-vis-button,
 .gp-vis-dpad,
 .gp-vis-bumper {
@@ -648,31 +709,34 @@ body {
     stroke-width: 0.5;
     transition: fill 0.05s linear;
 }
+/* Style for the base of analog sticks. */
 .gp-vis-stick-base {
     fill: #2a527a;
 }
+/* Style for the top part of analog sticks. */
 .gp-vis-stick-top {
     fill: #6699cc;
     stroke: #8cb3d9;
     stroke-width: 0.5;
     transition: transform 0.05s linear;
 }
+/* Style for triggers, default low opacity. */
 .gp-vis-trigger {
     fill: #8ecae6;
     stroke: #a1d8f0;
     stroke-width: 0.5;
     transition: opacity 0.05s linear;
-    opacity: 0.5; /* Default low opacity for triggers */
+    opacity: 0.5;
 }
 
-/* Pressed States */
+/* Pressed states for gamepad buttons, d-pad, bumpers. Uses active color. */
 .gp-vis-button-pressed,
 .gp-vis-dpad-pressed,
 .gp-vis-bumper-pressed {
-    fill: #4a90e2; /* Active/pressed color */
+    fill: #4a90e2;
 }
 
-/* Message when no gamepads are detected yet */
+/* Message displayed when no gamepads are detected. */
 .no-gamepads-message {
     font-style: italic;
     color: var(--sidebar-text);
@@ -681,71 +745,24 @@ body {
     margin-top: 10px;
 }
 
-/* Style for preset and audio device dropdowns */
-.dev-setting-item #resolutionPresetSelect,
-.dev-setting-item .audio-device-select {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    background-color: var(--input-bg);
-    color: var(--input-text);
-    font-size: 1em;
-    cursor: pointer;
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    /* Custom arrow SVG for dark theme */
-    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23abb2bf%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
-    background-repeat: no-repeat;
-    background-position: right 8px top 50%;
-    background-size: 12px auto;
-    transition: border-color 0.2s ease;
-}
-
-/* Custom arrow color and explicit colors for light theme select */
-.theme-light .dev-setting-item #resolutionPresetSelect,
-.theme-light .dev-setting-item .audio-device-select {
-    /* Custom arrow SVG for light theme */
-    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%22292.4%22%3E%3Cpath%20fill%3D%22%23333%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
-    background-color: var(--input-bg);
-    color: var(--input-text);
-}
-
-/* Hover state for select */
-.dev-setting-item #resolutionPresetSelect:hover,
-.dev-setting-item .audio-device-select:hover {
-    border-color: var(--sidebar-header-color);
-}
-
-/* Focus state for select */
-.dev-setting-item #resolutionPresetSelect:focus,
-.dev-setting-item .audio-device-select:focus {
-   outline: none;
-   border-color: var(--sidebar-header-color);
-   box-shadow: none;
-}
-
-/* Disabled state for audio device selects */
-.dev-setting-item .audio-device-select:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
-/* Container for manual width/height inputs */
+/* --- Resolution and Audio Settings --- */
+/* Container for manual width/height inputs.
+   Provides space between inputs and below the container. */
 .resolution-manual-inputs {
     display: flex;
-    gap: 10px; /* Space between width and height inputs */
-    margin-bottom: 15px; /* Space below the inputs */
+    gap: 10px;
+    margin-bottom: 15px;
 }
 
-/* Individual manual input item (label + input) */
+/* Individual manual input item (label + input).
+   Each takes half the space, removes bottom margin. */
 .manual-input-item {
-    flex: 1; /* Each takes half the space */
-    margin-bottom: 0; /* Remove bottom margin from individual items */
+    flex: 1;
+    margin-bottom: 0;
 }
 
-/* Manual width/height number inputs */
+/* Manual width/height number inputs.
+   Removes spinners in Firefox. */
 .manual-input-item input[type="number"] {
     width: 100%;
     padding: 8px;
@@ -755,56 +772,63 @@ body {
     color: var(--input-text);
     font-size: 1em;
     box-sizing: border-box;
-    -moz-appearance: textfield; /* Firefox */
+    -moz-appearance: textfield;
 }
 
-/* Remove spinners for number input in Webkit */
+/* Remove spinners for number input in Webkit browsers. */
 .manual-input-item input[type="number"]::-webkit-outer-spin-button,
 .manual-input-item input[type="number"]::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
 }
 
-/* Hover/Focus for number inputs */
+/* Hover state for number inputs. */
 .manual-input-item input[type="number"]:hover {
     border-color: var(--sidebar-header-color);
 }
+/* Focus state for number inputs. */
 .manual-input-item input[type="number"]:focus {
     outline: none;
     border-color: var(--sidebar-header-color);
 }
 
-/* Container for scale locally checkbox and label */
+/* Container for "Scale Locally" checkbox and label.
+   Provides space between checkbox and label. */
 .scale-locally-item {
     display: flex;
     align-items: center;
-    gap: 8px; /* Space between checkbox and label */
+    gap: 8px;
     margin-bottom: 15px;
 }
 
+/* "Scale Locally" checkbox.
+   Colors the checkbox, resets margin. */
 .scale-locally-item input[type="checkbox"] {
     width: 16px;
     height: 16px;
-    accent-color: var(--sidebar-header-color); /* Color the checkbox */
+    accent-color: var(--sidebar-header-color);
     cursor: pointer;
-    margin: 0; /* Reset margin */
+    margin: 0;
 }
 
+/* Label for "Scale Locally" checkbox.
+   Less prominent, allows clicking label to toggle, resets margin. */
 .scale-locally-item label {
-    font-weight: normal; /* Make label less prominent than section headers */
+    font-weight: normal;
     font-size: 0.9em;
-    cursor: pointer; /* Allow clicking label to toggle */
-    margin: 0; /* Reset margin */
+    cursor: pointer;
+    margin: 0;
 }
 
-/* Container for the resolution action buttons */
+/* Container for resolution action buttons (Set/Reset).
+   Provides space between buttons and above the container. */
 .resolution-action-buttons {
     display: flex;
-    gap: 10px; /* Space between buttons */
-    margin-top: 5px; /* Space above the buttons */
+    gap: 10px;
+    margin-top: 5px;
 }
 
-/* Styling for Set/Reset buttons */
+/* Styling for Set/Reset buttons in resolution settings. */
 .resolution-button {
     flex: 1;
     width: 100%;
@@ -830,14 +854,14 @@ body {
     border-color: var(--sidebar-header-color);
 }
 
-/* Divider style used in Audio Settings */
+/* Divider style used in Audio Settings. */
 .section-divider {
     border: none;
     border-top: 1px solid var(--item-border);
     margin: 15px 0;
 }
 
-/* Error message style used in Audio Settings */
+/* Error message style used in Audio Settings. */
 .error-message {
     color: var(--error-color, #e74c3c);
     background-color: rgba(231, 76, 60, 0.1);
@@ -848,7 +872,7 @@ body {
     border: 1px solid rgba(231, 76, 60, 0.3);
 }
 
-/* Notice style used in Audio Settings */
+/* Notice style used in Audio Settings (e.g., device support). */
 .device-support-notice {
     font-size: 0.8em;
     color: var(--sidebar-text-secondary, #888);
@@ -857,45 +881,53 @@ body {
     text-align: center;
 }
 
+/* --- Toggle Buttons (e.g., Mic Mute, Audio Mute) --- */
+/* Generic toggle button style, inherits from .resolution-button. */
 .toggle-button {
-    /* Inherits base styles from .resolution-button */
     transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out;
     background-color: var(--input-bg);
     color: var(--sidebar-text);
     border-color: var(--item-border);
 }
 
+/* Hover state for toggle buttons, slightly more prominent. */
 .toggle-button:hover {
-    /* Slightly more prominent hover */
     border-color: var(--sidebar-header-color);
     background-color: var(--section-bg);
 }
 
-/* Active state for toggle buttons */
+/* Active state for toggle buttons (e.g., when muted).
+   Uses highlight color and contrast text. */
 .toggle-button.active {
-    background-color: var(--sidebar-header-color); /* Highlight color */
-    color: var(--button-text); /* Contrast text color */
-    border-color: var(--sidebar-header-color); /* Match background border */
+    background-color: var(--sidebar-header-color);
+    color: var(--button-text);
+    border-color: var(--sidebar-header-color);
 }
 
-/* Hover state when active */
+/* Hover state when toggle button is active. Uses theme's button hover. */
 .toggle-button.active:hover {
-     background-color: var(--button-hover-bg); /* Use theme's button hover */
+     background-color: var(--button-hover-bg);
      border-color: var(--button-hover-bg);
 }
 
+/* --- Notifications --- */
+/* Container for all notification items.
+   Positioned top-right, high z-index, allows clicks to pass through container itself. */
 .notification-container {
     position: fixed;
     top: 20px;
     right: 20px;
-    width: 320px; /* Adjust width as needed */
-    z-index: 1050; /* Ensure it's above other elements like sidebar */
+    width: 320px;
+    z-index: 1050;
     display: flex;
     flex-direction: column;
-    gap: 10px; /* Space between notifications */
-    pointer-events: none; /* Allow clicks to pass through container */
+    gap: 10px;
+    pointer-events: none;
 }
 
+/* Individual notification item.
+   Re-enables pointer events, prevents content overflow.
+   Transition matches FADE_DURATION if applicable from JS. */
 .notification-item {
     background-color: var(--section-bg);
     color: var(--sidebar-text);
@@ -904,17 +936,19 @@ body {
     padding: 10px 15px;
     box-shadow: 0 2px 10px var(--notification-shadow);
     opacity: 1;
-    transition: opacity 0.5s ease-out, transform 0.3s ease-out; /* Match FADE_DURATION */
+    transition: opacity 0.5s ease-out, transform 0.3s ease-out;
     transform: translateX(0);
-    pointer-events: auto; /* Re-enable pointer events for items */
-    overflow: hidden; /* Prevent content overflow */
+    pointer-events: auto;
+    overflow: hidden;
 }
 
+/* Style for fading out notification, optional slide-out effect. */
 .notification-item.fade-out {
     opacity: 0;
-    transform: translateX(20px); /* Optional: slide out effect */
+    transform: translateX(20px);
 }
 
+/* Header of a notification item (filename, close button). */
 .notification-header {
     display: flex;
     justify-content: space-between;
@@ -922,6 +956,8 @@ body {
     margin-bottom: 8px;
 }
 
+/* Filename display in notification, truncates long names.
+   Provides space before close button. */
 .notification-filename {
     font-weight: bold;
     font-size: 0.9em;
@@ -929,9 +965,11 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     flex-grow: 1;
-    margin-right: 10px; /* Space before close button */
+    margin-right: 10px;
 }
 
+/* Close button for notifications.
+   Makes clickable area slightly larger. */
 .notification-close-button {
     background: none;
     border: none;
@@ -939,7 +977,7 @@ body {
     font-size: 1.2em;
     line-height: 1;
     padding: 2px 5px;
-    margin: -2px -5px; /* Make clickable area slightly larger */
+    margin: -2px -5px;
     cursor: pointer;
     opacity: 0.7;
     transition: opacity 0.2s ease, background-color 0.2s ease;
@@ -951,17 +989,20 @@ body {
     background-color: var(--notification-close-hover-bg);
 }
 
+/* Body of a notification item (status text, progress bar). */
 .notification-body {
     display: flex;
     flex-direction: column;
     gap: 5px;
 }
 
+/* Status text within notification. */
 .notification-status-text {
     font-size: 0.85em;
     opacity: 0.9;
 }
 
+/* Outer container for the progress bar. */
 .notification-progress-bar-outer {
     width: 100%;
     height: 6px;
@@ -970,53 +1011,53 @@ body {
     overflow: hidden;
 }
 
+/* Inner fill of the progress bar.
+   Starts at 0% width, smooth progress updates. */
 .notification-progress-bar-inner {
     height: 100%;
-    width: 0%; /* Start at 0% */
+    width: 0%;
     background-color: var(--notification-progress-fill);
     border-radius: 3px;
-    transition: width 0.1s linear; /* Smooth progress updates */
+    transition: width 0.1s linear;
 }
 
-/* Status-specific styling */
+/* Success state for notification progress bar. */
 .notification-item.end .notification-progress-bar-inner {
     background-color: var(--notification-success-color);
 }
 
+/* Error state for notification progress bar. */
 .notification-item.error .notification-progress-bar-inner {
     background-color: var(--notification-error-color);
 }
 
+/* Error status text styling. */
 .notification-item.error .notification-status-text.error-text {
     color: var(--notification-error-color);
     font-weight: bold;
 }
 
+/* Detailed error message in notification. Wraps long messages. */
 .notification-error-message {
     font-size: 0.8em;
     color: var(--notification-error-color);
     margin: 5px 0 0 0;
     padding: 0;
-    word-break: break-word; /* Wrap long error messages */
+    word-break: break-word;
 }
 
-a:link {
-  text-decoration: none;
-}
-
-a:visited {
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: none;
-}
-
+/* --- Global Link Styles --- */
+/* Basic link styling to remove default underlines. */
+a:link,
+a:visited,
+a:hover,
 a:active {
   text-decoration: none;
 }
 
-/* Files Modal Styles */
+/* --- Files Modal Styles --- */
+/* Styles for the file browser modal.
+   Rounded corners, positioned above sidebar/notifications. */
 .files-modal {
     position: fixed;
     top: 10%;
@@ -1025,19 +1066,21 @@ a:active {
     height: 80%;
     background-color: var(--sidebar-bg);
     border: 1px solid var(--sidebar-border);
-    border-radius: 15px; /* Rounded corners for the modal */
+    border-radius: 15px;
     box-shadow: 0 5px 15px var(--sidebar-shadow);
-    z-index: 1060; /* Above notifications and sidebar */
+    z-index: 1060;
     padding: 20px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
 }
 
+/* Close button for the files modal.
+   Positioned relative to modal padding, ensures it's above iframe. */
 .files-modal-close {
     position: absolute;
-    top: 10px; /* Position relative to modal padding */
-    right: 15px; /* Position relative to modal padding */
+    top: 10px;
+    right: 15px;
     background: transparent;
     border: none;
     font-size: 2rem;
@@ -1046,80 +1089,92 @@ a:active {
     cursor: pointer;
     padding: 0;
     line-height: 1;
-    z-index: 1061; /* Ensure close button is above iframe */
+    z-index: 1061;
 }
 
 .files-modal-close:hover {
     color: var(--sidebar-header-color);
 }
 
+/* Iframe within the files modal.
+   Fills available space, no border, rounded corners for content area. */
 .files-modal iframe {
-    flex-grow: 1; /* Make iframe fill the available space in the modal */
+    flex-grow: 1;
     width: 100%;
-    height: 100%; /* Fill the height of the flex container part */
-    border: none; /* No border for the iframe */
-    border-radius: 10px; /* Slightly rounded corners for the iframe content area */
-    background-color: var(--input-bg); /* Background for iframe area before content loads */
+    height: 100%;
+    border: none;
+    border-radius: 10px;
+    background-color: var(--input-bg);
 }
 
-/* Virtual Keyboard Button */
+/* --- Virtual Keyboard Button --- */
+/* Styles for the floating virtual keyboard button.
+   Uses theme variables, consistent styling, positioned above most elements. */
 .virtual-keyboard-button {
   position: fixed;
   bottom: 20px;
   right: 20px;
   width: 50px;
   height: 50px;
-  background-color: var(--button-bg); /* Uses theme variable for background */
-  color: var(--button-text); /* Uses theme variable for icon color */
-  border: 1px solid var(--item-border); /* Uses theme variable for border */
-  border-radius: 8px; /* Square with rounded corners, consistent with other elements */
-  box-shadow: 0 2px 8px var(--sidebar-shadow); /* Consistent shadow */
+  background-color: var(--button-bg);
+  color: var(--button-text);
+  border: 1px solid var(--item-border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px var(--sidebar-shadow);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  z-index: 1040; /* Positioned above sidebar/tooltips, below modals/notifications */
-  padding: 0; /* Remove default padding */
+  z-index: 1040;
+  padding: 0;
   transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
 }
 
+/* Hover state for virtual keyboard button.
+   Uses theme hover, highlights border, slight lift effect. */
 .virtual-keyboard-button:hover {
-  background-color: var(--button-hover-bg); /* Uses theme variable */
-  border-color: var(--sidebar-header-color); /* Highlight similar to other interactive elements */
-  transform: translateY(-2px); /* Slight lift effect on hover */
+  background-color: var(--button-hover-bg);
+  border-color: var(--sidebar-header-color);
+  transform: translateY(-2px);
 }
 
+/* Active (pressed) state for virtual keyboard button. Press down effect. */
 .virtual-keyboard-button:active {
-  transform: translateY(0px) scale(0.98); /* Press down effect */
-  /* Optionally, use a slightly different background for active state if desired */
-  /* background-color: var(--button-active-bg, var(--button-hover-bg)); */
+  transform: translateY(0px) scale(0.98);
 }
 
+/* SVG icon within the virtual keyboard button.
+   Adjusts size, inherits color from button. */
 .virtual-keyboard-button svg {
-  width: 24px; /* Adjust icon size as needed */
+  width: 24px;
   height: 24px;
-  fill: currentColor; /* Icon color inherits from button's text color */
+  fill: currentColor;
 }
 
+/* --- Apps Modal Styles --- */
+/* Styles for the applications browser modal.
+   Centered, responsive dimensions, high z-index, rounded corners.
+   Prevents content overflow before scroll is active. */
 .apps-modal {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 80vw; /* 80% of viewport width */
-    height: 80vh; /* 80% of viewport height */
-    max-width: 1000px; /* Optional: max width */
-    max-height: 700px; /* Optional: max height */
+    width: 80vw;
+    height: 80vh;
+    max-width: 1000px;
+    max-height: 700px;
     background-color: var(--sidebar-bg);
     border: 1px solid var(--sidebar-border);
-    border-radius: 15px; /* Rounded corners */
+    border-radius: 15px;
     box-shadow: 0 5px 20px var(--sidebar-shadow);
-    z-index: 1070; /* High z-index */
+    z-index: 1070;
     display: flex;
     flex-direction: column;
-    overflow: hidden; /* Prevent content from spilling out before scroll is active */
+    overflow: hidden;
 }
 
+/* Close button for the apps modal. */
 .apps-modal-close {
     position: absolute;
     top: 15px;
@@ -1139,15 +1194,18 @@ a:active {
     color: var(--sidebar-header-color);
 }
 
+/* Content area of the apps modal.
+   Padded with space for close button, scrollable. */
 .apps-modal-content {
     padding: 20px;
-    padding-top: 40px; /* Space for close button */
+    padding-top: 40px;
     flex-grow: 1;
-    overflow-y: auto; /* Scroll for content */
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
 }
 
+/* Loading and error states within the apps modal. */
 .apps-modal-loading,
 .apps-modal-error {
     display: flex;
@@ -1165,7 +1223,7 @@ a:active {
     color: var(--notification-error-color);
 }
 
-
+/* Search bar within the apps modal. */
 .apps-search-bar {
     width: 100%;
     padding: 10px 15px;
@@ -1182,6 +1240,7 @@ a:active {
     border-color: var(--sidebar-header-color);
 }
 
+/* Grid layout for app cards. */
 .apps-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -1189,6 +1248,9 @@ a:active {
     align-content: start;
 }
 
+/* Individual app card style.
+   Clickable, with hover effect, contains icon and name.
+   Position relative for badge, min/max height, overflow hidden. */
 .app-card {
     background-color: var(--section-bg);
     border: 1px solid var(--item-border);
@@ -1200,8 +1262,8 @@ a:active {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: space-between; /* Keeps pushing name to bottom */
-    position: relative; /* For badge */
+    justify-content: space-between;
+    position: relative;
     min-height: 180px;
     max-height: 220px;
     overflow: hidden;
@@ -1215,7 +1277,7 @@ a:active {
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
-
+/* Icon within an app card. */
 .app-card-icon {
     width: 96px;
     height: 96px;
@@ -1224,6 +1286,8 @@ a:active {
     flex-shrink: 0;
 }
 
+/* Name display within an app card.
+   Handles word break and text overflow. */
 .app-card-name {
     font-size: 0.9em;
     color: var(--sidebar-text);
@@ -1235,31 +1299,34 @@ a:active {
     text-overflow: ellipsis;
 }
 
+/* "Installed" badge on an app card. */
 .app-card-installed-badge {
     position: absolute;
     top: 5px;
     right: 5px;
     background-color: var(--notification-success-color);
-    color: white; /* Or var(--button-text) if it fits better */
+    color: white;
     padding: 2px 6px;
     font-size: 0.7em;
     border-radius: 4px;
     font-weight: bold;
 }
 
-
-/* App Detail View */
+/* --- App Detail View (within Apps Modal) --- */
+/* Styles for the detailed view of a single app.
+   Centered content and text. */
 .app-detail-view {
     padding: 10px;
     color: var(--sidebar-text);
     display: flex;
     flex-direction: column;
-    align-items: center; /* Center content */
-    text-align: center; /* Center text */
+    align-items: center;
+    text-align: center;
 }
 
+/* "Back" button in app detail view. Positioned to the left. */
 .app-detail-back-button {
-    align-self: flex-start; /* Position to the left */
+    align-self: flex-start;
     margin-bottom: 15px;
     background-color: var(--input-bg);
     color: var(--sidebar-text);
@@ -1274,34 +1341,42 @@ a:active {
     border-color: var(--sidebar-header-color);
 }
 
+/* Icon in app detail view. Optional rounded corners for square icons. */
 .app-detail-icon {
-    width: 128px; /* Slightly smaller than GTK's detail view */
+    width: 128px;
     height: 128px;
     object-fit: contain;
     margin-bottom: 15px;
-    border-radius: 8px; /* Optional: if icons are square */
+    border-radius: 8px;
 }
 
+/* Title (app name) in app detail view. */
 .app-detail-view h2 {
     color: var(--sidebar-header-color);
     margin-top: 0;
     margin-bottom: 10px;
 }
 
+/* Description text in app detail view.
+   Prevents description from becoming too wide. */
 .app-detail-description {
     font-size: 1em;
     line-height: 1.6;
     margin-bottom: 20px;
-    max-width: 600px; /* Prevent description from becoming too wide */
+    max-width: 600px;
 }
 
+/* Container for action buttons (Install, Update, Remove) in app detail view.
+   Centers buttons. */
 .app-action-buttons {
     display: flex;
     gap: 10px;
     margin-top: 10px;
-    justify-content: center; /* Center buttons */
+    justify-content: center;
 }
 
+/* Generic style for action buttons in app detail view.
+   Ensures buttons have a decent width. */
 .app-action-button {
     padding: 10px 20px;
     border: none;
@@ -1309,9 +1384,10 @@ a:active {
     font-size: 1em;
     cursor: pointer;
     transition: background-color 0.2s ease;
-    min-width: 120px; /* Ensure buttons have a decent width */
+    min-width: 120px;
 }
 
+/* Install button style. */
 .app-action-button.install {
     background-color: var(--button-bg);
     color: var(--button-text);
@@ -1320,23 +1396,26 @@ a:active {
     background-color: var(--button-hover-bg);
 }
 
+/* Update button style. */
 .app-action-button.update {
-    background-color: #f0ad4e; /* Example: Orange for update */
+    background-color: #f0ad4e;
     color: white;
 }
 .app-action-button.update:hover {
     background-color: #eea236;
 }
 
+/* Remove button style. */
 .app-action-button.remove {
-    background-color: var(--notification-error-color); /* Example: Red for remove */
+    background-color: var(--notification-error-color);
     color: white;
 }
 .app-action-button.remove:hover {
     background-color: #c9302c;
 }
 
-/* Spinner Icon color fix if needed */
+/* --- Spinner Icon Color Fix --- */
+/* Ensures spinner icon in loading states uses theme color. */
 .apps-modal-loading svg {
     stroke: var(--sidebar-header-color);
 }
