@@ -1,4 +1,4 @@
-# Interactive Streaming Server Core
+# Selkies Server
 
 This document outlines the fundamental responsibilities and architecture of this server component, designed for real-time interactive streaming.
 
