@@ -1922,6 +1922,7 @@ function receiveMessage(event) {
   }
 }
 
+
 function handleSettingsMessage(settings) {
   console.log('Applying settings:', settings);
   if (settings.videoBitRate !== undefined) {
@@ -1983,61 +1984,100 @@ function handleSettingsMessage(settings) {
   if (settings.encoder !== undefined) {
     const newEncoderSetting = settings.encoder;
     const oldEncoderActual = currentEncoderMode; // Capture global state before update
-    currentEncoderMode = newEncoderSetting; // Update global state
-    setStringParam('encoder', currentEncoderMode); // Persist the new encoder setting
-    // Send to server
-    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-      webrtc.sendDataChannelMessage(`enc,${currentEncoderMode}`);
-      console.log(`Sent encoder ${currentEncoderMode} to server via DataChannel.`);
-    } else if (clientMode === 'websockets') {
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        const message = `SET_ENCODER,${currentEncoderMode}`;
-        console.log(`Sent websocket message: ${message}`);
-        websocket.send(message);
-      } else {
-        console.warn("Websocket connection not open, cannot send encoder setting.");
-      }
-    }
-    if (oldEncoderActual === 'x264enc-striped' && currentEncoderMode !== 'x264enc-striped') {
-      clearAllVncStripeDecoders();
-      console.log("Switched away from x264enc-striped, cleared stripe decoders.");
-      // If switching to a mode that uses the main 'decoder', ensure it's ready or reinitialized
-      if (currentEncoderMode === 'x264enc' && (!decoder || decoder.state === 'closed')) {
-        triggerInitializeDecoder(); // For full-frame H.264
-      }
-    } else if (currentEncoderMode === 'x264enc-striped' && oldEncoderActual !== 'x264enc-striped') {
-      if (canvasContext) {
-        canvasContext.setTransform(1, 0, 0, 1, 0, 0);
-        canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-        console.log("Switched to x264enc-striped, cleared canvas.");
-      }
-      // Close the main full-frame decoder if it's active, as VNC stripes use their own
-      if (decoder && decoder.state !== 'closed') {
-        console.log("Switching to VNC mode, closing main video decoder.");
-        decoder.close();
-        decoder = null;
-      }
-    }
-    // Existing JPEG switch logic (mostly for canvas sizing)
-    if (currentEncoderMode === 'jpeg' && oldEncoderActual !== 'jpeg') {
-      console.log("Encoder changed to JPEG. Ensuring canvas buffer is correctly sized.");
-      let currentTargetWidth, currentTargetHeight;
-      if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
-        currentTargetWidth = manualWidth;
-        currentTargetHeight = manualHeight;
-        console.log(`JPEG Switch: Using manual resolution for canvas buffer: ${currentTargetWidth}x${currentTargetHeight}`);
-        applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, scaleLocallyManual);
-      } else {
-        if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
-          const currentWindowRes = window.webrtcInput.getWindowResolution();
-          currentTargetWidth = roundDownToEven(currentWindowRes[0]);
-          currentTargetHeight = roundDownToEven(currentWindowRes[1]);
-          console.log(`JPEG Switch: Using auto (window) resolution for canvas buffer: ${currentTargetWidth}x${currentTargetHeight}`);
-          resetCanvasStyle(currentTargetWidth, currentTargetHeight);
-        } else {
-          console.warn("Cannot determine auto resolution for JPEG switch: webrtcInput or getWindowResolution not available.");
+    
+    if (oldEncoderActual !== newEncoderSetting) { // Proceed only if encoder actually changes
+        currentEncoderMode = newEncoderSetting; // Update global state
+        setStringParam('encoder', currentEncoderMode); // Persist the new encoder setting
+
+        // Send new encoder to server
+        if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+            webrtc.sendDataChannelMessage(`enc,${currentEncoderMode}`);
+            console.log(`Sent encoder ${currentEncoderMode} to server via DataChannel.`);
+        } else if (clientMode === 'websockets') {
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+            const message = `SET_ENCODER,${currentEncoderMode}`;
+            console.log(`Sent websocket message: ${message}`);
+            websocket.send(message);
+            } else {
+            console.warn("Websocket connection not open, cannot send encoder setting.");
+            }
         }
-      }
+
+        // Define mode types for clarity
+        const isNewStripedH264 = newEncoderSetting === 'x264enc-striped';
+        const isOldStripedH264 = oldEncoderActual === 'x264enc-striped';
+        const isNewJpeg = newEncoderSetting === 'jpeg';
+        const isOldJpeg = oldEncoderActual === 'jpeg';
+        // "Video pipeline" mode means any non-JPEG, non-striped-H264 mode that uses the main 'decoder'
+        const isNewVideoPipeline = !isNewJpeg && !isNewStripedH264;
+        const isOldVideoPipeline = !isOldJpeg && !isOldStripedH264;
+
+        // 1. Cleanup tasks based on the OLD encoder mode if switching AWAY from it
+        if (isOldStripedH264 && !isNewStripedH264) { // Switching away from x264enc-striped
+            clearAllVncStripeDecoders();
+            console.log(`Switched away from ${oldEncoderActual}, cleared stripe decoders.`);
+        }
+        // If old mode was a video pipeline or striped H264, and new mode is JPEG, close main decoder
+        if ((isOldVideoPipeline || isOldStripedH264) && isNewJpeg) {
+            if (decoder && decoder.state !== 'closed') {
+                console.log(`Switching from ${oldEncoderActual} to JPEG, closing main video decoder.`);
+                decoder.close();
+                decoder = null;
+            }
+        }
+
+        // 2. Setup tasks based on the NEW encoder mode
+        if (isNewStripedH264) { // Switching TO x264enc-striped
+            if (canvasContext) {
+                canvasContext.setTransform(1, 0, 0, 1, 0, 0);
+                canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+                console.log("Switched to x264enc-striped, cleared canvas.");
+            }
+            // Close main full-frame decoder if it was active
+            if (decoder && decoder.state !== 'closed') {
+                console.log("Switching to x264enc-striped, closing main video decoder.");
+                decoder.close();
+                decoder = null;
+            }
+        } else if (isNewJpeg) { // Switching TO JPEG
+            console.log("Encoder changed to JPEG. Ensuring canvas buffer is correctly sized.");
+             // (clearAllVncStripeDecoders if old was x264enc-striped is handled in step 1)
+             // (closing main decoder if old was video pipeline is handled in step 1)
+            let currentTargetWidth, currentTargetHeight;
+            if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
+                currentTargetWidth = manualWidth;
+                currentTargetHeight = manualHeight;
+                applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, scaleLocallyManual);
+            } else {
+                if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
+                const currentWindowRes = window.webrtcInput.getWindowResolution();
+                currentTargetWidth = roundDownToEven(currentWindowRes[0]);
+                currentTargetHeight = roundDownToEven(currentWindowRes[1]);
+                resetCanvasStyle(currentTargetWidth, currentTargetHeight);
+                } else {
+                console.warn("Cannot determine auto resolution for JPEG switch: webrtcInput or getWindowResolution not available.");
+                }
+            }
+        } else if (isNewVideoPipeline) { // Switching TO a full-frame video pipeline mode
+            console.log(`Switching to video pipeline ${newEncoderSetting}. Ensuring main decoder is initialized/reconfigured.`);
+            triggerInitializeDecoder(); // This will close existing decoder if any, and re-init.
+        }
+
+        const wasStripedOrJpeg = isOldJpeg || isOldStripedH264;
+
+        if (wasStripedOrJpeg && isNewVideoPipeline) {
+          console.log(`Switched from ${oldEncoderActual} (striped/jpeg) to ${newEncoderSetting} (video pipeline). Resending video bitrate ${videoBitRate} kbit/s.`);
+          if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
+            webrtc.sendDataChannelMessage(`vb,${videoBitRate}`);
+          } else if (clientMode === 'websockets') {
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+              const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
+              websocket.send(message);
+            }
+          }
+        }
+    } else {
+        console.log(`Encoder setting received (${newEncoderSetting}), but it's the same as current (${oldEncoderActual}). No change.`);
     }
   }
   if (settings.videoBufferSize !== undefined) {
@@ -2059,7 +2099,6 @@ function handleSettingsMessage(settings) {
         console.warn("Websocket connection not open, cannot send CRF setting.");
       }
     } else {
-      // Note: No equivalent WebRTC data channel message specified in the prompt
       console.warn("CRF setting received, but not sending to server in webrtc mode (not implemented/specified).");
     }
   }
@@ -2069,7 +2108,7 @@ function handleSettingsMessage(settings) {
     console.log(`Applied turnSwitch setting: ${turnSwitch}. Reloading...`);
     if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
       console.log('WebRTC not connected, skipping immediate reload.');
-      return; // Important to return if not reloading, to process other settings
+      return; 
     }
     setTimeout(() => {
       window.location.reload();
@@ -2081,7 +2120,7 @@ function handleSettingsMessage(settings) {
     console.log(`Applied debug setting: ${debug}. Reloading...`);
     if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
       console.log('WebRTC not connected, skipping immediate reload.');
-      return; // Important to return if not reloading, to process other settings
+      return; 
     }
     setTimeout(() => {
       window.location.reload();
