@@ -2457,6 +2457,149 @@ const fil = {
     }
 };
 
+// --- Danish Translations ---
+const da = {
+    selkiesLogoAlt: "Selkies Logo",
+    selkiesTitle: "Selkies",
+    toggleThemeTitle: "Skift Tema",
+    fullscreenTitle: "Start Fuldskærm",
+    buttons: {
+        videoStreamEnableTitle: "Aktiver Videostream",
+        videoStreamDisableTitle: "Deaktiver Videostream",
+        audioStreamEnableTitle: "Aktiver Lydstream",
+        audioStreamDisableTitle: "Deaktiver Lydstream",
+        microphoneEnableTitle: "Aktiver Mikrofon",
+        microphoneDisableTitle: "Deaktiver Mikrofon",
+        gamepadEnableTitle: "Aktiver Gamepad-input",
+        gamepadDisableTitle: "Deaktiver Gamepad-input",
+        virtualKeyboardButtonTitle: "Vis Tastatur",
+    },
+    sections: {
+        video: {
+            title: "Videoindstillinger",
+            encoderLabel: "Encoder:",
+            framerateLabel: "Billeder pr. sekund ({framerate} FPS):",
+            bitrateLabel: "Video Bitrate ({bitrate} Mbps):",
+            bufferLabelImmediate: "Videobufferstørrelse (0 (Øjeblikkelig)):",
+            bufferLabelFrames: "Videobufferstørrelse ({videoBufferSize} billeder):",
+            crfLabel: "Video CRF ({crf}):",
+        },
+        audio: {
+            title: "Lydindstillinger",
+            bitrateLabel: "Lyd Bitrate ({bitrate} kbps):",
+            inputLabel: "Input (Mikrofon):",
+            outputLabel: "Output (Højttaler):",
+            outputNotSupported: "Valg af outputenhed understøttes ikke af denne browser.",
+            deviceErrorDefault: "Fejl ved listning af lydenheder: {errorName}",
+            deviceErrorPermission: "Adgang nægtet. Tillad venligst mikrofonadgang i browserindstillinger for at vælge enheder.",
+            deviceErrorNotFound: "Ingen lydenheder fundet.",
+            defaultInputLabelFallback: "Inputenhed {index}",
+            defaultOutputLabelFallback: "Outputenhed {index}",
+        },
+        screen: {
+            title: "Skærmindstillinger",
+            presetLabel: "Forudindstilling:",
+            resolutionPresetSelect: "-- Vælg Forudindstilling --",
+            widthLabel: "Bredde:",
+            heightLabel: "Højde:",
+            widthPlaceholder: "f.eks. 1920",
+            heightPlaceholder: "f.eks. 1080",
+            setManualButton: "Indstil Manuel Opløsning",
+            resetButton: "Nulstil til Vindue",
+            scaleLocallyLabel: "Skaler Lokalt:",
+            scaleLocallyOn: "TIL",
+            scaleLocallyOff: "FRA",
+            scaleLocallyTitleEnable: "Aktiver Lokal Skalering (Bevar Aspektforhold)",
+            scaleLocallyTitleDisable: "Deaktiver Lokal Skalering (Brug Præcis Opløsning)",
+        },
+        stats: {
+            title: "Statistik",
+            cpuLabel: "CPU",
+            gpuLabel: "GPU-brug",
+            sysMemLabel: "Systemhuk.",
+            gpuMemLabel: "GPU-huk.",
+            fpsLabel: "FPS",
+            audioLabel: "Lyd",
+            tooltipCpu: "CPU-brug: {value}%",
+            tooltipGpu: "GPU-brug: {value}%",
+            tooltipSysMem: "Systemhukommelse: {used} / {total}",
+            tooltipGpuMem: "GPU-hukommelse: {used} / {total}",
+            tooltipFps: "Klient FPS: {value}",
+            tooltipAudio: "Lydbuffere: {value}",
+            tooltipMemoryNA: "I/T",
+        },
+        clipboard: {
+            title: "Udklipsholder",
+            label: "Server Udklipsholder:",
+            placeholder: "Indhold fra serverens udklipsholder...",
+        },
+        files: {
+            title: "Filer",
+            uploadButton: "Upload Filer",
+            uploadButtonTitle: "Upload filer til den eksterne session",
+            downloadButtonTitle: "Download Filer",
+        },
+        gamepads: {
+            title: "Gamepads",
+            noActivity: "Ingen fysisk gamepad-aktivitet registreret endnu...",
+            touchEnableTitle: "Aktiver Touch Gamepad",
+            touchDisableTitle: "Deaktiver Touch Gamepad",
+            touchActiveLabel: "Touch Gamepad: TIL",
+            touchInactiveLabel: "Touch Gamepad: FRA",
+            physicalHiddenForTouch: "Visning af fysisk gamepad er skjult, mens touch gamepad er aktiv.",
+            noActivityMobileOrEnableTouch: "Ingen fysiske gamepads. Aktiver touch gamepad eller tilslut en controller."
+        },
+        apps: {
+          title: "Apps",
+          openButtonTitle: "Administrer Apps",
+          openButton: "Administrer Apps"
+        }
+    },
+    resolutionPresets: {
+        "1920x1080": "1920 x 1080 (FHD)",
+        "1280x720": "1280 x 720 (HD)",
+        "1366x768": "1366 x 768 (Bærbar)",
+        "1920x1200": "1920 x 1200 (16:10)",
+        "2560x1440": "2560 x 1440 (QHD)",
+        "3840x2160": "3840 x 2160 (4K UHD)",
+        "1024x768": "1024 x 768 (XGA 4:3)",
+        "800x600": "800 x 600 (SVGA 4:3)",
+        "640x480": "640 x 480 (VGA 4:3)",
+        "320x240": "320 x 240 (QVGA 4:3)",
+    },
+    appsModal: {
+        closeAlt: "Luk app-modal",
+        loading: "Indlæser apps...",
+        errorLoading: "Kunne ikke indlæse app-data. Prøv venligst igen.",
+        searchPlaceholder: "Søg efter apps...",
+        noAppsFound: "Ingen apps fundet, der matcher din søgning.",
+        backButton: "Tilbage til listen",
+        installButton: "Installer",
+        updateButton: "Opdater",
+        removeButton: "Fjern",
+        installingMessage: "Simulerer installation for: {{appName}}",
+        removingMessage: "Simulerer fjernelse for: {{appName}}",
+        updatingMessage: "Simulerer opdatering for: {{appName}}",
+        installedBadge: "Installeret"
+    },
+    notifications: {
+        closeButtonAlt: "Luk notifikation for {fileName}",
+        uploading: "Uploader... {progress}%",
+        uploadComplete: "Upload Fuldført",
+        uploadFailed: "Upload Mislykkedes",
+        errorPrefix: "Fejl:",
+        unknownError: "Der opstod en ukendt fejl.",
+    },
+    alerts: {
+        invalidResolution: "Indtast venligst gyldige positive heltal for Bredde og Højde.",
+    },
+    byteUnits: ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
+    zeroBytes: "0 Bytes",
+    filesModal: {
+        closeAlt: "Luk fil-modal",
+        iframeTitle: "Downloadbare Filer"
+    }
+};
 
 // --- Combined Translations Object ---
 const translations = {
@@ -2477,6 +2620,7 @@ const translations = {
     vi,
     th,
     fil,
+    da,
 };
 
 // Function to get translations based on language code
