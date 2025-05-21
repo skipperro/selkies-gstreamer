@@ -125,6 +125,7 @@ static int (*real_open64)(const char *pathname, int flags, ...) = NULL;
 static int (*real_ioctl)(int fd, ioctl_request_t request, ...) = NULL;
 static int (*real_epoll_ctl)(int epfd, int op, int fd, struct epoll_event *event) = NULL;
 static int (*real_close)(int fd) = NULL;
+static ssize_t (*real_read)(int fd, void *buf, size_t count) = NULL;
 
 __attribute__((constructor)) void init_interposer()
 {
@@ -140,6 +141,9 @@ __attribute__((constructor)) void init_interposer()
     }
     if (load_real_func((void *)&real_close, "close") < 0) {
         interposer_log(LOG_ERROR, "CRITICAL: Failed to load real 'close'. Interposer may not function.");
+    }
+    if (load_real_func((void *)&real_read, "read") < 0) {
+        interposer_log(LOG_ERROR, "CRITICAL: Failed to load real 'read'. Event reading will likely fail.");
     }
 
     // open64 is optional; real_open64 will remain NULL if not found.
@@ -222,7 +226,7 @@ int read_config(int fd, js_config_t *config_dest)
     interposer_log(LOG_INFO, "Attempting to read %zd bytes for js_config_t from fd %d.", bytes_to_read, fd);
 
     while (bytes_read_total < bytes_to_read) {
-        ssize_t current_read = read(fd, buffer_ptr + bytes_read_total, bytes_to_read - bytes_read_total);
+        ssize_t current_read = real_read(fd, buffer_ptr + bytes_read_total, bytes_to_read - bytes_read_total);
         if (current_read == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 interposer_log(LOG_WARN, "read_config: read() returned EAGAIN/EWOULDBLOCK on fd %d. Retrying.", fd);
@@ -470,6 +474,116 @@ int close(int fd)
     return real_close(fd);
 }
 
+ssize_t read(int fd, void *buf, size_t count)
+{
+    if (!real_read) {
+        interposer_log(LOG_ERROR, "CRITICAL: real_read not loaded in read().");
+        errno = EFAULT;
+        return -1;
+    }
+
+    js_interposer_t *interposer = NULL;
+    for (size_t i = 0; i < NUM_INTERPOSERS(); i++) {
+        if (fd == interposers[i].sockfd && interposers[i].sockfd != -1) {
+            interposer = &interposers[i];
+            break;
+        }
+    }
+
+    if (interposer == NULL) {
+        // Not our fd, pass to real_read
+        return real_read(fd, buf, count);
+    }
+
+    interposer_log(LOG_INFO, "Intercepted 'read' for interposed fd %d (device %s, type %d), requested %zu bytes.",
+                   fd, interposer->open_dev_name, interposer->type, count);
+
+    size_t event_size;
+    if (interposer->type == DEV_TYPE_JS) {
+        event_size = sizeof(struct js_event); // Typically 8 bytes
+        interposer_log(LOG_INFO, "read() for JS device: event_size = %zu", event_size);
+    } else if (interposer->type == DEV_TYPE_EV) {
+        // Calculate based on arch byte sent to server (sizeof(long) for timeval)
+        // struct timeval (2 * sizeof(long)), type (2), code (2), value (4)
+        // This assumes sizeof(long) accurately reflects the architecture for timeval.
+        // The `arch_byte` sent to Python was sizeof(unsigned long).
+        // For struct input_event: struct timeval time; __u16 type; __u16 code; __s32 value;
+        // So timeval is 2 * sizeof(long) on most systems for sec and usec.
+        event_size = (2 * sizeof(long)) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(int32_t);
+        interposer_log(LOG_INFO, "read() for EV device: event_size = %zu (based on sizeof(long)=%zu)", event_size, sizeof(long));
+    } else {
+        interposer_log(LOG_ERROR, "read(): Unknown interposer type %d for fd %d", interposer->type, fd);
+        errno = EBADF;
+        return -1;
+    }
+
+    if (count == 0) { // Application requested zero bytes.
+        return 0;
+    }
+
+    if (count < event_size) {
+        interposer_log(LOG_WARN, "read() for %s: application buffer too small (%zu bytes) for a single event_size (%zu bytes). Returning -EINVAL.",
+                       interposer->open_dev_name, count, event_size);
+        errno = EINVAL; // Common practice if buffer is too small for minimum unit
+        return -1;
+    }
+
+    // We need to read exactly one event_size from the socket.
+    // The socket is (or should be) non-blocking due to epoll_ctl logic or explicit setting.
+    size_t bytes_read_total = 0;
+    char *buffer_ptr = (char *)buf;
+
+    // We will only return one event at a time, even if `count` is larger.
+    // This matches how evdev devices typically behave with read().
+    size_t target_read_size = event_size;
+
+    // Loop to ensure a full event is read from the (potentially non-blocking) socket
+    struct timespec start_time, current_time;
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
+    const long read_timeout_ns = 2000000000; // 2 seconds timeout for a single event read, adjust as needed
+
+    while (bytes_read_total < target_read_size) {
+        ssize_t current_read = recv(interposer->sockfd, buffer_ptr + bytes_read_total, target_read_size - bytes_read_total, 0);
+
+        if (current_read == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Socket is non-blocking and no data right now.
+                // Check if the application opened the fd with O_NONBLOCK.
+                // If so, we should return -EAGAIN.
+                // For now, we make it blocking with a timeout.
+                // Check for timeout
+                clock_gettime(CLOCK_MONOTONIC, &current_time);
+                long elapsed_ns = (current_time.tv_sec - start_time.tv_sec) * 1000000000L + (current_time.tv_nsec - start_time.tv_nsec);
+                if (elapsed_ns > read_timeout_ns) {
+                    interposer_log(LOG_WARN, "read() on socket %d: Timeout waiting for event data after %ld ns.", interposer->sockfd, elapsed_ns);
+                    // If some bytes were read, it's an incomplete event.
+                    // If no bytes read, could return EAGAIN if app expects non-blocking.
+                    // For simplicity, returning an error for timeout.
+                    errno = ETIMEDOUT;
+                    return -1;
+                }
+                usleep(1000); // Small sleep to yield CPU
+                continue;
+            }
+            interposer_log(LOG_ERROR, "read() on socket %d: recv error: %s", interposer->sockfd, strerror(errno));
+            return -1; // Propagate other errors
+        } else if (current_read == 0) {
+            interposer_log(LOG_INFO, "read() on socket %d: recv returned 0 (EOF). Peer closed connection.", interposer->sockfd);
+            if (bytes_read_total > 0 && bytes_read_total < target_read_size) {
+                 interposer_log(LOG_ERROR, "read() on socket %d: EOF mid-event after %zu bytes.", interposer->sockfd, bytes_read_total);
+                 errno = EPIPE;
+                 return -1;
+            }
+            return 0; // Clean EOF, no bytes read for this event, or EOF between events
+        }
+        bytes_read_total += current_read;
+    }
+
+    interposer_log(LOG_INFO, "Successfully read %zu bytes for one event from %s (fd %d).",
+                   bytes_read_total, interposer->open_dev_name, fd);
+    return bytes_read_total; // Should be event_size
+}
+
 int intercept_js_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t request, void *arg)
 {
     int len;
@@ -610,9 +724,20 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
                        interposer->open_dev_name, (unsigned long)request, id->bustype, id->vendor, id->product, id->version); 
         return 0;
     case EVIOCGRAB:
-        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGRAB (0x%08lx) (arg: %p, val: %d) (noop, success)",
-                       interposer->open_dev_name, (unsigned long)request, arg, arg ? *((int*)arg) : -1); 
-        return 0;
+        { // Add a block for a local variable
+            int grab_value = -1; // Default if arg is weird
+            if (arg == (void*)0) {
+                grab_value = 0;
+            } else if (arg == (void*)1) {
+                grab_value = 1;
+            } else if (arg != NULL) {
+                grab_value = -2; // Indicate "other non-NULL pointer" for logging
+            }
+
+            interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGRAB (0x%08lx) (arg_ptr: %p, effective_grab_val: %d) (noop, success)",
+                           interposer->open_dev_name, (unsigned long)request, arg, grab_value);
+        }
+        return 0; // Your EVIOCGRAB is a no-op that returns success
     }
 
     // For ioctls like EVIOCGNAME, EVIOCGPROP, EVIOCGKEY, EVIOCGBIT that encode size/type in the request number,
