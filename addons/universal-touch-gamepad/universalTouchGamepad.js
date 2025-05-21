@@ -18,9 +18,8 @@
     const R3_BUTTON_INDEX = 11;
 
     const SETTINGS_ICON_SVG = `
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M0 0h24v24H0V0z" fill="none"/>
-            <path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69-.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19-.15-.24.42.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23-.09.49 0 .61.22l2 3.46c.13.22-.07.49.12.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor">
+            <path d="M424.5 216.5h-15.2c-12.4 0-22.8-10.7-22.8-23.4 0-6.4 2.7-12.2 7.5-16.5l9.8-9.6c9.7-9.6 9.7-25.3 0-34.9L381.5 110c-4.4-4.4-10.9-7-17.5-7s-13 2.6-17.5 7l-9.4 9.4c-4.5 5-10.5 7.7-17 7.7-12.8 0-23.5-10.4-23.5-22.7V89.1c0-13.5-10.9-25.1-24.5-25.1h-30.4c-13.6 0-24.4 11.5-24.4 25.1v15.2c0 12.3-10.7 22.7-23.5 22.7-6.4 0-12.3-2.7-16.6-7.4l-9.7-9.6c-4.4-4.5-10.9-7-17.5-7s-13 2.6-17.5 7L110 132c-9.6 9.6-9.6 25.3 0 34.8l9.4 9.4c5 4.5 7.8 10.5 7.8 16.9 0 12.8-10.4 23.4-22.8 23.4H89.2c-13.7 0-25.2 10.7-25.2 24.3V256v15.2c0 13.5 11.5 24.3 25.2 24.3h15.2c12.4 0 22.8 10.7 22.8 23.4 0 6.4-2.8 12.4-7.8 16.9l-9.4 9.3c-9.6 9.6-9.6 25.3 0 34.8l22.3 22.2c4.4 4.5 10.9 7 17.5 7s13-2.6 17.5-7l9.7-9.6c4.2-4.7 10.2-7.4 16.6-7.4 12.8 0 23.5 10.4 23.5 22.7V423c0 13.5 10.8 25.1 24.5 25.1H272c13.6 0 24.4-11.5 24.4-25.1v-15.2c0-12.3 10.7-22.7 23.5-22.7 6.4 0 12.4 2.8 17 7.7l9.4 9.4c4.5 4.4 10.9 7 17.5 7s13-2.6 17.5-7l22.3-22.2c9.6-9.6 9.6-25.3 0-34.9l-9.8-9.6c-4.8-4.3-7.5-10.2-7.5-16.5 0-12.8 10.4-23.4 22.8-23.4h15.2c13.6 0 23.3-10.7 23.3-24.3V256v-15.2c.2-13.6-9.5-24.3-23.1-24.3zM336.8 256h0c0 44.1-35.7 80-80 80s-80-35.9-80-80h0 0c0-44.1 35.7-80 80-80s80 35.9 80 80h0z"/>
         </svg>
     `;
 
@@ -184,7 +183,7 @@
                 { id: 'dpadLeft', index: 14, label: LEFT_ARROW_SVG, style: { left: '20px', bottom: '90px', width: '50px', height: '50px' } },
                 { id: 'dpadRight', index: 15, label: RIGHT_ARROW_SVG, style: { left: '120px', bottom: '90px', width: '50px', height: '50px' } },
                 { id: 'select', index: 8, label: 'SELECT', shape: 'squircle', style: { left: 'calc(50% - 70px)', bottom: '30px', width: '60px', height: '30px'} },
-                { id: 'start', index: 9, label: 'START', shape: 'squircle', style: { right: 'calc(50% - 70px)', bottom: '30px', width: '60px', height: '30px' } },
+                { id: 'start', index: 9, label: 'START', shape: 'squircle', style: { right: 'calc(50% - 90px)', bottom: '30px', width: '60px', height: '30px' } },
                 { id: 'buttonB_nes', index: 1, label: 'B', style: { right: '30px', bottom: '90px', width: '60px', height: '60px', borderRadius: '15px' } },
                 { id: 'buttonA_nes', index: 0, label: 'A', style: { right: '110px', bottom: '90px', width: '60px', height: '60px', borderRadius: '15px' } },
             ],
@@ -202,7 +201,7 @@
                 { id: 'dpadLeft_snes', index: 14, label: LEFT_ARROW_SVG, style: { left: '20px', bottom: '90px', width: '50px', height: '50px' } },
                 { id: 'dpadRight_snes', index: 15, label: RIGHT_ARROW_SVG, style: { left: '120px', bottom: '90px', width: '50px', height: '50px' } },
                 { id: 'select_snes', index: 8, label: 'SELECT', shape: 'squircle', style: { left: 'calc(50% - 70px)', bottom: '30px', width: '60px', height: '30px'} },
-                { id: 'start_snes', index: 9, label: 'START', shape: 'squircle', style: { right: 'calc(50% - 70px)', bottom: '30px', width: '60px', height: '30px' } },
+                { id: 'start_snes', index: 9, label: 'START', shape: 'squircle', style: { right: 'calc(50% - 90px)', bottom: '30px', width: '60px', height: '30px' } },
                 { id: 'buttonY_snes', index: 3, label: 'Y', style: { right: '80px', bottom: '130px', width: '50px', height: '50px', borderRadius: '50%' } },
                 { id: 'buttonX_snes', index: 2, label: 'X', style: { right: '130px', bottom: '90px', width: '50px', height: '50px', borderRadius: '50%' } },
                 { id: 'buttonB_snes', index: 1, label: 'B', style: { right: '30px', bottom: '90px', width: '50px', height: '50px', borderRadius: '50%' } },
@@ -231,7 +230,7 @@
                 { id: 'dpadRight_mod', index: 15, label: RIGHT_ARROW_SVG, style: { left: '200px', bottom: '60px', width: '40px', height: '40px' } },
                 { id: 'home_mod', index: 16, label: HOME_ICON_SVG, style: { left: 'calc(50% - 20px)', bottom: '250px', width: '40px', height: '40px', borderRadius: '50%'} },
                 { id: 'select_mod', index: 8, label: 'VIEW', shape: 'squircle', style: { left: 'calc(50% - 75px)', bottom: '200px', width: '60px', height: '30px'} },
-                { id: 'start_mod', index: 9, label: 'MENU', shape: 'squircle', style: { right: 'calc(50% - 75px)', bottom: '200px', width: '60px', height: '30px' } },
+                { id: 'start_mod', index: 9, label: 'MENU', shape: 'squircle', style: { right: 'calc(50% - 100px)', bottom: '200px', width: '60px', height: '30px' } },
                 { id: 'share_mod', index: 17, label: 'SHARE', shape: 'squircle', style: { left: 'calc(50% - 30px)', bottom: '150px', width: '60px', height: '25px', fontSize:'8px' } },
                 { id: 'buttonY_mod', index: 3, label: 'Y', style: { right: '125px', bottom: '180px', width: '45px', height: '45px', borderRadius: '50%' } },
                 { id: 'buttonX_mod', index: 2, label: 'X', style: { right: '175px', bottom: '140px', width: '45px', height: '45px', borderRadius: '50%' } },
