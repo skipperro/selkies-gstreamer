@@ -654,23 +654,30 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
 {
     struct input_absinfo *absinfo;
     struct input_id *id;
-    int ev_version = 0x010001; 
+    int ev_version = 0x010001;
     int len;
     unsigned int i;
 
-    if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) >= 0x40 && _IOC_NR(request) < (0x40 + ABS_CNT)) {
+    // First, handle ioctls that are identified by _IOC_TYPE and _IOC_NR,
+    // like EVIOCGABS, EVIOCGNAME, EVIOCGPROP, EVIOCGKEY, EVIOCGBIT.
+    // This order helps if some macros might incidentally match values used by these.
+
+    if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) >= 0x40 && _IOC_NR(request) < (0x40 + ABS_CNT)) { // EVIOCGABS(code)
         uint8_t abs_code = _IOC_NR(request) - 0x40;
         absinfo = (struct input_absinfo *)arg;
-        if (!absinfo) return -EINVAL;
+        if (!absinfo) {
+            errno = EINVAL;
+            return -1;
+        }
 
-        absinfo->value = 0; 
+        absinfo->value = 0;
         absinfo->minimum = ABS_AXIS_MIN_DEFAULT;
         absinfo->maximum = ABS_AXIS_MAX_DEFAULT;
-        absinfo->fuzz = 16;    
-        absinfo->flat = 128;   
-        absinfo->resolution = 0; 
+        absinfo->fuzz = 16;
+        absinfo->flat = 128;
+        absinfo->resolution = 0;
 
-        if (abs_code == ABS_Z || abs_code == ABS_RZ || 
+        if (abs_code == ABS_Z || abs_code == ABS_RZ ||
             abs_code == ABS_THROTTLE || abs_code == ABS_RUDDER ||
             abs_code == ABS_WHEEL || abs_code == ABS_GAS || abs_code == ABS_BRAKE) {
             absinfo->minimum = ABS_TRIGGER_MIN_DEFAULT;
@@ -683,119 +690,81 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
             absinfo->fuzz = 0;
             absinfo->flat = 0;
         }
-        // Check if this abs_code is actually in our axes_map - not strictly necessary to fail if not,
-        // as some applications query all possible axes. We'll provide default values.
-        /*
-        int found_axis = 0;
-        for(i=0; i < interposer->js_config.num_axes; ++i) {
-            if (interposer->js_config.axes_map[i] == abs_code) {
-                found_axis = 1;
-                break;
-            }
-        }
-        if(!found_axis) {
-             // interposer_log(LOG_WARN, "IOCTL(%s): EVIOCGABS for unmapped axis 0x%02x", interposer->open_dev_name, abs_code);
-        }
-        */
-        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGABS(0x%02x) (0x%08lx) min:%d max:%d", interposer->open_dev_name, abs_code, (unsigned long)request, absinfo->minimum, absinfo->maximum); 
-        return 0; 
-    }
-
-    // Cast request to unsigned long for switch statements using defined constants like EVIOCGVERSION
-    // These constants are typically unsigned long.
-    unsigned long ul_request = (unsigned long)request;
-
-    switch (ul_request) 
-    {
-    case EVIOCGVERSION:
-        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGVERSION (0x%08lx) -> 0x%08x", interposer->open_dev_name, (unsigned long)request, ev_version); 
-        if (!arg) return -EINVAL;
-        *((int *)arg) = ev_version;
+        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGABS(0x%02x) (0x%08lx) min:%d max:%d",
+                       interposer->open_dev_name, abs_code, (unsigned long)request, absinfo->minimum, absinfo->maximum);
         return 0;
-    case EVIOCGID:
-        id = (struct input_id *)arg;
-        if (!id) return -EINVAL;
-        memset(id, 0, sizeof(struct input_id));
-        id->bustype = BUS_VIRTUAL; 
-        id->vendor = interposer->js_config.vendor;
-        id->product = interposer->js_config.product;
-        id->version = interposer->js_config.version;
-        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGID (0x%08lx) -> bus:0x%04x, ven:0x%04x, prod:0x%04x, ver:0x%04x",
-                       interposer->open_dev_name, (unsigned long)request, id->bustype, id->vendor, id->product, id->version); 
-        return 0;
-    case EVIOCGRAB:
-        { // Add a block for a local variable
-            int grab_value = -1; // Default if arg is weird
-            if (arg == (void*)0) {
-                grab_value = 0;
-            } else if (arg == (void*)1) {
-                grab_value = 1;
-            } else if (arg != NULL) {
-                grab_value = -2; // Indicate "other non-NULL pointer" for logging
-            }
-
-            interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGRAB (0x%08lx) (arg_ptr: %p, effective_grab_val: %d) (noop, success)",
-                           interposer->open_dev_name, (unsigned long)request, arg, grab_value);
-        }
-        return 0; // Your EVIOCGRAB is a no-op that returns success
     }
-
-    // For ioctls like EVIOCGNAME, EVIOCGPROP, EVIOCGKEY, EVIOCGBIT that encode size/type in the request number,
-    // we need to decode using _IOC_TYPE, _IOC_NR, _IOC_SIZE.
-    // The switch(ul_request) above handles exact matches for macros that don't encode variable sizes.
 
     if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) == 0x06) { // EVIOCGNAME base
         len = _IOC_SIZE(request);
-        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGNAME(%u) (0x%08lx) for name '%s'", interposer->open_dev_name, (unsigned int)len, (unsigned long)request, interposer->js_config.name); 
+        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGNAME(%u) (0x%08lx) for name '%s'",
+                       interposer->open_dev_name, (unsigned int)len, (unsigned long)request, interposer->js_config.name);
         if (!arg) {
             interposer_log(LOG_WARN, "IOCTL(%s): EVIOCGNAME called with NULL argument.", interposer->open_dev_name);
-            return -EINVAL;
+            errno = EINVAL;
+            return -1;
         }
-        if (len == 0) { // Should not happen for EVIOCGNAME as it expects a buffer, but handle defensively.
+        if (len == 0) {
             interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGNAME with len 0. Returning 0.", interposer->open_dev_name);
-            return 0; // Or strlen of the name if that's the convention for "tell me how big"
+            return 0;
         }
         strncpy((char *)arg, interposer->js_config.name, len - 1);
         ((char *)arg)[len - 1] = '\0';
-        return strlen((char *)arg); // Return length of string copied
+        return strlen((char *)arg);
     }
-    
+
     if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) == 0x09) { // EVIOCGPROP base
         len = _IOC_SIZE(request);
-        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGPROP(%d) (0x%08lx) (returning 0 props)", interposer->open_dev_name, len, (unsigned long)request); 
-        if (!arg) return -EINVAL;
-        if (len > 0) memset(arg, 0, len); 
-        return 0; // Number of bytes written (0 for no props)
+        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGPROP(%d) (0x%08lx) (returning 0 props)",
+                       interposer->open_dev_name, len, (unsigned long)request);
+        if (!arg) {
+            errno = EINVAL;
+            return -1;
+        }
+        if (len > 0) memset(arg, 0, len);
+        return 0;
     }
 
     if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) == 0x18) { // EVIOCGKEY base
         len = _IOC_SIZE(request);
-        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGKEY(%d) (0x%08lx) (returning all keys up)", interposer->open_dev_name, len, (unsigned long)request); 
-        if (!arg) return -EINVAL;
-        if (len > 0) memset(arg, 0, len); 
-        return 0; 
+        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGKEY(%d) (0x%08lx) (returning all keys up)",
+                       interposer->open_dev_name, len, (unsigned long)request);
+        if (!arg) {
+            errno = EINVAL;
+            return -1;
+        }
+        if (len > 0) memset(arg, 0, len);
+        return 0;
     }
 
     // General EVIOCGBIT handling
     if (_IOC_TYPE(request) == 'E' && _IOC_NR(request) >= 0x20 && _IOC_NR(request) < 0x40) { // EVIOCGBIT range
         unsigned char ev_type_query = _IOC_NR(request) - 0x20;
         len = _IOC_SIZE(request);
-        if (!arg) return -EINVAL;
-        memset(arg, 0, len); 
+        if (!arg) {
+            errno = EINVAL;
+            return -1;
+        }
+        memset(arg, 0, len);
 
         interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGBIT for EV type 0x%02x, len %d (0x%08lx)",
-                       interposer->open_dev_name, ev_type_query, len, (unsigned long)request); 
+                       interposer->open_dev_name, ev_type_query, len, (unsigned long)request);
 
-        if (ev_type_query == 0) { // Query for supported event types (EV_SYN, EV_KEY, EV_ABS, etc.)
+        if (ev_type_query == 0) { // Query for supported event types
             if (EV_SYN / 8 < len) ((unsigned char *)arg)[EV_SYN / 8] |= (1 << (EV_SYN % 8));
             if (EV_KEY / 8 < len) ((unsigned char *)arg)[EV_KEY / 8] |= (1 << (EV_KEY % 8));
             if (EV_ABS / 8 < len) ((unsigned char *)arg)[EV_ABS / 8] |= (1 << (EV_ABS % 8));
-            return len; 
+            // Return value for EVIOCGBIT should be the number of bytes written into the buffer,
+            // which is 'len' if the buffer is large enough, or the actual max bytes needed.
+            // For simplicity and common practice, returning 'len' (bytes copied, which is all zeros then set bits)
+            // or the actual number of bytes for the bitmask could be more precise.
+            // Let's return len, as we've zeroed it and then potentially set bits.
+            return len;
         }
         else if (ev_type_query == EV_KEY) { // Query for supported key codes
             for (i = 0; i < interposer->js_config.num_btns; ++i) {
                 int key_code = interposer->js_config.btn_map[i];
-                if (key_code >= 0 && key_code < KEY_MAX && (key_code / 8 < len)) { 
+                if (key_code >= 0 && key_code < KEY_MAX && (key_code / 8 < len)) {
                     ((unsigned char *)arg)[key_code / 8] |= (1 << (key_code % 8));
                 }
             }
@@ -804,19 +773,68 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
         else if (ev_type_query == EV_ABS) { // Query for supported absolute axis codes
             for (i = 0; i < interposer->js_config.num_axes; ++i) {
                 int abs_code = interposer->js_config.axes_map[i];
-                 if (abs_code >= 0 && abs_code < ABS_MAX && (abs_code / 8 < len)) { 
+                 if (abs_code >= 0 && abs_code < ABS_MAX && (abs_code / 8 < len)) {
                     ((unsigned char *)arg)[abs_code / 8] |= (1 << (abs_code % 8));
                 }
             }
             return len;
         }
-        // Other types like EV_REL, EV_MSC, etc. will return an empty bitmask.
-        return len; 
+        return len; // Return len for other EV_types, effectively an empty bitmask
     }
 
-    interposer_log(LOG_WARN, "Unhandled EVDEV ioctl for %s: request 0x%08lx (Type '%c', NR 0x%02x, Size %d)",
-                   interposer->open_dev_name, (unsigned long)request, _IOC_TYPE(request), _IOC_NR(request), _IOC_SIZE(request)); 
-    return -ENOTTY; 
+    // Now, use a switch for ioctl macros that define a unique constant value
+    // Switch directly on 'request' (type ioctl_request_t) to avoid sign-extension issues on Musl
+    switch (request)
+    {
+    case EVIOCGVERSION:
+        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGVERSION (0x%08lx) -> 0x%08x",
+                       interposer->open_dev_name, (unsigned long)request, ev_version);
+        if (!arg) {
+            errno = EINVAL;
+            return -1;
+        }
+        *((int *)arg) = ev_version;
+        return 0;
+
+    case EVIOCGID:
+        id = (struct input_id *)arg;
+        if (!id) {
+            errno = EINVAL;
+            return -1;
+        }
+        memset(id, 0, sizeof(struct input_id));
+        id->bustype = BUS_VIRTUAL;
+        id->vendor = interposer->js_config.vendor;
+        id->product = interposer->js_config.product;
+        id->version = interposer->js_config.version;
+        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGID (0x%08lx) -> bus:0x%04x, ven:0x%04x, prod:0x%04x, ver:0x%04x",
+                       interposer->open_dev_name, (unsigned long)request, id->bustype, id->vendor, id->product, id->version);
+        return 0;
+
+    case EVIOCGRAB:
+        // For EVIOCGRAB, arg is (void*)0 or (void*)1. Don't dereference.
+        interposer_log(LOG_INFO, "IOCTL(%s): EVIOCGRAB (0x%08lx) (arg_ptr_value: %p) (noop, success)",
+                       interposer->open_dev_name,
+                       (unsigned long)request,
+                       arg);
+        // EVIOCGRAB is a no-op in this interposer, always return success.
+        // The actual grab state is not emulated here.
+        return 0;
+
+    // Add other specific 'E' type ioctls here if they are simple macros
+    // and not covered by the _IOC_TYPE/_IOC_NR checks above.
+    // Example: EVIOCGPHYS, EVIOCGUNIQ, EVIOCGKEYCODE, EVIOCSKEYCODE, etc.
+    // if they are simple #defines and not complex _IOR/_IOW macros that might
+    // overlap with the generic handlers above. For most common ones, the
+    // _IOC_TYPE/_IOC_NR handlers are more robust.
+
+    default:
+        // If it's not one of the specific cases or generic handlers above
+        interposer_log(LOG_WARN, "Unhandled EVDEV ioctl for %s: request 0x%08lx (Type '%c', NR 0x%02x, Size %d)",
+                       interposer->open_dev_name, (unsigned long)request, _IOC_TYPE(request), _IOC_NR(request), _IOC_SIZE(request));
+        errno = ENOTTY; // Inappropriate ioctl for device
+        return -1;
+    }
 }
 
 int ioctl(int fd, ioctl_request_t request, ...)
