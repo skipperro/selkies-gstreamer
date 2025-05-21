@@ -2948,6 +2948,16 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('[websockets] Error sending blank settings:', e);
       }
     }
+    const isCurrentModeStripedH264_ws = currentEncoderMode === 'x264enc-striped';
+    const isCurrentModeJpeg_ws = currentEncoderMode === 'jpeg';
+    const isCurrentModeVideoPipeline_ws = !isCurrentModeStripedH264_ws && !isCurrentModeJpeg_ws;
+
+    if (isCurrentModeVideoPipeline_ws) {
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        const bitrateMessage = `SET_VIDEO_BITRATE,${videoBitRate}`;
+        websocket.send(bitrateMessage);
+      }
+    }
     if (metricsIntervalId === null) {
       metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
       console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
