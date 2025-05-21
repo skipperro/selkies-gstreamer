@@ -456,13 +456,10 @@
                 const triggerStyles = {};
                 for (const key in triggerConfig.style) {
                     let finalValue = parseStyleValue(triggerConfig.style[key], 1.0);
-                    if (!finalValue.startsWith('calc(')) {
-                        const originalValueForCalc = parseStyleValue(triggerConfig.style[key], 1.0);
-                        if (key === 'left') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.left}px)`;
-                        else if (key === 'right') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.right}px)`;
-                        else if (key === 'bottom') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.bottom}px)`;
-                        else if (key === 'top') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.top}px)`;
-                    }
+                    if (key === 'left') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.left}px)`;
+                    else if (key === 'right') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.right}px)`;
+                    else if (key === 'bottom') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.bottom}px)`;
+                    else if (key === 'top') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.top}px)`;
                     triggerStyles[key] = finalValue;
                 }
                 Object.assign(trigger.style, triggerStyles);
@@ -515,12 +512,11 @@
                 const btnStyles = {};
                 for (const key in btnConfig.style) {
                     let finalValue = parseStyleValue(btnConfig.style[key], scale);
-                    if (!isPreview && !finalValue.startsWith('calc(')) {
-                        const originalValueForCalc = parseStyleValue(btnConfig.style[key], 1.0);
-                        if (key === 'left') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.left}px)`; 
-                        else if (key === 'right') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.right}px)`; 
-                        else if (key === 'bottom') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.bottom}px)`; 
-                        else if (key === 'top') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.top}px)`;
+                    if (!isPreview) {
+                        if (key === 'left') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.left}px)`;
+                        else if (key === 'right') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.right}px)`;
+                        else if (key === 'bottom') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.bottom}px)`;
+                        else if (key === 'top') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.top}px)`;
                     }
                     btnStyles[key] = finalValue;
                 }
@@ -554,13 +550,10 @@
                 const clusterStyles = {};
                 for (const key in clusterConfig.style) {
                     let finalValue = parseStyleValue(clusterConfig.style[key], 1.0);
-                    if (!finalValue.startsWith('calc(')) {
-                         const originalValueForCalc = parseStyleValue(clusterConfig.style[key], 1.0);
-                        if (key === 'left') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.left}px)`;
-                        else if (key === 'right') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.right}px)`;
-                        else if (key === 'bottom') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.bottom}px)`;
-                        else if (key === 'top') finalValue = `calc(${originalValueForCalc} + ${SAFE_AREA_PADDING.top}px)`;
-                    }
+                    if (key === 'left') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.left}px)`;
+                    else if (key === 'right') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.right}px)`;
+                    else if (key === 'bottom') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.bottom}px)`;
+                    else if (key === 'top') finalValue = `calc(${finalValue} + ${SAFE_AREA_PADDING.top}px)`;
                     clusterStyles[key] = finalValue;
                 }
                 Object.assign(clusterDiv.style, clusterStyles);

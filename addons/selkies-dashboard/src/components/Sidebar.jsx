@@ -2503,7 +2503,7 @@ function Sidebar({ isOpen }) {
 
       {isMobile && (
         <button
-          className={`virtual-keyboard-button theme-${theme}`}
+          className={`virtual-keyboard-button theme-${theme} allow-native-input`}
           onClick={handleShowVirtualKeyboard}
           title={t("buttons.virtualKeyboardButtonTitle", "Pop Keyboard")}
           aria-label={t("buttons.virtualKeyboardButtonTitle", "Pop Keyboard")}

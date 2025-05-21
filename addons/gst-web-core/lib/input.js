@@ -27,6 +27,11 @@ import { GamepadManager } from './gamepad.js';
 import { Queue } from './util.js';
 
 /**
+ * Class used by frontend to whitelist elements for input
+ */
+const WHITELIST_CLASS = 'allow-native-input';
+
+/**
  * Map of known JavaScript keycodes which do not map to typable characters
  * to their X11 keysym equivalents.
  * @private
@@ -791,7 +796,6 @@ export class Input {
         return true;
     }
     _handleKeyDown(event) {
-        const WHITELIST_CLASS = 'allow-native-input';
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
             console.debug('Input: KeyDown on whitelisted element, allowing native behavior.');
             return;
@@ -827,7 +831,6 @@ export class Input {
         }
     }
     _handleKeyPress(event) {
-        const WHITELIST_CLASS = 'allow-native-input';
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
             console.debug('Input: KeyPress on whitelisted element, allowing native behavior.');
             return;
@@ -842,7 +845,6 @@ export class Input {
         }
     }
     _handleKeyUp(event) {
-        const WHITELIST_CLASS = 'allow-native-input';
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
             console.debug('Input: KeyUp on whitelisted element, allowing native behavior.');
             return;
@@ -1060,6 +1062,10 @@ export class Input {
      * @private
      */
     _handleTouchEvent(event) {
+        // Do not captre whitelisted classes
+        if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
+            return;
+        }
         // Prevent double handling
         if (!this._guac_markEvent(event)) return;
 

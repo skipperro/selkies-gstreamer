@@ -1641,10 +1641,21 @@ function receiveMessage(event) {
     case 'showVirtualKeyboard':
       console.log("Received 'showVirtualKeyboard' message.");
       const kbdAssistInput = document.getElementById('keyboard-input-assist');
+      const mainInteractionOverlay = document.getElementById('overlayInput');
       if (kbdAssistInput) {
         kbdAssistInput.value = '';
         kbdAssistInput.focus();
         console.log("Focused #keyboard-input-assist element.");
+        // Listen for a click back into the main div to unpop
+        mainInteractionOverlay.addEventListener(
+          "touchstart",
+          () => {
+            if (document.activeElement === kbdAssistInput) {
+              kbdAssistInput.blur();
+            }
+          },
+          { once: true, passive: true }
+        );
       } else {
         console.error("Could not find #keyboard-input-assist element to focus.");
       }
