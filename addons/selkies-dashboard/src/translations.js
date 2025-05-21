@@ -15,6 +15,7 @@ const en = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "Toggle Theme",
     fullscreenTitle: "Enter Fullscreen",
+    gamingModeTitle: "Gaming Mode",
     buttons: {
         videoStreamEnableTitle: "Enable Video Stream",
         videoStreamDisableTitle: "Disable Video Stream",
@@ -159,6 +160,7 @@ const es = {
     selkiesTitle: "Selkies", // Proper noun
     toggleThemeTitle: "Cambiar Tema",
     fullscreenTitle: "Entrar en Pantalla Completa",
+    gamingModeTitle: "Modo Juego",
     buttons: {
         videoStreamEnableTitle: "Activar Stream de Vídeo",
         videoStreamDisableTitle: "Desactivar Stream de Vídeo",
@@ -303,6 +305,7 @@ const zh = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "切换主题",
     fullscreenTitle: "进入全屏",
+    gamingModeTitle: "游戏模式",
     buttons: {
         videoStreamEnableTitle: "启用视频流",
         videoStreamDisableTitle: "禁用视频流",
@@ -447,6 +450,7 @@ const hi = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "थीम बदलें",
     fullscreenTitle: "फुलस्क्रीन दर्ज करें",
+    gamingModeTitle: "गेमिंग मोड",
     buttons: {
         videoStreamEnableTitle: "वीडियो स्ट्रीम सक्षम करें",
         videoStreamDisableTitle: "वीडियो स्ट्रीम अक्षम करें",
@@ -591,6 +595,7 @@ const pt = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "Alternar Tema",
     fullscreenTitle: "Entrar em Tela Cheia",
+    gamingModeTitle: "Modo de Jogo",
     buttons: {
         videoStreamEnableTitle: "Ativar Stream de Vídeo",
         videoStreamDisableTitle: "Desativar Stream de Vídeo",
@@ -735,6 +740,7 @@ const fr = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "Changer de thème",
     fullscreenTitle: "Passer en plein écran",
+    gamingModeTitle: "Mode Jeu",
     buttons: {
         videoStreamEnableTitle: "Activer le flux vidéo",
         videoStreamDisableTitle: "Désactiver le flux vidéo",
@@ -879,6 +885,7 @@ const ru = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "Переключить тему",
     fullscreenTitle: "Войти в полноэкранный режим",
+    gamingModeTitle: "Игровой режим",
     buttons: {
         videoStreamEnableTitle: "Включить видеопоток",
         videoStreamDisableTitle: "Отключить видеопоток",
@@ -1023,6 +1030,7 @@ const de = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "Theme wechseln",
     fullscreenTitle: "Vollbildmodus aktivieren",
+    gamingModeTitle: "Gaming-Modus",
     buttons: {
         videoStreamEnableTitle: "Videostream aktivieren",
         videoStreamDisableTitle: "Videostream deaktivieren",
@@ -1167,6 +1175,7 @@ const tr = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "Temayı Değiştir",
     fullscreenTitle: "Tam Ekrana Gir",
+    gamingModeTitle: "Oyun Modu",
     buttons: {
         videoStreamEnableTitle: "Video Akışını Etkinleştir",
         videoStreamDisableTitle: "Video Akışını Devre Dışı Bırak",
@@ -1311,6 +1320,7 @@ const it = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "Cambia Tema",
     fullscreenTitle: "Entra in Schermo Intero",
+    gamingModeTitle: "Modalità Gioco",
     buttons: {
         videoStreamEnableTitle: "Abilita Stream Video",
         videoStreamDisableTitle: "Disabilita Stream Video",
@@ -1455,6 +1465,7 @@ const nl = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "Thema wisselen",
     fullscreenTitle: "Volledig scherm openen",
+    gamingModeTitle: "Gaming Modus",
     buttons: {
         videoStreamEnableTitle: "Videostream inschakelen",
         videoStreamDisableTitle: "Videostream uitschakelen",
@@ -1599,6 +1610,7 @@ const ar = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "تبديل السمة",
     fullscreenTitle: "الدخول في وضع ملء الشاشة",
+    gamingModeTitle: "وضع الألعاب",
     buttons: {
         videoStreamEnableTitle: "تمكين بث الفيديو",
         videoStreamDisableTitle: "تعطيل بث الفيديو",
@@ -1743,6 +1755,7 @@ const ko = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "테마 전환",
     fullscreenTitle: "전체 화면 시작",
+    gamingModeTitle: "게임 모드",
     buttons: {
         videoStreamEnableTitle: "비디오 스트림 활성화",
         videoStreamDisableTitle: "비디오 스트림 비활성화",
@@ -1887,6 +1900,7 @@ const ja = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "テーマを切り替え",
     fullscreenTitle: "フルスクリーンに入る",
+    gamingModeTitle: "ゲームモード",
     buttons: {
         videoStreamEnableTitle: "ビデオストリームを有効にする",
         videoStreamDisableTitle: "ビデオストリームを無効にする",
@@ -2031,6 +2045,7 @@ const vi = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "Chuyển đổi Chủ đề",
     fullscreenTitle: "Vào Toàn màn hình",
+    gamingModeTitle: "Chế độ Chơi game",
     buttons: {
         videoStreamEnableTitle: "Bật Luồng Video",
         videoStreamDisableTitle: "Tắt Luồng Video",
@@ -2175,6 +2190,7 @@ const th = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "สลับธีม",
     fullscreenTitle: "เข้าสู่โหมดเต็มหน้าจอ",
+    gamingModeTitle: "โหมดเกมมิ่ง",
     buttons: {
         videoStreamEnableTitle: "เปิดใช้งานสตรีมวิดีโอ",
         videoStreamDisableTitle: "ปิดใช้งานสตรีมวิดีโอ",
@@ -2319,6 +2335,7 @@ const fil = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "I-toggle ang Tema",
     fullscreenTitle: "Pumasok sa Fullscreen",
+    gamingModeTitle: "Gaming Mode",
     buttons: {
         videoStreamEnableTitle: "Paganahin ang Video Stream",
         videoStreamDisableTitle: "Huwag paganahin ang Video Stream",
@@ -2463,6 +2480,7 @@ const da = {
     selkiesTitle: "Selkies",
     toggleThemeTitle: "Skift tema",
     fullscreenTitle: "Start Fuldskærm",
+    gamingModeTitle: "Spiltilstand",
     buttons: {
         videoStreamEnableTitle: "Aktiver videostream",
         videoStreamDisableTitle: "Deaktiver videostream",

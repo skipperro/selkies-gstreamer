@@ -110,6 +110,12 @@ function debounce(func, delay) {
 }
 
 // --- Icons ---
+const GamingModeIcon = () => (
+  <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" width="18" height="18">
+    <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+    <path d="M12 5V9M12 15V19M5 12H9M15 12H19" strokeLinecap="round" />
+  </svg>
+);
 const AppsIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
     <path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z" />
@@ -885,6 +891,20 @@ function Sidebar({ isOpen }) {
     );
   const handleFullscreenRequest = () =>
     window.postMessage({ type: "requestFullscreen" }, window.location.origin);
+  const handleBrowserFullscreen = () => {
+    const elem = document.documentElement;
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+      });
+    } else if (elem.mozRequestFullScreen) {
+      elem.mozRequestFullScreen();
+    } else if (elem.webkitRequestFullscreen) {
+      elem.webkitRequestFullscreen();
+    } else if (elem.msRequestFullscreen) {
+      elem.msRequestFullscreen();
+    }
+  };
   const handleClipboardChange = (event) =>
     setDashboardClipboardContent(event.target.value);
   const handleClipboardBlur = (event) =>
@@ -1457,10 +1477,17 @@ function Sidebar({ isOpen }) {
             </div>
             <button
               className="header-action-button fullscreen-button"
-              onClick={handleFullscreenRequest}
+              onClick={handleBrowserFullscreen}
               title={t("fullscreenTitle")}
             >
               <FullscreenIcon />
+            </button>
+            <button
+              className="header-action-button gaming-mode-button"
+              onClick={handleFullscreenRequest}
+              title={t("gamingModeTitle", "Gaming Mode")}
+            >
+              <GamingModeIcon />
             </button>
           </div>
         </div>
