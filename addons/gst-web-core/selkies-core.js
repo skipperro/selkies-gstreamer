@@ -419,9 +419,10 @@ function getCookieValue(name) {
   const b = document.cookie.match(`(^|[^;]+)\\s*${name}\\s*=\\s*([^;]+)`);
   return b ? b.pop() : '';
 }
-const appName =
-  window.location.pathname.endsWith('/') &&
-  window.location.pathname.split('/')[1] || 'webrtc';
+// Set app name from manifest if possible
+let appName = 'Selkies';
+!async function(){try{const t=await fetch("manifest.json",{signal:AbortSignal.timeout(500)});if(t.ok){const a=await t.json();a&&"string"==typeof a.name&&""!==a.name.trim()&&(appName=a.name)}}catch(t){}}();
+
 let videoBitRate = 8000;
 let videoFramerate = 60;
 let videoCRF = 25;
@@ -1090,7 +1091,7 @@ function disableAutoResize() {
 }
 const initializeUI = () => {
   injectCSS();
-  document.title = `Selkies - ${appName}`;
+  document.title = `${appName}`;
   window.addEventListener('requestFileUpload', handleRequestFileUpload);
   const appDiv = document.getElementById('app');
   if (!appDiv) {
