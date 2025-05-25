@@ -196,16 +196,12 @@ static js_interposer_t interposers[NUM_INTERPOSERS()] = {
 // --- Initialization ---
 __attribute__((constructor)) void init_interposer() {
     init_log_file_if_needed(); // Ensure log file is ready
-    sji_log_info("Initializing Selkies Joystick Interposer...");
-
     if (load_real_func((void *)&real_open, "open") < 0) sji_log_error("CRITICAL: Failed to load real 'open'.");
     if (load_real_func((void *)&real_ioctl, "ioctl") < 0) sji_log_error("CRITICAL: Failed to load real 'ioctl'.");
     if (load_real_func((void *)&real_epoll_ctl, "epoll_ctl") < 0) sji_log_error("CRITICAL: Failed to load real 'epoll_ctl'.");
     if (load_real_func((void *)&real_close, "close") < 0) sji_log_error("CRITICAL: Failed to load real 'close'.");
     if (load_real_func((void *)&real_read, "read") < 0) sji_log_error("CRITICAL: Failed to load real 'read'.");
-    load_real_func((void *)&real_open64, "open64"); // Optional, don't make it critical if not found
-
-    sji_log_info("Selkies Joystick Interposer initialization complete.");
+    load_real_func((void *)&real_open64, "open64");
 }
 
 // --- Helper Functions ---
@@ -501,8 +497,6 @@ ssize_t read(int fd, void *buf, size_t count) {
                 // If our socket is non-blocking and no data is available for the start of an event,
                 // return EAGAIN immediately to the application.
                 if (socket_is_nonblocking && bytes_read_total == 0) {
-                    sji_log_info("read for %s (fd %d): socket is non-blocking and no data ready; returning EAGAIN.",
-                                 interposer->open_dev_name, fd);
                     errno = EAGAIN;
                     return -1;
                 }

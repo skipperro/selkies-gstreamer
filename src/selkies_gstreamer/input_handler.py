@@ -799,10 +799,39 @@ class WebRTCInput:
         self.__keyboard_connect()
         if self.xdisplay: self.reset_keyboard()
         self.__mouse_connect()
+        logger_webrtc_input.info(f"Initializing {self.num_gamepads} persistent gamepad instances...")
+        if not os.path.exists(self.js_socket_path_prefix):
+            try:
+                os.makedirs(self.js_socket_path_prefix, exist_ok=True)
+                logger_webrtc_input.info(f"Created directory for gamepad sockets: {self.js_socket_path_prefix}")
+            except OSError as e:
+                logger_webrtc_input.error(f"Failed to create directory {self.js_socket_path_prefix} for gamepad sockets: {e}")
 
+        for i in range(self.num_gamepads):
+            js_ip_sock_path = os.path.join(self.js_socket_path_prefix, f"selkies_js{i}.sock")
+            evdev_ip_sock_path = os.path.join(self.js_socket_path_prefix, f"selkies_event{1000+i}.sock") 
+            
+            gamepad = SelkiesGamepad(js_ip_sock_path, evdev_ip_sock_path, self.loop)
+            
+            gamepad_name_for_interposer = f"Selkies Virtual Gamepad {i}" 
+            # Use button/axis counts from STANDARD_XPAD_CONFIG for the initial setup.
+            std_num_btns = len(STANDARD_XPAD_CONFIG["btn_map"])
+            std_num_axes = len(STANDARD_XPAD_CONFIG["axes_map"])
+            
+            gamepad.set_config(gamepad_name_for_interposer, std_num_btns, std_num_axes)
+            
+            asyncio.create_task(gamepad.run_servers()) 
+            self.gamepad_instances[i] = gamepad # Store by index i
+            logger_webrtc_input.info(f"Pre-allocated and started gamepad instance for index {i} (Name: '{gamepad_name_for_interposer}', JS: {js_ip_sock_path}, EVDEV: {evdev_ip_sock_path}).")
 
     async def disconnect(self):
-        await self.__gamepad_disconnect() 
+        logger_webrtc_input.info("Closing all pre-allocated gamepad instances...")
+        gamepad_indices_to_close = list(self.gamepad_instances.keys()) # Iterate over a copy of keys
+        for gamepad_idx in gamepad_indices_to_close:
+            gamepad = self.gamepad_instances.pop(gamepad_idx, None)
+            if gamepad:
+                logger_webrtc_input.info(f"Closing gamepad instance for index {gamepad_idx} (JS: {gamepad.js_sock_path}).")
+                await gamepad.close()
         self.__mouse_disconnect()
         if self.xdisplay: self.xdisplay = None
 
@@ -1070,18 +1099,45 @@ class WebRTCInput:
         elif msg_type == "js": 
             cmd = toks[1]
             gamepad_idx = int(toks[2])
+
+            if not (0 <= gamepad_idx < self.num_gamepads):
+                logger_webrtc_input.error(f"Client message for gamepad index {gamepad_idx} is out of range (0-{self.num_gamepads-1}).")
+                return
+
+            target_gamepad_instance = self.gamepad_instances.get(gamepad_idx)
+            if not target_gamepad_instance:
+                logger_webrtc_input.error(f"No pre-allocated gamepad instance found for index {gamepad_idx}. This indicates an issue with initialization.")
+                return
+
             if cmd == "c": 
                 try: client_name = base64.b64decode(toks[3]).decode('latin-1', 'ignore')[:255]
-                except Exception as e: client_name = f"Gamepad{gamepad_idx}"; logger_webrtc_input.warning(f"Error decoding gamepad name: {e}")
+                except Exception as e: client_name = f"ClientGamepad{gamepad_idx}"; logger_webrtc_input.warning(f"Error decoding client gamepad name: {e}")
                 client_num_axes, client_num_btns = int(toks[4]), int(toks[5])
-                await self.__gamepad_connect(gamepad_idx, client_name, client_num_btns, client_num_axes)
+                
+                logger_webrtc_input.info(
+                    f"Client reported connecting controller '{client_name}' ({client_num_btns}b, {client_num_axes}a) "
+                    f"to pre-allocated gamepad slot {gamepad_idx} (Instance: {target_gamepad_instance.js_sock_path}). "
+                    f"The OS device configuration remains static as '{target_gamepad_instance.mapper.config['name']}'."
+                )
+
             elif cmd == "d": 
-                await self.__gamepad_disconnect(gamepad_idx)
+                logger_webrtc_input.info(
+                    f"Client reported disconnecting controller from gamepad slot {gamepad_idx} "
+                    f"(Instance: {target_gamepad_instance.js_sock_path}). "
+                    f"The slot remains active and available."
+                )
+            
             elif cmd == "b": 
-                self.__gamepad_emit_btn(gamepad_idx, int(toks[3]), float(toks[4]))
+                button_num = int(toks[3])
+                button_val = float(toks[4])
+                target_gamepad_instance.send_event(button_num, button_val, is_button_event=True)
+
             elif cmd == "a": 
-                self.__gamepad_emit_axis(gamepad_idx, int(toks[3]), float(toks[4]))
-            else: logger_webrtc_input.warning(f"Unhandled joystick command: js {cmd}")
+                axis_num = int(toks[3])
+                axis_val = float(toks[4])
+                target_gamepad_instance.send_event(axis_num, axis_val, is_button_event=False)
+            
+            else: logger_webrtc_input.warning(f"Unhandled joystick command for slot {gamepad_idx}: js {cmd}")
         elif msg_type == "cr": 
             if self.enable_clipboard in ["true", "out"]:
                 data = await self.loop.run_in_executor(None, self.read_clipboard)
