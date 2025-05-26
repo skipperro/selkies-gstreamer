@@ -1,5 +1,5 @@
-site_name: Selkies-GStreamer
-site_url: https://selkies-project.github.io/selkies-gstreamer
+site_name: Selkies
+site_url: https://selkies-project.github.io/selkies
 site_description: >-
   Open-Source Low-Latency Accelerated Linux WebRTC HTML5 Remote Desktop Streaming Platform for Self-Hosting, Containers, Kubernetes, or Cloud/HPC
 
@@ -7,11 +7,11 @@ theme:
   name: material
 
 # Repository
-repo_name: Selkies-GStreamer
-repo_url: https://github.com/selkies-project/selkies-gstreamer
+repo_name: Selkies
+repo_url: https://github.com/selkies-project/selkies
 
 # Copyright
-copyright: Copyright &copy; <script>document.write(new Date().getFullYear())</script> <a href="https://github.com/selkies-project/selkies-gstreamer" target="_blank" rel="noopener">Selkies Project</a>. All rights reserved.
+copyright: Copyright &copy; <script>document.write(new Date().getFullYear())</script> <a href="https://github.com/selkies-project/selkies" target="_blank" rel="noopener">Selkies Project</a>. All rights reserved.
 
 # Configuration
 theme:
@@ -84,7 +84,7 @@ extra:
   generator: false
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/selkies-project/selkies-gstreamer
+      link: https://github.com/selkies-project/selkies
     - icon: fontawesome/brands/discord
       link: https://discord.gg/wDNGDeSW5F
 
@@ -111,7 +111,7 @@ markdown_extensions:
 # Navigation
 nav:
   - Home: README.md
-  - 'What is Selkies-GStreamer?': design.md
+  - 'What is Selkies?': design.md
   - 'Getting Started': start.md
   - Usage: usage.md
   - 'Troubleshooting and FAQs': faq.md

@@ -22,7 +22,7 @@ services:
     # NOTE: export the DISTRIB_IMAGE and DISTRIB_RELEASE environment variables to change the base image during build and run.
     ###
 
-    image: selkies-gstreamer-example:latest-${DISTRIB_IMAGE:-ubuntu}${DISTRIB_RELEASE:-24.04}
+    image: selkies-example:latest-${DISTRIB_IMAGE:-ubuntu}${DISTRIB_RELEASE:-24.04}
     entrypoint: ["/tini", "--", "/bin/bash"]
     build:
       context: ./addons/example
@@ -35,12 +35,12 @@ services:
         # 1. (cd addons/gstreamer && docker build --build-arg DISTRIB_IMAGE=${DISTRIB_IMAGE?} --build-arg DISTRIB_RELEASE=${DISTRIB_RELEASE?} -t gstreamer:latest-${DISTRIB_IMAGE?}${DISTRIB_RELEASE?} .)
         # 2. export GSTREAMER_BASE_IMAGE=gstreamer
         # 3. docker-compose build test
-        GSTREAMER_BASE_IMAGE: ${GSTREAMER_BASE_IMAGE:-ghcr.io/selkies-project/selkies-gstreamer/gstreamer}
+        GSTREAMER_BASE_IMAGE: ${GSTREAMER_BASE_IMAGE:-ghcr.io/selkies-project/selkies/gstreamer}
         GSTREAMER_BASE_IMAGE_RELEASE: ${GSTREAMER_BASE_IMAGE_RELEASE:-main}
 
-        PY_BUILD_IMAGE: selkies-gstreamer-py-build:latest
+        PY_BUILD_IMAGE: selkies-py-build:latest
         WEB_IMAGE: gst-web:latest
-        PYPI_PACKAGE: selkies_gstreamer
+        PYPI_PACKAGE: selkies
         PACKAGE_VERSION: 0.0.0.dev0
     environment:
       # Basic authentication
@@ -72,9 +72,9 @@ services:
       - "8080:8080"
     volumes:
       - type: bind
-        source: ./src/selkies_gstreamer
+        source: ./src/selkies
         # Change Python version to system version
-        target: /usr/local/lib/python3.12/dist-packages/selkies_gstreamer
+        target: /usr/local/lib/python3.12/dist-packages/selkies
         read_only: true
 
     # Configure for interactive session
