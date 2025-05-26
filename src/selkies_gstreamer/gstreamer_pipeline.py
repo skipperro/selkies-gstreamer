@@ -17,7 +17,7 @@ gi.require_version("GstRtp", "1.0")
 gi.require_version("GstSdp", "1.0")
 gi.require_version("GstWebRTC", "1.0")
 from gi.repository import GLib, Gst, GstRtp, GstSdp, GstWebRTC
-logger_gstwebrtc_app = logging.getLogger("gstebrtc_app")
+logger_gstwebrtc_app = logging.getLogger("gstwebrtc_app")
 
 class GSTWebRTCAppError(Exception):
     pass

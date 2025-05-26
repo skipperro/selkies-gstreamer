@@ -74,7 +74,7 @@ import logging
 LOGLEVEL = logging.INFO
 logging.basicConfig(level=LOGLEVEL)
 logger_selkies_gamepad = logging.getLogger("selkies_gamepad")
-logger_gstwebrtc_app = logging.getLogger("gstebrtc_app")
+logger_gstwebrtc_app = logging.getLogger("gstwebrtc_app")
 logger_gstwebrtc_app_resize = logging.getLogger("gstwebrtc_app_resize")
 logger_signaling = logging.getLogger("signaling")
 logger_webrtc_input = logging.getLogger("webrtc_input")
