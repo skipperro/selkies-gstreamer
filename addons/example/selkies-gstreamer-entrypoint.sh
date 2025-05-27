@@ -109,7 +109,7 @@ server {
         proxy_pass http$(if [ \"$(echo ${SELKIES_ENABLE_HTTPS} | tr '[:upper:]' '[:lower:]')\" = \"true\" ]; then echo -n "s"; fi)://localhost:${SELKIES_PORT:-8081};
     }
 
-    location /webrtc/signalling {
+    location /webrtc/signaling {
         proxy_set_header        Upgrade \$http_upgrade;
         proxy_set_header        Connection \"upgrade\";
 

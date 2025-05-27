@@ -19,10 +19,6 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at https://mozilla.org/MPL/2.0/.
-
 # Constants
 FPS_DIFFERENCE_THRESHOLD = 5
 BITRATE_DECREASE_STEP_KBPS = 2000
@@ -78,7 +74,7 @@ logger_gstwebrtc_app = logging.getLogger("gstwebrtc_app")
 logger_gstwebrtc_app_resize = logging.getLogger("gstwebrtc_app_resize")
 logger_signaling = logging.getLogger("signaling")
 logger_webrtc_input = logging.getLogger("webrtc_input")
-logger_webrtc_signalling = logging.getLogger("webrtc_signalling")
+logger_webrtc_signaling = logging.getLogger("webrtc_signaling")
 logger = logging.getLogger("main")
 web_logger = logging.getLogger("web")
 data_logger = logging.getLogger("data_websocket")
@@ -3796,8 +3792,8 @@ class WebRTCSimpleServer:
             path == "/websocket"
             or path == "/ws"
             or path == "/ws/"
-            or path.endswith("/signalling")
-            or path.endswith("/signalling/")
+            or path.endswith("/signaling")
+            or path.endswith("/signaling/")
         ):
             # Let the websockets library handle the upgrade request
             return None
@@ -4634,19 +4630,19 @@ class WebRTCSimpleServer:
                 return  # Exit the check loop
 
 
-class WebRTCSignallingError(Exception):
+class WebRTCSignalingError(Exception):
     """Custom exception for general WebRTC signaling errors."""
 
     pass
 
 
-class WebRTCSignallingErrorNoPeer(Exception):
+class WebRTCSignalingErrorNoPeer(Exception):
     """Custom exception for errors when a specific peer is not found."""
 
     pass
 
 
-class WebRTCSignalling:
+class WebRTCSignaling:
     def __init__(
         self,
         server,
@@ -4665,27 +4661,27 @@ class WebRTCSignalling:
         self.basic_auth_user = basic_auth_user
         self.basic_auth_password = basic_auth_password
         self.conn = None
-        self.on_ice = lambda mlineindex, candidate: logger_webrtc_signalling.warning(
+        self.on_ice = lambda mlineindex, candidate: logger_webrtc_signaling.warning(
             "unhandled ice event"
         )
-        self.on_sdp = lambda sdp_type, sdp: logger_webrtc_signalling.warning(
+        self.on_sdp = lambda sdp_type, sdp: logger_webrtc_signaling.warning(
             "unhandled sdp event"
         )
-        self.on_connect = lambda: logger_webrtc_signalling.warning(
+        self.on_connect = lambda: logger_webrtc_signaling.warning(
             "unhandled on_connect callback"
         )
-        self.on_disconnect = lambda: logger_webrtc_signalling.warning(
+        self.on_disconnect = lambda: logger_webrtc_signaling.warning(
             "unhandled on_disconnect callback"
         )
-        self.on_session = lambda peer_id, meta: logger_webrtc_signalling.warning(
+        self.on_session = lambda peer_id, meta: logger_webrtc_signaling.warning(
             "unhandled on_session callback"
         )
-        self.on_error = lambda v: logger_webrtc_signalling.warning(
+        self.on_error = lambda v: logger_webrtc_signaling.warning(
             "unhandled on_error callback: %s", v
         )
 
     async def setup_call(self):
-        logger_webrtc_signalling.debug("setting up call")
+        logger_webrtc_signaling.debug("setting up call")
         await self.conn.send("SESSION %d" % self.peer_id)
 
     async def connect(self):
@@ -4711,7 +4707,7 @@ class WebRTCSignalling:
                     )
                     break
                 except ConnectionRefusedError:
-                    logger_webrtc_signalling.info("Connecting to signal server...")
+                    logger_webrtc_signaling.info("Connecting to signal server...")
                     await asyncio.sleep(2.0)
             await self.conn.send("HELLO %d" % self.id)
         except websockets.exceptions.ConnectionClosed:
@@ -4722,20 +4718,20 @@ class WebRTCSignalling:
         await self.conn.send(msg)
 
     async def send_sdp(self, sdp_type, sdp):
-        logger_webrtc_signalling.info("sending sdp type: %s" % sdp_type)
-        logger_webrtc_signalling.debug("SDP:\n%s" % sdp)
+        logger_webrtc_signaling.info("sending sdp type: %s" % sdp_type)
+        logger_webrtc_signaling.debug("SDP:\n%s" % sdp)
         msg = json.dumps({"sdp": {"type": sdp_type, "sdp": sdp}})
         await self.conn.send(msg)
 
     async def stop(self):
-        logger_webrtc_signalling.warning("stopping")
+        logger_webrtc_signaling.warning("stopping")
         if self.conn:
             await self.conn.close()
         self.conn = None
 
     async def start(self):
         if not self.conn:
-            logger_webrtc_signalling.error(
+            logger_webrtc_signaling.error(
                 "Cannot start signaling loop, connection is not established."
             )
             return
@@ -4743,14 +4739,14 @@ class WebRTCSignalling:
         try:
             async for message in self.conn:
                 if message == "HELLO":
-                    logger_webrtc_signalling.info("connected")
+                    logger_webrtc_signaling.info("connected")
                     await self.on_connect()
                 elif message.startswith("SESSION_OK"):
                     toks = message.split()
                     meta = {}
                     if len(toks) > 1:
                         meta = json.loads(base64.b64decode(toks[1]))
-                    logger_webrtc_signalling.info(
+                    logger_webrtc_signaling.info(
                         "started session with peer: %s, meta: %s",
                         self.peer_id,
                         json.dumps(meta),
@@ -4759,12 +4755,12 @@ class WebRTCSignalling:
                 elif message.startswith("ERROR"):
                     if message == "ERROR peer '%s' not found" % self.peer_id:
                         await self.on_error(
-                            WebRTCSignallingErrorNoPeer("'%s' not found" % self.peer_id)
+                            WebRTCSignalingErrorNoPeer("'%s' not found" % self.peer_id)
                         )
                     else:
                         await self.on_error(
-                            WebRTCSignallingError(
-                                "unhandled signalling message: %s" % message
+                            WebRTCSignalingError(
+                                "unhandled signaling message: %s" % message
                             )
                         )
                 else:
@@ -4774,39 +4770,39 @@ class WebRTCSignalling:
                     except Exception as e:
                         if isinstance(e, json.decoder.JSONDecodeError):
                             await self.on_error(
-                                WebRTCSignallingError(
+                                WebRTCSignalingError(
                                     "error parsing message as JSON: %s" % message
                                 )
                             )
                         else:
                             await self.on_error(
-                                WebRTCSignallingError(
+                                WebRTCSignalingError(
                                     "failed to prase message: %s" % message
                                 )
                             )
                         continue
                     if data.get("sdp", None):
-                        logger_webrtc_signalling.info("received SDP")
-                        logger_webrtc_signalling.debug("SDP:\n%s" % data["sdp"])
+                        logger_webrtc_signaling.info("received SDP")
+                        logger_webrtc_signaling.debug("SDP:\n%s" % data["sdp"])
                         self.on_sdp(data["sdp"].get("type"), data["sdp"].get("sdp"))
                     elif data.get("ice", None):
-                        logger_webrtc_signalling.info("received ICE")
-                        logger_webrtc_signalling.debug("ICE:\n%s" % data.get("ice"))
+                        logger_webrtc_signaling.info("received ICE")
+                        logger_webrtc_signaling.debug("ICE:\n%s" % data.get("ice"))
                         self.on_ice(
                             data["ice"].get("sdpMLineIndex"),
                             data["ice"].get("candidate"),
                         )
                     else:
                         await self.on_error(
-                            WebRTCSignallingError(
+                            WebRTCSignalingError(
                                 "unhandled JSON message: %s", json.dumps(data)
                             )
                         )
         except websockets.exceptions.ConnectionClosed:
-            logger_webrtc_signalling.info("Signaling connection closed.")
+            logger_webrtc_signaling.info("Signaling connection closed.")
             await self.on_disconnect()
         except Exception as e:
-            logger_webrtc_signalling.error(
+            logger_webrtc_signaling.error(
                 f"Unexpected error in signaling loop: {e}", exc_info=True
             )
             await self.on_disconnect()
@@ -5243,15 +5239,15 @@ async def main():
         sys.exit(1)
 
     # --- Setup Signaling Clients (WebRTC Mode Only) ---
-    signalling = None
-    audio_signalling = None
+    signaling = None
+    audio_signaling = None
     if args.mode == "webrtc":
         ws_protocol = "wss:" if using_https else "ws:"
         # Signaling clients connect to the local signaling server instance
-        signalling_url = f"{ws_protocol}//127.0.0.1:{args.port}/ws"
+        signaling_url = f"{ws_protocol}//127.0.0.1:{args.port}/ws"
         # Video/App signaling client
-        signalling = WebRTCSignalling(
-            signalling_url,
+        signaling = WebRTCSignaling(
+            signaling_url,
             my_id,
             peer_id,
             using_https,
@@ -5260,8 +5256,8 @@ async def main():
             args.basic_auth_password,
         )
         # Audio-only signaling client
-        audio_signalling = WebRTCSignalling(
-            signalling_url,
+        audio_signaling = WebRTCSignaling(
+            signaling_url,
             my_audio_id,
             audio_peer_id,
             using_https,
@@ -5271,45 +5267,45 @@ async def main():
         )
 
         # Define error handlers for signaling clients
-        async def on_signalling_error(e):
-            if isinstance(e, WebRTCSignallingErrorNoPeer):
+        async def on_signaling_error(e):
+            if isinstance(e, WebRTCSignalingErrorNoPeer):
                 # If peer not found, retry session setup after a delay
                 logger.warning(
-                    f"Signaling: Peer {signalling.peer_id} not found, retrying setup call..."
+                    f"Signaling: Peer {signaling.peer_id} not found, retrying setup call..."
                 )
                 await asyncio.sleep(1.0)
-                await signalling.setup_call()
+                await signaling.setup_call()
             else:
                 # Log other signaling errors and potentially stop the pipeline
-                logger.error("Signalling error: %s", str(e), exc_info=True)
+                logger.error("Signaling error: %s", str(e), exc_info=True)
                 if app and hasattr(app, "stop_pipeline"):
                     await app.stop_pipeline()
 
-        async def on_audio_signalling_error(e):
-            if isinstance(e, WebRTCSignallingErrorNoPeer):
+        async def on_audio_signaling_error(e):
+            if isinstance(e, WebRTCSignalingErrorNoPeer):
                 # If audio peer not found, retry session setup
                 logger.warning(
-                    f"Audio Signaling: Peer {audio_signalling.peer_id} not found, retrying setup call..."
+                    f"Audio Signaling: Peer {audio_signaling.peer_id} not found, retrying setup call..."
                 )
                 await asyncio.sleep(1.0)
-                await audio_signalling.setup_call()
+                await audio_signaling.setup_call()
             else:
-                logger.error("Audio signalling error: %s", str(e), exc_info=True)
+                logger.error("Audio signaling error: %s", str(e), exc_info=True)
                 if audio_app and hasattr(audio_app, "stop_pipeline"):
                     await audio_app.stop_pipeline()
 
         # Assign handlers to signaling clients
-        signalling.on_error = on_signalling_error
-        audio_signalling.on_error = on_audio_signalling_error
+        signaling.on_error = on_signaling_error
+        audio_signaling.on_error = on_audio_signaling_error
         # Stop pipelines if signaling disconnects
         if hasattr(GSTWebRTCApp, "stop_pipeline"):  # Check before assigning lambda
-            signalling.on_disconnect = lambda: app.stop_pipeline() if app else None
-            audio_signalling.on_disconnect = (
+            signaling.on_disconnect = lambda: app.stop_pipeline() if app else None
+            audio_signaling.on_disconnect = (
                 lambda: audio_app.stop_pipeline() if audio_app else None
             )
         # Initiate session setup upon successful connection
-        signalling.on_connect = signalling.setup_call
-        audio_signalling.on_connect = audio_signalling.setup_call
+        signaling.on_connect = signaling.setup_call
+        audio_signaling.on_connect = audio_signaling.setup_call
 
     # --- RTC Configuration Determination ---
     # Determine the source and content of the WebRTC ICE server configuration
@@ -5577,7 +5573,7 @@ async def main():
 
     # --- Setup Callbacks (Linking components) ---
     if args.mode == "webrtc":
-        if not signalling or not audio_signalling:
+        if not signaling or not audio_signaling:
             # Should not happen if mode is webrtc, but check defensively
             logger.critical(
                 "WebRTC mode setup error: Signaling objects not initialized. Exiting."
@@ -5585,22 +5581,22 @@ async def main():
             sys.exit(1)
         # Link GSTApp SDP/ICE generation to Signaling client sending methods
         if hasattr(app, "on_sdp"):
-            app.on_sdp = signalling.send_sdp
+            app.on_sdp = signaling.send_sdp
         if audio_app and hasattr(audio_app, "on_sdp"):
-            audio_app.on_sdp = audio_signalling.send_sdp
+            audio_app.on_sdp = audio_signaling.send_sdp
         if hasattr(app, "on_ice"):
-            app.on_ice = signalling.send_ice
+            app.on_ice = signaling.send_ice
         if audio_app and hasattr(audio_app, "on_ice"):
-            audio_app.on_ice = audio_signalling.send_ice
+            audio_app.on_ice = audio_signaling.send_ice
         # Link Signaling client SDP/ICE receiving methods to GSTApp handlers
         if hasattr(app, "set_sdp"):
-            signalling.on_sdp = app.set_sdp
-        if audio_signalling and audio_app and hasattr(audio_app, "set_sdp"):
-            audio_signalling.on_sdp = audio_app.set_sdp
+            signaling.on_sdp = app.set_sdp
+        if audio_signaling and audio_app and hasattr(audio_app, "set_sdp"):
+            audio_signaling.on_sdp = audio_app.set_sdp
         if hasattr(app, "set_ice"):
-            signalling.on_ice = app.set_ice
-        if audio_signalling and audio_app and hasattr(audio_app, "set_ice"):
-            audio_signalling.on_ice = audio_app.set_ice
+            signaling.on_ice = app.set_ice
+        if audio_signaling and audio_app and hasattr(audio_app, "set_ice"):
+            audio_signaling.on_ice = audio_app.set_ice
 
     # Handler for when a signaling session is established
     def on_session_handler(session_peer_id, meta=None):
@@ -5638,9 +5634,9 @@ async def main():
 
     # Assign the session handler to signaling clients (WebRTC mode)
     if args.mode == "webrtc":
-        signalling.on_session = on_session_handler
-        if audio_signalling:
-            audio_signalling.on_session = on_session_handler
+        signaling.on_session = on_session_handler
+        if audio_signaling:
+            audio_signaling.on_session = on_session_handler
 
     # Initialize the input handler
     cursor_scale = 1.0  # Initial cursor scale
@@ -5960,11 +5956,11 @@ async def main():
 
             # Start Signaling Client Loop
             logger.info("Connecting and starting WebRTC signaling client loops...")
-            await signalling.connect()
-            signaling_task = asyncio.create_task(signalling.start())
-            if audio_signalling:
-                await audio_signalling.connect()
-                audio_signaling_task = asyncio.create_task(audio_signalling.start())
+            await signaling.connect()
+            signaling_task = asyncio.create_task(signaling.start())
+            if audio_signaling:
+                await audio_signaling.connect()
+                audio_signaling_task = asyncio.create_task(audio_signaling.start())
 
             # Define essential tasks to wait for in WebRTC mode
             # The application should run as long as the servers and signaling loops are active
@@ -6073,10 +6069,10 @@ async def main():
 
         # Stop Signaling Clients (WebRTC mode)
         logger.info("Stopping signaling clients...")
-        if signalling:
-            await signalling.stop()
-        if audio_signalling:
-            await audio_signalling.stop()
+        if signaling:
+            await signaling.stop()
+        if audio_signaling:
+            await audio_signaling.stop()
 
         # Stop GStreamer Pipelines (Both modes)
         if app:

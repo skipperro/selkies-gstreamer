@@ -25,7 +25,7 @@
  *   limitations under the License.
  */
 /**
- * @typedef {Object} WebRTCDemoSignalling
+ * @typedef {Object} WebRTCDemoSignaling
  * @property {function} ondebug - Callback fired when a new debug message is set.
  * @property {function} onstatus - Callback fired when a new status message is set.
  * @property {function} onerror - Callback fired when an error occurs.
@@ -34,17 +34,17 @@
  * @property {function} connect - initiate connection to server.
  * @property {function} disconnect - close connection to server.
  */
-export class WebRTCDemoSignalling {
+export class WebRTCDemoSignaling {
   /**
-   * Interface to WebRTC demo signalling server.
-   * Protocol: https://github.com/GStreamer/gstreamer/blob/main/subprojects/gst-examples/webrtc/signalling/Protocol.md
+   * Interface to WebRTC demo signaling server.
+   * Protocol: https://github.com/GStreamer/gstreamer/blob/main/subprojects/gst-examples/webrtc/signaling/Protocol.md
    *
    * @constructor
    * @param {URL} [server]
-   *    The URL object of the signalling server to connect to, created with `new URL()`.
-   *    Signalling implementation is here:
-   *      https://github.com/GStreamer/gstreamer/tree/main/subprojects/gst-examples/webrtc/signalling
-   * @param {number} peerId - The peer ID for this signalling instance (1 for video, 3 for audio).
+   *    The URL object of the signaling server to connect to, created with `new URL()`.
+   *    Signaling implementation is here:
+   *      https://github.com/GStreamer/gstreamer/tree/main/subprojects/gst-examples/webrtc/signaling
+   * @param {number} peerId - The peer ID for this signaling instance (1 for video, 3 for audio).
    */
   constructor(server, peerId) {
     /**
@@ -159,8 +159,8 @@ export class WebRTCDemoSignalling {
     }
   }
   /**
-   * Fired whenever the signalling websocket is opened.
-   * Sends the peer id to the signalling server.
+   * Fired whenever the signaling websocket is opened.
+   * Sends the peer id to the signaling server.
    *
    * @private
    * @event
@@ -177,7 +177,7 @@ export class WebRTCDemoSignalling {
     this.retry_count = 0;
   }
   /**
-   * Fired whenever the signalling websocket emits and error.
+   * Fired whenever the signaling websocket emits and error.
    * Reconnects after 3 seconds.
    *
    * @private
@@ -199,7 +199,7 @@ export class WebRTCDemoSignalling {
     }
   }
   /**
-   * Fired whenever a message is received from the signalling server.
+   * Fired whenever a message is received from the signaling server.
    * Message types:
    *   HELLO: response from server indicating peer is registered.
    *   ERROR*: error messages from server.
@@ -243,7 +243,7 @@ export class WebRTCDemoSignalling {
     }
   }
   /**
-   * Fired whenever the signalling websocket is closed.
+   * Fired whenever the signaling websocket is closed.
    * Reconnects after 1 second.
    *
    * @private
@@ -257,8 +257,8 @@ export class WebRTCDemoSignalling {
     }
   }
   /**
-   * Initiates the connection to the signalling server.
-   * After this is called, a series of handshakes occurs between the signalling
+   * Initiates the connection to the signaling server.
+   * After this is called, a series of handshakes occurs between the signaling
    * server and the server (peer) to negotiate ICE candidates and media capabilities.
    */
   connect() {
@@ -271,7 +271,7 @@ export class WebRTCDemoSignalling {
     this._ws_conn.addEventListener('close', this._onServerClose.bind(this));
   }
   /**
-   * Closes connection to signalling server.
+   * Closes connection to signaling server.
    * Triggers onServerClose event.
    */
   disconnect() {
@@ -342,8 +342,8 @@ import {
 } from './lib/webrtc.js';
 let webrtc;
 let audio_webrtc;
-let signalling;
-let audio_signalling;
+let signaling;
+let audio_signaling;
 let decoder;
 let audioDecoderWorker = null;
 let canvas = null;
@@ -627,15 +627,15 @@ const updateStatusDisplay = () => {
   statusDisplayElement.textContent = loadingText;
 };
 const appendLogEntry = (message) => {
-  logEntries.push(applyTimestamp(`[signalling] ${message}`));
+  logEntries.push(applyTimestamp(`[signaling] ${message}`));
   updateLogOutput();
 };
 const appendLogError = (message) => {
-  logEntries.push(applyTimestamp(`[signalling] [ERROR] ${message}`));
+  logEntries.push(applyTimestamp(`[signaling] [ERROR] ${message}`));
   updateLogOutput();
 };
 const appendDebugEntry = (message) => {
-  debugEntries.push(`[signalling] ${message}`);
+  debugEntries.push(`[signaling] ${message}`);
   updateDebugOutput();
 };
 const updateLogOutput = () => {};
@@ -2236,54 +2236,54 @@ document.addEventListener('DOMContentLoaded', () => {
     window.location.pathname.lastIndexOf('/') + 1
   );
   const protocol = location.protocol === 'http:' ? 'ws://' : 'wss://';
-  audio_signalling = new WebRTCDemoSignalling(
+  audio_signaling = new WebRTCDemoSignaling(
     new URL(
-      `${protocol}${window.location.host}${pathname}${appName}/signalling/`
+      `${protocol}${window.location.host}${pathname}${appName}/signaling/`
     ),
     3
   );
-  audio_webrtc = new WebRTCDemo(audio_signalling, audioElement, 3);
-  audio_signalling.setInput(audio_webrtc.input);
+  audio_webrtc = new WebRTCDemo(audio_signaling, audioElement, 3);
+  audio_signaling.setInput(audio_webrtc.input);
   window.applyTimestamp = (msg) => {
     const now = new Date();
     const ts = `${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`;
     return `[${ts}] ${msg}`;
   };
-  audio_signalling.onstatus = (message) => {
+  audio_signaling.onstatus = (message) => {
     loadingText = message;
     appendLogEntry(message);
     updateStatusDisplay();
   };
-  audio_signalling.onerror = appendLogError;
-  audio_signalling.ondisconnect = () => {
+  audio_signaling.onerror = appendLogError;
+  audio_signaling.ondisconnect = () => {
     const checkconnect = status === 'checkconnect';
     status = 'connecting';
     updateStatusDisplay();
     overlayInput.style.cursor = 'auto';
     audio_webrtc.reset();
     status = 'checkconnect';
-    if (!checkconnect && signalling) signalling.disconnect();
+    if (!checkconnect && signaling) signaling.disconnect();
   };
   const setupWebRTCMode = () => {
     if (metricsIntervalId) {
       clearInterval(metricsIntervalId);
       metricsIntervalId = null;
     }
-    signalling = new WebRTCDemoSignalling(
+    signaling = new WebRTCDemoSignaling(
       new URL(
-        `${protocol}${window.location.host}${pathname}${appName}/signalling/`
+        `${protocol}${window.location.host}${pathname}${appName}/signaling/`
       ),
       1
     );
-    webrtc = new WebRTCDemo(signalling, videoElement, 1);
-    signalling.setInput(webrtc.input);
-    signalling.onstatus = (message) => {
+    webrtc = new WebRTCDemo(signaling, videoElement, 1);
+    signaling.setInput(webrtc.input);
+    signaling.onstatus = (message) => {
       loadingText = message;
       appendLogEntry(message);
       updateStatusDisplay();
     };
-    signalling.onerror = appendLogError;
-    signalling.ondisconnect = () => {
+    signaling.onerror = appendLogError;
+    signaling.ondisconnect = () => {
       const checkconnect = status === 'checkconnect';
       status = 'connecting';
       updateStatusDisplay();
@@ -2292,7 +2292,7 @@ document.addEventListener('DOMContentLoaded', () => {
         webrtc.reset();
       }
       status = 'checkconnect';
-      if (!checkconnect) audio_signalling.disconnect();
+      if (!checkconnect) audio_signaling.disconnect();
     };
     webrtc.onstatus = (message) => {
       appendLogEntry(applyTimestamp(`[webrtc] ${message}`));
@@ -2419,8 +2419,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStatusDisplay();
   };
   if (debug) {
-    audio_signalling.ondebug = (message) => {
-      appendDebugEntry(`[audio signalling] ${message}`);
+    audio_signaling.ondebug = (message) => {
+      appendDebugEntry(`[audio signaling] ${message}`);
     };
     audio_webrtc.ondebug = (message) => {
       appendDebugEntry(applyTimestamp(`[audio webrtc] ${message}`));
@@ -3938,13 +3938,13 @@ function cleanup() {
   console.log("Cleanup: Starting cleanup process...");
   // Stop microphone first
   stopMicrophoneCapture();
-  if (clientMode === 'webrtc' && signalling) {
-    signalling.disconnect();
-    signalling = null;
+  if (clientMode === 'webrtc' && signaling) {
+    signaling.disconnect();
+    signaling = null;
   }
-  if (audio_signalling) {
-    audio_signalling.disconnect();
-    audio_signalling = null;
+  if (audio_signaling) {
+    audio_signaling.disconnect();
+    audio_signaling = null;
   }
   if (clientMode === 'webrtc' && webrtc) {
     webrtc.reset();

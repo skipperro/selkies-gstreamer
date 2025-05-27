@@ -24,7 +24,7 @@
 
 
 /**
-* @typedef {Object} WebRTCDemoSignalling
+* @typedef {Object} WebRTCDemoSignaling
 * @property {function} ondebug - Callback fired when a new debug message is set.
 * @property {function} onstatus - Callback fired when a new status message is set.
 * @property {function} onerror - Callback fired when an error occurs.
@@ -33,16 +33,16 @@
 * @property {function} connect - initiate connection to server.
 * @property {function} disconnect - close connection to server.
 */
-class WebRTCDemoSignalling {
+class WebRTCDemoSignaling {
     /**
-     * Interface to WebRTC demo signalling server.
-     * Protocol: https://github.com/GStreamer/gstreamer/blob/main/subprojects/gst-examples/webrtc/signalling/Protocol.md
+     * Interface to WebRTC demo signaling server.
+     * Protocol: https://github.com/GStreamer/gstreamer/blob/main/subprojects/gst-examples/webrtc/signaling/Protocol.md
      *
      * @constructor
      * @param {URL} [server]
-     *    The URL object of the signalling server to connect to, created with `new URL()`.
-     *    Signalling implementation is here:
-     *      https://github.com/GStreamer/gstreamer/tree/main/subprojects/gst-examples/webrtc/signalling
+     *    The URL object of the signaling server to connect to, created with `new URL()`.
+     *    Signaling implementation is here:
+     *      https://github.com/GStreamer/gstreamer/tree/main/subprojects/gst-examples/webrtc/signaling
      */
     constructor(server) {
         /**
@@ -169,8 +169,8 @@ class WebRTCDemoSignalling {
     }
 
     /**
-     * Fired whenever the signalling websocket is opened.
-     * Sends the peer id to the signalling server.
+     * Fired whenever the signaling websocket is opened.
+     * Sends the peer id to the signaling server.
      *
      * @private
      * @event
@@ -189,7 +189,7 @@ class WebRTCDemoSignalling {
     }
 
     /**
-     * Fired whenever the signalling websocket emits and error.
+     * Fired whenever the signaling websocket emits and error.
      * Reconnects after 3 seconds.
      *
      * @private
@@ -210,7 +210,7 @@ class WebRTCDemoSignalling {
     }
 
     /**
-     * Fired whenever a message is received from the signalling server.
+     * Fired whenever a message is received from the signaling server.
      * Message types:
      *   HELLO: response from server indicating peer is registered.
      *   ERROR*: error messages from server.
@@ -260,7 +260,7 @@ class WebRTCDemoSignalling {
     }
 
     /**
-     * Fired whenever the signalling websocket is closed.
+     * Fired whenever the signaling websocket is closed.
      * Reconnects after 1 second.
      *
      * @private
@@ -275,8 +275,8 @@ class WebRTCDemoSignalling {
     }
 
     /**
-     * Initiates the connection to the signalling server.
-     * After this is called, a series of handshakes occurs between the signalling
+     * Initiates the connection to the signaling server.
+     * After this is called, a series of handshakes occurs between the signaling
      * server and the server (peer) to negotiate ICE candidates and media capabilities.
      */
     connect() {
@@ -293,7 +293,7 @@ class WebRTCDemoSignalling {
     }
 
     /**
-     * Closes connection to signalling server.
+     * Closes connection to signaling server.
      * Triggers onServerClose event.
      */
     disconnect() {

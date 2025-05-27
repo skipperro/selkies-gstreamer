@@ -13,7 +13,7 @@ var filesToCache = [
   /* cache assets from app launcher */
   'app.js?ts=CACHE_VERSION',
   'input.js?ts=CACHE_VERSION',
-  'signalling.js?ts=CACHE_VERSION',
+  'signaling.js?ts=CACHE_VERSION',
   'webrtc.js?ts=CACHE_VERSION'
 ];
 
