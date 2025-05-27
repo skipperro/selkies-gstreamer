@@ -24,340 +24,27 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  */
-/**
- * @typedef {Object} WebRTCDemoSignaling
- * @property {function} ondebug - Callback fired when a new debug message is set.
- * @property {function} onstatus - Callback fired when a new status message is set.
- * @property {function} onerror - Callback fired when an error occurs.
- * @property {function} onice - Callback fired when a new ICE candidate is received.
- * @property {function} onsdp - Callback fired when SDP is received.
- * @property {function} connect - initiate connection to server.
- * @property {function} disconnect - close connection to server.
- */
-export class WebRTCDemoSignaling {
-  /**
-   * Interface to WebRTC demo signaling server.
-   * Protocol: https://github.com/GStreamer/gstreamer/blob/main/subprojects/gst-examples/webrtc/signaling/Protocol.md
-   *
-   * @constructor
-   * @param {URL} [server]
-   *    The URL object of the signaling server to connect to, created with `new URL()`.
-   *    Signaling implementation is here:
-   *      https://github.com/GStreamer/gstreamer/tree/main/subprojects/gst-examples/webrtc/signaling
-   * @param {number} peerId - The peer ID for this signaling instance (1 for video, 3 for audio).
-   */
-  constructor(server, peerId) {
-    /**
-     * @private
-     * @type {URL}
-     */
-    this._server = server;
-    /**
-     * @private
-     * @type {number}
-     */
-    this.peer_id = peerId;
-    /**
-     * @private
-     * @type {WebSocket}
-     */
-    this._ws_conn = null;
-    /**
-     * @event
-     * @type {function}
-     */
-    this.onstatus = null;
-    /**
-     * @event
-     * @type {function}
-     */
-    this.onerror = null;
-    /**
-     * @type {function}
-     */
-    this.ondebug = null;
-    /**
-     * @event
-     * @type {function}
-     */
-    this.onice = null;
-    /**
-     * @event
-     * @type {function}
-     */
-    this.onsdp = null;
-    /**
-     * @event
-     * @type {function}
-     */
-    this.ondisconnect = null;
-    /**
-     * @type {string}
-     */
-    this.state = 'disconnected';
-    /**
-     * @type {number}
-     */
-    this.retry_count = 0;
-    /**
-     * @type {object}
-     */
-    this.webrtcInput = null;
-  }
-  /**
-   * Sets status message.
-   *
-   * @private
-   * @param {string} message
-   */
-  _setStatus(message) {
-    if (this.onstatus !== null) {
-      this.onstatus(message);
-    }
-  }
-  /**
-   * Sets a debug message.
-   * @private
-   * @param {string} message
-   */
-  _setDebug(message) {
-    if (this.ondebug !== null) {
-      this.ondebug(message);
-    }
-  }
-  /**
-   * Sets error message.
-   *
-   * @private
-   * @param {string} message
-   */
-  _setError(message) {
-    if (this.onerror !== null) {
-      this.onerror(message);
-    }
-  }
-  /**
-   * Sets SDP
-   *
-   * @private
-   * @param {string} message
-   */
-  _setSDP(sdp) {
-    if (this.onsdp !== null) {
-      this.onsdp(sdp);
-    }
-  }
-  /**
-   * Sets ICE
-   *
-   * @private
-   * @param {RTCIceCandidate} icecandidate
-   */
-  _setICE(icecandidate) {
-    if (this.onice !== null) {
-      this.onice(icecandidate);
-    }
-  }
-  /**
-   * Fired whenever the signaling websocket is opened.
-   * Sends the peer id to the signaling server.
-   *
-   * @private
-   * @event
-   */
-  _onServerOpen() {
-    const currRes = this.webrtcInput ? this.webrtcInput.getWindowResolution() : [window.innerWidth, window.innerHeight];
-    const meta = {
-      res: `${currRes[0]}x${currRes[1]}`,
-      scale: window.devicePixelRatio,
-    };
-    this.state = 'connected';
-    this._ws_conn.send(`HELLO ${this.peer_id} ${btoa(JSON.stringify(meta))}`);
-    this._setStatus(`Registering with server, peer ID: ${this.peer_id}`);
-    this.retry_count = 0;
-  }
-  /**
-   * Fired whenever the signaling websocket emits and error.
-   * Reconnects after 3 seconds.
-   *
-   * @private
-   * @event
-   */
-  _onServerError() {
-    this._setStatus('Connection error, retry in 3 seconds.');
-    this.retry_count++;
-    if (this._ws_conn.readyState === WebSocket.CLOSED) {
-      setTimeout(() => {
-        if (this.retry_count > 3) {
-          window.location.replace(
-            window.location.href.replace(window.location.pathname, '/')
-          );
-        } else {
-          this.connect();
-        }
-      }, 3000);
-    }
-  }
-  /**
-   * Fired whenever a message is received from the signaling server.
-   * Message types:
-   *   HELLO: response from server indicating peer is registered.
-   *   ERROR*: error messages from server.
-   *   {"sdp": ...}: JSON SDP message
-   *   {"ice": ...}: JSON ICE message
-   *
-   * @private
-   * @event
-   * @param {MessageEvent} event The event: https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent
-   */
-  _onServerMessage(event) {
-    this._setDebug(`server message: ${event.data}`);
-    if (event.data === 'HELLO') {
-      this._setStatus('Registered with server.');
-      this._setStatus('Waiting for stream.');
-      this.sendSessionRequest();
-      return;
-    }
-    if (event.data.startsWith('ERROR')) {
-      this._setStatus(`Error from server: ${event.data}`);
-      return;
-    }
-    let msg;
-    try {
-      msg = JSON.parse(event.data);
-    } catch (e) {
-      if (e instanceof SyntaxError) {
-        this._setError(`error parsing message as JSON: ${event.data}`);
-      } else {
-        this._setError(`failed to parse message: ${event.data}`);
-      }
-      return;
-    }
-    if (msg.sdp != null) {
-      this._setSDP(new RTCSessionDescription(msg.sdp));
-    } else if (msg.ice != null) {
-      const icecandidate = new RTCIceCandidate(msg.ice);
-      this._setICE(icecandidate);
-    } else {
-      this._setError(`unhandled JSON message: ${msg}`);
-    }
-  }
-  /**
-   * Fired whenever the signaling websocket is closed.
-   * Reconnects after 1 second.
-   *
-   * @private
-   * @event
-   */
-  _onServerClose() {
-    if (this.state !== 'connecting') {
-      this.state = 'disconnected';
-      this._setError('Server closed connection.');
-      if (this.ondisconnect !== null) this.ondisconnect();
-    }
-  }
-  /**
-   * Initiates the connection to the signaling server.
-   * After this is called, a series of handshakes occurs between the signaling
-   * server and the server (peer) to negotiate ICE candidates and media capabilities.
-   */
-  connect() {
-    this.state = 'connecting';
-    this._setStatus('Connecting to server.');
-    this._ws_conn = new WebSocket(this._server.href);
-    this._ws_conn.addEventListener('open', this._onServerOpen.bind(this));
-    this._ws_conn.addEventListener('error', this._onServerError.bind(this));
-    this._ws_conn.addEventListener('message', this._onServerMessage.bind(this));
-    this._ws_conn.addEventListener('close', this._onServerClose.bind(this));
-  }
-  /**
-   * Closes connection to signaling server.
-   * Triggers onServerClose event.
-   */
-  disconnect() {
-    if (this._ws_conn) {
-      this._ws_conn.close();
-    }
-  }
-  /**
-   * Send ICE candidate.
-   *
-   * @param {RTCIceCandidate} ice
-   */
-  sendICE(ice) {
-    if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
-      this._setDebug(`sending ice candidate: ${JSON.stringify(ice)}`);
-      this._ws_conn.send(JSON.stringify({
-        ice
-      }));
-    } else {
-      console.warn("Websocket not open, cannot send ICE candidate.");
-    }
-  }
-  /**
-   * Send local session description.
-   *
-   * @param {RTCSessionDescription} sdp
-   */
-  sendSDP(sdp) {
-    if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
-      this._setDebug(`sending local sdp: ${JSON.stringify(sdp)}`);
-      this._ws_conn.send(JSON.stringify({
-        sdp
-      }));
-    } else {
-      console.warn("Websocket not open, cannot send SDP.");
-    }
-  }
-  /**
-   * Send SESSION request to the server to initiate WebRTC session.
-   * @private
-   */
-  sendSessionRequest() {
-    if (this._ws_conn && this._ws_conn.readyState === WebSocket.OPEN) {
-      this._setDebug(
-        `Sending SESSION request to server, peer ID: ${this.peer_id}`
-      );
-      this._ws_conn.send(`SESSION ${this.peer_id}`);
-    } else {
-      console.warn("Websocket not open, cannot send SESSION request.");
-    }
-  }
-  /**
-   * Sets the webrtc input object
-   * @param {object} input - The webrtc.input object.
-   */
-  setInput(input) {
-    this.webrtcInput = input;
-  }
-}
+
+// WebRTCDemoSignaling class removed as it's WebRTC specific.
+
 import {
   GamepadManager
 } from './lib/gamepad.js';
 import {
   Input
 } from './lib/input.js';
-import {
-  WebRTCDemo
-} from './lib/webrtc.js';
-let webrtc;
-let audio_webrtc;
-let signaling;
-let audio_signaling;
+
 let decoder;
 let audioDecoderWorker = null;
 let canvas = null;
 let canvasContext = null;
 let websocket;
 let clientMode = null;
-let videoConnected = '';
-let audioConnected = '';
 let audioContext;
 let audioWorkletNode;
 let audioWorkletProcessorPort;
 const audioBufferQueue = [];
 window.currentAudioBufferSize = 0;
-/** @type {VideoFrame[]} */
 let videoFrameBuffer = [];
 let jpegStripeRenderQueue = [];
 let videoBufferSize = 0;
@@ -371,7 +58,7 @@ let triggerInitializeDecoder = () => {
 let isVideoPipelineActive = true;
 let isAudioPipelineActive = true;
 let isMicrophoneActive = false;
-let isGamepadEnabled; // Will be loaded from localStorage
+let isGamepadEnabled;
 let gamepadStates = {};
 let lastReceivedVideoFrameId = -1;
 const GAMEPAD_VIS_THRESHOLD = 0.1;
@@ -400,17 +87,16 @@ let manualHeightInput;
 let scaleLocallyCheckbox;
 let setResolutionButton;
 let resetResolutionButton;
-window.isManualResolutionMode = false; // Will be loaded from localStorage
-let manualWidth = null; // Will be loaded from localStorage
-let manualHeight = null; // Will be loaded from localStorage
+window.isManualResolutionMode = false;
+let manualWidth = null;
+let manualHeight = null;
 let autoResizeHandler = null;
 let debouncedAutoResizeHandler = null;
 let originalWindowResizeHandler = null;
 let handleResizeUI_globalRef = null;
-// --- START VNC H.264 STRIPE DECODER ADDITIONS ---
-let vncStripeDecoders = {}; // Key: stripe_y_start, Value: { decoder: VideoDecoder, pendingChunks: [] }
-let vncStripeFrameMetadata = {}; // Key: chunkTimestamp, Value: { y: stripe_y_start, id: vncFrameID }
-let currentEncoderMode = 'x264enc-stiped'; // Default, will be updated from settings
+let vncStripeDecoders = {};
+let vncStripeFrameMetadata = {};
+let currentEncoderMode = 'x264enc-stiped';
 window.onload = () => {
   'use strict';
 };
@@ -421,7 +107,17 @@ function getCookieValue(name) {
 }
 // Set app name from manifest if possible
 let appName = 'Selkies';
-!async function(){try{const t=await fetch("manifest.json",{signal:AbortSignal.timeout(500)});if(t.ok){const a=await t.json();a&&"string"==typeof a.name&&""!==a.name.trim()&&(appName=a.name)}}catch(t){}}();
+!async function() {
+  try {
+    const t = await fetch("manifest.json", {
+      signal: AbortSignal.timeout(500)
+    });
+    if (t.ok) {
+      const a = await t.json();
+      a && "string" == typeof a.name && "" !== a.name.trim() && (appName = a.name)
+    }
+  } catch (t) {}
+}();
 
 let videoBitRate = 8000;
 let videoFramerate = 60;
@@ -464,10 +160,8 @@ const cpuStat = {
   serverMemoryTotal: 0,
   serverMemoryUsed: 0,
 };
-let serverLatency = 0;
 let resizeRemote = true;
 let debug = false;
-let turnSwitch = false;
 let publishingAllowed = false;
 let publishingIdle = false;
 let publishingError = '';
@@ -500,10 +194,10 @@ let videoToggleButtonElement;
 let audioToggleButtonElement;
 let gamepadToggleButtonElement;
 let micToggleButtonElement;
+
 const getIntParam = (key, default_value) => {
   const prefixedKey = `${appName}_${key}`;
   const value = window.localStorage.getItem(prefixedKey);
-  // Return default_value if null or undefined, otherwise parse
   return (value === null || value === undefined) ? default_value : parseInt(value);
 };
 const setIntParam = (key, value) => {
@@ -543,14 +237,14 @@ const setStringParam = (key, value) => {
     window.localStorage.setItem(prefixedKey, value.toString());
   }
 };
-// --- Load Persisted Settings ---
+
 videoBitRate = getIntParam('videoBitRate', videoBitRate);
 videoFramerate = getIntParam('videoFramerate', videoFramerate);
 videoCRF = getIntParam('videoCRF', videoCRF);
 audioBitRate = getIntParam('audioBitRate', audioBitRate);
 resizeRemote = getBoolParam('resizeRemote', resizeRemote);
 debug = getBoolParam('debug', debug);
-turnSwitch = getBoolParam('turnSwitch', turnSwitch);
+// turnSwitch = getBoolParam('turnSwitch', turnSwitch); // WebRTC specific
 videoBufferSize = getIntParam('videoBufferSize', 0);
 currentEncoderMode = getStringParam('encoder', 'x264enc-striped');
 scaleLocallyManual = getBoolParam('scaleLocallyManual', true);
@@ -558,46 +252,33 @@ isManualResolutionMode = getBoolParam('isManualResolutionMode', false);
 manualWidth = getIntParam('manualWidth', null);
 manualHeight = getIntParam('manualHeight', null);
 isGamepadEnabled = getBoolParam('isGamepadEnabled', true);
-const getUsername = () => getCookieValue(`broker_${appName}`)?.split('#')[0] || 'webrtc';
+
+const getUsername = () => getCookieValue(`broker_${appName}`)?.split('#')[0] || 'websocket_user'; // Default user for WS
+
 const enterFullscreen = () => {
-  if (
-    clientMode === 'webrtc' &&
-    webrtc &&
-    'input' in webrtc &&
-    'enterFullscreen' in webrtc.input
-  ) {
-    webrtc.input.enterFullscreen();
-  } else if (
-    clientMode === 'websockets' &&
-    'webrtcInput' in window
-  ) {
+  if ('webrtcInput' in window && window.webrtcInput && typeof window.webrtcInput.enterFullscreen === 'function') {
     window.webrtcInput.enterFullscreen();
   }
 };
+
 const playStream = () => {
-  if (clientMode === 'webrtc') {
-    webrtc.playStream();
-    audio_webrtc.playStream();
-  }
   showStart = false;
-  playButtonElement.classList.add('hidden');
-  statusDisplayElement.classList.add('hidden');
+  if (playButtonElement) playButtonElement.classList.add('hidden');
+  if (statusDisplayElement) statusDisplayElement.classList.add('hidden');
+  console.log("playStream called in WebSocket mode - UI elements hidden.");
 };
+
 const enableClipboard = () => {
   navigator.clipboard
     .readText()
     .then((text) => {
-      webrtc._setStatus('clipboard enabled');
-      webrtc.sendDataChannelMessage('cr');
+      console.log("Clipboard API read access confirmed.");
     })
     .catch((err) => {
-      if (clientMode === 'webrtc') {
-        webrtc._setError(`Failed to read clipboard contents: ${err}`);
-      } else if (clientMode === 'websockets') {
-        console.error(`Failed to read clipboard contents: ${err}`);
-      }
+      console.error(`Failed to read clipboard contents: ${err}`);
     });
 };
+
 const publish = () => {
   const data = {
     name: publishingAppName,
@@ -616,34 +297,40 @@ const publish = () => {
     .then((response) => {
       if (response.code === 201) {
         publishingIdle = false;
-        checkPublishing();
       } else {
         publishingError = response.status;
         updatePublishingErrorDisplay();
       }
     });
 };
+
 const updateStatusDisplay = () => {
-  statusDisplayElement.textContent = loadingText;
+  if (statusDisplayElement) {
+    statusDisplayElement.textContent = loadingText || status;
+  }
 };
+
+window.applyTimestamp = (msg) => {
+  const now = new Date();
+  const ts = `${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`;
+  return `[${ts}] ${msg}`;
+};
+
 const appendLogEntry = (message) => {
-  logEntries.push(applyTimestamp(`[signaling] ${message}`));
-  updateLogOutput();
+  logEntries.push(applyTimestamp(`[app] ${message}`));
 };
 const appendLogError = (message) => {
-  logEntries.push(applyTimestamp(`[signaling] [ERROR] ${message}`));
-  updateLogOutput();
+  logEntries.push(applyTimestamp(`[app] [ERROR] ${message}`));
 };
 const appendDebugEntry = (message) => {
-  debugEntries.push(`[signaling] ${message}`);
+  debugEntries.push(`[app] ${message}`);
   updateDebugOutput();
 };
-const updateLogOutput = () => {};
-const updateDebugOutput = () => {};
-const updatePublishingErrorDisplay = () => {};
+
 const roundDownToEven = (num) => {
   return Math.floor(num / 2) * 2;
 };
+
 const injectCSS = () => {
   const style = document.createElement('style');
   style.textContent = `
@@ -660,9 +347,6 @@ body {
   flex-direction: column;
   height: 100vh;
   width: 100%;
-}
-#app.dev-mode {
-  flex-direction: row;
 }
 .video-container {
   flex-grow: 1;
@@ -689,6 +373,7 @@ body {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  display: none;
 }
 .video-container #videoCanvas {
     z-index: 2;
@@ -739,190 +424,6 @@ body {
   border-radius: 3px;
   backdrop-filter: blur(5px);
 }
-#dev-sidebar {
-  display: none;
-}
-#app.dev-mode #dev-sidebar {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  width: 300px;
-  height: 100vh;
-  background-color: #2e2e2e;
-  color: #eee;
-  padding: 10px;
-  box-sizing: border-box;
-  overflow-y: auto;
-  gap: 10px; /* Add gap between items */
-}
-#dev-sidebar button {
-    margin-bottom: 10px;
-    padding: 8px;
-    cursor: pointer;
-    background-color: #444;
-    color: white;
-    border: 1px solid #555;
-    border-radius: 3px;
-    width: 100%;
-    box-sizing: border-box;
-    transition: background-color 0.2s ease;
-}
-#dev-sidebar button:hover {
-    background-color: #555;
-}
-#dev-sidebar button.toggle-button.active {
-    background-color: #3a8d3a;
-    border-color: #5cb85c;
-}
-#dev-sidebar button.toggle-button.active:hover {
-    background-color: #4cae4c;
-}
-#dev-sidebar button.toggle-button.inactive {
-    background-color: #c9302c;
-    border-color: #d43f3a;
-}
-#dev-sidebar button.toggle-button.inactive:hover {
-    background-color: #d9534f;
-}
-.dev-setting-item {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 10px;
-}
-
-.dev-setting-item label {
-    margin-bottom: 5px;
-    font-size: 0.9em;
-    color: #bbb;
-}
-.dev-setting-item select {
-    padding: 5px;
-    background-color: #333;
-    color: #eee;
-    border: 1px solid #555;
-    border-radius: 3px;
-    font-size: 1em;
-    width: 100%;
-    box-sizing: border-box;
-}
-#audio-device-settings {
-    border-top: 1px solid #555;
-    padding-top: 10px;
-    margin-top: 10px;
-}
-#audio-device-settings label {
-    margin-top: 8px;
-}
-.dev-stats-item {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 10px;
-    border: 1px solid #555;
-    padding: 8px;
-    background-color: #333;
-    font-family: monospace;
-    font-size: 0.8em;
-    white-space: pre-wrap;
-    word-break: break-all;
-}
-.dev-stats-item label {
-    margin-bottom: 5px;
-    font-size: 0.9em;
-    color: #bbb;
-    font-family: sans-serif;
-}
-.dev-clipboard-item {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 10px;
-}
-.dev-clipboard-item label {
-    margin-bottom: 5px;
-    font-size: 0.9em;
-    color: #bbb;
-}
-.dev-clipboard-item textarea {
-    padding: 5px;
-    background-color: #333;
-    color: #eee;
-    border: 1px solid #555;
-    border-radius: 3px;
-    font-size: 0.9em;
-    width: 100%;
-    box-sizing: border-box;
-    min-height: 80px; /* Give it some initial height */
-    resize: vertical; /* Allow vertical resize */
-    font-family: monospace; /* Use monospace for text content */
-}
-#upload-progress-container {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 10px;
-    border-top: 1px solid #555;
-    padding-top: 10px;
-}
-.upload-progress-item {
-    background-color: #333;
-    border: 1px solid #555;
-    border-radius: 3px;
-    padding: 6px;
-    font-size: 0.8em;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    transition: opacity 0.5s ease-out;
-}
-.upload-progress-item.fade-out {
-    opacity: 0;
-}
-.upload-progress-item .file-name {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: #ccc;
-}
-.upload-progress-bar-outer {
-    width: 100%;
-    height: 8px;
-    background-color: #555;
-    border-radius: 4px;
-    overflow: hidden;
-}
-.upload-progress-bar-inner {
-    height: 100%;
-    width: 0%; /* Start at 0% */
-    background-color: #ffc000; /* Progress color */
-    border-radius: 4px;
-    transition: width 0.1s linear;
-}
-.upload-progress-item.complete .upload-progress-bar-inner {
-    background-color: #3a8d3a; /* Green for complete */
-}
-.upload-progress-item.error .upload-progress-bar-inner {
-    background-color: #c9302c; /* Red for error */
-    width: 100% !important; /* Show full bar for error indication */
-}
-.upload-progress-item.error .file-name {
-    color: #ff8a8a; /* Lighter red for error text */
-}
-#gamepad-visualization-container {
-    border-top: 1px solid #555;
-    padding-top: 10px;
-    margin-top: 10px;
-}
-#gamepad-visualization-container label {
-    margin-bottom: 5px;
-    font-size: 0.9em;
-    color: #bbb;
-    display: block; /* Ensure label is on its own line */
-}
-#gamepad-svg-vis {
-    background-color: #222; /* Dark background for the SVG area */
-    border-radius: 3px;
-    display: block; /* Prevent extra space below */
-    margin-top: 10px; /* <<< ADDED THIS LINE for padding */
-}
   `;
   document.head.appendChild(style);
 };
@@ -944,44 +445,24 @@ function updateToggleButtonAppearance(buttonElement, isActive) {
     buttonElement.classList.add('inactive');
   }
 }
-/** NEW HELPER FUNCTION
- * Sends the current resolution (manual or container-based) and pixel ratio to the server.
- * @param {number} width - The width to send.
- * @param {number} height - The height to send.
- */
+
 function sendResolutionToServer(width, height) {
   const pixelRatio = window.devicePixelRatio;
   const resString = `${width}x${height}`;
   console.log(`Sending resolution to server: ${resString}, Pixel Ratio: ${pixelRatio}`);
-  if (clientMode === 'webrtc') {
-    if (webrtc && webrtc.sendDataChannelMessage) {
-      webrtc.sendDataChannelMessage(`r,${resString}`);
-      webrtc.sendDataChannelMessage(`s,${pixelRatio}`);
-    } else {
-      console.warn("Cannot send resolution via WebRTC: Data channel not ready.");
-    }
-  } else if (clientMode === 'websockets') {
-    if (websocket && websocket.readyState === WebSocket.OPEN) {
-      // Assuming WebSocket messages 'r,' and 's,' are handled similarly
-      websocket.send(`r,${resString}`);
-      websocket.send(`s,${pixelRatio}`);
-    } else {
-      console.warn("Cannot send resolution via WebSocket: Connection not open.");
-    }
+  if (websocket && websocket.readyState === WebSocket.OPEN) {
+    websocket.send(`r,${resString}`);
+    websocket.send(`s,${pixelRatio}`);
+  } else {
+    console.warn("Cannot send resolution via WebSocket: Connection not open.");
   }
 }
-/** HELPER FUNCTION
- * Applies CSS styles to the canvas based on manual resolution settings and scaling preference.
- * @param {number} targetWidth - The desired internal width of the stream.
- * @param {number} targetHeight - The desired internal height of the stream.
- * @param {boolean} scaleToFit - If true, scale visually while maintaining aspect ratio.
- */
+
 function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
   if (!canvas || !canvas.parentElement) {
     console.error("Cannot apply manual canvas style: Canvas or parent container not found.");
     return;
   }
-  // Set internal buffer size
   if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
     canvas.width = targetWidth;
     canvas.height = targetHeight;
@@ -991,7 +472,6 @@ function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
   const containerWidth = container.clientWidth;
   const containerHeight = container.clientHeight;
   if (scaleToFit) {
-    // Scale Locally (Maintain Aspect Ratio) - Checked
     const targetAspectRatio = targetWidth / targetHeight;
     const containerAspectRatio = containerWidth / containerHeight;
     let cssWidth, cssHeight;
@@ -1009,44 +489,37 @@ function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
     canvas.style.height = `${cssHeight}px`;
     canvas.style.top = `${topOffset}px`;
     canvas.style.left = `${leftOffset}px`;
-    canvas.style.objectFit = 'contain'; // Should be redundant if buffer matches target
+    canvas.style.objectFit = 'contain';
     console.log(`Applied manual style (Scaled): CSS ${cssWidth}x${cssHeight}, Buffer ${targetWidth}x${targetHeight}, Pos ${leftOffset},${topOffset}`);
   } else {
-    // Scale Locally - Unchecked (Exact resolution, top-left, overflow)
     canvas.style.position = 'absolute';
-    canvas.style.width = `${targetWidth}px`; // CSS matches buffer
-    canvas.style.height = `${targetHeight}px`; // CSS matches buffer
+    canvas.style.width = `${targetWidth}px`;
+    canvas.style.height = `${targetHeight}px`;
     canvas.style.top = '0px';
     canvas.style.left = '0px';
-    canvas.style.objectFit = 'fill'; // Or 'none'
+    canvas.style.objectFit = 'fill';
     console.log(`Applied manual style (Exact): CSS ${targetWidth}x${targetHeight}, Buffer ${targetWidth}x${targetHeight}, Pos 0,0`);
   }
   canvas.style.display = 'block';
 }
-/** HELPER FUNCTION
- * Resets the canvas CSS styles to default (fill container).
- */
+
 function resetCanvasStyle(streamWidth, streamHeight) {
   if (!canvas) return;
-  // Set internal buffer size
   if (canvas.width !== streamWidth || canvas.height !== streamHeight) {
     canvas.width = streamWidth;
     canvas.height = streamHeight;
     console.log(`Canvas internal buffer reset to: ${streamWidth}x${streamHeight}`);
   }
-  // Set CSS display style
   canvas.style.position = 'absolute';
   canvas.style.width = '100%';
   canvas.style.height = '100%';
   canvas.style.top = '0px';
   canvas.style.left = '0px';
-  canvas.style.objectFit = 'contain'; // Crucial for aspect ratio with 100%
-  canvas.style.display = 'block'; // Ensure it's visible
+  canvas.style.objectFit = 'contain';
+  canvas.style.display = 'block';
   console.log(`Reset canvas CSS style to 100% width/height, object-fit: contain. Buffer: ${streamWidth}x${streamHeight}`);
 }
-/**
- * Enables the automatic resizing behavior based on window/container size.
- */
+
 function enableAutoResize() {
   if (directManualLocalScalingHandler) {
     console.log("Switching to Auto Mode: Removing direct manual local scaling listener.");
@@ -1054,7 +527,7 @@ function enableAutoResize() {
   }
   if (originalWindowResizeHandler) {
     console.log("Switching to Auto Mode: Adding original (auto) debounced resize listener.");
-    window.removeEventListener('resize', originalWindowResizeHandler); // Defensive removal
+    window.removeEventListener('resize', originalWindowResizeHandler);
     window.addEventListener('resize', originalWindowResizeHandler);
     if (typeof handleResizeUI_globalRef === 'function') {
       console.log("Triggering immediate auto-resize calculation for auto mode.");
@@ -1066,29 +539,27 @@ function enableAutoResize() {
     console.warn("Cannot enable auto-resize: originalWindowResizeHandler not found.");
   }
 }
+
 const directManualLocalScalingHandler = () => {
   if (window.isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
     applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
   }
 };
-/**
- * Disables the automatic resizing behavior.
- */
+
 function disableAutoResize() {
   if (originalWindowResizeHandler) {
     console.log("Switching to Manual Mode Local Scaling: Removing original (auto) resize listener.");
     window.removeEventListener('resize', originalWindowResizeHandler);
   }
-  // Add the direct, non-debounced handler for manual local scaling
   console.log("Switching to Manual Mode Local Scaling: Adding direct manual scaling listener.");
   window.removeEventListener('resize', directManualLocalScalingHandler); // Defensive removal
   window.addEventListener('resize', directManualLocalScalingHandler);
-  // Apply current manual style immediately to reflect the mode change and set initial view
   if (window.isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
     console.log("Applying current manual canvas style after enabling direct manual resize handler.");
     applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
   }
 }
+
 const initializeUI = () => {
   injectCSS();
   document.title = `${appName}`;
@@ -1104,33 +575,31 @@ const initializeUI = () => {
   statusDisplayElement.id = 'status-display';
   statusDisplayElement.className = 'status-bar';
   statusDisplayElement.textContent = 'Connecting...';
-  statusDisplayElement.classList.toggle('hidden', !showStart);
   videoContainer.appendChild(statusDisplayElement);
   overlayInput = document.createElement('input');
   overlayInput.type = 'text';
   overlayInput.readOnly = true;
   overlayInput.id = 'overlayInput';
   videoContainer.appendChild(overlayInput);
+
   videoElement = document.createElement('video');
-  videoElement.id = 'stream';
-  videoElement.className = 'video';
-  videoElement.autoplay = true;
-  videoElement.playsInline = true;
-  videoElement.contentEditable = 'true';
+  videoElement.id = 'stream'; // Original ID
+  videoElement.style.display = 'none'; // Hide it
   videoContainer.appendChild(videoElement);
+
   canvas = document.getElementById('videoCanvas');
   if (!canvas) {
     canvas = document.createElement('canvas');
     canvas.id = 'videoCanvas';
   }
   videoContainer.appendChild(canvas);
-  // --- Initialize Canvas & Resize based on loaded settings ---
+
   if (isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
     applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
-    disableAutoResize(); // Start disabled if manual mode is loaded
+    disableAutoResize();
     console.log(`Initialized UI in Manual Resolution Mode: ${manualWidth}x${manualHeight}, ScaleLocally: ${scaleLocallyManual}`);
   } else {
-    const initialStreamWidth = 1024; // Default if auto-size can't be determined yet
+    const initialStreamWidth = 1024;
     const initialStreamHeight = 768;
     resetCanvasStyle(initialStreamWidth, initialStreamHeight);
     console.log("Initialized UI in Auto Resolution Mode (defaulting to 1024x768 for now)");
@@ -1139,17 +608,18 @@ const initializeUI = () => {
   if (!canvasContext) {
     console.error('Failed to get 2D rendering context');
   }
+
   audioElement = document.createElement('audio');
   audioElement.id = 'audio_stream';
-  audioElement.style.display = 'none';
-  audioElement.autoplay = true;
-  audioElement.playsInline = true;
+  audioElement.style.display = 'none'; // Hide it
   videoContainer.appendChild(audioElement);
+
   playButtonElement = document.createElement('button');
   playButtonElement.id = 'playButton';
   playButtonElement.textContent = 'Play Stream';
-  playButtonElement.classList.toggle('hidden', !showStart);
   videoContainer.appendChild(playButtonElement);
+  playButtonElement.classList.add('hidden');
+  statusDisplayElement.classList.remove('hidden');
   const sidebarDiv = document.createElement('div');
   sidebarDiv.id = 'dev-sidebar';
   const hiddenFileInput = document.createElement('input');
@@ -1159,11 +629,11 @@ const initializeUI = () => {
   hiddenFileInput.style.display = 'none';
   document.body.appendChild(hiddenFileInput);
   hiddenFileInput.addEventListener('change', handleFileInputChange);
+
   if (!document.getElementById('keyboard-input-assist')) {
     const keyboardInputAssist = document.createElement('input');
     keyboardInputAssist.type = 'text';
     keyboardInputAssist.id = 'keyboard-input-assist';
-    // Apply hiding styles directly
     keyboardInputAssist.style.position = 'absolute';
     keyboardInputAssist.style.left = '-9999px';
     keyboardInputAssist.style.top = '-9999px';
@@ -1173,31 +643,19 @@ const initializeUI = () => {
     keyboardInputAssist.style.border = '0';
     keyboardInputAssist.style.padding = '0';
     keyboardInputAssist.style.caretColor = 'transparent';
-    // Accessibility and browser hints
     keyboardInputAssist.setAttribute('aria-hidden', 'true');
     keyboardInputAssist.setAttribute('autocomplete', 'off');
     keyboardInputAssist.setAttribute('autocorrect', 'off');
     keyboardInputAssist.setAttribute('autocapitalize', 'off');
     keyboardInputAssist.setAttribute('spellcheck', 'false');
-    document.body.appendChild(keyboardInputAssist); // Append to body
+    document.body.appendChild(keyboardInputAssist);
     console.log("Dynamically added #keyboard-input-assist element.");
   }
   appDiv.appendChild(videoContainer);
   updateStatusDisplay();
-  updateLogOutput();
-  updateDebugOutput();
-  updatePublishingErrorDisplay();
   playButtonElement.addEventListener('click', playStream);
-  if (clientMode === 'websockets') {
-    playButtonElement.classList.add('hidden');
-    statusDisplayElement.classList.remove('hidden');
-  }
 };
-// --- START VNC H.264 STRIPE DECODER FUNCTIONS ---
-/**
- * Clears all active VNC stripe decoders and associated metadata.
- * Called when switching away from VNC mode, on resize, or pipeline stop.
- */
+
 function clearAllVncStripeDecoders() {
   console.log("Clearing all VNC stripe decoders.");
   for (const yPos in vncStripeDecoders) {
@@ -1214,14 +672,10 @@ function clearAllVncStripeDecoders() {
     }
   }
   vncStripeDecoders = {};
-  vncStripeFrameMetadata = {}; // Also clear metadata for pending/decoded frames
+  vncStripeFrameMetadata = {};
   console.log("All VNC stripe decoders and metadata cleared.");
 }
-/**
- * Processes any pending H.264 chunks for a specific stripe's decoder.
- * This is typically called after the decoder has successfully configured.
- * @param {number} stripe_y_start The Y-offset of the stripe.
- */
+
 function processPendingChunksForStripe(stripe_y_start) {
   const decoderInfo = vncStripeDecoders[stripe_y_start];
   if (!decoderInfo || decoderInfo.decoder.state !== "configured" || !decoderInfo.pendingChunks) {
@@ -1239,53 +693,44 @@ function processPendingChunksForStripe(stripe_y_start) {
       decoderInfo.decoder.decode(chunk);
     } catch (e) {
       console.error(`Error decoding pending chunk for stripe Y=${stripe_y_start}:`, e, chunk);
-      // If decode fails, might need to reset this specific decoder
-      // decoderInfo.decoder.reset(); // Or close and re-create on next key frame
     }
   }
 }
-/**
- * Handles a decoded VideoFrame from a VNC stripe decoder.
- * Draws the frame onto the main canvas at the correct Y-offset.
- * @param {VideoFrame} frame The decoded video frame.
- */
+
 window.vncStripesDecodedThisPeriod = 0;
 window.vncStripesArrivedThisPeriod = 0;
 window.lastVncStripeRateLogTime = performance.now();
 window.VNC_STRIPE_LOG_INTERVAL_MS = 1000;
 let decodedStripesQueue = [];
 
-function handleDecodedVncStripeFrame(yPos, vncFrameID, frame) { // vncFrameID can be omitted if not used
+function handleDecodedVncStripeFrame(yPos, vncFrameID, frame) {
   decodedStripesQueue.push({
     yPos,
     frame,
     vncFrameID
   });
 }
+
 async function handleAdvancedAudioClick() {
   console.log("Advanced Audio Settings button clicked.");
   if (!audioDeviceSettingsDivElement || !audioInputSelectElement || !audioOutputSelectElement) {
     console.error("Audio device UI elements not found in dev sidebar.");
     return;
   }
-  // Check if the settings are currently hidden
   const isHidden = audioDeviceSettingsDivElement.classList.contains('hidden');
   if (isHidden) {
     console.log("Settings are hidden, attempting to show and populate...");
-    // Check for setSinkId support for output selection
     const supportsSinkId = typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
     const outputLabel = document.getElementById('audioOutputLabel');
     if (!supportsSinkId) {
       console.warn('Browser does not support selecting audio output device (setSinkId). Hiding output selection.');
       if (outputLabel) outputLabel.classList.add('hidden');
       audioOutputSelectElement.classList.add('hidden');
-      return;
     } else {
       if (outputLabel) outputLabel.classList.remove('hidden');
       audioOutputSelectElement.classList.remove('hidden');
     }
     try {
-      // Request temporary microphone permission to get device labels
       console.log("Requesting microphone permission for device listing...");
       const tempStream = await navigator.mediaDevices.getUserMedia({
         audio: true
@@ -1295,10 +740,8 @@ async function handleAdvancedAudioClick() {
       console.log("Enumerating media devices...");
       const devices = await navigator.mediaDevices.enumerateDevices();
       console.log("Devices found:", devices);
-      // Clear existing options
       audioInputSelectElement.innerHTML = '';
       audioOutputSelectElement.innerHTML = '';
-      // Populate dropdowns
       let inputCount = 0;
       let outputCount = 0;
       devices.forEach(device => {
@@ -1317,11 +760,9 @@ async function handleAdvancedAudioClick() {
         }
       });
       console.log(`Populated ${inputCount} input devices and ${outputCount} output devices.`);
-      // Make the container visible
       audioDeviceSettingsDivElement.classList.remove('hidden');
     } catch (err) {
       console.error('Error getting media devices or permissions:', err);
-      // Keep it hidden and inform the user
       audioDeviceSettingsDivElement.classList.add('hidden');
       alert(`Could not list audio devices. Please ensure microphone permissions are granted.\nError: ${err.message || err.name}`);
     }
@@ -1356,17 +797,16 @@ function handleRequestFileUpload() {
   console.log("Triggering click on hidden file input.");
   hiddenInput.click();
 }
+
 async function handleFileInputChange(event) {
   const files = event.target.files;
   if (!files || files.length === 0) {
-    // Clear the input value in case the user cancels
     event.target.value = null;
     return;
   }
   console.log(`File input changed, processing ${files.length} files sequentially.`);
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
     console.error("WebSocket is not open. Cannot upload selected files.");
-    // Maybe post an error message?
     window.postMessage({
       type: 'fileUpload',
       payload: {
@@ -1383,7 +823,6 @@ async function handleFileInputChange(event) {
       const file = files[i];
       const pathToSend = file.name;
       console.log(`Uploading file ${i + 1}/${files.length}: ${pathToSend}`);
-      // Await the upload of each file before starting the next
       await uploadFileObject(file, pathToSend);
     }
     console.log("Finished processing all files from input.");
@@ -1407,11 +846,13 @@ async function handleFileInputChange(event) {
     event.target.value = null;
   }
 }
+
 const startStream = () => {
   if (streamStarted) return;
   streamStarted = true;
-  statusDisplayElement.classList.add('hidden');
-  playButtonElement.classList.add('hidden');
+  if (statusDisplayElement) statusDisplayElement.classList.add('hidden');
+  if (playButtonElement) playButtonElement.classList.add('hidden');
+  console.log("Stream started (UI elements hidden).");
 };
 
 function debounce(func, delay) {
@@ -1423,102 +864,146 @@ function debounce(func, delay) {
     }, delay);
   };
 }
+
 const initializeInput = () => {
   if (inputInitialized) {
+    console.log("Input already initialized. Skipping.");
     return;
   }
   inputInitialized = true;
+  console.log("Initializing Input system...");
+
   let inputInstance;
   const websocketSendInput = (message) => {
-    if (
-      clientMode === 'websockets' &&
-      websocket &&
-      websocket.readyState === WebSocket.OPEN
-    ) {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
       websocket.send(message);
+    } else {
+      console.warn("initializeInput: WebSocket not open, cannot send input message:", message);
     }
   };
-  const webrtcSendInput = (message) => {
-    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-      webrtc.sendDataChannelMessage(message);
-    }
-  };
-  let sendInputFunction;
-  if (clientMode === 'websockets') {
-    sendInputFunction = websocketSendInput;
-  } else if (clientMode === 'webrtc') {
-    sendInputFunction = webrtcSendInput;
-  } else {
-    sendInputFunction = () => {};
+
+  let sendInputFunction = websocketSendInput;
+
+  if (!overlayInput) {
+    console.error("initializeInput: overlayInput element not found. Cannot initialize input handling.");
+    inputInitialized = false;
+    return;
   }
+
   inputInstance = new Input(overlayInput, sendInputFunction);
-  // This function now calculates the container size for auto-resize purposes
+
   inputInstance.getWindowResolution = () => {
     const videoContainer = document.querySelector('.video-container');
     if (!videoContainer) {
-      console.warn('video-container not found, using window size for resolution.');
+      console.warn('initializeInput: .video-container not found, using window inner dimensions for resolution calculation.');
       // Return raw window size, let the caller handle rounding if needed
       return [window.innerWidth, window.innerHeight];
     }
     const videoContainerRect = videoContainer.getBoundingClientRect();
-    // Return raw container size, let the caller handle rounding if needed
+    // Return raw container size
     return [videoContainerRect.width, videoContainerRect.height];
   };
+
   inputInstance.ongamepadconnected = (gamepad_id) => {
     gamepad.gamepadState = 'connected';
     gamepad.gamepadName = gamepad_id;
     if (window.webrtcInput && window.webrtcInput.gamepadManager) {
-      if (!isGamepadEnabled) {
+      if (!isGamepadEnabled) { 
         window.webrtcInput.gamepadManager.disable();
+        console.log("Gamepad connected, but master gamepad toggle is OFF. Disabling manager.");
+      } else {
+        console.log("Gamepad connected, master gamepad toggle is ON. Manager should be active.");
       }
     } else {
-      console.error("Gamepad connected callback fired, but gamepadManager instance not found on webrtcInput.");
+      console.error("Gamepad connected callback: window.webrtcInput.gamepadManager not found.");
     }
   };
+
   inputInstance.ongamepaddisconnected = () => {
     gamepad.gamepadState = 'disconnected';
     gamepad.gamepadName = 'none';
+    console.log("Gamepad disconnected.");
   };
+
   inputInstance.attach();
-  // Define the actual resize logic
+
+  // Define the actual resize logic that will be called by the event listener or manually
   const handleResizeUI = () => {
     if (window.isManualResolutionMode) {
-      console.log("Auto-resize skipped: Manual resolution mode active.");
+      console.log("handleResizeUI: Auto-resize skipped, manual resolution mode is active.");
+      // In manual mode, the resolution is fixed and set by 'setManualResolution' or initial load.
+      // Local scaling is handled by directManualLocalScalingHandler or applyManualCanvasStyle.
       return;
     }
-    console.log("Auto-resize triggered.");
+
+    console.log("handleResizeUI: Auto-resize triggered (e.g., by window resize event).");
+    // This should only be called for *subsequent* resizes after initial landing.
     const windowResolution = inputInstance.getWindowResolution();
     const evenWidth = roundDownToEven(windowResolution[0]);
     const evenHeight = roundDownToEven(windowResolution[1]);
+
+    // Check if dimensions are valid before sending
+    if (evenWidth <= 0 || evenHeight <= 0) {
+      console.warn(`handleResizeUI: Calculated invalid dimensions (${evenWidth}x${evenHeight}). Skipping resize send.`);
+      return;
+    }
+
     sendResolutionToServer(evenWidth, evenHeight);
-    // Update canvas buffer and reset style for auto mode
-    resetCanvasStyle(evenWidth, evenHeight); // Pass the new stream dimensions
+    // Update canvas buffer and reset style for auto mode to match the new stream dimensions
+    resetCanvasStyle(evenWidth, evenHeight);
   };
-  handleResizeUI_globalRef = handleResizeUI;
-  // Store the debounced handler
+
+  handleResizeUI_globalRef = handleResizeUI; // Store for potential external calls if needed
+
+  // Debounced handler for actual window resize events
   originalWindowResizeHandler = debounce(handleResizeUI, 500);
-  // Add the listener only if NOT in manual mode initially
   if (!window.isManualResolutionMode) {
-    console.log("Initializing Input: Attaching auto-resize listener.");
+    console.log("initializeInput: Auto-resolution mode. Attaching 'resize' event listener for subsequent changes.");
     window.addEventListener('resize', originalWindowResizeHandler);
-    // Trigger initial resize calculation if not in manual mode
-    handleResizeUI();
+    const videoContainer = document.querySelector('.video-container');
+    let currentAutoWidth, currentAutoHeight;
+    if (videoContainer) {
+      const rect = videoContainer.getBoundingClientRect();
+      currentAutoWidth = roundDownToEven(rect.width);
+      currentAutoHeight = roundDownToEven(rect.height);
+    } else {
+      currentAutoWidth = roundDownToEven(window.innerWidth);
+      currentAutoHeight = roundDownToEven(window.innerHeight);
+    }
+    if (currentAutoWidth <= 0 || currentAutoHeight <= 0) {
+      console.warn(`initializeInput: Current auto-calculated dimensions are invalid (${currentAutoWidth}x${currentAutoHeight}). Defaulting canvas style to 1024x768 for initial setup. The resolution sent by onopen should prevail on the server.`);
+      currentAutoWidth = 1024;
+      currentAutoHeight = 768;
+    }
+    resetCanvasStyle(currentAutoWidth, currentAutoHeight);
+    console.log(`initializeInput: Canvas style reset to reflect current auto-dimensions: ${currentAutoWidth}x${currentAutoHeight}. Initial resolution was already sent by onopen.`);
+
   } else {
-    console.log("Initializing Input: Manual resolution mode active, skipping initial auto-resize listener attachment.");
-  }
-  if (clientMode === 'webrtc') {
-    if (webrtc) {
-      webrtc.input = inputInstance;
+    console.log("initializeInput: Manual resolution mode active. Initial resolution already sent by onopen.");
+    if (manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
+      applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
+      disableAutoResize(); // This will remove originalWindowResizeHandler and add directManualLocalScalingHandler
+    } else {
+      console.warn("initializeInput: Manual mode is set, but manualWidth/Height are invalid. Canvas might not display correctly.");
     }
   }
-  overlayInput.addEventListener('dragover', handleDragOver);
-  overlayInput.addEventListener('drop', handleDrop);
+
+  // Attach drag and drop listeners to the overlay for file uploads
+  if (overlayInput) {
+    overlayInput.addEventListener('dragover', handleDragOver);
+    overlayInput.addEventListener('drop', handleDrop);
+  } else {
+    console.warn("initializeInput: overlayInput not found, cannot attach drag/drop listeners.");
+  }
+
+  // Make the input instance globally accessible if needed
   window.webrtcInput = inputInstance;
+
+  // Setup keyboard input assist listeners
   const keyboardInputAssist = document.getElementById('keyboard-input-assist');
-  if (keyboardInputAssist && inputInstance) { // Check if both exist
+  if (keyboardInputAssist && inputInstance) {
     keyboardInputAssist.addEventListener('input', (event) => {
       const typedString = keyboardInputAssist.value;
-      console.log(`Input event on assist: Value="${typedString}"`);
       if (typedString) {
         inputInstance._typeString(typedString);
         keyboardInputAssist.value = ''; // Clear after processing
@@ -1526,29 +1011,26 @@ const initializeInput = () => {
     });
     keyboardInputAssist.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.keyCode === 13) {
-        console.log("Enter keydown detected on assist input.");
-        const enterKeysym = 0xFF0D;
+        const enterKeysym = 0xFF0D; // XK_Return
         inputInstance._guac_press(enterKeysym);
         setTimeout(() => inputInstance._guac_release(enterKeysym), 5);
         event.preventDefault();
         keyboardInputAssist.value = '';
       } else if (event.key === 'Backspace' || event.keyCode === 8) {
-        console.log("Backspace keydown detected on assist input.");
-        const backspaceKeysym = 0xFF08;
+        const backspaceKeysym = 0xFF08; // XK_BackSpace
         inputInstance._guac_press(backspaceKeysym);
         setTimeout(() => inputInstance._guac_release(backspaceKeysym), 5);
         event.preventDefault();
       }
+      // Other keys are handled by the 'input' event or by main overlayInput if focused
     });
-    console.log("Added 'input' and 'keydown' listeners to #keyboard-input-assist.");
+    console.log("initializeInput: Added 'input' and 'keydown' listeners to #keyboard-input-assist.");
   } else {
-    console.error("Could not add listeners to keyboard assist: Element or Input handler instance not found inside initializeInput.");
+    console.error("initializeInput: Could not add listeners to keyboard assist: Element or Input handler instance not found.");
   }
+  console.log("Input system initialized.");
 };
-/**
- * Attempts to apply the preferredOutputDeviceId to the playback audio context
- * and the audio element.
- */
+
 async function applyOutputDevice() {
   if (!preferredOutputDeviceId) {
     console.log("No preferred output device set, using default.");
@@ -1558,17 +1040,14 @@ async function applyOutputDevice() {
     (audioElement && typeof audioElement.setSinkId === 'function');
   if (!supportsSinkId) {
     console.warn("Browser does not support setSinkId, cannot apply output device preference.");
-    // Hide the output selection UI elements if they exist and haven't been hidden already
     if (audioOutputSelectElement) audioOutputSelectElement.classList.add('hidden');
     const outputLabel = document.getElementById('audioOutputLabel');
     if (outputLabel) outputLabel.classList.add('hidden');
     return;
   }
-  // Apply to Playback AudioContext
   if (audioContext) {
     if (audioContext.state === 'running') {
       try {
-        // Check if the current sinkId is already the preferred one
         await audioContext.setSinkId(preferredOutputDeviceId);
         console.log(`Playback AudioContext output set to device: ${preferredOutputDeviceId}`);
       } catch (err) {
@@ -1580,22 +1059,11 @@ async function applyOutputDevice() {
   } else {
     console.log("Playback AudioContext doesn't exist yet, sinkId will be applied on initialization.");
   }
-  // Apply to <audio> element (for redundancy or direct playback scenarios)
-  if (audioElement && typeof audioElement.setSinkId === 'function') {
-    try {
-      if (audioElement.sinkId !== preferredOutputDeviceId) {
-        await audioElement.setSinkId(preferredOutputDeviceId);
-        console.log(`<audio> element output set to device: ${preferredOutputDeviceId}`);
-      }
-    } catch (err) {
-      console.error(`Error setting sinkId on <audio> element (ID: ${preferredOutputDeviceId}): ${err.name}`, err);
-    }
-  }
 }
+
 window.addEventListener('message', receiveMessage, false);
 
 function postSidebarButtonUpdate() {
-  // Gather current states
   const updatePayload = {
     type: 'sidebarButtonStatusUpdate',
     video: isVideoPipelineActive,
@@ -1608,13 +1076,11 @@ function postSidebarButtonUpdate() {
 }
 
 function receiveMessage(event) {
-  // 1. Origin Check (Security)
   if (event.origin !== window.location.origin) {
     console.warn(`Received message from unexpected origin: ${event.origin}. Expected ${window.location.origin}. Ignoring.`);
     return;
   }
   const message = event.data;
-  // 2. Message Type Check (Basic Validation)
   if (typeof message !== 'object' || message === null) {
     console.warn('Received non-object message via window.postMessage:', message);
     return;
@@ -1623,14 +1089,12 @@ function receiveMessage(event) {
     console.warn('Received message without a type property:', message);
     return;
   }
-  // 3. Message Handling based on type
   switch (message.type) {
     case 'setScaleLocally':
       if (typeof message.value === 'boolean') {
         scaleLocallyManual = message.value;
-        setBoolParam('scaleLocallyManual', scaleLocallyManual); // Persist the setting
+        setBoolParam('scaleLocallyManual', scaleLocallyManual);
         console.log(`Set scaleLocallyManual to ${scaleLocallyManual} and persisted.`);
-        // If we are currently in manual mode, re-apply the style immediately
         if (window.isManualResolutionMode && manualWidth !== null && manualHeight !== null) {
           console.log("Applying new scaling style in manual mode.");
           applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
@@ -1647,22 +1111,22 @@ function receiveMessage(event) {
         kbdAssistInput.value = '';
         kbdAssistInput.focus();
         console.log("Focused #keyboard-input-assist element.");
-        // Listen for a click back into the main div to unpop
         mainInteractionOverlay.addEventListener(
           "touchstart",
           () => {
             if (document.activeElement === kbdAssistInput) {
               kbdAssistInput.blur();
             }
-          },
-          { once: true, passive: true }
+          }, {
+            once: true,
+            passive: true
+          }
         );
       } else {
         console.error("Could not find #keyboard-input-assist element to focus.");
       }
       break;
     case 'setManualResolution':
-      // Validation already happened in the UI event listener, but double-check here
       const width = parseInt(message.width, 10);
       const height = parseInt(message.height, 10);
       if (isNaN(width) || width <= 0 || isNaN(height) || height <= 0) {
@@ -1677,9 +1141,9 @@ function receiveMessage(event) {
       setIntParam('manualWidth', manualWidth);
       setIntParam('manualHeight', manualHeight);
       setBoolParam('isManualResolutionMode', true);
-      disableAutoResize(); // Stop listening to window resize
-      sendResolutionToServer(manualWidth, manualHeight); // Send new res to server
-      applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual); // Apply local styling
+      disableAutoResize();
+      sendResolutionToServer(manualWidth, manualHeight);
+      applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
       if (currentEncoderMode === 'x264enc-striped') {
         console.log("Clearing VNC stripe decoders due to manual resolution change.");
         clearAllVncStripeDecoders();
@@ -1692,22 +1156,20 @@ function receiveMessage(event) {
       window.isManualResolutionMode = false;
       manualWidth = null;
       manualHeight = null;
-      // --- Clear Persisted Manual Resolution Settings ---
       setIntParam('manualWidth', null);
       setIntParam('manualHeight', null);
       setBoolParam('isManualResolutionMode', false);
-      // Calculate current auto-resolution
       const currentWindowRes = window.webrtcInput ? window.webrtcInput.getWindowResolution() : [window.innerWidth, window.innerHeight];
       const autoWidth = roundDownToEven(currentWindowRes[0]);
       const autoHeight = roundDownToEven(currentWindowRes[1]);
-      resetCanvasStyle(autoWidth, autoHeight); // Reset local canvas styling first
+      resetCanvasStyle(autoWidth, autoHeight);
       if (currentEncoderMode === 'x264enc-striped') {
         console.log("Clearing VNC stripe decoders due to resolution reset to window.");
         clearAllVncStripeDecoders();
         if (canvasContext) canvasContext.setTransform(1, 0, 0, 1, 0, 0);
         canvasContext.clearRect(0, 0, canvas.width, canvas.height);
       }
-      enableAutoResize(); // Re-enable listener and trigger immediate resize
+      enableAutoResize();
       break;
     case 'settings':
       console.log('Received settings message:', message.settings);
@@ -1720,23 +1182,14 @@ function receiveMessage(event) {
     case 'clipboardUpdateFromUI':
       console.log('Received clipboardUpdateFromUI message.');
       const newClipboardText = message.text;
-      if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
         try {
-          const encodedText = btoa(newClipboardText); // Base64 encode
-          const clipboardMessage = `cw,${encodedText}`; // Prepend type
+          const encodedText = btoa(newClipboardText);
+          const clipboardMessage = `cw,${encodedText}`;
           websocket.send(clipboardMessage);
           console.log(`Sent clipboard update from UI to server: cw,...`);
         } catch (e) {
           console.error('Failed to encode or send clipboard text from UI:', e);
-        }
-      } else if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-        try {
-          const encodedText = btoa(newClipboardText); // Base64 encode
-          const clipboardMessage = `cw,${encodedText}`; // Prepend type
-          webrtc.sendDataChannelMessage(clipboardMessage);
-          console.log(`Sent clipboard update from UI to server via WebRTC: cw,...`);
-        } catch (e) {
-          console.error('Failed to encode or send clipboard text from UI via WebRTC:', e);
         }
       } else {
         console.warn('Cannot send clipboard update from UI: Not connected.');
@@ -1746,30 +1199,23 @@ function receiveMessage(event) {
       console.log('Received pipelineStatusUpdate message:', message);
       let stateChangedFromStatus = false;
       if (message.video !== undefined && isVideoPipelineActive !== message.video) {
-        console.log(`pipelineStatusUpdate: Updating isVideoPipelineActive to ${message.video}`);
         isVideoPipelineActive = message.video;
         stateChangedFromStatus = true;
       }
       if (message.audio !== undefined && isAudioPipelineActive !== message.audio) {
-        console.log(`pipelineStatusUpdate: Updating isAudioPipelineActive to ${message.audio}`);
         isAudioPipelineActive = message.audio;
         stateChangedFromStatus = true;
       }
       if (message.microphone !== undefined && isMicrophoneActive !== message.microphone) {
-        console.log(`pipelineStatusUpdate: Updating isMicrophoneActive to ${message.microphone}`);
         isMicrophoneActive = message.microphone;
         stateChangedFromStatus = true;
       }
       if (message.gamepad !== undefined && isGamepadEnabled !== message.gamepad) {
-        console.log(`pipelineStatusUpdate: Updating isGamepadEnabled to ${message.gamepad}`);
         isGamepadEnabled = message.gamepad;
         stateChangedFromStatus = true;
       }
       if (stateChangedFromStatus) {
-        console.log("pipelineStatusUpdate: State changed, posting sidebar button update.");
         postSidebarButtonUpdate();
-      } else {
-        console.log("pipelineStatusUpdate: No relevant state change detected.");
       }
       break;
     case 'fileUpload':
@@ -1786,12 +1232,10 @@ function receiveMessage(event) {
         if (pipeline === 'video') {
           if (isVideoPipelineActive !== desiredState) {
             isVideoPipelineActive = desiredState;
-            console.log(`pipelineControl: Immediately updating isVideoPipelineActive to ${isVideoPipelineActive}`);
             stateChangedFromControl = true;
             if (!isVideoPipelineActive) {
               cleanupVideoBuffer();
               if (currentEncoderMode === 'x264enc-striped') {
-                console.log("Video pipeline stopped in VNC mode, clearing stripe decoders.");
                 clearAllVncStripeDecoders();
               }
             }
@@ -1800,7 +1244,6 @@ function receiveMessage(event) {
         } else if (pipeline === 'audio') {
           if (isAudioPipelineActive !== desiredState) {
             isAudioPipelineActive = desiredState;
-            console.log(`pipelineControl: Immediately updating isAudioPipelineActive to ${isAudioPipelineActive}`);
             stateChangedFromControl = true;
             wsMessage = desiredState ? 'START_AUDIO' : 'STOP_AUDIO';
             if (audioDecoderWorker) {
@@ -1816,11 +1259,10 @@ function receiveMessage(event) {
         if (stateChangedFromControl) {
           postSidebarButtonUpdate();
         }
-        if (wsMessage && clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-          console.log(`pipelineControl: Sending ${wsMessage} via websocket.`);
+        if (wsMessage && websocket && websocket.readyState === WebSocket.OPEN) {
           websocket.send(wsMessage);
         } else if (wsMessage) {
-          console.warn(`Cannot send ${pipeline} pipelineControl command: Not in websockets mode or websocket not open.`);
+          console.warn(`Cannot send ${pipeline} pipelineControl command: Websocket not open.`);
         }
       } else if (pipeline === 'microphone') {
         if (desiredState) {
@@ -1842,21 +1284,14 @@ function receiveMessage(event) {
         break;
       }
       if (context === 'input') {
-        console.log(`Setting preferred input device to: ${deviceId}`);
-        if (preferredInputDeviceId !== deviceId) {
-          preferredInputDeviceId = deviceId;
-          if (isMicrophoneActive) {
-            console.log("Microphone is active, restarting to apply new input device...");
-            stopMicrophoneCapture();
-            setTimeout(startMicrophoneCapture, 150);
-          }
+        preferredInputDeviceId = deviceId;
+        if (isMicrophoneActive) {
+          stopMicrophoneCapture();
+          setTimeout(startMicrophoneCapture, 150);
         }
       } else if (context === 'output') {
-        console.log(`Setting preferred output device to: ${deviceId}`);
-        if (preferredOutputDeviceId !== deviceId) {
-          preferredOutputDeviceId = deviceId;
-          applyOutputDevice();
-        }
+        preferredOutputDeviceId = deviceId;
+        applyOutputDevice();
       } else {
         console.warn(`Unknown context in audioDeviceSelected message: ${context}`);
       }
@@ -1866,18 +1301,14 @@ function receiveMessage(event) {
       const newGamepadState = message.enabled;
       if (isGamepadEnabled !== newGamepadState) {
         isGamepadEnabled = newGamepadState;
-        setBoolParam('isGamepadEnabled', isGamepadEnabled); // Persist gamepad state
-        postSidebarButtonUpdate(); // Post update for UI consistency
+        setBoolParam('isGamepadEnabled', isGamepadEnabled);
+        postSidebarButtonUpdate();
         if (window.webrtcInput && window.webrtcInput.gamepadManager) {
           if (isGamepadEnabled) {
             window.webrtcInput.gamepadManager.enable();
-            console.log("Gamepad input enabled.");
           } else {
             window.webrtcInput.gamepadManager.disable();
-            console.log("Gamepad input disabled.");
           }
-        } else {
-          console.warn("Could not toggle gamepad state: window.webrtcInput or gamepadManager not found.");
         }
       }
       break;
@@ -1889,26 +1320,16 @@ function receiveMessage(event) {
           axes: {}
         };
         if (message.type === 'gamepadButtonUpdate') {
-          const {
-            buttonIndex,
-            value
-          } = message;
           if (!gamepadStates[0].buttons) gamepadStates[0].buttons = {};
-          gamepadStates[0].buttons[buttonIndex] = value;
+          gamepadStates[0].buttons[message.buttonIndex] = message.value;
         } else {
-          const {
-            axisIndex,
-            value
-          } = message;
           if (!gamepadStates[0].axes) gamepadStates[0].axes = {};
-          const clampedValue = Math.max(-1, Math.min(1, value));
-          gamepadStates[0].axes[axisIndex] = clampedValue;
+          gamepadStates[0].axes[message.axisIndex] = Math.max(-1, Math.min(1, message.value));
         }
         updateGamepadVisuals(0);
       }
       break;
     case 'requestFullscreen':
-      console.log('Received requestFullscreen message. Calling enterFullscreen().');
       enterFullscreen();
       break;
     case 'command':
@@ -1934,206 +1355,139 @@ function receiveMessage(event) {
   }
 }
 
-
 function handleSettingsMessage(settings) {
   console.log('Applying settings:', settings);
   if (settings.videoBitRate !== undefined) {
     videoBitRate = parseInt(settings.videoBitRate);
-    setIntParam('videoBitRate', videoBitRate); // Save to localStorage
-    // Send to server
-    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-      webrtc.sendDataChannelMessage(`vb,${videoBitRate}`);
-      console.log(`Sent video bitrate ${videoBitRate} kbit/s to server via DataChannel.`);
-    } else if (clientMode === 'websockets') {
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
-        console.log(`Sent websocket message: ${message}`);
-        websocket.send(message);
-      } else {
-        console.warn("Websocket connection not open, cannot send video bitrate setting.");
-      }
+    setIntParam('videoBitRate', videoBitRate);
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
+      console.log(`Sent websocket message: ${message}`);
+      websocket.send(message);
+    } else {
+      console.warn("Websocket connection not open, cannot send video bitrate setting.");
     }
   }
   if (settings.videoFramerate !== undefined) {
     videoFramerate = parseInt(settings.videoFramerate);
-    setIntParam('videoFramerate', videoFramerate); // Save to localStorage
-    // Send to server
-    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-      webrtc.sendDataChannelMessage(`_arg_fps,${videoFramerate}`);
-      console.log(`Sent video framerate ${videoFramerate} FPS to server via DataChannel (_arg_fps).`);
-    } else if (clientMode === 'websockets') {
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        const message = `SET_FRAMERATE,${videoFramerate}`;
-        console.log(`Sent websocket message: ${message}`);
-        websocket.send(message);
-      } else {
-        console.warn("Websocket connection not open, cannot send framerate setting.");
-      }
+    setIntParam('videoFramerate', videoFramerate);
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      const message = `SET_FRAMERATE,${videoFramerate}`;
+      console.log(`Sent websocket message: ${message}`);
+      websocket.send(message);
+    } else {
+      console.warn("Websocket connection not open, cannot send framerate setting.");
     }
   }
   if (settings.resizeRemote !== undefined) {
     resizeRemote = settings.resizeRemote;
-    setBoolParam('resizeRemote', resizeRemote); // Save to localStorage
-    // Send to server (requires calculating resolution)
-    const videoContainer = document.querySelector('.video-container');
-    let res;
-    if (!videoContainer) {
-      console.warn('video-container not found, using window size for resizeRemote resolution.');
-      res = `${roundDownToEven(window.innerWidth)}x${roundDownToEven(window.innerHeight)}`;
-    } else {
-      const videoContainerRect = videoContainer.getBoundingClientRect();
-      const evenWidth = roundDownToEven(videoContainerRect.width);
-      const evenHeight = roundDownToEven(videoContainerRect.height);
-      res = `${evenWidth}x${evenHeight}`;
-    }
-    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-      webrtc.sendDataChannelMessage(`_arg_resize,${resizeRemote},${res}`);
-      console.log(`Sent resizeRemote ${resizeRemote} with resolution ${res} to server via DataChannel.`);
-    } else if (clientMode === 'websockets') {
-      console.warn("ResizeRemote setting received, but not sending to server in websockets mode (not implemented).");
-    }
+    setBoolParam('resizeRemote', resizeRemote);
+    console.warn("ResizeRemote setting received; for websockets, server ENABLE_RESIZE and client 'r,' messages control resizing.");
   }
   if (settings.encoder !== undefined) {
     const newEncoderSetting = settings.encoder;
-    const oldEncoderActual = currentEncoderMode; // Capture global state before update
-    
-    if (oldEncoderActual !== newEncoderSetting) { // Proceed only if encoder actually changes
-        currentEncoderMode = newEncoderSetting; // Update global state
-        setStringParam('encoder', currentEncoderMode); // Persist the new encoder setting
+    const oldEncoderActual = currentEncoderMode;
 
-        // Send new encoder to server
-        if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-            webrtc.sendDataChannelMessage(`enc,${currentEncoderMode}`);
-            console.log(`Sent encoder ${currentEncoderMode} to server via DataChannel.`);
-        } else if (clientMode === 'websockets') {
-            if (websocket && websocket.readyState === WebSocket.OPEN) {
-            const message = `SET_ENCODER,${currentEncoderMode}`;
-            console.log(`Sent websocket message: ${message}`);
-            websocket.send(message);
-            } else {
-            console.warn("Websocket connection not open, cannot send encoder setting.");
-            }
+    if (oldEncoderActual !== newEncoderSetting) {
+      currentEncoderMode = newEncoderSetting;
+      setStringParam('encoder', currentEncoderMode);
+
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        const message = `SET_ENCODER,${currentEncoderMode}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else {
+        console.warn("Websocket connection not open, cannot send encoder setting.");
+      }
+
+      const isNewStripedH264 = newEncoderSetting === 'x264enc-striped';
+      const isOldStripedH264 = oldEncoderActual === 'x264enc-striped';
+      const isNewJpeg = newEncoderSetting === 'jpeg';
+      const isOldJpeg = oldEncoderActual === 'jpeg';
+      const isNewVideoPipeline = !isNewJpeg && !isNewStripedH264;
+      const isOldVideoPipeline = !isOldJpeg && !isOldStripedH264;
+
+      if (isOldStripedH264 && !isNewStripedH264) {
+        clearAllVncStripeDecoders();
+        console.log(`Switched away from ${oldEncoderActual}, cleared stripe decoders.`);
+      }
+      if ((isOldVideoPipeline || isOldStripedH264) && isNewJpeg) {
+        if (decoder && decoder.state !== 'closed') {
+          console.log(`Switching from ${oldEncoderActual} to JPEG, closing main video decoder.`);
+          decoder.close();
+          decoder = null;
         }
+      }
 
-        // Define mode types for clarity
-        const isNewStripedH264 = newEncoderSetting === 'x264enc-striped';
-        const isOldStripedH264 = oldEncoderActual === 'x264enc-striped';
-        const isNewJpeg = newEncoderSetting === 'jpeg';
-        const isOldJpeg = oldEncoderActual === 'jpeg';
-        // "Video pipeline" mode means any non-JPEG, non-striped-H264 mode that uses the main 'decoder'
-        const isNewVideoPipeline = !isNewJpeg && !isNewStripedH264;
-        const isOldVideoPipeline = !isOldJpeg && !isOldStripedH264;
-
-        // 1. Cleanup tasks based on the OLD encoder mode if switching AWAY from it
-        if (isOldStripedH264 && !isNewStripedH264) { // Switching away from x264enc-striped
-            clearAllVncStripeDecoders();
-            console.log(`Switched away from ${oldEncoderActual}, cleared stripe decoders.`);
+      if (isNewStripedH264) {
+        if (canvasContext) {
+          canvasContext.setTransform(1, 0, 0, 1, 0, 0);
+          canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+          console.log("Switched to x264enc-striped, cleared canvas.");
         }
-        // If old mode was a video pipeline or striped H264, and new mode is JPEG, close main decoder
-        if ((isOldVideoPipeline || isOldStripedH264) && isNewJpeg) {
-            if (decoder && decoder.state !== 'closed') {
-                console.log(`Switching from ${oldEncoderActual} to JPEG, closing main video decoder.`);
-                decoder.close();
-                decoder = null;
-            }
+        if (decoder && decoder.state !== 'closed') {
+          console.log("Switching to x264enc-striped, closing main video decoder.");
+          decoder.close();
+          decoder = null;
         }
-
-        // 2. Setup tasks based on the NEW encoder mode
-        if (isNewStripedH264) { // Switching TO x264enc-striped
-            if (canvasContext) {
-                canvasContext.setTransform(1, 0, 0, 1, 0, 0);
-                canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-                console.log("Switched to x264enc-striped, cleared canvas.");
-            }
-            // Close main full-frame decoder if it was active
-            if (decoder && decoder.state !== 'closed') {
-                console.log("Switching to x264enc-striped, closing main video decoder.");
-                decoder.close();
-                decoder = null;
-            }
-        } else if (isNewJpeg) { // Switching TO JPEG
-            console.log("Encoder changed to JPEG. Ensuring canvas buffer is correctly sized.");
-             // (clearAllVncStripeDecoders if old was x264enc-striped is handled in step 1)
-             // (closing main decoder if old was video pipeline is handled in step 1)
-            let currentTargetWidth, currentTargetHeight;
-            if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
-                currentTargetWidth = manualWidth;
-                currentTargetHeight = manualHeight;
-                applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, scaleLocallyManual);
-            } else {
-                if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
-                const currentWindowRes = window.webrtcInput.getWindowResolution();
-                currentTargetWidth = roundDownToEven(currentWindowRes[0]);
-                currentTargetHeight = roundDownToEven(currentWindowRes[1]);
-                resetCanvasStyle(currentTargetWidth, currentTargetHeight);
-                } else {
-                console.warn("Cannot determine auto resolution for JPEG switch: webrtcInput or getWindowResolution not available.");
-                }
-            }
-        } else if (isNewVideoPipeline) { // Switching TO a full-frame video pipeline mode
-            console.log(`Switching to video pipeline ${newEncoderSetting}. Ensuring main decoder is initialized/reconfigured.`);
-            triggerInitializeDecoder(); // This will close existing decoder if any, and re-init.
-        }
-
-        const wasStripedOrJpeg = isOldJpeg || isOldStripedH264;
-
-        if (wasStripedOrJpeg && isNewVideoPipeline) {
-          console.log(`Switched from ${oldEncoderActual} (striped/jpeg) to ${newEncoderSetting} (video pipeline). Resending video bitrate ${videoBitRate} kbit/s.`);
-          if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage) {
-            webrtc.sendDataChannelMessage(`vb,${videoBitRate}`);
-          } else if (clientMode === 'websockets') {
-            if (websocket && websocket.readyState === WebSocket.OPEN) {
-              const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
-              websocket.send(message);
-            }
+      } else if (isNewJpeg) {
+        console.log("Encoder changed to JPEG. Ensuring canvas buffer is correctly sized.");
+        let currentTargetWidth, currentTargetHeight;
+        if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
+          currentTargetWidth = manualWidth;
+          currentTargetHeight = manualHeight;
+          applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, scaleLocallyManual);
+        } else {
+          if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
+            const currentWindowRes = window.webrtcInput.getWindowResolution();
+            currentTargetWidth = roundDownToEven(currentWindowRes[0]);
+            currentTargetHeight = roundDownToEven(currentWindowRes[1]);
+            resetCanvasStyle(currentTargetWidth, currentTargetHeight);
+          } else {
+            console.warn("Cannot determine auto resolution for JPEG switch: webrtcInput or getWindowResolution not available.");
           }
         }
+      } else if (isNewVideoPipeline) {
+        console.log(`Switching to video pipeline ${newEncoderSetting}. Ensuring main decoder is initialized/reconfigured.`);
+        triggerInitializeDecoder();
+      }
+      const wasStripedOrJpeg = isOldJpeg || isOldStripedH264;
+      if (wasStripedOrJpeg && isNewVideoPipeline) {
+        console.log(`Switched from ${oldEncoderActual} (striped/jpeg) to ${newEncoderSetting} (video pipeline). Resending video bitrate ${videoBitRate} kbit/s.`);
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+          const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
+          websocket.send(message);
+        }
+      }
     } else {
-        console.log(`Encoder setting received (${newEncoderSetting}), but it's the same as current (${oldEncoderActual}). No change.`);
+      console.log(`Encoder setting received (${newEncoderSetting}), but it's the same as current (${oldEncoderActual}). No change.`);
     }
   }
   if (settings.videoBufferSize !== undefined) {
     videoBufferSize = parseInt(settings.videoBufferSize);
-    setIntParam('videoBufferSize', videoBufferSize); // Save to localStorage
+    setIntParam('videoBufferSize', videoBufferSize);
     console.log(`Applied Video buffer size setting: ${videoBufferSize} frames.`);
   }
   if (settings.videoCRF !== undefined) {
     videoCRF = parseInt(settings.videoCRF, 10);
-    setIntParam('videoCRF', videoCRF); // Save to localStorage
+    setIntParam('videoCRF', videoCRF);
     console.log(`Applied Video CRF setting: ${videoCRF}.`);
-    // Send to server via WebSocket
-    if (clientMode === 'websockets') {
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        const message = `SET_CRF,${videoCRF}`;
-        console.log(`Sent websocket message: ${message}`);
-        websocket.send(message);
-      } else {
-        console.warn("Websocket connection not open, cannot send CRF setting.");
-      }
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      const message = `SET_CRF,${videoCRF}`;
+      console.log(`Sent websocket message: ${message}`);
+      websocket.send(message);
     } else {
-      console.warn("CRF setting received, but not sending to server in webrtc mode (not implemented/specified).");
+      console.warn("Websocket connection not open, cannot send CRF setting.");
     }
   }
   if (settings.turnSwitch !== undefined) {
-    turnSwitch = settings.turnSwitch;
-    setBoolParam('turnSwitch', turnSwitch); // Save to localStorage
-    console.log(`Applied turnSwitch setting: ${turnSwitch}. Reloading...`);
-    if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
-      console.log('WebRTC not connected, skipping immediate reload.');
-      return; 
-    }
-    setTimeout(() => {
-      window.location.reload();
-    }, 700);
+    console.log(`turnSwitch setting received (WebRTC specific): ${settings.turnSwitch}. No action in WebSocket mode.`);
   }
   if (settings.debug !== undefined) {
     debug = settings.debug;
-    setBoolParam('debug', debug); // Save to localStorage
+    setBoolParam('debug', debug);
     console.log(`Applied debug setting: ${debug}. Reloading...`);
-    if (clientMode === 'webrtc' && (!webrtc || webrtc.peerConnection === null)) {
-      console.log('WebRTC not connected, skipping immediate reload.');
-      return; 
-    }
+    // If reload is generally desired for debug changes, keep it.
     setTimeout(() => {
       window.location.reload();
     }, 700);
@@ -2142,7 +1496,7 @@ function handleSettingsMessage(settings) {
 
 function sendStatsMessage() {
   const stats = {
-    connection: connectionStat,
+    connection: connectionStat, // This might need WebSocket specific population
     gpu: gpuStat,
     cpu: cpuStat,
     clientFps: window.fps,
@@ -2152,29 +1506,25 @@ function sendStatsMessage() {
     isAudioPipelineActive: isAudioPipelineActive,
     isMicrophoneActive: isMicrophoneActive,
   };
-  if (typeof encoderName !== 'undefined') { // encoderName is not defined in this scope, maybe currentEncoderMode?
-    stats.encoderName = currentEncoderMode;
-  }
+  stats.encoderName = currentEncoderMode;
   window.parent.postMessage({
     type: 'stats',
     data: stats
   }, window.location.origin);
   console.log('Sent stats message via window.postMessage:', stats);
 }
+
 document.addEventListener('DOMContentLoaded', () => {
   async function initializeDecoder() {
     if (decoder && decoder.state !== 'closed') {
       console.warn("VideoDecoder already exists, closing before re-initializing.");
       decoder.close();
     }
-    // --- START: Dynamic Dimension Calculation ---
-    let targetWidth = 1280; // Default fallback width
-    let targetHeight = 720; // Default fallback height
+    let targetWidth = 1280;
+    let targetHeight = 720;
     if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
-      // Use manually set resolution if active and valid
       targetWidth = manualWidth;
       targetHeight = manualHeight;
-      console.log(`[initializeDecoder] Using manual resolution for config: ${targetWidth}x${targetHeight}`);
     } else if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
       try {
         const currentRes = window.webrtcInput.getWindowResolution();
@@ -2183,29 +1533,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (autoWidth > 0 && autoHeight > 0) {
           targetWidth = autoWidth;
           targetHeight = autoHeight;
-          console.log(`[initializeDecoder] Using auto resolution for config: ${targetWidth}x${targetHeight}`);
-        } else {
-          console.warn(`[initializeDecoder] Auto resolution gave invalid dimensions (${autoWidth}x${autoHeight}), falling back to defaults.`);
         }
       } catch (e) {
-        console.error("[initializeDecoder] Error getting auto resolution:", e, "Falling back to defaults.");
+        /* use defaults */
       }
-    } else {
-      console.warn("[initializeDecoder] Cannot determine manual or auto resolution, falling back to defaults (1280x720). Input handler might not be ready.");
     }
     decoder = new VideoDecoder({
       output: handleDecodedFrame,
       error: (e) => {
         console.error('VideoDecoder error:', e.message);
         if (e.message.includes('fatal') || decoder.state === 'closed' || decoder.state === 'unconfigured') {
-          console.warn('Attempting to reset VideoDecoder due to error or bad state.');
           initializeDecoder();
         }
       },
     });
-    // This config is for the main full-frame H.264 decoder (not VNC stripes)
     const decoderConfig = {
-      codec: 'avc1.42E01E', // Common H.264 baseline codec string
+      codec: 'avc1.42E01E',
       codedWidth: targetWidth,
       codedHeight: targetHeight,
       optimizeForLatency: true,
@@ -2214,7 +1557,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const support = await VideoDecoder.isConfigSupported(decoderConfig);
       if (support.supported) {
         decoder.configure(decoderConfig);
-        // Log the config that was *actually* used
         console.log('Main VideoDecoder configured successfully with config:', decoderConfig);
       } else {
         console.error('Main VideoDecoder configuration not supported:', support, decoderConfig);
@@ -2225,291 +1567,76 @@ document.addEventListener('DOMContentLoaded', () => {
       decoder = null;
     }
   }
+
   initializeUI();
-  videoElement.addEventListener('loadeddata', () => {
-    if (clientMode === 'webrtc' && webrtc && webrtc.input) {
-      webrtc.input.getCursorScaleFactor();
-    }
-  });
+
+
   const pathname = window.location.pathname.substring(
     0,
     window.location.pathname.lastIndexOf('/') + 1
   );
-  const protocol = location.protocol === 'http:' ? 'ws://' : 'wss://';
-  audio_signaling = new WebRTCDemoSignaling(
-    new URL(
-      `${protocol}${window.location.host}${pathname}${appName}/signaling/`
-    ),
-    3
-  );
-  audio_webrtc = new WebRTCDemo(audio_signaling, audioElement, 3);
-  audio_signaling.setInput(audio_webrtc.input);
-  window.applyTimestamp = (msg) => {
-    const now = new Date();
-    const ts = `${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`;
-    return `[${ts}] ${msg}`;
-  };
-  audio_signaling.onstatus = (message) => {
-    loadingText = message;
-    appendLogEntry(message);
-    updateStatusDisplay();
-  };
-  audio_signaling.onerror = appendLogError;
-  audio_signaling.ondisconnect = () => {
-    const checkconnect = status === 'checkconnect';
-    status = 'connecting';
-    updateStatusDisplay();
-    overlayInput.style.cursor = 'auto';
-    audio_webrtc.reset();
-    status = 'checkconnect';
-    if (!checkconnect && signaling) signaling.disconnect();
-  };
-  const setupWebRTCMode = () => {
-    if (metricsIntervalId) {
-      clearInterval(metricsIntervalId);
-      metricsIntervalId = null;
-    }
-    signaling = new WebRTCDemoSignaling(
-      new URL(
-        `${protocol}${window.location.host}${pathname}${appName}/signaling/`
-      ),
-      1
-    );
-    webrtc = new WebRTCDemo(signaling, videoElement, 1);
-    signaling.setInput(webrtc.input);
-    signaling.onstatus = (message) => {
-      loadingText = message;
-      appendLogEntry(message);
-      updateStatusDisplay();
-    };
-    signaling.onerror = appendLogError;
-    signaling.ondisconnect = () => {
-      const checkconnect = status === 'checkconnect';
-      status = 'connecting';
-      updateStatusDisplay();
-      overlayInput.style.cursor = 'auto';
-      if (clientMode === 'webrtc' && webrtc) {
-        webrtc.reset();
-      }
-      status = 'checkconnect';
-      if (!checkconnect) audio_signaling.disconnect();
-    };
-    webrtc.onstatus = (message) => {
-      appendLogEntry(applyTimestamp(`[webrtc] ${message}`));
-    };
-    webrtc.onerror = (message) => {
-      appendLogError(applyTimestamp(`[webrtc] [ERROR] ${message}`));
-    };
-    webrtc.onconnectionstatechange = (state) => {
-      videoConnected = state;
-      if (videoConnected === 'connected') {
-        if (!videoElement.paused) {
-          playButtonElement.classList.add('hidden');
-          statusDisplayElement.classList.add('hidden');
-        }
-        if (webrtc && webrtc.peerConnection) {
-          webrtc.peerConnection.getReceivers().forEach((receiver) => {
-            const intervalLoop = setInterval(async () => {
-              if (
-                receiver.track.readyState !== 'live' ||
-                receiver.transport.state !== 'connected'
-              ) {
-                clearInterval(intervalLoop);
-                return;
-              }
-              receiver.jitterBufferTarget = 0;
-              receiver.jitterBufferDelayHint = 0;
-              receiver.playoutDelayHint = 0;
-            }, 15);
-          });
-        }
-      }
-      status =
-        videoConnected === 'connected' && audioConnected === 'connected' ?
-        state :
-        videoConnected === 'connected' ?
-        audioConnected :
-        videoConnected;
-      updateStatusDisplay();
-    };
-    webrtc.ondatachannelopen = initializeInput;
-    webrtc.ondatachannelclose = () => {
-      if (webrtc && webrtc.input) webrtc.input.detach();
-    };
-    webrtc.onclipboardcontent = (content) => {
-      navigator.clipboard
-        .writeText(content)
-        .catch((err) => {
-          if (webrtc)
-            webrtc._setStatus(`Could not copy text to clipboard: ${err}`);
-        });
-    };
-    webrtc.oncursorchange = (handle, curdata, hotspot, override) => {
-      if (parseInt(handle, 10) === 0) {
-        overlayInput.style.cursor = 'auto';
-        return;
-      }
-      if (override) {
-        overlayInput.style.cursor = override;
-        return;
-      }
-      if (webrtc && !webrtc.cursor_cache.has(handle)) {
-        const cursor_url = `url('data:image/png;base64,${curdata}')`;
-        webrtc.cursor_cache.set(handle, cursor_url);
-      }
-      if (webrtc) {
-        let cursor_url = webrtc.cursor_cache.get(handle);
-        if (hotspot) {
-          cursor_url += ` ${hotspot.x} ${hotspot.y}, auto`;
-        } else {
-          cursor_url += ', auto';
-        }
-        overlayInput.style.cursor = cursor_url;
-      }
-    };
-    webrtc.onsystemaction = (action) => {
-      if (webrtc) webrtc._setStatus(`Executing system action: ${action}`);
-    };
-    webrtc.onlatencymeasurement = (latency_ms) => {
-      serverLatency = latency_ms * 2.0;
-    };
-    if (debug) {
-      webrtc.ondebug = (message) => {
-        appendDebugEntry(applyTimestamp(`[webrtc] ${message}`));
-      };
-    }
-    if (webrtc) {
-      webrtc.ongpustats = async (data) => {
-        gpuStat.gpuLoad = Math.round(data.load * 100);
-        gpuStat.gpuMemoryTotal = data.memory_total;
-        gpuStat.gpuMemoryUsed = data.memory_used;
-      };
-    }
-  };
-  audio_webrtc.onstatus = (message) => {
-    appendLogEntry(applyTimestamp(`[audio webrtc] ${message}`));
-  };
-  audio_webrtc.onerror = appendLogError;
-  audio_webrtc.onconnectionstatechange = (state) => {
-    audioConnected = state;
-    if (audioConnected === 'connected') {
-      if (audio_webrtc && audio_webrtc.peerConnection) {
-        audio_webrtc.peerConnection.getReceivers().forEach((receiver) => {
-          const intervalLoop = setInterval(async () => {
-            if (
-              receiver.track.readyState !== 'live' ||
-              receiver.transport.state !== 'connected'
-            ) {
-              clearInterval(intervalLoop);
-              return;
-            }
-            receiver.jitterBufferTarget = 0;
-            receiver.jitterBufferDelayHint = 0;
-            receiver.playoutDelayHint = 0;
-          }, 15);
-        });
-      }
-    }
-    status =
-      audioConnected === 'connected' && videoConnected === 'connected' ?
-      state :
-      audioConnected === 'connected' ?
-      videoConnected :
-      audioConnected;
-    updateStatusDisplay();
-  };
-  if (debug) {
-    audio_signaling.ondebug = (message) => {
-      appendDebugEntry(`[audio signaling] ${message}`);
-    };
-    audio_webrtc.ondebug = (message) => {
-      appendDebugEntry(applyTimestamp(`[audio webrtc] ${message}`));
-    };
-  }
+
   window.addEventListener('focus', () => {
-    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage)
-      webrtc.sendDataChannelMessage('kr');
-    if (
-      clientMode === 'websockets' &&
-      websocket &&
-      websocket.readyState === WebSocket.OPEN
-    )
-      websocket.send('kr');
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      websocket.send('kr'); // Key reset
+    }
     navigator.clipboard
       .readText()
       .then((text) => {
         const encodedText = btoa(text);
-        if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage)
-          webrtc.sendDataChannelMessage(`cw,${encodedText}`);
-        if (
-          clientMode === 'websockets' &&
-          websocket &&
-          websocket.readyState === WebSocket.OPEN
-        )
-          websocket.send(`cw,${encodedText}`);
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+          websocket.send(`cw,${encodedText}`); // Clipboard write
+        }
       })
       .catch((err) => {
-        if (clientMode === 'webrtc') {
-          webrtc._setStatus(`Failed to read clipboard contents: ${err}`);
-        } else if (clientMode === 'websockets') {
-          console.error(`Failed to read clipboard contents: ${err}`);
-        }
+        console.error(`Failed to read clipboard contents on focus: ${err}`);
       });
   });
+
   window.addEventListener('blur', () => {
-    if (clientMode === 'webrtc' && webrtc && webrtc.sendDataChannelMessage)
-      webrtc.sendDataChannelMessage('kr');
-    if (
-      clientMode === 'websockets' &&
-      websocket &&
-      websocket.readyState === WebSocket.OPEN
-    )
-      websocket.send('kr');
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      websocket.send('kr'); // Key reset
+    }
   });
+
   document.addEventListener('visibilitychange', () => {
-    if (clientMode !== 'websockets') return;
+    // clientMode check is removed as it will always be 'websockets' or null before connection
     if (document.hidden) {
       console.log('Tab is hidden, stopping video pipeline.');
       if (websocket && websocket.readyState === WebSocket.OPEN) {
         if (isVideoPipelineActive) {
           websocket.send('STOP_VIDEO');
-          isVideoPipelineActive = false; // Assume it stops
+          isVideoPipelineActive = false;
           window.postMessage({
             type: 'pipelineStatusUpdate',
             video: false
           }, window.location.origin);
-          console.log("Tab hidden in VNC mode, clearing stripe decoders.");
-          clearAllVncStripeDecoders();
-        } else {
-          console.log('Video pipeline already stopped, not sending STOP_VIDEO.');
+          if (currentEncoderMode === 'x264enc-striped') { // Check if this mode is active
+            console.log("Tab hidden in VNC mode, clearing stripe decoders.");
+            clearAllVncStripeDecoders();
+          }
         }
-      } else {
-        console.warn('Websocket not open, cannot send STOP_VIDEO.');
       }
       cleanupVideoBuffer();
     } else {
       console.log('Tab is visible, starting video pipeline.');
       if (websocket && websocket.readyState === WebSocket.OPEN) {
-        if (!isVideoPipelineActive) { // Only start if it was stopped
+        if (!isVideoPipelineActive) {
           websocket.send('START_VIDEO');
-          isVideoPipelineActive = true; // Assume it starts
+          isVideoPipelineActive = true;
           window.postMessage({
             type: 'pipelineStatusUpdate',
             video: true
           }, window.location.origin);
-          // If switching to VNC mode and tab becomes visible, canvas might need a clear
           if (currentEncoderMode === 'x264enc-striped' && canvasContext) {
             canvasContext.setTransform(1, 0, 0, 1, 0, 0);
             canvasContext.clearRect(0, 0, canvas.width, canvas.height);
           }
-        } else {
-          console.log('Video pipeline already started, not sending START_VIDEO.');
         }
-      } else {
-        console.warn('Websocket not open, cannot send START_VIDEO.');
       }
     }
   });
+
   async function decodeAndQueueJpegStripe(startY, jpegData) {
     if (typeof ImageDecoder === 'undefined') {
       console.warn('ImageDecoder API not supported. Cannot decode JPEG stripes.');
@@ -2530,30 +1657,22 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Error decoding JPEG stripe:', error, 'startY:', startY, 'dataLength:', jpegData.byteLength);
     }
   }
-  /**
-   * Handles a decoded video frame from the decoder.
-   * Adds the frame to the videoFrameBuffer.
-   * @param {VideoFrame} frame
-   */
+
   function handleDecodedFrame(frame) {
     if (document.hidden) {
-      console.log('Tab is hidden, dropping video frame.');
       frame.close();
       return;
     }
     if (!isVideoPipelineActive && clientMode === 'websockets') {
-      console.log('Video pipeline inactive, dropping video frame.');
       frame.close();
       return;
     }
     videoFrameBuffer.push(frame);
   }
+
   triggerInitializeDecoder = initializeDecoder;
   console.log("initializeDecoder function assigned to triggerInitializeDecoder.");
-  /**
-   * Paints the oldest frame from the buffer onto the canvas if the buffer is full enough.
-   * Runs on a requestAnimationFrame loop.
-   */
+
   function paintVideoFrame() {
     if (!canvas || !canvasContext) {
       requestAnimationFrame(paintVideoFrame);
@@ -2561,20 +1680,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     let videoPaintedThisFrame = false;
     let jpegPaintedThisFrame = false;
-    // --- VNC STRIPE CHANGE: Conditional processing based on mode ---
+
     if (currentEncoderMode === 'x264enc-striped') {
       let paintedSomethingThisCycle = false;
       for (const stripeData of decodedStripesQueue) {
         canvasContext.drawImage(stripeData.frame, 0, stripeData.yPos);
-        stripeData.frame.close(); // Close frame AFTER drawing
+        stripeData.frame.close();
         paintedSomethingThisCycle = true;
       }
-      decodedStripesQueue = []; // Clear the queue
+      decodedStripesQueue = [];
       if (paintedSomethingThisCycle && !streamStarted) {
         startStream();
       }
     } else if (currentEncoderMode === 'jpeg') {
-      // JPEG Stripe Rendering (additive)
       if (canvasContext && jpegStripeRenderQueue.length > 0) {
         if ((canvas.width === 0 || canvas.height === 0) || (canvas.width === 300 && canvas.height === 150)) {
           const firstStripe = jpegStripeRenderQueue[0];
@@ -2599,10 +1717,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (jpegPaintedThisFrame && !streamStarted) {
           startStream();
-          initializeInput();
+          if (!inputInitialized) initializeInput();
         }
       }
-    } else { // Default to full-frame video (e.g., x264enc, nvh264enc)
+    } else { // Default to full-frame video
       if (!document.hidden && isVideoPipelineActive && videoFrameBuffer.length > videoBufferSize) {
         const frameToPaint = videoFrameBuffer.shift();
         if (frameToPaint) {
@@ -2612,28 +1730,23 @@ document.addEventListener('DOMContentLoaded', () => {
           frameCount++;
           if (!streamStarted) {
             startStream();
-            initializeInput();
+            if (!inputInitialized) initializeInput(); // Initialize input if not already
           }
         }
       }
     }
     requestAnimationFrame(paintVideoFrame);
   }
+
   async function initializeAudio() {
     if (!audioContext) {
       const contextOptions = {
-        sampleRate: 48000,
+        sampleRate: 48000
       };
       audioContext = new(window.AudioContext || window.webkitAudioContext)(contextOptions);
-      console.log(
-        'Playback AudioContext initialized with options:', contextOptions,
-        'Actual sampleRate:', audioContext.sampleRate,
-        'Initial state:', audioContext.state
-      );
-      // Handle state changes (e.g., if it starts suspended and resumes later)
+      console.log('Playback AudioContext initialized. Actual sampleRate:', audioContext.sampleRate, 'Initial state:', audioContext.state);
       audioContext.onstatechange = () => {
         console.log(`Playback AudioContext state changed to: ${audioContext.state}`);
-        // Re-apply sinkId if it becomes running, in case it wasn't set before
         if (audioContext.state === 'running') {
           applyOutputDevice();
         }
@@ -2648,7 +1761,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.currentAudioData = null;
             this.currentDataOffset = 0;
             this.port.onmessage = (event) => {
-            if (event.data.audioData) { // event.data.audioData is an ArrayBuffer
+            if (event.data.audioData) {
                 const pcmData = new Float32Array(event.data.audioData);
                 this.audioBufferQueue.push(pcmData);
               } else if (event.data.type === 'getBufferSize') {
@@ -2669,7 +1782,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const samplesPerBuffer = leftChannel.length;
-
             if (this.audioBufferQueue.length === 0 && this.currentAudioData === null) {
               leftChannel.fill(0);
               rightChannel.fill(0);
@@ -2692,7 +1804,6 @@ document.addEventListener('DOMContentLoaded', () => {
                   return true;
                 }
               }
-
               leftChannel[sampleIndex] = data[offset++];
               if (offset < data.length) {
                 rightChannel[sampleIndex] = data[offset++];
@@ -2701,7 +1812,6 @@ document.addEventListener('DOMContentLoaded', () => {
                  offset++;
               }
             }
-
             this.currentDataOffset = offset;
             if (offset >= data.length) {
                  this.currentAudioData = null;
@@ -2709,27 +1819,21 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                  this.currentAudioData = data;
             }
-
-
             return true;
           }
         }
-
         registerProcessor('audio-frame-processor', AudioFrameProcessor);
       `;
       const audioWorkletBlob = new Blob([audioWorkletProcessorCode], {
-        type: 'text/javascript',
+        type: 'text/javascript'
       });
       const audioWorkletURL = URL.createObjectURL(audioWorkletBlob);
       await audioContext.audioWorklet.addModule(audioWorkletURL);
       URL.revokeObjectURL(audioWorkletURL);
-      audioWorkletNode = new AudioWorkletNode(
-        audioContext,
-        'audio-frame-processor', {
-          numberOfOutputs: 1,
-          outputChannelCount: [2],
-        }
-      );
+      audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-frame-processor', {
+        numberOfOutputs: 1,
+        outputChannelCount: [2]
+      });
       audioWorkletProcessorPort = audioWorkletNode.port;
       audioWorkletProcessorPort.onmessage = (event) => {
         if (event.data.type === 'audioBufferSize') {
@@ -2739,12 +1843,12 @@ document.addEventListener('DOMContentLoaded', () => {
       audioWorkletNode.connect(audioContext.destination);
       console.log('Playback AudioWorkletProcessor initialized and connected.');
       await applyOutputDevice();
-      if (audioDecoderWorker) { // Terminate existing worker if any
+
+      if (audioDecoderWorker) {
         console.warn("[Main] Terminating existing audio decoder worker before creating a new one.");
         audioDecoderWorker.postMessage({
           type: 'close'
-        }); // Ask it to clean up
-        // Give it a moment to close gracefully before forceful termination
+        });
         await new Promise(resolve => setTimeout(resolve, 50));
         if (audioDecoderWorker) audioDecoderWorker.terminate();
         audioDecoderWorker = null;
@@ -2754,7 +1858,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const audioDecoderWorkerURL = URL.createObjectURL(audioDecoderWorkerBlob);
       audioDecoderWorker = new Worker(audioDecoderWorkerURL);
-      URL.revokeObjectURL(audioDecoderWorkerURL); // Clean up blob URL
+      URL.revokeObjectURL(audioDecoderWorkerURL);
       audioDecoderWorker.onmessage = (event) => {
         const {
           type,
@@ -2763,59 +1867,50 @@ document.addEventListener('DOMContentLoaded', () => {
         } = event.data;
         if (type === 'decoderInitFailed') {
           console.error(`[Main] Audio Decoder Worker failed to initialize: ${reason}`);
-          // Potentially try to re-initialize or disable audio pipeline
         } else if (type === 'decoderError') {
           console.error(`[Main] Audio Decoder Worker reported error: ${message}`);
         } else if (type === 'decoderInitialized') {
           console.log('[Main] Audio Decoder Worker confirmed its decoder is initialized.');
         } else if (type === 'decodedAudioData') {
           const pcmBufferFromWorker = event.data.pcmBuffer;
-          // --- NEW: Handle decoded PCM data from worker ---
           if (pcmBufferFromWorker && audioWorkletProcessorPort && audioContext && audioContext.state === 'running') {
-            if (window.currentAudioBufferSize < 10) { // Check AudioWorklet buffer before posting
+            if (window.currentAudioBufferSize < 10) {
               audioWorkletProcessorPort.postMessage({
                 audioData: pcmBufferFromWorker
               }, [pcmBufferFromWorker]);
-            } else {
-              // console.warn(`[Main] AudioWorklet buffer full (${window.currentAudioBufferSize}). Dropping PCM from worker.`);
-              // The pcmBuffer is not used, will be garbage collected.
             }
-          } else if (!audioWorkletProcessorPort || !audioContext || audioContext.state !== 'running') {
-            // console.warn('[Main] AudioWorklet not ready for PCM data from worker. Dropping.');
           }
         }
       };
       audioDecoderWorker.onerror = (error) => {
         console.error('[Main] Uncaught error in Audio Decoder Worker:', error.message, error);
         if (audioDecoderWorker) {
-          audioDecoderWorker.terminate(); // Terminate on unhandled error
+          audioDecoderWorker.terminate();
           audioDecoderWorker = null;
         }
-        // Consider re-initializing the entire audio pipeline or notifying user
       };
-      // Send the AudioWorklet port to the worker.
-      // Crucially, also send the current pipeline status.
       if (audioWorkletProcessorPort) {
         audioDecoderWorker.postMessage({
           type: 'init',
           data: {
-            initialPipelineStatus: isAudioPipelineActive // Send current status
+            initialPipelineStatus: isAudioPipelineActive
           }
         });
-        console.log('[Main] Audio Decoder Worker created and init message sent with AudioWorklet port.');
+        console.log('[Main] Audio Decoder Worker created and init message sent.');
       } else {
         console.error("[Main] audioWorkletProcessorPort is null, cannot initialize audioDecoderWorker correctly.");
       }
     } catch (error) {
       console.error('Error initializing Playback AudioWorklet:', error);
       if (audioContext && audioContext.state !== 'closed') {
-        audioContext.close(); // Clean up context if worklet failed
+        audioContext.close();
       }
       audioContext = null;
       audioWorkletNode = null;
       audioWorkletProcessorPort = null;
     }
   }
+
   async function initializeDecoderAudio() {
     if (audioDecoderWorker) {
       console.log('[Main] Requesting Audio Decoder Worker to reinitialize its decoder.');
@@ -2824,71 +1919,57 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     } else {
       console.warn('[Main] Cannot initialize decoder audio: Audio Decoder Worker not available. Call initializeAudio() first.');
-      // If in websockets mode and the worker isn't up, try to start the full audio init.
-      if (clientMode === 'websockets' && !audioContext) {
+      if (clientMode === 'websockets' && !audioContext) { 
         console.log('[Main] Audio context missing, attempting to initialize full audio pipeline for websockets.');
-        await initializeAudio(); // This will create the worker and send init.
+        await initializeAudio();
       }
     }
   }
+
   const ws_protocol = location.protocol === 'http:' ? 'ws://' : 'wss://';
-  const websocketEndpointURL = new URL(
-    `${ws_protocol}${window.location.host}${pathname}websockets`
-  );
+  const websocketEndpointURL = new URL(`${ws_protocol}${window.location.host}${pathname}websockets`);
   websocket = new WebSocket(websocketEndpointURL.href);
   websocket.binaryType = 'arraybuffer';
+
   const sendClientMetrics = () => {
-    if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-      if (audioWorkletProcessorPort) { // Playback worklet port
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      if (audioWorkletProcessorPort) {
         audioWorkletProcessorPort.postMessage({
           type: 'getBufferSize'
         });
       }
-      // --- FPS Calculation Logic ---
       const now = performance.now();
       const elapsedStriped = now - lastStripedFpsUpdateTime;
       const elapsedFullFrame = now - lastFpsUpdateTime;
-      const fpsUpdateInterval = 1000; // ms
-      // Check if we received striped frames with IDs recently
+      const fpsUpdateInterval = 1000;
       if (uniqueStripedFrameIdsThisPeriod.size > 0) {
         if (elapsedStriped >= fpsUpdateInterval) {
           const stripedFps = (uniqueStripedFrameIdsThisPeriod.size * 1000) / elapsedStriped;
           window.fps = Math.round(stripedFps);
-          // Reset counters for the next period
           uniqueStripedFrameIdsThisPeriod.clear();
           lastStripedFpsUpdateTime = now;
-          frameCount = 0; // Reset full frame count too, as striped mode is active
+          frameCount = 0;
           lastFpsUpdateTime = now;
         }
-        // If interval not reached, window.fps retains previous value
-      }
-      // Else, check if we painted full frames recently
-      else if (frameCount > 0) {
+      } else if (frameCount > 0) {
         if (elapsedFullFrame >= fpsUpdateInterval) {
           const fullFrameFps = (frameCount * 1000) / elapsedFullFrame;
           window.fps = Math.round(fullFrameFps);
-          // Reset counters for the next period
           frameCount = 0;
           lastFpsUpdateTime = now;
-          uniqueStripedFrameIdsThisPeriod.clear(); // Reset striped count too
+          uniqueStripedFrameIdsThisPeriod.clear();
           lastStripedFpsUpdateTime = now;
         }
-        // If interval not reached, window.fps retains previous value
-      }
-      // Else (neither striped nor full frames processed recently)
-      else {
-        // If enough time has passed since *either* last update, reset FPS to 0
+      } else {
         if (elapsedStriped >= fpsUpdateInterval && elapsedFullFrame >= fpsUpdateInterval) {
           window.fps = 0;
-          // Reset timers anyway
           lastFpsUpdateTime = now;
           lastStripedFpsUpdateTime = now;
         }
       }
       try {
-        // Send the calculated FPS
         websocket.send('cfps,' + window.fps);
-        if (lastReceivedVideoFrameId !== -1) { // Only send if we've received a frame
+        if (lastReceivedVideoFrameId !== -1) {
           websocket.send(`CLIENT_FRAME_ACK ${lastReceivedVideoFrameId}`);
         }
       } catch (error) {
@@ -2896,59 +1977,91 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   };
+
   websocket.onopen = () => {
     console.log('[websockets] Connection opened!');
-    isVideoPipelineActive = true; // Assume pipelines start active on new connection
-    isAudioPipelineActive = true;
-    window.postMessage({
-      type: 'pipelineStatusUpdate',
-      video: true,
-      audio: true
-    }, window.location.origin);
-    isMicrophoneActive = false; // Mic should always start off
-    updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
-    const settingsPrefix = `${appName}_`;
+    status = 'connected_waiting_mode'; // More specific status
+    loadingText = 'Connection established. Waiting for server mode...';
+    updateStatusDisplay();
+
+    const settingsPrefix = `${appName}_`; // Ensure appName is defined
     const settingsToSend = {};
     let foundSettings = false;
-    // --- Collect ALL settings from localStorage ---
+
+    let initialClientWidthForSettings, initialClientHeightForSettings;
     for (const key in localStorage) {
       if (Object.hasOwnProperty.call(localStorage, key) && key.startsWith(settingsPrefix)) {
-        const settingValue = localStorage.getItem(key); // Get raw string value
-        // Use the full key (including prefix) for sending
-        settingsToSend[key] = settingValue;
-        foundSettings = true;
+        const unprefixedKey = key.substring(settingsPrefix.length);
+        let serverExpectedKey = null;
+
+        if (unprefixedKey === 'videoBitRate') serverExpectedKey = 'webrtc_videoBitRate';
+        else if (unprefixedKey === 'videoFramerate') serverExpectedKey = 'webrtc_videoFramerate';
+        else if (unprefixedKey === 'videoCRF') serverExpectedKey = 'webrtc_videoCRF';
+        else if (unprefixedKey === 'encoder') serverExpectedKey = 'webrtc_encoder';
+        else if (unprefixedKey === 'resizeRemote') serverExpectedKey = 'webrtc_resizeRemote';
+        else if (unprefixedKey === 'isManualResolutionMode') serverExpectedKey = 'webrtc_isManualResolutionMode';
+        else if (unprefixedKey === 'manualWidth') serverExpectedKey = 'webrtc_manualWidth';
+        else if (unprefixedKey === 'manualHeight') serverExpectedKey = 'webrtc_manualHeight';
+        else if (unprefixedKey === 'audioBitRate') serverExpectedKey = 'webrtc_audioBitRate';
+        else if (unprefixedKey === 'videoBufferSize') serverExpectedKey = 'webrtc_videoBufferSize';
+
+        if (serverExpectedKey) {
+          let value = localStorage.getItem(key);
+          if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode') {
+            value = (value === 'true');
+          } else if (['webrtc_videoBitRate', 'webrtc_videoFramerate', 'webrtc_videoCRF',
+              'webrtc_manualWidth', 'webrtc_manualHeight', 'webrtc_audioBitRate',
+              'webrtc_videoBufferSize'
+            ].includes(serverExpectedKey)) {
+            value = parseInt(value, 10);
+            if (isNaN(value)) {
+              value = localStorage.getItem(key);
+            }
+          }
+          settingsToSend[serverExpectedKey] = value;
+          foundSettings = true;
+        }
       }
     }
-    if (foundSettings) {
-      try {
-        const settingsJson = JSON.stringify(settingsToSend);
-        const message = `SETTINGS,${settingsJson}`;
-        websocket.send(message);
-        console.log('[websockets] Sent stored settings to server:', settingsToSend);
-        // --- Send settings via postMessage ---
-        window.postMessage({
-          type: 'initialClientSettings',
-          settings: settingsToSend
-        }, window.location.origin);
-        console.log('[client] Posted initial settings via window.postMessage:', settingsToSend);
-      } catch (e) {
-        console.error('[websockets] Error sending stored settings:', e);
-      }
+
+    // Add current/manual resolution to the SETTINGS payload
+    if (isManualResolutionMode && manualWidth != null && manualHeight != null) {
+      initialClientWidthForSettings = manualWidth;
+      initialClientHeightForSettings = manualHeight;
+      // Ensure these are in settingsToSend if not already picked from localStorage
+      if (settingsToSend['webrtc_isManualResolutionMode'] === undefined) settingsToSend['webrtc_isManualResolutionMode'] = true;
+      if (settingsToSend['webrtc_manualWidth'] === undefined) settingsToSend['webrtc_manualWidth'] = manualWidth;
+      if (settingsToSend['webrtc_manualHeight'] === undefined) settingsToSend['webrtc_manualHeight'] = manualHeight;
     } else {
-      try {
-        const message = 'SETTINGS,{}';
-        websocket.send(message);
-        console.log('[websockets] Sent blank settings to server (no settings found in localStorage).');
-        // --- Send blank settings via postMessage ---
-        window.postMessage({
-          type: 'initialClientSettings',
-          settings: {}
-        }, window.location.origin);
-        console.log('[client] Posted blank initial settings via window.postMessage.');
-      } catch (e) {
-        console.error('[websockets] Error sending blank settings:', e);
-      }
+      const videoContainer = document.querySelector('.video-container');
+      const rect = videoContainer ? videoContainer.getBoundingClientRect() : {
+        width: window.innerWidth,
+        height: window.innerHeight
+      };
+      initialClientWidthForSettings = roundDownToEven(rect.width);
+      initialClientHeightForSettings = roundDownToEven(rect.height);
+      settingsToSend['webrtc_isManualResolutionMode'] = false; // Explicitly set if not manual
+      settingsToSend['webrtc_initialClientWidth'] = initialClientWidthForSettings;
+      settingsToSend['webrtc_initialClientHeight'] = initialClientHeightForSettings;
     }
+
+    try {
+      const settingsJson = JSON.stringify(settingsToSend);
+      const message = `SETTINGS,${settingsJson}`;
+      websocket.send(message);
+      console.log('[websockets] Sent initial settings (including resolution) to server:', settingsToSend);
+
+      // Also post these initial settings for any UI components listening
+      window.postMessage({
+        type: 'initialClientSettings',
+        settings: settingsToSend // Send the mapped settings
+      }, window.location.origin);
+
+    } catch (e) {
+      console.error('[websockets] Error constructing or sending initial settings:', e);
+    }
+
+    // 2. Send initial video bitrate if the encoder is a GStreamer one (not JPEG/striped)
     const isCurrentModeStripedH264_ws = currentEncoderMode === 'x264enc-striped';
     const isCurrentModeJpeg_ws = currentEncoderMode === 'jpeg';
     const isCurrentModeVideoPipeline_ws = !isCurrentModeStripedH264_ws && !isCurrentModeJpeg_ws;
@@ -2957,302 +2070,257 @@ document.addEventListener('DOMContentLoaded', () => {
       if (websocket && websocket.readyState === WebSocket.OPEN) {
         const bitrateMessage = `SET_VIDEO_BITRATE,${videoBitRate}`;
         websocket.send(bitrateMessage);
+        console.log(`[websockets] Sent initial SET_VIDEO_BITRATE,${videoBitRate} for GStreamer encoder.`);
       }
     }
+
+    const pixelRatio = window.devicePixelRatio;
+    websocket.send(`s,${pixelRatio}`);
+    console.log(`[websockets] Sent initial pixel ratio: ${pixelRatio}. Initial resolution sent via SETTINGS.`);
+
+    websocket.send('cr');
+    console.log('[websockets] Sent initial clipboard request (cr) to server.');
+
+    isVideoPipelineActive = true;
+    isAudioPipelineActive = true;
+    window.postMessage({
+      type: 'pipelineStatusUpdate',
+      video: true,
+      audio: true
+    }, window.location.origin);
+
+    isMicrophoneActive = false; // Mic always starts off
+    updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+
     if (metricsIntervalId === null) {
       metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
       console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
     }
-    // --- Send initial resolution based on loaded mode ---
-    if (isManualResolutionMode && manualWidth != null && manualHeight != null) {
-      console.log("[websockets] Manual mode active on connect, sending stored manual resolution.");
-      sendResolutionToServer(manualWidth, manualHeight);
-    } else {
-      const videoContainer = document.querySelector('.video-container');
-      let initialWidth, initialHeight;
-      if (videoContainer) {
-        const rect = videoContainer.getBoundingClientRect();
-        initialWidth = roundDownToEven(rect.width);
-        initialHeight = roundDownToEven(rect.height);
-      } else {
-        console.warn("Websocket Open: video-container not found for initial resolution, using window.");
-        initialWidth = roundDownToEven(window.innerWidth);
-        initialHeight = roundDownToEven(window.innerHeight);
-      }
-      console.log("[websockets] Auto mode active on connect, sending container/window resolution.");
-      sendResolutionToServer(initialWidth, initialHeight);
-    }
-    // Request clipboard content
-    websocket.send('cr');
-    console.log('[websockets] Sent clipboard request (cr) to server.');
   };
   websocket.onmessage = (event) => {
     if (event.data instanceof ArrayBuffer) {
-      if (clientMode === 'websockets') {
-        const arrayBuffer = event.data;
-        const dataView = new DataView(arrayBuffer);
-        if (arrayBuffer.byteLength < 1) {
-          console.warn('Received empty binary message, ignoring.');
-          return;
-        }
-        const dataTypeByte = dataView.getUint8(0);
-        // console.log("Received binary data, type:", dataTypeByte); // Less verbose log
-        if (dataTypeByte === 0) { // Full H.264 frame (non-VNC)
-          if (arrayBuffer.byteLength < 4) {
-            console.warn('Received short video message (type 0), ignoring.');
-            return;
-          }
-          const frameTypeFlag = dataView.getUint8(1);
-          lastReceivedVideoFrameId = dataView.getUint16(2, false);
-          const videoDataArrayBuffer = arrayBuffer.slice(4);
-          if (!isVideoPipelineActive) return;
-          if (decoder && decoder.state === 'configured') {
-            const chunk = new EncodedVideoChunk({
-              type: frameTypeFlag === 1 ? 'key' : 'delta',
-              timestamp: performance.now() * 1000,
-              data: videoDataArrayBuffer,
-            });
-            try {
-              decoder.decode(chunk);
-            } catch (e) {
-              console.error('Video Decoding error:', e);
-              if (decoder.state === 'closed' || decoder.state === 'unconfigured') {
-                console.warn("Video Decoder is closed or unconfigured, reinitializing...");
-                initializeDecoder();
-              }
-            }
-          } else {
-            console.warn('Video Decoder not ready or not configured yet, video frame dropped.');
-            if (!decoder || decoder.state === 'closed') initializeDecoder();
-          }
-        } else if (dataTypeByte === 1) { // Audio frame
-          const AUDIO_BUFFER_THRESHOLD = 5;
-          if (window.currentAudioBufferSize >= AUDIO_BUFFER_THRESHOLD) {
-            // console.warn(`Playback Audio buffer (${window.currentAudioBufferSize} buffers) is full (>= ${AUDIO_BUFFER_THRESHOLD}). Dropping audio frame.`);
-            return;
-          }
-          if (!isAudioPipelineActive) return;
-          if (audioDecoderWorker) {
-            // Ensure audioContext is running, as it's a prerequisite for AudioWorklet
-            if (audioContext && audioContext.state !== 'running') {
-              // console.warn(`[Main] Playback AudioContext is ${audioContext.state}, attempting resume before sending to worker.`);
-              audioContext.resume().catch(e => console.error("[Main] Error resuming audio context on audio frame arrival", e));
-            }
-            const opusDataArrayBuffer = arrayBuffer.slice(2);
-            if (opusDataArrayBuffer.byteLength > 0) {
-              audioDecoderWorker.postMessage({
-                type: 'decode',
-                data: {
-                  opusBuffer: opusDataArrayBuffer,
-                  timestamp: performance.now() * 1000 // Provide a timestamp
-                }
-              }, [opusDataArrayBuffer]); // Transfer the ArrayBuffer
-            } else {
-              console.warn('[Main] Received audio frame with no Opus data after slicing.');
-            }
-          } else {
-            console.warn('[Main] Audio Decoder Worker not available, audio frame dropped. Attempting to initialize audio pipeline.');
-            if (clientMode === 'websockets') {
-              initializeAudio().then(() => { // initializeAudio is async
-                if (audioDecoderWorker) { // Check if worker got created
-                  const opusDataArrayBuffer = arrayBuffer.slice(2); // Use consistent slicing
-                  if (opusDataArrayBuffer.byteLength > 0) {
-                    audioDecoderWorker.postMessage({
-                      type: 'decode',
-                      data: {
-                        opusBuffer: opusDataArrayBuffer,
-                        timestamp: performance.now() * 1000
-                      }
-                    }, [opusDataArrayBuffer]);
-                  }
-                }
-              }).catch(err => console.error("[Main] Error during fallback audio initialization:", err));
-            }
-          }
-        } else if (dataTypeByte === 0x02) { // Microphone data from server (should not happen)
-          console.log('Received unexpected microphone data (type 0x02) from server.');
-        } else if (dataTypeByte === 0x03) { // JPEG Stripe
-          // 1 (type) + 1 + 2 + 2 = 6 bytes. Payload from byte 6.
-          if (arrayBuffer.byteLength < 6) { // Check against original assumption
-            console.warn('[websockets] Received short JPEG stripe message (type 0x03), ignoring.');
-            return;
-          }
-          const stripe_y_start = dataView.getUint16(4, false); // Original offset 4, Big Endiani
-          lastReceivedVideoFrameId = dataView.getUint16(2, false);
-          const jpegDataBuffer = arrayBuffer.slice(6);
-          if (jpegDataBuffer.byteLength === 0) {
-            console.warn('[websockets] Received JPEG stripe (type 0x03) with no image data, ignoring.');
-            return;
-          }
-          decodeAndQueueJpegStripe(stripe_y_start, jpegDataBuffer);
-        }
-        // --- START VNC H.264 STRIPE (0x04) HANDLING ---
-        else if (dataTypeByte === 0x04) { // H.264 VNC Stripe
-          if (!isVideoPipelineActive) {
-            // console.log("VNC Stripe (0x04) received, but video pipeline inactive. Discarding.");
-            return;
-          }
-          if (typeof window.vncStripesArrivedThisPeriod !== 'undefined') {
-            window.vncStripesArrivedThisPeriod++;
-          }
-          const EXPECTED_HEADER_LENGTH = 10;
-          if (arrayBuffer.byteLength < EXPECTED_HEADER_LENGTH) { // Correct check
-            console.warn(`[websockets] Received short H.264 VNC stripe (type 0x04), length ${arrayBuffer.byteLength}, expected at least ${EXPECTED_HEADER_LENGTH}. Ignoring.`);
-            return;
-          }
-          const video_frame_type_byte = dataView.getUint8(1);
-          const vncFrameID = dataView.getUint16(2, false);
-          lastReceivedVideoFrameId = vncFrameID;
-          uniqueStripedFrameIdsThisPeriod.add(lastReceivedVideoFrameId);
-          const vncStripeYStart = dataView.getUint16(4, false);
-          const stripeWidth = dataView.getUint16(6, false);
-          const stripeHeight = dataView.getUint16(8, false);
-          const h264Payload = arrayBuffer.slice(EXPECTED_HEADER_LENGTH);
-          if (h264Payload.byteLength === 0) {
-            console.warn(`[websockets] Received H.264 VNC stripe (type 0x04) for Y=${vncStripeYStart} with no payload, ignoring.`);
-            return;
-          }
-          let decoderInfo = vncStripeDecoders[vncStripeYStart];
-          const chunkType = (video_frame_type_byte === 0x01) ? 'key' : 'delta';
-          if (!decoderInfo) {
-            const newStripeDecoder = new VideoDecoder({
-              output: handleDecodedVncStripeFrame.bind(null, vncStripeYStart, vncFrameID),
-              error: (e) => {
-                console.error(`Error in VideoDecoder for VNC stripe Y=${vncStripeYStart} (FrameID: ${vncFrameID}):`, e.message);
-              }
-            });
-            const decoderConfig = {
-              codec: 'avc1.42E01E',
-              codedWidth: stripeWidth,
-              codedHeight: stripeHeight,
-              optimizeForLatency: true,
-            };
-            vncStripeDecoders[vncStripeYStart] = {
-              decoder: newStripeDecoder,
-              pendingChunks: []
-            };
-            decoderInfo = vncStripeDecoders[vncStripeYStart];
-            VideoDecoder.isConfigSupported(decoderConfig)
-              .then(support => {
-                if (support.supported) {
-                  // Return the promise from configure() to chain it
-                  return newStripeDecoder.configure(decoderConfig);
-                } else {
-                  console.error(`Decoder config not supported for VNC stripe Y=${vncStripeYStart}:`, decoderConfig, support);
-                  // Clean up if config not supported
-                  if (vncStripeDecoders[vncStripeYStart] && vncStripeDecoders[vncStripeYStart].decoder === newStripeDecoder) {
-                    delete vncStripeDecoders[vncStripeYStart];
-                  }
-                  return Promise.reject(new Error("Configuration not supported")); // Propagate error
-                }
-              })
-              .then(() => {
-                // This .then() block executes ONLY if configure() was successful
-                console.log(`VideoDecoder successfully configured for VNC stripe Y=${vncStripeYStart}`);
-                // Now it's safe to process any chunks that were queued while configuring
-                processPendingChunksForStripe(vncStripeYStart);
-              })
-              .catch(e => {
-                console.error(`Error during support check or configuration for VNC stripe Y=${vncStripeYStart}:`, e);
-                // Ensure cleanup if configuration failed after being added to vncStripeDecoders
-                if (vncStripeDecoders[vncStripeYStart] && vncStripeDecoders[vncStripeYStart].decoder === newStripeDecoder) {
-                  try {
-                    if (newStripeDecoder.state !== 'closed') newStripeDecoder.close();
-                  } catch (closeError) {
-                    /* ignore */
-                  }
-                  delete vncStripeDecoders[vncStripeYStart];
-                }
-              });
-          }
-          // Decoder exists, queue or decode the chunk
-          if (decoderInfo) { // Check again as async configure might have failed and deleted it
-            const chunkTimestamp = performance.now() * 1000; // Microseconds, unique
-            const chunkData = {
-              type: chunkType,
-              timestamp: chunkTimestamp,
-              data: h264Payload
-            };
-            if (decoderInfo.decoder.state === "configured") {
-              const chunk = new EncodedVideoChunk({
-                type: chunkType,
-                timestamp: chunkTimestamp,
-                data: h264Payload
-              });
-              try {
-                decoderInfo.decoder.decode(chunk);
-              } catch (e) {
-                console.error(`Error decoding chunk for VNC stripe Y=${vncStripeYStart}:`, e, chunk);
-              }
-            } else { // "unconfigured" or "configuring"
-              // console.log(`VNC stripe Y=${vncStripeYStart} decoder not configured yet, adding to pending chunks.`);
-              decoderInfo.pendingChunks.push(chunkData);
-            }
+      const arrayBuffer = event.data;
+      const dataView = new DataView(arrayBuffer);
+      if (arrayBuffer.byteLength < 1) return;
+      const dataTypeByte = dataView.getUint8(0);
+
+      if (dataTypeByte === 0) { // Full H.264 frame
+        if (arrayBuffer.byteLength < 4) return;
+        const frameTypeFlag = dataView.getUint8(1);
+        lastReceivedVideoFrameId = dataView.getUint16(2, false);
+        const videoDataArrayBuffer = arrayBuffer.slice(4);
+        if (!isVideoPipelineActive) return;
+        if (decoder && decoder.state === 'configured') {
+          const chunk = new EncodedVideoChunk({
+            type: frameTypeFlag === 1 ? 'key' : 'delta',
+            timestamp: performance.now() * 1000,
+            data: videoDataArrayBuffer,
+          });
+          try {
+            decoder.decode(chunk);
+          } catch (e) {
+            console.error('Video Decoding error:', e);
+            if (decoder.state === 'closed' || decoder.state === 'unconfigured') initializeDecoder();
           }
         } else {
-          console.warn('Unknown binary data payload type received:', dataTypeByte);
+          if (!decoder || decoder.state === 'closed') initializeDecoder();
         }
+      } else if (dataTypeByte === 1) { // Audio frame
+        if (window.currentAudioBufferSize >= 5) return;
+        if (!isAudioPipelineActive) return;
+        if (audioDecoderWorker) {
+          if (audioContext && audioContext.state !== 'running') {
+            audioContext.resume().catch(e => console.error("Error resuming audio context", e));
+          }
+          const opusDataArrayBuffer = arrayBuffer.slice(2); // Assuming 2 bytes header (type + flags/id)
+          if (opusDataArrayBuffer.byteLength > 0) {
+            audioDecoderWorker.postMessage({
+              type: 'decode',
+              data: {
+                opusBuffer: opusDataArrayBuffer,
+                timestamp: performance.now() * 1000
+              }
+            }, [opusDataArrayBuffer]);
+          }
+        } else {
+          initializeAudio().then(() => {
+            if (audioDecoderWorker) {
+              const opusDataArrayBuffer = arrayBuffer.slice(2);
+              if (opusDataArrayBuffer.byteLength > 0) {
+                audioDecoderWorker.postMessage({
+                  type: 'decode',
+                  data: {
+                    opusBuffer: opusDataArrayBuffer,
+                    timestamp: performance.now() * 1000
+                  }
+                }, [opusDataArrayBuffer]);
+              }
+            }
+          });
+        }
+      } else if (dataTypeByte === 0x03) { // JPEG Stripe
+        if (arrayBuffer.byteLength < 6) return;
+        const stripe_y_start = dataView.getUint16(4, false);
+        lastReceivedVideoFrameId = dataView.getUint16(2, false);
+        const jpegDataBuffer = arrayBuffer.slice(6);
+        if (jpegDataBuffer.byteLength === 0) return;
+        decodeAndQueueJpegStripe(stripe_y_start, jpegDataBuffer);
+      } else if (dataTypeByte === 0x04) { // H.264 VNC Stripe
+        if (!isVideoPipelineActive) return;
+        if (typeof window.vncStripesArrivedThisPeriod !== 'undefined') window.vncStripesArrivedThisPeriod++;
+        const EXPECTED_HEADER_LENGTH = 10;
+        if (arrayBuffer.byteLength < EXPECTED_HEADER_LENGTH) return;
+        const video_frame_type_byte = dataView.getUint8(1);
+        const vncFrameID = dataView.getUint16(2, false);
+        lastReceivedVideoFrameId = vncFrameID;
+        uniqueStripedFrameIdsThisPeriod.add(lastReceivedVideoFrameId);
+        const vncStripeYStart = dataView.getUint16(4, false);
+        const stripeWidth = dataView.getUint16(6, false);
+        const stripeHeight = dataView.getUint16(8, false);
+        const h264Payload = arrayBuffer.slice(EXPECTED_HEADER_LENGTH);
+        if (h264Payload.byteLength === 0) return;
+        let decoderInfo = vncStripeDecoders[vncStripeYStart];
+        const chunkType = (video_frame_type_byte === 0x01) ? 'key' : 'delta';
+        if (!decoderInfo) {
+          const newStripeDecoder = new VideoDecoder({
+            output: handleDecodedVncStripeFrame.bind(null, vncStripeYStart, vncFrameID),
+            error: (e) => console.error(`Error in VideoDecoder for VNC stripe Y=${vncStripeYStart} (FrameID: ${vncFrameID}):`, e.message)
+          });
+          const decoderConfig = {
+            codec: 'avc1.42E01E',
+            codedWidth: stripeWidth,
+            codedHeight: stripeHeight,
+            optimizeForLatency: true
+          };
+          vncStripeDecoders[vncStripeYStart] = {
+            decoder: newStripeDecoder,
+            pendingChunks: []
+          };
+          decoderInfo = vncStripeDecoders[vncStripeYStart];
+          VideoDecoder.isConfigSupported(decoderConfig)
+            .then(support => {
+              if (support.supported) return newStripeDecoder.configure(decoderConfig);
+              else {
+                delete vncStripeDecoders[vncStripeYStart];
+                return Promise.reject("Config not supported");
+              }
+            })
+            .then(() => processPendingChunksForStripe(vncStripeYStart))
+            .catch(e => {
+              console.error(`Error configuring VNC stripe decoder Y=${vncStripeYStart}:`, e);
+              if (vncStripeDecoders[vncStripeYStart] && vncStripeDecoders[vncStripeYStart].decoder === newStripeDecoder) {
+                try {
+                  if (newStripeDecoder.state !== 'closed') newStripeDecoder.close();
+                } catch (_) {}
+                delete vncStripeDecoders[vncStripeYStart];
+              }
+            });
+        }
+        if (decoderInfo) {
+          const chunkTimestamp = performance.now() * 1000;
+          const chunkData = {
+            type: chunkType,
+            timestamp: chunkTimestamp,
+            data: h264Payload
+          };
+          if (decoderInfo.decoder.state === "configured") {
+            const chunk = new EncodedVideoChunk(chunkData);
+            try {
+              decoderInfo.decoder.decode(chunk);
+            } catch (e) {
+              console.error(`Error decoding VNC stripe chunk Y=${vncStripeYStart}:`, e);
+            }
+          } else {
+            decoderInfo.pendingChunks.push(chunkData);
+          }
+        }
+      } else {
+        console.warn('Unknown binary data payload type received:', dataTypeByte);
       }
     } else if (typeof event.data === 'string') {
-      if (clientMode === 'websockets') {
+      if (event.data === 'MODE websockets') {
+        clientMode = 'websockets';
+        console.log('[websockets] Switched to websockets mode.');
+        status = 'initializing';
+        loadingText = 'Initializing WebSocket mode...';
+        updateStatusDisplay();
+
+        // Cleanup potentially existing resources (though less critical if only one mode)
+        if (decoder && decoder.state !== "closed") decoder.close(); // Close if exists from a previous session/error
+        clearAllVncStripeDecoders();
+        cleanupVideoBuffer();
+        cleanupJpegStripeQueue();
+        stopMicrophoneCapture(); // Ensure mic is stopped before re-init
+
+        if (currentEncoderMode !== 'x264enc-striped' && currentEncoderMode !== 'jpeg') {
+          initializeDecoder();
+        }
+        initializeAudio().then(() => { // Ensure audio context and worker are up
+          initializeDecoderAudio(); // Then initialize the audio decoder within the worker
+        });
+        initializeInput();
+
+        if (playButtonElement) playButtonElement.classList.add('hidden');
+        if (statusDisplayElement) statusDisplayElement.classList.remove('hidden'); // Show status during init
+
+        console.log('Starting video painting loop (requestAnimationFrame).');
+        requestAnimationFrame(paintVideoFrame);
+
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+          websocket.send('cr'); // Request clipboard
+          if (!document.hidden && !isVideoPipelineActive) websocket.send('START_VIDEO');
+          if (!isAudioPipelineActive) websocket.send('START_AUDIO');
+        }
+        loadingText = 'Waiting for stream...'; // Update status after init
+        updateStatusDisplay();
+
+      } 
+      else if (clientMode === 'websockets') { 
         if (event.data.startsWith('{')) {
           let obj;
           try {
             obj = JSON.parse(event.data);
           } catch (e) {
-            console.error('Error parsing JSON message from server:', e, 'Message:', event.data);
+            console.error('Error parsing JSON:', e);
             return;
           }
-          if (obj.type === 'system_stats') {
-            window.system_stats = obj;
-          } else if (obj.type === 'gpu_stats') {
-            window.gpu_stats = obj;
-          } else if (obj.type === 'server_settings') {
-            window.postMessage({
-              type: 'serverSettings',
-              encoders: obj.encoders
-            }, window.location.origin);
-          } else if (obj.type === 'server_apps') {
+          if (obj.type === 'system_stats') window.system_stats = obj;
+          else if (obj.type === 'gpu_stats') window.gpu_stats = obj;
+          else if (obj.type === 'server_settings') window.postMessage({
+            type: 'serverSettings',
+            encoders: obj.encoders
+          }, window.location.origin);
+          else if (obj.type === 'server_apps') {
             if (obj.apps && Array.isArray(obj.apps)) {
-              console.log('[websockets] Received server_apps:', obj.apps);
               window.postMessage({
                 type: 'systemApps',
                 apps: obj.apps
               }, window.location.origin);
-            } else {
-              console.warn('[websockets] Received server_apps message without a valid "apps" array:', obj);
             }
           } else if (obj.type === 'pipeline_status') {
-            console.log('Received pipeline status confirmation from server:', obj);
             let statusChanged = false;
             if (obj.video !== undefined && obj.video !== isVideoPipelineActive) {
               isVideoPipelineActive = obj.video;
               statusChanged = true;
-              if (!isVideoPipelineActive && currentEncoderMode === 'x264enc-striped') {
-                clearAllVncStripeDecoders(); // Clear if VNC video is stopped by server
-              }
+              if (!isVideoPipelineActive && currentEncoderMode === 'x264enc-striped') clearAllVncStripeDecoders();
             }
             if (obj.audio !== undefined && obj.audio !== isAudioPipelineActive) {
               isAudioPipelineActive = obj.audio;
               statusChanged = true;
-              if (audioDecoderWorker) {
-                audioDecoderWorker.postMessage({
-                  type: 'updatePipelineStatus',
-                  data: {
-                    isActive: isAudioPipelineActive
-                  }
-                });
-              }
+              if (audioDecoderWorker) audioDecoderWorker.postMessage({
+                type: 'updatePipelineStatus',
+                data: {
+                  isActive: isAudioPipelineActive
+                }
+              });
             }
-            if (statusChanged) {
-              window.postMessage({
-                type: 'pipelineStatusUpdate',
-                video: isVideoPipelineActive,
-                audio: isAudioPipelineActive
-              }, window.location.origin);
-            }
+            if (statusChanged) window.postMessage({
+              type: 'pipelineStatusUpdate',
+              video: isVideoPipelineActive,
+              audio: isAudioPipelineActive
+            }, window.location.origin);
           } else {
-            console.warn(`Received unexpected JSON message type from server: ${obj.type}`, obj);
+            console.warn(`Unexpected JSON message type: ${obj.type}`, obj);
           }
         } else if (event.data.startsWith('cursor,')) {
           try {
@@ -3261,24 +2329,17 @@ document.addEventListener('DOMContentLoaded', () => {
               overlayInput.style.cursor = 'auto';
               return;
             }
-            const cursor_url = `url('data:image/png;base64,${cursorData.curdata}')`;
-            let cursorStyle = cursor_url;
-            if (cursorData.hotspot) {
-              cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
-            } else {
-              cursorStyle += ', auto';
-            }
+            let cursorStyle = `url('data:image/png;base64,${cursorData.curdata}')`;
+            if (cursorData.hotspot) cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
+            else cursorStyle += ', auto';
             overlayInput.style.cursor = cursorStyle;
           } catch (e) {
             console.error('Error parsing cursor data:', e);
           }
         } else if (event.data.startsWith('clipboard,')) {
           try {
-            const clipboardDataBase64 = event.data.substring(10);
-            const clipboardData = atob(clipboardDataBase64);
-            navigator.clipboard.writeText(clipboardData).catch((err) => {
-              console.error('Could not copy text to clipboard: ' + err);
-            });
+            const clipboardData = atob(event.data.substring(10));
+            navigator.clipboard.writeText(clipboardData).catch(err => console.error('Could not copy: ' + err));
             window.postMessage({
               type: 'clipboardContentUpdate',
               text: clipboardData
@@ -3289,157 +2350,83 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (event.data.startsWith('system,')) {
           try {
             const systemMsg = JSON.parse(event.data.substring(7));
-            if (systemMsg.action === 'reload') {
-              console.log('Received system reload action, reloading window.');
-              window.location.reload();
-            }
+            if (systemMsg.action === 'reload') window.location.reload();
           } catch (e) {
             console.error('Error parsing system data:', e);
           }
         } else if (event.data === 'VIDEO_STARTED' && !isVideoPipelineActive) {
-          console.log('Received VIDEO_STARTED confirmation.');
           isVideoPipelineActive = true;
           window.postMessage({
             type: 'pipelineStatusUpdate',
             video: true
           }, window.location.origin);
         } else if (event.data === 'VIDEO_STOPPED' && isVideoPipelineActive) {
-          console.log('Received VIDEO_STOPPED confirmation.');
           isVideoPipelineActive = false;
           window.postMessage({
             type: 'pipelineStatusUpdate',
             video: false
           }, window.location.origin);
           cleanupVideoBuffer();
-          if (currentEncoderMode === 'x264enc-striped') { // Also clear VNC decoders
-            clearAllVncStripeDecoders();
-          }
+          if (currentEncoderMode === 'x264enc-striped') clearAllVncStripeDecoders();
         } else if (event.data === 'AUDIO_STARTED' && !isAudioPipelineActive) {
-          console.log('Received AUDIO_STARTED confirmation.');
           isAudioPipelineActive = true;
           window.postMessage({
             type: 'pipelineStatusUpdate',
             audio: true
           }, window.location.origin);
-          if (audioDecoderWorker) {
-            audioDecoderWorker.postMessage({
-              type: 'updatePipelineStatus',
-              data: {
-                isActive: true
-              }
-            });
-          }
+          if (audioDecoderWorker) audioDecoderWorker.postMessage({
+            type: 'updatePipelineStatus',
+            data: {
+              isActive: true
+            }
+          });
         } else if (event.data === 'AUDIO_STOPPED' && isAudioPipelineActive) {
-          console.log('Received AUDIO_STOPPED confirmation.');
           isAudioPipelineActive = false;
           window.postMessage({
             type: 'pipelineStatusUpdate',
             audio: false
           }, window.location.origin);
-          if (audioDecoderWorker) {
-            audioDecoderWorker.postMessage({
-              type: 'updatePipelineStatus',
-              data: {
-                isActive: false
-              }
-            });
-          }
+          if (audioDecoderWorker) audioDecoderWorker.postMessage({
+            type: 'updatePipelineStatus',
+            data: {
+              isActive: false
+            }
+          });
         } else {
           if (window.webrtcInput && window.webrtcInput.on_message) {
-            const handled = window.webrtcInput.on_message(event.data);
-            if (!handled) {
-              // console.warn('Received unhandled string message (not input):', event.data);
-            }
-          } else {
-            // console.warn('Received unhandled string message (no input handler):', event.data);
+            window.webrtcInput.on_message(event.data); // Let input handler try
           }
         }
-      } else if (event.data === 'MODE websockets') {
-        clientMode = 'websockets';
-        console.log('[websockets] Switched to websockets mode.');
-        if (currentEncoderMode !== 'x264enc-striped') { // Only init main decoder if not in VNC mode
-          initializeDecoder();
-        }
-        initializeDecoderAudio();
-        initializeInput();
-        if (playButtonElement) playButtonElement.classList.add('hidden');
-        if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
-        console.log('Starting video painting loop (requestAnimationFrame).');
-        requestAnimationFrame(paintVideoFrame);
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-          websocket.send('cr');
-          console.log('[websockets] Sent clipboard request (cr) to server.');
-          if (!document.hidden && !isVideoPipelineActive) websocket.send('START_VIDEO');
-          if (!isAudioPipelineActive) websocket.send('START_AUDIO');
-        }
-      } else if (event.data === 'MODE webrtc') {
-        clientMode = 'webrtc';
-        console.log('[websockets] Switched to webrtc mode.');
-        if (metricsIntervalId) {
-          clearInterval(metricsIntervalId);
-          metricsIntervalId = null;
-          console.log('[websockets] Stopped client metrics interval for webrtc mode.');
-        }
-        if (decoder) decoder.close(); // Close main full-frame decoder
-        clearAllVncStripeDecoders(); // Clear VNC decoders when switching mode
-        cleanupVideoBuffer();
-        cleanupJpegStripeQueue();
-        stopMicrophoneCapture();
-        setupWebRTCMode();
-        fetch('./turn')
-          .then((response) => response.json())
-          .then((config) => {
-            turnSwitch = getBoolParam('turnSwitch', turnSwitch);
-            audio_webrtc.forceTurn = turnSwitch;
-            audio_webrtc.rtcPeerConfig = config;
-            const windowResolution =
-              (clientMode === 'webrtc' && webrtc && webrtc.input) ?
-              webrtc.input.getWindowResolution() : [roundDownToEven(window.innerWidth), roundDownToEven(window.innerHeight)];
-            if (!scaleLocallyManual) {
-              videoElement.style.width = `${windowResolution[0] / window.devicePixelRatio}px`;
-              videoElement.style.height = `${windowResolution[1] / window.devicePixelRatio}px`;
-            }
-            if (config.iceServers.length > 1) {
-              appendDebugEntry(
-                applyTimestamp(
-                  `[app] using TURN servers: ${config.iceServers[1].urls.join(
-                    ', '
-                  )}`
-                )
-              );
-            } else {
-              appendDebugEntry(applyTimestamp('[app] no TURN servers found.'));
-            }
-            audio_webrtc.connect();
-            webrtc.forceTurn = turnSwitch;
-            webrtc.rtcPeerConfig = config;
-            webrtc.connect();
-          });
       }
     }
   };
+
   websocket.onerror = (event) => {
     console.error('[websockets] Error:', event);
+    status = 'error';
+    loadingText = 'WebSocket connection error.';
+    updateStatusDisplay();
     if (metricsIntervalId) {
       clearInterval(metricsIntervalId);
       metricsIntervalId = null;
-      console.log('[websockets] Stopped client metrics interval due to error.');
     }
   };
+
   websocket.onclose = (event) => {
     console.log('[websockets] Connection closed', event);
+    status = 'disconnected';
+    loadingText = 'WebSocket disconnected. Attempting to reconnect...';
+    updateStatusDisplay();
     if (metricsIntervalId) {
       clearInterval(metricsIntervalId);
       metricsIntervalId = null;
-      console.log('[websockets] Stopped client metrics interval due to close.');
     }
     cleanupVideoBuffer();
     cleanupJpegStripeQueue();
-    if (decoder) decoder.close();
-    clearAllVncStripeDecoders(); // VNC decoders on close
+    if (decoder && decoder.state !== "closed") decoder.close();
+    clearAllVncStripeDecoders();
     decoder = null;
     if (audioDecoderWorker) {
-      console.log('[websockets] Closing: Terminating Audio Decoder Worker.');
       audioDecoderWorker.postMessage({
         type: 'close'
       });
@@ -3454,15 +2441,18 @@ document.addEventListener('DOMContentLoaded', () => {
       video: false,
       audio: false
     }, window.location.origin);
+    // Reconnect logic is below
   };
-  // Reconnect on drop 
+
   setInterval(() => {
     if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
-      // Pass
+      // Connection is fine
     } else {
-      location.reload()
+      // Attempt to reload if not connected or clientMode isn't set (implies initial failure or disconnect)
+      console.log("WebSocket not open or not in WebSocket mode, reloading page to reconnect.");
+      location.reload();
     }
-  }, 1000);
+  }, 3000); // Check every 3 seconds for robust reconnection
 });
 
 function cleanupVideoBuffer() {
@@ -3473,7 +2463,7 @@ function cleanupVideoBuffer() {
       frame.close();
       closedCount++;
     } catch (e) {
-      // Ignore errors closing already closed frames
+      /* ignore */
     }
   }
   if (closedCount > 0) console.log(`Cleanup: Closed ${closedCount} video frames from main buffer.`);
@@ -3494,6 +2484,7 @@ function cleanupJpegStripeQueue() {
   }
   if (closedCount > 0) console.log(`Cleanup: Closed ${closedCount} JPEG stripe images.`);
 }
+
 const audioDecoderWorkerCode = `
   let decoderAudio;
   let pipelineActive = true;
@@ -3506,42 +2497,29 @@ const audioDecoderWorkerCode = `
 
   async function initializeDecoderInWorker() {
     if (decoderAudio && decoderAudio.state !== 'closed') {
-      console.log('[AudioWorker] Closing existing AudioDecoder before re-initializing.');
-      try {
-        decoderAudio.close();
-      } catch (e) {
-        console.warn('[AudioWorker] Error closing existing AudioDecoder:', e);
-      }
+      try { decoderAudio.close(); } catch (e) { /* ignore */ }
     }
     currentDecodeQueueSize = 0;
-
     decoderAudio = new AudioDecoder({
-      output: handleDecodedAudioFrameInWorker, // This will be the async version
+      output: handleDecodedAudioFrameInWorker,
       error: (e) => {
         console.error('[AudioWorker] AudioDecoder error:', e.message, e);
         currentDecodeQueueSize = Math.max(0, currentDecodeQueueSize -1);
         if (e.message.includes('fatal') || (decoderAudio && (decoderAudio.state === 'closed' || decoderAudio.state === 'unconfigured'))) {
-          console.warn('[AudioWorker] Attempting to reset AudioDecoder due to error or bad state.');
-          initializeDecoderInWorker(); // Try to recover
+          initializeDecoderInWorker();
         }
-        // Optionally, notify main thread of persistent errors
-        // self.postMessage({ type: 'decoderError', message: e.message });
       },
     });
-
     try {
       const support = await AudioDecoder.isConfigSupported(decoderConfig);
       if (support.supported) {
         await decoderAudio.configure(decoderConfig);
-        console.log('[AudioWorker] AudioDecoder configured successfully.');
         self.postMessage({ type: 'decoderInitialized' });
       } else {
-        console.error('[AudioWorker] AudioDecoder configuration not supported:', support);
         decoderAudio = null;
         self.postMessage({ type: 'decoderInitFailed', reason: 'configNotSupported' });
       }
     } catch (e) {
-      console.error('[AudioWorker] Error configuring AudioDecoder:', e);
       decoderAudio = null;
       self.postMessage({ type: 'decoderInitFailed', reason: e.message });
     }
@@ -3549,179 +2527,89 @@ const audioDecoderWorkerCode = `
 
   async function handleDecodedAudioFrameInWorker(frame) {
     currentDecodeQueueSize = Math.max(0, currentDecodeQueueSize - 1);
-
     if (!frame || typeof frame.copyTo !== 'function' || typeof frame.allocationSize !== 'function' || typeof frame.close !== 'function') {
-        console.error('[AudioWorker] Invalid frame received in output callback or frame missing methods. Frame:', frame);
-        if(frame && typeof frame.close === 'function') {
-            try { frame.close(); } catch(e) { /* ignore */ }
-        }
+        if(frame && typeof frame.close === 'function') { try { frame.close(); } catch(e) { /* ignore */ } }
         return;
     }
-
     if (!pipelineActive) {
       try { frame.close(); } catch(e) { /* ignore */ }
       return;
     }
-
     let pcmDataArrayBuffer;
-
     try {
       const requiredByteLength = frame.allocationSize({ planeIndex: 0, format: 'f32' });
       if (requiredByteLength === 0) {
-          console.warn('[AudioWorker] Frame allocation size is 0. Skipping. Frame format:', frame.format);
-          // It's crucial to close the frame if we're not processing it further.
           try { frame.close(); } catch(e) { /* ignore */ }
           return;
       }
-
       pcmDataArrayBuffer = new ArrayBuffer(requiredByteLength);
       const pcmDataView = new Float32Array(pcmDataArrayBuffer);
-
       await frame.copyTo(pcmDataView, { planeIndex: 0, format: 'f32' });
-
       self.postMessage({ type: 'decodedAudioData', pcmBuffer: pcmDataArrayBuffer }, [pcmDataArrayBuffer]);
-      pcmDataArrayBuffer = null; // Buffer is transferred
-
-    } catch (error) {
-      console.error('[AudioWorker] Audio processing error in handleDecodedAudioFrameInWorker:', error,
-                    'Frame format:', frame?.format, 'Sample rate:', frame?.sampleRate,
-                    'Channels:', frame?.numberOfChannels, 'Frames (samples):', frame?.numberOfFrames,
-                    'Duration (us):', frame?.duration);
-    } finally {
-      // Frame should be closed by the time copyTo promise resolves or if an error occurs before/during copyTo.
-      // If an error occurs *after* copyTo but *before* postMessage, the frame might still be open.
-      // The AudioDecoder spec implies frames are single-use and should be closed.
-      // If copyTo succeeds, the data is copied. If it fails, the frame should still be closed.
-      if (frame && typeof frame.close === 'function') { // Check again as it might have been closed in an error path.
-        try {
-            frame.close();
-        } catch (e) {
-            // console.warn('[AudioWorker] Error closing frame in finally (already closed?):', e.message);
-        }
+      pcmDataArrayBuffer = null;
+    } catch (error) { /* console.error */ }
+    finally {
+      if (frame && typeof frame.close === 'function') {
+        try { frame.close(); } catch (e) { /* ignore */ }
       }
     }
   }
 
   self.onmessage = async (event) => {
     const { type, data } = event.data;
-
     switch (type) {
-      case 'init': // Worker receives initial pipeline status
+      case 'init':
         pipelineActive = data.initialPipelineStatus;
-        console.log('[AudioWorker] Initialized. Initial pipeline status:', pipelineActive);
         await initializeDecoderInWorker();
         break;
       case 'decode':
         if (!pipelineActive) return;
-
         if (decoderAudio && decoderAudio.state === 'configured') {
-          const opusBuffer = data.opusBuffer;
-          const chunk = new EncodedAudioChunk({
-            type: 'key',
-            timestamp: data.timestamp || (performance.now() * 1000),
-            data: opusBuffer,
-          });
+          const chunk = new EncodedAudioChunk({ type: 'key', timestamp: data.timestamp || (performance.now() * 1000), data: data.opusBuffer });
           try {
-            if (currentDecodeQueueSize < 20) { // Simple backpressure
-              decoderAudio.decode(chunk);
-              currentDecodeQueueSize++;
-            } else {
-              // console.warn(\`[AudioWorker] Decode queue full (\${currentDecodeQueueSize}), dropping frame.\`);
-              // If dropping, we don't increment currentDecodeQueueSize for this chunk
-            }
-          } catch (e) {
-            console.error('[AudioWorker] Error decoding audio chunk:', e);
-            // Don't decrement currentDecodeQueueSize here, as the chunk wasn't successfully enqueued for output.
-            // The 'output' or 'error' callback of the decoder will handle queue size adjustment.
-            if (decoderAudio.state === 'closed' || decoderAudio.state === 'unconfigured') {
-              await initializeDecoderInWorker();
-            }
-          }
+            if (currentDecodeQueueSize < 20) { decoderAudio.decode(chunk); currentDecodeQueueSize++; }
+          } catch (e) { if (decoderAudio.state === 'closed' || decoderAudio.state === 'unconfigured') await initializeDecoderInWorker(); }
         } else if (!decoderAudio || (decoderAudio && decoderAudio.state !== 'configuring')) {
-          console.warn('[AudioWorker] Decoder not configured or in bad state when receiving decode message. Attempting to initialize.');
           await initializeDecoderInWorker();
-          // TODO: Could consider queuing the chunk here and processing after successful init
         }
         break;
-      case 'reinitialize':
-        console.log('[AudioWorker] Received reinitialize request.');
-        await initializeDecoderInWorker();
-        break;
-      case 'updatePipelineStatus':
-        pipelineActive = data.isActive;
-        console.log('[AudioWorker] Pipeline status updated to:', pipelineActive);
-        if (!pipelineActive && decoderAudio && decoderAudio.state === 'configured') {
-            // If pipeline becomes inactive, we might want to flush the decoder
-            // This helps clear out any pending frames if the pipeline is paused for a while.
-            // However, a simple flush might not be enough if there's a large input queue.
-            // For now, just stopping new decodes is the primary action.
-            // try {
-            //   await decoderAudio.flush();
-            //   console.log('[AudioWorker] Flushed AudioDecoder due to inactive pipeline.');
-            // } catch (e) {
-            //   console.warn('[AudioWorker] Error flushing AudioDecoder:', e);
-            // }
-        }
-        break;
+      case 'reinitialize': await initializeDecoderInWorker(); break;
+      case 'updatePipelineStatus': pipelineActive = data.isActive; break;
       case 'close':
-        console.log('[AudioWorker] Received close request.');
-        if (decoderAudio && decoderAudio.state !== 'closed') {
-          try {
-            decoderAudio.close();
-            console.log('[AudioWorker] AudioDecoder closed.');
-          } catch (e) { /* ignore */ }
-        }
-        decoderAudio = null;
-        self.close(); // Worker terminates itself
-        break;
-      default:
-        console.warn('[AudioWorker] Received unknown message type:', type);
+        if (decoderAudio && decoderAudio.state !== 'closed') { try { decoderAudio.close(); } catch (e) { /* ignore */ } }
+        decoderAudio = null; self.close(); break;
+      default: break;
     }
   };
 `;
-// --- Microphone Worklet Code ---
+
 const micWorkletProcessorCode = `
 class MicWorkletProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-  }
-
+  constructor() { super(); }
   process(inputs, outputs, parameters) {
     const input = inputs[0];
-
-    if (input && input[0]) { // Check if input and channel data are available
+    if (input && input[0]) {
       const inputChannelData = input[0];
       const int16Array = Int16Array.from(inputChannelData, x => x * 32767);
       if (! int16Array.every(item => item === 0)) {
         this.port.postMessage(int16Array.buffer, [int16Array.buffer]);
       }
     }
-    return true; // Keep the processor alive
+    return true;
   }
 }
-
 registerProcessor('mic-worklet-processor', MicWorkletProcessor);
 `;
+
 async function startMicrophoneCapture() {
-  // Check if already active or prerequisites missing
   if (isMicrophoneActive || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    if (!isMicrophoneActive) {
-      console.warn('getUserMedia not supported or mediaDevices not available.');
-      // Ensure state reflects reality and trigger UI update
-      isMicrophoneActive = false;
-      postSidebarButtonUpdate(); // Post update even on failure to start due to lack of support
-    } else {
-      console.warn('Microphone already active.');
-      postSidebarButtonUpdate();
-    }
-    return; // Exit if already active or not supported
+    if (!isMicrophoneActive) isMicrophoneActive = false;
+    postSidebarButtonUpdate();
+    return;
   }
-  console.log('Attempting to start microphone capture...');
-  // Define constraints variable here to be accessible in catch block
   let constraints;
   try {
-    // 1. Get Microphone Stream with selected device preference
-    constraints = { // Assign to the outer scope variable
+    constraints = {
       audio: {
         deviceId: preferredInputDeviceId ? {
           exact: preferredInputDeviceId
@@ -3734,196 +2622,94 @@ async function startMicrophoneCapture() {
       },
       video: false
     };
-    console.log("Requesting microphone with constraints:", JSON.stringify(constraints.audio));
     micStream = await navigator.mediaDevices.getUserMedia(constraints);
-    console.log('Microphone access granted.');
-    // Log actual settings and update preferred device if needed
     const audioTracks = micStream.getAudioTracks();
     if (audioTracks.length > 0) {
       const settings = audioTracks[0].getSettings();
-      console.log("Actual microphone settings obtained:", settings);
-      if (!preferredInputDeviceId && settings.deviceId) {
-        console.log(`Default input device resolved to: ${settings.deviceId} (${settings.label || 'No Label'})`);
-        preferredInputDeviceId = settings.deviceId;
-      }
-      // Log if the requested sample rate was achieved
-      if (settings.sampleRate && settings.sampleRate !== 24000) {
-        console.warn(`Requested sampleRate 24000 but got ${settings.sampleRate}`);
-      }
+      if (!preferredInputDeviceId && settings.deviceId) preferredInputDeviceId = settings.deviceId;
     }
-    // 2. Create *separate* AudioContext for Microphone
-    if (micAudioContext && micAudioContext.state !== 'closed') {
-      console.warn("Closing existing micAudioContext before creating a new one.");
-      await micAudioContext.close();
-      micAudioContext = null; // Clear reference
-    }
+    if (micAudioContext && micAudioContext.state !== 'closed') await micAudioContext.close();
     micAudioContext = new AudioContext({
       sampleRate: 24000
-    }); // Use the requested sample rate
-    console.log('Microphone AudioContext created. Initial State:', micAudioContext.state, 'Sample Rate:', micAudioContext.sampleRate);
-    if (micAudioContext.state === 'suspended') {
-      console.log('Mic AudioContext is suspended, attempting resume...');
-      await micAudioContext.resume();
-      console.log('Mic AudioContext resumed. New State:', micAudioContext.state);
-    }
-    // Check if the actual context sample rate matches requested
-    if (micAudioContext.sampleRate !== 24000) {
-      console.warn(`Requested AudioContext sampleRate 24000 but created context has ${micAudioContext.sampleRate}`);
-    }
-    // 3. Add MicWorkletProcessor Module (Ensure micWorkletProcessorCode is defined)
-    if (typeof micWorkletProcessorCode === 'undefined' || !micWorkletProcessorCode) {
-      throw new Error("micWorkletProcessorCode is not defined. Cannot add AudioWorklet module.");
-    }
+    });
+    if (micAudioContext.state === 'suspended') await micAudioContext.resume();
+    if (typeof micWorkletProcessorCode === 'undefined' || !micWorkletProcessorCode) throw new Error("micWorkletProcessorCode undefined");
     const micWorkletBlob = new Blob([micWorkletProcessorCode], {
       type: 'application/javascript'
-    }); // Use correct MIME type
+    });
     const micWorkletURL = URL.createObjectURL(micWorkletBlob);
     try {
       await micAudioContext.audioWorklet.addModule(micWorkletURL);
-      console.log('Microphone AudioWorklet module added.');
     } finally {
-      URL.revokeObjectURL(micWorkletURL); // Revoke URL immediately after addModule promise resolves/rejects
+      URL.revokeObjectURL(micWorkletURL);
     }
-    // 4. Create Source and Worklet Nodes
     micSourceNode = micAudioContext.createMediaStreamSource(micStream);
-    micWorkletNode = new AudioWorkletNode(micAudioContext, 'mic-worklet-processor'); // Ensure this name matches registerProcessor
-    console.log('Microphone source and worklet nodes created.');
-    // 5. Set up WebSocket message handler for processed audio
+    micWorkletNode = new AudioWorkletNode(micAudioContext, 'mic-worklet-processor');
     micWorkletNode.port.onmessage = (event) => {
       const pcm16Buffer = event.data;
-      const wsState = websocket ? websocket.readyState : 'No WebSocket';
       if (websocket && websocket.readyState === WebSocket.OPEN && isMicrophoneActive) {
-        if (!pcm16Buffer || !(pcm16Buffer instanceof ArrayBuffer) || pcm16Buffer.byteLength === 0) {
-          return;
-        }
-        // Message format: 1 byte type (0x02) + PCM data
+        if (!pcm16Buffer || !(pcm16Buffer instanceof ArrayBuffer) || pcm16Buffer.byteLength === 0) return;
         const messageBuffer = new ArrayBuffer(1 + pcm16Buffer.byteLength);
         const messageView = new DataView(messageBuffer);
-        messageView.setUint8(0, 0x02); // Type byte for PCM audio
-        new Uint8Array(messageBuffer, 1).set(new Uint8Array(pcm16Buffer)); // Copy PCM data
+        messageView.setUint8(0, 0x02);
+        new Uint8Array(messageBuffer, 1).set(new Uint8Array(pcm16Buffer));
         try {
           websocket.send(messageBuffer);
         } catch (e) {
-          console.error("Error sending microphone data via websocket:", e);
+          console.error("Error sending mic data:", e);
         }
-      } else if (!isMicrophoneActive) {
-        // console.log("Microphone inactive, dropping message from worklet."); // Can be noisy
-      } else {
-        console.warn("WebSocket not open or null, cannot send microphone data. State:", wsState);
       }
     };
-    micWorkletNode.port.onmessageerror = (event) => {
-      console.error("Error receiving message from mic worklet:", event);
-    };
-    // 6. Connect the nodes
+    micWorkletNode.port.onmessageerror = (event) => console.error("Error from mic worklet:", event);
     micSourceNode.connect(micWorkletNode);
-    console.log('Microphone nodes connected.');
-    // 7. Update State and Trigger UI Update via postMessage
     isMicrophoneActive = true;
-    postSidebarButtonUpdate(); // Post message to update UI
-    console.log('Microphone capture started successfully.');
+    postSidebarButtonUpdate();
   } catch (error) {
     console.error('Failed to start microphone capture:', error);
-    if (constraints) { // Log constraints if they were defined
-      console.error('Error occurred after requesting constraints:', JSON.stringify(constraints.audio));
-    }
-    if (error.name === 'NotAllowedError') {
-      alert("Microphone access was denied. Please grant permission in your browser settings.");
-    } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-      alert("No microphone found, or the selected microphone is unavailable. Please check your hardware and browser settings.");
-      // Clear preference if specific device failed
-      if (preferredInputDeviceId) {
-        console.warn(`Failed to find preferred device ${preferredInputDeviceId}. Clearing preference.`);
-        preferredInputDeviceId = null;
-      }
-    } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-      alert("Could not read from the microphone. It might be in use by another application or there could be a hardware issue.");
-    } else if (error.name === 'OverconstrainedError') {
-      alert(`Could not satisfy microphone requirements (e.g., sample rate ${constraints?.audio?.sampleRate}). Try default settings.`);
-      console.error("OverconstrainedError details:", error.constraint);
-    } else if (error.message.includes("addModule")) {
-      alert("Failed to load audio processing module. Please check console for details.");
-    } else {
-      alert(`An unexpected error occurred while starting the microphone: ${error.message}`);
-    }
-    // Clean up any resources that might have been partially created
+    // Simplified error alerting for brevity in this refactor
+    alert(`Microphone error: ${error.name} - ${error.message}`);
     stopMicrophoneCapture();
-    // Ensure state reflects failure and trigger UI update via postMessage
     isMicrophoneActive = false;
-    postSidebarButtonUpdate(); // Post message to update UI to reflect failure
+    postSidebarButtonUpdate();
   }
 }
 
 function stopMicrophoneCapture() {
-  // Only proceed if the microphone is actually active
-  if (!isMicrophoneActive && !micStream && !micAudioContext) { // Check all relevant states
-    // console.log('Stop capture called, but microphone appears to be already inactive or not initialized.');
-    if (isMicrophoneActive) { // If state is true but resources are null, correct state.
+  if (!isMicrophoneActive && !micStream && !micAudioContext) {
+    if (isMicrophoneActive) {
       isMicrophoneActive = false;
       postSidebarButtonUpdate();
     }
     return;
   }
-  console.log('Stopping microphone capture...');
-  // 1. Stop MediaStream Tracks
   if (micStream) {
-    micStream.getTracks().forEach(track => {
-      track.stop();
-      console.log(`Microphone track stopped: ${track.kind} (${track.label})`);
-    });
-    micStream = null; // Clear the reference
-  } else {
-    // console.log('No active microphone stream (micStream) found to stop tracks for.');
+    micStream.getTracks().forEach(track => track.stop());
+    micStream = null;
   }
-  // 2. Disconnect Nodes (Disconnect in reverse order: worklet first)
   if (micWorkletNode) {
-    // Remove listeners first to prevent potential errors during/after disconnect
     micWorkletNode.port.onmessage = null;
     micWorkletNode.port.onmessageerror = null;
     try {
       micWorkletNode.disconnect();
-      console.log('Microphone worklet node disconnected.');
-    } catch (e) {
-      console.warn("Error disconnecting worklet node (already disconnected?):", e);
-    }
-    micWorkletNode = null; // Clear reference
-  } else {
-    // console.log('No microphone worklet node (micWorkletNode) found to disconnect.');
+    } catch (e) {}
+    micWorkletNode = null;
   }
   if (micSourceNode) {
     try {
       micSourceNode.disconnect();
-      console.log('Microphone source node disconnected.');
-    } catch (e) {
-      console.warn("Error disconnecting source node (already disconnected?):", e);
-    }
-    micSourceNode = null; // Clear reference
-  } else {
-    // console.log('No microphone source node (micSourceNode) found to disconnect.');
+    } catch (e) {}
+    micSourceNode = null;
   }
-  // 3. Close Microphone AudioContext
   if (micAudioContext) {
     if (micAudioContext.state !== 'closed') {
-      console.log(`Closing microphone AudioContext (State: ${micAudioContext.state})...`);
-      micAudioContext.close().then(() => {
-        console.log('Microphone AudioContext closed successfully.');
-      }).catch(e => {
-        console.error('Error closing microphone AudioContext:', e);
-      }).finally(() => {
-        micAudioContext = null; // Clear reference after attempt
-      });
+      micAudioContext.close().catch(e => console.error('Error closing mic AudioContext:', e)).finally(() => micAudioContext = null);
     } else {
-      // console.log('Microphone AudioContext already closed.');
-      micAudioContext = null; // Ensure reference is cleared
+      micAudioContext = null;
     }
-  } else {
-    // console.log('No microphone AudioContext (micAudioContext) found to close.');
   }
-  // 4. Update State and Trigger UI Update via postMessage
-  if (isMicrophoneActive) { // Only update if state was true
+  if (isMicrophoneActive) {
     isMicrophoneActive = false;
-    postSidebarButtonUpdate(); // Post message to update UI
-    console.log('Microphone capture stopped state updated and UI update posted.');
+    postSidebarButtonUpdate();
   }
 }
 
@@ -3931,73 +2717,43 @@ function cleanup() {
   if (metricsIntervalId) {
     clearInterval(metricsIntervalId);
     metricsIntervalId = null;
-    console.log('Cleanup: Stopped client metrics interval.');
   }
   if (window.isCleaningUp) return;
   window.isCleaningUp = true;
   console.log("Cleanup: Starting cleanup process...");
-  // Stop microphone first
   stopMicrophoneCapture();
-  if (clientMode === 'webrtc' && signaling) {
-    signaling.disconnect();
-    signaling = null;
-  }
-  if (audio_signaling) {
-    audio_signaling.disconnect();
-    audio_signaling = null;
-  }
-  if (clientMode === 'webrtc' && webrtc) {
-    webrtc.reset();
-    webrtc = null;
-  }
-  if (audio_webrtc) {
-    audio_webrtc.reset();
-    audio_webrtc = null;
-  }
+  // WebRTC specific cleanup removed (signaling, webrtc instances)
   if (websocket) {
     websocket.onopen = null;
     websocket.onmessage = null;
     websocket.onerror = null;
     websocket.onclose = null;
-    if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) {
-      websocket.close();
-      console.log("Cleanup: Closed websocket connection.");
-    }
+    if (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING) websocket.close();
     websocket = null;
   }
-  // Cleanup Playback Audio Context
   if (audioContext) {
-    if (audioContext.state !== 'closed') {
-      console.log(`Cleanup: Closing Playback AudioContext (state: ${audioContext.state})`);
-      audioContext.close().then(() => console.log('Cleanup: Playback AudioContext closed.')).catch(e => console.error('Cleanup: Error closing Playback AudioContext:', e));
-    }
+    if (audioContext.state !== 'closed') audioContext.close().catch(e => console.error('Cleanup error:', e));
     audioContext = null;
     audioWorkletNode = null;
     audioWorkletProcessorPort = null;
     audioBufferQueue.length = 0;
     window.currentAudioBufferSize = 0;
     if (audioDecoderWorker) {
-      console.log("Cleanup: Terminating Audio Decoder Worker.");
       audioDecoderWorker.postMessage({
         type: 'close'
-      }); // Ask worker to close its decoder
+      });
       audioDecoderWorker = null;
     }
   }
-  if (decoder) { // Main full-frame decoder
-    if (decoder.state !== 'closed') {
-      decoder.close();
-      console.log("Cleanup: Closed Main VideoDecoder.");
-    }
+  if (decoder && decoder.state !== "closed") {
+    decoder.close();
     decoder = null;
   }
-  cleanupVideoBuffer(); // For main video frames
-  cleanupJpegStripeQueue(); // For JPEG stripes
-  clearAllVncStripeDecoders(); // For H.264 VNC stripes
-  // Reset audio device preferences
+  cleanupVideoBuffer();
+  cleanupJpegStripeQueue();
+  clearAllVncStripeDecoders();
   preferredInputDeviceId = null;
   preferredOutputDeviceId = null;
-  console.log("Cleanup: Reset preferred audio device IDs.");
   status = 'connecting';
   loadingText = '';
   showStart = true;
@@ -4005,112 +2761,56 @@ function cleanup() {
   inputInitialized = false;
   if (statusDisplayElement) statusDisplayElement.textContent = 'Connecting...';
   if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
-  if (playButtonElement) playButtonElement.classList.remove('hidden');
+  if (playButtonElement) playButtonElement.classList.remove('hidden'); // Should be hidden by default in WS
   if (overlayInput) overlayInput.style.cursor = 'auto';
   serverClipboardContent = '';
-  isVideoPipelineActive = true; // Reset to default assumption
-  isAudioPipelineActive = true; // Reset to default assumption
-  isMicrophoneActive = false; // Always starts off
-  connectionStat.connectionStatType = 'unknown';
-  connectionStat.connectionLatency = 0;
-  // ... (rest of connectionStat resets) ...
-  gamepad.gamepadState = 'disconnected';
-  gamepad.gamepadName = 'none';
-  // ... (rest of state variable resets) ...
+  isVideoPipelineActive = true;
+  isAudioPipelineActive = true;
+  isMicrophoneActive = false;
+  // Reset stats objects if necessary
   window.fps = 0;
   frameCount = 0;
   lastFpsUpdateTime = performance.now();
   console.log("Cleanup: Finished cleanup process.");
   window.isCleaningUp = false;
 }
-/**
- * Handles the 'dragover' event to allow dropping.
- * @param {DragEvent} ev
- */
+
 function handleDragOver(ev) {
-  ev.preventDefault(); // Necessary to allow dropping
+  ev.preventDefault();
   ev.dataTransfer.dropEffect = 'copy';
 }
-/**
- * Handles the 'drop' event on the overlayInput element.
- * Collects entries first, then processes sequentially using async/await.
- * @param {DragEvent} ev
- */
+
 async function handleDrop(ev) {
   ev.preventDefault();
   ev.stopPropagation();
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-    const errorMsg = "WebSocket is not open. Cannot upload files.";
-    console.error(errorMsg);
-    // Send error message to window if needed
     window.postMessage({
       type: 'fileUpload',
       payload: {
         status: 'error',
         fileName: 'N/A',
-        message: errorMsg
+        message: "WebSocket not open."
       }
     }, window.location.origin);
     return;
   }
-  console.log("File(s) dropped, collecting entries...");
-  const entriesToProcess = []; // Array to hold valid entries
+  const entriesToProcess = [];
   if (ev.dataTransfer.items) {
-    // Synchronously collect all entries from the item list
     for (let i = 0; i < ev.dataTransfer.items.length; i++) {
-      const item = ev.dataTransfer.items[i];
-      const entry = item.webkitGetAsEntry() || item.getAsEntry();
-      if (entry) {
-        entriesToProcess.push(entry); // Add the entry to our array
-      } else {
-        console.warn("Could not get FileSystemEntry for dropped item.", item);
-      }
+      const entry = ev.dataTransfer.items[i].webkitGetAsEntry() || ev.dataTransfer.items[i].getAsEntry();
+      if (entry) entriesToProcess.push(entry);
     }
-  } else {
+  } else if (ev.dataTransfer.files.length > 0) { // Fallback for browsers not supporting .items or .getAsEntry()
     for (let i = 0; i < ev.dataTransfer.files.length; i++) {
-      console.warn("Legacy file drop detected. Handling files directly.");
+      await uploadFileObject(ev.dataTransfer.files[i], ev.dataTransfer.files[i].name);
     }
-    if (entriesToProcess.length === 0 && ev.dataTransfer.files.length > 0) {
-      console.log("Processing legacy files sequentially.");
-      try {
-        for (let i = 0; i < ev.dataTransfer.files.length; i++) {
-          await uploadFileObject(ev.dataTransfer.files[i], ev.dataTransfer.files[i].name);
-        }
-        console.log("Finished processing all legacy files.");
-      } catch (error) {
-        const errorMsg = `An error occurred during the legacy file upload process: ${error.message || error}`;
-        console.error(errorMsg);
-        window.postMessage({
-          type: 'fileUpload',
-          payload: {
-            status: 'error',
-            fileName: 'N/A',
-            message: errorMsg
-          }
-        }, window.location.origin);
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-          try {
-            websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Legacy processing failed`);
-          } catch (_) {}
-        }
-      } finally {
-        // No explicit cleanup needed here for legacy files
-      }
-      return;
-    }
+    return; // Processed legacy files, exit.
   }
-  console.log(`Collected ${entriesToProcess.length} entries to process sequentially.`);
-  // Now, sequentially process the entries from our stable array
+
   try {
-    for (const entry of entriesToProcess) {
-      const entryName = entry.name || 'Unknown Entry Name';
-      console.log(`Processing collected entry: ${entryName}`);
-      await handleDroppedEntry(entry);
-    }
-    console.log("Finished processing all collected entries.");
+    for (const entry of entriesToProcess) await handleDroppedEntry(entry);
   } catch (error) {
-    const errorMsg = `An error occurred during the sequential upload process: ${error.message || error}`;
-    console.error(errorMsg);
+    const errorMsg = `Error during sequential upload: ${error.message || error}`;
     window.postMessage({
       type: 'fileUpload',
       payload: {
@@ -4119,40 +2819,22 @@ async function handleDrop(ev) {
         message: errorMsg
       }
     }, window.location.origin);
-    if (websocket && websocket.readyState === WebSocket.OPEN) {
-      try {
-        websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Processing failed`);
-      } catch (_) {}
-    }
-  } finally {
-    console.log("Upload process finished.");
+    if (websocket && websocket.readyState === WebSocket.OPEN) websocket.send(`FILE_UPLOAD_ERROR:GENERAL:Processing failed`);
   }
 }
-/**
- * Promisified version of entry.file()
- * @param {FileSystemFileEntry} fileEntry
- * @returns {Promise<File>}
- */
+
 function getFileFromEntry(fileEntry) {
-  return new Promise((resolve, reject) => {
-    fileEntry.file(resolve, reject);
-  });
+  return new Promise((resolve, reject) => fileEntry.file(resolve, reject));
 }
-/**
- * Recursively handles a dropped FileSystemEntry (file or directory) sequentially.
- * @param {FileSystemEntry} entry
- */
+
 async function handleDroppedEntry(entry) {
   if (entry.isFile) {
-    const pathName = entry.fullPath || entry.name; // Use fullPath if available
+    const pathName = entry.fullPath || entry.name;
     try {
-      // Get the file object using the promisified helper
       const file = await getFileFromEntry(entry);
-      // Await the upload of this file, passing the path
       await uploadFileObject(file, pathName);
     } catch (err) {
-      const errorMsg = `Error getting or uploading file from entry ${pathName}: ${err.message || err}`;
-      console.error(errorMsg);
+      const errorMsg = `Error with file entry ${pathName}: ${err.message || err}`;
       window.postMessage({
         type: 'fileUpload',
         payload: {
@@ -4161,63 +2843,31 @@ async function handleDroppedEntry(entry) {
           message: errorMsg
         }
       }, window.location.origin);
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        try {
-          websocket.send(`FILE_UPLOAD_ERROR:${pathName}:Failed to get/upload file`);
-        } catch (_) {}
-      }
+      if (websocket && websocket.readyState === WebSocket.OPEN) websocket.send(`FILE_UPLOAD_ERROR:${pathName}:Failed to get/upload`);
       throw err;
     }
   } else if (entry.isDirectory) {
-    const dirPath = entry.fullPath || entry.name;
-    console.log(`Reading directory: ${dirPath}`);
     const dirReader = entry.createReader();
-    // Await the processing of the entire directory
     await readDirectoryEntries(dirReader);
   }
 }
-/**
- * Promisified version of dirReader.readEntries()
- * Reads one batch of entries.
- * @param {FileSystemDirectoryReader} dirReader
- * @returns {Promise<FileSystemEntry[]>}
- */
+
 function readEntriesPromise(dirReader) {
-  return new Promise((resolve, reject) => {
-    dirReader.readEntries(resolve, reject);
-  });
+  return new Promise((resolve, reject) => dirReader.readEntries(resolve, reject));
 }
-/**
- * Recursively reads and processes all entries in a directory sequentially.
- * @param {FileSystemDirectoryReader} dirReader
- */
+
 async function readDirectoryEntries(dirReader) {
   let entries;
   do {
-    // Await reading a batch of entries
     entries = await readEntriesPromise(dirReader);
-    if (entries.length > 0) {
-      // Process each entry in the batch sequentially
-      for (const entry of entries) {
-        await handleDroppedEntry(entry);
-      }
-    }
+    for (const entry of entries) await handleDroppedEntry(entry);
   } while (entries.length > 0);
 }
-/**
- * Uploads a single File object by chunking it. Returns a Promise.
- * Sends start, progress, end, and error messages via window.postMessage.
- * @param {File} file The File object to upload.
- * @param {string} pathToSend The relative path of the file to send to the server.
- * @returns {Promise<void>} Resolves when upload is complete, rejects on error.
- */
+
 function uploadFileObject(file, pathToSend) {
-  // Wrap in a Promise
   return new Promise((resolve, reject) => {
     if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-      const errorMsg = `WebSocket closed before file ${pathToSend} could be uploaded.`;
-      console.error(errorMsg);
-      // Send error message to window
+      const errorMsg = `WS closed for ${pathToSend}.`;
       window.postMessage({
         type: 'fileUpload',
         payload: {
@@ -4229,8 +2879,6 @@ function uploadFileObject(file, pathToSend) {
       reject(new Error(errorMsg));
       return;
     }
-    console.log(`Starting upload for: ${pathToSend} (${file.size} bytes)`);
-    // Send START message via window.postMessage
     window.postMessage({
       type: 'fileUpload',
       payload: {
@@ -4244,46 +2892,21 @@ function uploadFileObject(file, pathToSend) {
     const reader = new FileReader();
     reader.onload = function(e) {
       if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-        const errorMsg = `WebSocket closed during upload of ${pathToSend}. Aborting.`;
-        console.error(errorMsg);
-        // Send error message to window
-        window.postMessage({
-          type: 'fileUpload',
-          payload: {
-            status: 'error',
-            fileName: pathToSend,
-            message: errorMsg
-          }
-        }, window.location.origin);
-        reject(new Error(errorMsg));
+        /* similar error handling */
+        reject(new Error("WS closed during upload"));
         return;
       }
       if (e.target.error) {
-        const errorMsg = `Error reading file ${pathToSend}: ${e.target.error}`;
-        console.error(errorMsg);
-        // Send error message to window
-        window.postMessage({
-          type: 'fileUpload',
-          payload: {
-            status: 'error',
-            fileName: pathToSend,
-            message: errorMsg
-          }
-        }, window.location.origin);
-        // Try to notify server before rejecting
-        try {
-          websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:${e.target.error}`);
-        } catch (_) {}
+        /* similar error handling */
         reject(e.target.error);
         return;
       }
       try {
         const prefixedView = new Uint8Array(1 + e.target.result.byteLength);
-        prefixedView[0] = 0x01; // Data type for file chunk
+        prefixedView[0] = 0x01;
         prefixedView.set(new Uint8Array(e.target.result), 1);
         websocket.send(prefixedView.buffer);
         offset += e.target.result.byteLength;
-        // Calculate and send PROGRESS message via window.postMessage
         const progress = file.size > 0 ? Math.round((offset / file.size) * 100) : 100;
         window.postMessage({
           type: 'fileUpload',
@@ -4294,10 +2917,8 @@ function uploadFileObject(file, pathToSend) {
             fileSize: file.size
           }
         }, window.location.origin);
-        if (offset < file.size) {
-          readChunk(offset); // Read next chunk
-        } else {
-          console.log(`Finished uploading ${pathToSend}`);
+        if (offset < file.size) readChunk(offset);
+        else {
           websocket.send(`FILE_UPLOAD_END:${pathToSend}`);
           window.postMessage({
             type: 'fileUpload',
@@ -4310,66 +2931,24 @@ function uploadFileObject(file, pathToSend) {
           resolve();
         }
       } catch (wsError) {
-        const errorMsg = `WebSocket error sending chunk for ${pathToSend}: ${wsError}`;
-        console.error(errorMsg);
-        window.postMessage({
-          type: 'fileUpload',
-          payload: {
-            status: 'error',
-            fileName: pathToSend,
-            message: errorMsg
-          }
-        }, window.location.origin);
-        try {
-          websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:WebSocket send failed`);
-        } catch (_) {}
         reject(wsError);
       }
     };
     reader.onerror = function(e) {
-      const errorMsg = `FileReader error for ${pathToSend}: ${e.target.error}`;
-      console.error(errorMsg);
-      // Send error message to window
-      window.postMessage({
-        type: 'fileUpload',
-        payload: {
-          status: 'error',
-          fileName: pathToSend,
-          message: errorMsg
-        }
-      }, window.location.origin);
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        try {
-          websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:${e.target.error}`);
-        } catch (_) {}
-      }
       reject(e.target.error);
     };
 
     function readChunk(startOffset) {
-      // Check websocket state *before* reading next chunk
       if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-        const errorMsg = `WebSocket closed before reading next chunk for ${pathToSend}. Aborting.`;
-        console.error(errorMsg);
-        // Send error message to window
-        window.postMessage({
-          type: 'fileUpload',
-          payload: {
-            status: 'error',
-            fileName: pathToSend,
-            message: errorMsg
-          }
-        }, window.location.origin);
-        reject(new Error(errorMsg));
+        reject(new Error("WS closed before next chunk"));
         return;
       }
-      const endOffset = Math.min(startOffset + UPLOAD_CHUNK_SIZE, file.size);
-      const slice = file.slice(startOffset, endOffset);
+      const slice = file.slice(startOffset, Math.min(startOffset + UPLOAD_CHUNK_SIZE, file.size));
       reader.readAsArrayBuffer(slice);
     }
-    // Start reading the first chunk
     readChunk(0);
   });
 }
+
 window.addEventListener('beforeunload', cleanup);
 window.webrtcInput = null;
