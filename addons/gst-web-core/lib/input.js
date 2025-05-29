@@ -382,12 +382,16 @@ export class Input {
      * @constructor
      * @param {Element} [element] Video element to attach events to
      * @param {function} [send] Function used to send input events to server.
+     * @param {boolean} [isSharedMode=false] Indicates if the client is in shared mode.
      */
-    constructor(element, send) {
+    constructor(element, send, isSharedMode = false) {
         /** @type {Element} */
         this.element = element;
         /** @type {function} */
         this.send = send;
+        /** @type {boolean} */
+        this.isSharedMode = isSharedMode;
+        // console.log(`Input.js: Constructor - isSharedMode: ${this.isSharedMode}, send function: ${send ? 'provided' : 'NOT provided'}`);
         /** @type {boolean} */
         this.mouseRelative = false; // Should be managed by pointer lock status
         /** @type {Object} */
@@ -1505,24 +1509,52 @@ export class Input {
     }
 
     _gamepadConnected(event) {
-        this.gamepadManager = new GamepadManager(event.gamepad, this._gamepadButton.bind(this), this._gamepadAxis.bind(this));
+        console.log(`Input.js: _gamepadConnected event. Gamepad ID: ${event.gamepad.id}, Physical Index: ${event.gamepad.index}. isSharedMode: ${this.isSharedMode}`);
+        if (!this.gamepadManager) {
+            this.gamepadManager = new GamepadManager(event.gamepad, this._gamepadButton.bind(this), this._gamepadAxis.bind(this));
+            // console.log('Input.js: GamepadManager created.');
+        }
+        // If in shared mode, always send as server gamepad 1. Otherwise, use the physical index.
+        const server_gp_num = this.isSharedMode ? 1 : event.gamepad.index;
+        // console.log(`Input.js: Mapping physical gamepad index ${event.gamepad.index} to server_gp_num ${server_gp_num}`);
+        const connectMsg = "js,c," + server_gp_num + "," + btoa(event.gamepad.id) + "," + event.gamepad.axes.length + "," + event.gamepad.buttons.length;
+        // console.log(`Input.js: Sending connect message: ${connectMsg}`);
+        this.send(connectMsg);
         if (this.ongamepadconnected !== null) { this.ongamepadconnected(event.gamepad.id); }
-        this.send("js,c," + event.gamepad.index + "," + btoa(event.gamepad.id) + "," + this.gamepadManager.numAxes + "," + this.gamepadManager.numButtons);
     }
 
     _gamepadDisconnect(event) {
+        // console.log(`Input.js: _gamepadDisconnect event. Gamepad ID: ${event.gamepad.id}, Physical Index: ${event.gamepad.index}. isSharedMode: ${this.isSharedMode}`);
          if (this.ongamepaddisconneceted !== null) { this.ongamepaddisconneceted(); }
-         this.send("js,d," + event.gamepad.index);
-         this.gamepadManager = null; // Clear manager on disconnect
+         // If in shared mode, always send as server gamepad 1. Otherwise, use the physical index.
+         const server_gp_num = this.isSharedMode ? 1 : event.gamepad.index;
+         // console.log(`Input.js: Mapping physical gamepad index ${event.gamepad.index} to server_gp_num ${server_gp_num} for disconnect.`);
+         const disconnectMsg = "js,d," + server_gp_num;
+         // console.log(`Input.js: Sending disconnect message: ${disconnectMsg}`);
+         this.send(disconnectMsg);
     }
 
     _gamepadButton(gp_num, btn_num, val) {
-        this.send("js,b," + gp_num + "," + btn_num + "," + val);
+        // gp_num is the physical index from GamepadManager
+        // console.log(`Input.js: _gamepadButton callback. Physical gp_num: ${gp_num}, btn_num: ${btn_num}, val: ${val}. isSharedMode: ${this.isSharedMode}`);
+        // If in shared mode, always send as server gamepad 1. Otherwise, use the physical gp_num.
+        const server_gp_num = this.isSharedMode ? 1 : gp_num;
+        // console.log(`Input.js: Mapping physical button event from gp_num ${gp_num} to server_gp_num ${server_gp_num}`);
+        const buttonMsg = "js,b," + server_gp_num + "," + btn_num + "," + val;
+        // console.log(`Input.js: Sending button message: ${buttonMsg}`);
+        this.send(buttonMsg);
         window.postMessage({ type: 'gamepadButtonUpdate', gamepadIndex: gp_num, buttonIndex: btn_num, value: val }, window.location.origin);
     }
 
     _gamepadAxis(gp_num, axis_num, val) {
-        this.send("js,a," + gp_num + "," + axis_num + "," + val)
+        // gp_num is the physical index from GamepadManager
+        // console.log(`Input.js: _gamepadAxis callback. Physical gp_num: ${gp_num}, axis_num: ${axis_num}, val: ${val}. isSharedMode: ${this.isSharedMode}`);
+        // If in shared mode, always send as server gamepad 1. Otherwise, use the physical gp_num.
+        const server_gp_num = this.isSharedMode ? 1 : gp_num;
+        // console.log(`Input.js: Mapping physical axis event from gp_num ${gp_num} to server_gp_num ${server_gp_num}`);
+        const axisMsg = "js,a," + server_gp_num + "," + axis_num + "," + val;
+        // console.log(`Input.js: Sending axis message: ${axisMsg}`);
+        this.send(axisMsg);
         window.postMessage({ type: 'gamepadAxisUpdate', gamepadIndex: gp_num, axisIndex: axis_num, value: val }, window.location.origin);
     }
 
@@ -1593,11 +1625,20 @@ export class Input {
         this.listeners.push(addListener(document, 'fullscreenchange', this._onFullscreenChange, this));
         this.listeners.push(addListener(window, 'resize', this._windowMath, this));
 
-        // Gamepad support
+        // Gamepad support: These listeners are always attached.
+        // _gamepadConnected will set up GamepadManager for polling.
+        // The callbacks (_gamepadButton, _gamepadAxis) will use this.isSharedMode for remapping.
         this.listeners.push(addListener(window, 'gamepadconnected', this._gamepadConnected, this));
         this.listeners.push(addListener(window, 'gamepaddisconnected', this._gamepadDisconnect, this));
-
-        this.attach_context();
+        
+        // Conditionally attach context-sensitive listeners (mouse, keyboard, touch).
+        // These are NOT attached for shared mode clients to prevent them from sending these inputs.
+        if (!this.isSharedMode) {
+            // console.log("Input.js: Attaching context listeners (mouse, keyboard, touch) because not in shared mode.");
+            this.attach_context();
+        } else {
+            // console.log("Input.js: Skipping context listeners (mouse, keyboard, touch) because in shared mode.");
+        }
     }
 
     /**
@@ -1654,7 +1695,12 @@ export class Input {
     detach() {
         removeListeners(this.listeners);
         this.listeners = []; // Clear array
-        this.detach_context();
+        if (this.gamepadManager) {
+            // console.log("Input.js: Detaching - Destroying GamepadManager.");
+            this.gamepadManager.destroy();
+            this.gamepadManager = null;
+        }
+        this.detach_context(); // This will remove context listeners if they were attached
     }
 
     /**

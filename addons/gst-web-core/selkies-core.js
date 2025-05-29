@@ -97,6 +97,12 @@ let handleResizeUI_globalRef = null;
 let vncStripeDecoders = {};
 let vncStripeFrameMetadata = {};
 let currentEncoderMode = 'x264enc-stiped';
+
+const isSharedMode = window.location.hash === '#shared';
+if (isSharedMode) {
+  console.log("Client is running in SHARED read-only mode.");
+}
+
 window.onload = () => {
   'use strict';
 };
@@ -244,14 +250,23 @@ videoCRF = getIntParam('videoCRF', videoCRF);
 audioBitRate = getIntParam('audioBitRate', audioBitRate);
 resizeRemote = getBoolParam('resizeRemote', resizeRemote);
 debug = getBoolParam('debug', debug);
-// turnSwitch = getBoolParam('turnSwitch', turnSwitch); // WebRTC specific
 videoBufferSize = getIntParam('videoBufferSize', 0);
 currentEncoderMode = getStringParam('encoder', 'x264enc-striped');
 scaleLocallyManual = getBoolParam('scaleLocallyManual', true);
 isManualResolutionMode = getBoolParam('isManualResolutionMode', false);
-manualWidth = getIntParam('manualWidth', null);
-manualHeight = getIntParam('manualHeight', null);
 isGamepadEnabled = getBoolParam('isGamepadEnabled', true);
+
+if (isSharedMode) {
+    manualWidth = 1280; // Default stream dimensions for shared mode before first frame
+    manualHeight = 720;
+    console.log(`Shared mode: Initialized manualWidth/Height to ${manualWidth}x${manualHeight}`);
+    // Behavior of isManualResolutionMode = true and scaleLocallyManual = true is emulated
+    // by directly controlling canvas and scaling in shared mode logic.
+} else {
+    manualWidth = getIntParam('manualWidth', null);
+    manualHeight = getIntParam('manualHeight', null);
+}
+
 
 const getUsername = () => getCookieValue(`broker_${appName}`)?.split('#')[0] || 'websocket_user'; // Default user for WS
 
@@ -447,6 +462,10 @@ function updateToggleButtonAppearance(buttonElement, isActive) {
 }
 
 function sendResolutionToServer(width, height) {
+  if (isSharedMode) {
+    console.log("Shared mode: Resolution sending to server is blocked.");
+    return;
+  }
   const pixelRatio = window.devicePixelRatio;
   const resString = `${width}x${height}`;
   console.log(`Sending resolution to server: ${resString}, Pixel Ratio: ${pixelRatio}`);
@@ -463,10 +482,15 @@ function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
     console.error("Cannot apply manual canvas style: Canvas or parent container not found.");
     return;
   }
+  if (targetWidth <=0 || targetHeight <=0) {
+    console.warn(`Cannot apply manual canvas style: Invalid target dimensions ${targetWidth}x${targetHeight}`);
+    return;
+  }
+
   if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
     canvas.width = targetWidth;
     canvas.height = targetHeight;
-    console.log(`Canvas internal buffer set to manual: ${targetWidth}x${targetHeight}`);
+    console.log(`Canvas internal buffer set to: ${targetWidth}x${targetHeight}`);
   }
   const container = canvas.parentElement;
   const containerWidth = container.clientWidth;
@@ -489,7 +513,7 @@ function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
     canvas.style.height = `${cssHeight}px`;
     canvas.style.top = `${topOffset}px`;
     canvas.style.left = `${leftOffset}px`;
-    canvas.style.objectFit = 'contain';
+    canvas.style.objectFit = 'contain'; // Should be 'fill' if CSS handles aspect ratio
     console.log(`Applied manual style (Scaled): CSS ${cssWidth}x${cssHeight}, Buffer ${targetWidth}x${targetHeight}, Pos ${leftOffset},${topOffset}`);
   } else {
     canvas.style.position = 'absolute';
@@ -505,6 +529,10 @@ function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
 
 function resetCanvasStyle(streamWidth, streamHeight) {
   if (!canvas) return;
+   if (streamWidth <=0 || streamHeight <=0) {
+    console.warn(`Cannot reset canvas style: Invalid stream dimensions ${streamWidth}x${streamHeight}`);
+    return;
+  }
   if (canvas.width !== streamWidth || canvas.height !== streamHeight) {
     canvas.width = streamWidth;
     canvas.height = streamHeight;
@@ -527,7 +555,7 @@ function enableAutoResize() {
   }
   if (originalWindowResizeHandler) {
     console.log("Switching to Auto Mode: Adding original (auto) debounced resize listener.");
-    window.removeEventListener('resize', originalWindowResizeHandler);
+    window.removeEventListener('resize', originalWindowResizeHandler); // Ensure no duplicates
     window.addEventListener('resize', originalWindowResizeHandler);
     if (typeof handleResizeUI_globalRef === 'function') {
       console.log("Triggering immediate auto-resize calculation for auto mode.");
@@ -541,12 +569,15 @@ function enableAutoResize() {
 }
 
 const directManualLocalScalingHandler = () => {
-  if (window.isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
+  // This handler is for non-shared manual mode.
+  // Shared mode has its own simpler resize handling in initializeUI.
+  if (window.isManualResolutionMode && !isSharedMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
     applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
   }
 };
 
 function disableAutoResize() {
+  // This is primarily for non-shared manual mode.
   if (originalWindowResizeHandler) {
     console.log("Switching to Manual Mode Local Scaling: Removing original (auto) resize listener.");
     window.removeEventListener('resize', originalWindowResizeHandler);
@@ -554,11 +585,62 @@ function disableAutoResize() {
   console.log("Switching to Manual Mode Local Scaling: Adding direct manual scaling listener.");
   window.removeEventListener('resize', directManualLocalScalingHandler); // Defensive removal
   window.addEventListener('resize', directManualLocalScalingHandler);
-  if (window.isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
+  if (window.isManualResolutionMode && !isSharedMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
     console.log("Applying current manual canvas style after enabling direct manual resize handler.");
     applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
   }
 }
+
+function updateUIForSharedMode() {
+    if (!isSharedMode) return;
+
+    console.log("Shared mode: Updating UI elements to read-only.");
+
+    const idsToHide = [
+        'manualWidthInput', 'manualHeightInput', 'setResolutionButton', 'resetResolutionButton',
+        'scaleLocallyCheckbox', 'scaleLocallyLabel',
+        'videoBitrateSelect', 'encoderSelect', 'framerateSelect', 'crfSelect',
+        'videoBitrateLabel', 'encoderLabel', 'framerateLabel', 'crfLabel',
+        'micToggleBtn',
+        'fileUploadButton', // Assuming a generic ID for a file upload button in sidebar
+        'advancedAudioSettingsBtn',
+        // 'audioDeviceSettingsDiv', // This is a variable, handled below
+        // 'uploadProgressContainer' // This is a variable, handled below
+    ];
+
+    idsToHide.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.classList.add('hidden');
+            console.log(`Shared mode: Hid UI element #${id}`);
+        }
+    });
+
+    if (uploadProgressContainerElement) {
+        uploadProgressContainerElement.classList.add('hidden');
+        console.log("Shared mode: Hid uploadProgressContainerElement");
+    }
+    // advancedAudioSettingsBtnElement might not be initialized yet, check for it
+    const advAudioBtn = document.getElementById('advancedAudioSettingsBtn');
+    if (advAudioBtn) {
+        advAudioBtn.classList.add('hidden');
+        console.log("Shared mode: Hid advancedAudioSettingsBtn (by ID)");
+    }
+    // audioDeviceSettingsDivElement might not be initialized yet
+    const audioDevSettingsDiv = document.getElementById('audioDeviceSettingsDiv');
+     if (audioDevSettingsDiv) {
+        audioDevSettingsDiv.classList.add('hidden');
+        console.log("Shared mode: Hid audioDeviceSettingsDiv (by ID)");
+    }
+
+
+    const globalFileInput = document.getElementById('globalFileInput');
+    if (globalFileInput) {
+        globalFileInput.disabled = true;
+        console.log("Shared mode: Disabled globalFileInput.");
+    }
+}
+
 
 const initializeUI = () => {
   injectCSS();
@@ -583,8 +665,8 @@ const initializeUI = () => {
   videoContainer.appendChild(overlayInput);
 
   videoElement = document.createElement('video');
-  videoElement.id = 'stream'; // Original ID
-  videoElement.style.display = 'none'; // Hide it
+  videoElement.id = 'stream';
+  videoElement.style.display = 'none';
   videoContainer.appendChild(videoElement);
 
   canvas = document.getElementById('videoCanvas');
@@ -594,9 +676,20 @@ const initializeUI = () => {
   }
   videoContainer.appendChild(canvas);
 
-  if (isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
+  if (isSharedMode) {
+      if (!manualWidth || manualWidth <= 0 || !manualHeight || manualHeight <= 0) {
+          manualWidth = 1280; manualHeight = 720; // Fallback defaults for safety
+      }
+      applyManualCanvasStyle(manualWidth, manualHeight, true); // scaleToFit = true
+      window.addEventListener('resize', () => { // Simple resize for CSS scaling
+          if (isSharedMode && manualWidth && manualHeight && manualWidth > 0 && manualHeight > 0) {
+              applyManualCanvasStyle(manualWidth, manualHeight, true);
+          }
+      });
+      console.log(`Initialized UI in Shared Mode: Canvas buffer target ${manualWidth}x${manualHeight}, will scale to fit viewport.`);
+  } else if (isManualResolutionMode && manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
     applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
-    disableAutoResize();
+    disableAutoResize(); // Sets up directManualLocalScalingHandler for non-shared manual
     console.log(`Initialized UI in Manual Resolution Mode: ${manualWidth}x${manualHeight}, ScaleLocally: ${scaleLocallyManual}`);
   } else {
     const initialStreamWidth = 1024;
@@ -611,7 +704,7 @@ const initializeUI = () => {
 
   audioElement = document.createElement('audio');
   audioElement.id = 'audio_stream';
-  audioElement.style.display = 'none'; // Hide it
+  audioElement.style.display = 'none';
   videoContainer.appendChild(audioElement);
 
   playButtonElement = document.createElement('button');
@@ -654,6 +747,10 @@ const initializeUI = () => {
   appDiv.appendChild(videoContainer);
   updateStatusDisplay();
   playButtonElement.addEventListener('click', playStream);
+
+  if (isSharedMode) {
+      updateUIForSharedMode(); // Call after main UI elements are in DOM
+  }
 };
 
 function clearAllVncStripeDecoders() {
@@ -785,6 +882,10 @@ function handleAudioDeviceChange(event) {
 }
 
 function handleRequestFileUpload() {
+  if (isSharedMode) {
+    console.log("Shared mode: File upload via requestFileUpload blocked.");
+    return;
+  }
   const hiddenInput = document.getElementById('globalFileInput');
   if (!hiddenInput) {
     console.error("Global file input not found!");
@@ -799,6 +900,11 @@ function handleRequestFileUpload() {
 }
 
 async function handleFileInputChange(event) {
+  if (isSharedMode) {
+    console.log("Shared mode: File upload via fileInputChange blocked.");
+    event.target.value = null; // Clear the input
+    return;
+  }
   const files = event.target.files;
   if (!files || files.length === 0) {
     event.target.value = null;
@@ -882,7 +988,7 @@ const initializeInput = () => {
     }
   };
 
-  let sendInputFunction = websocketSendInput;
+  const sendInputFunction = websocketSendInput;
 
   if (!overlayInput) {
     console.error("initializeInput: overlayInput element not found. Cannot initialize input handling.");
@@ -890,32 +996,37 @@ const initializeInput = () => {
     return;
   }
 
-  inputInstance = new Input(overlayInput, sendInputFunction);
+  inputInstance = new Input(overlayInput, sendInputFunction, isSharedMode);
 
   inputInstance.getWindowResolution = () => {
     const videoContainer = document.querySelector('.video-container');
     if (!videoContainer) {
       console.warn('initializeInput: .video-container not found, using window inner dimensions for resolution calculation.');
-      // Return raw window size, let the caller handle rounding if needed
       return [window.innerWidth, window.innerHeight];
     }
     const videoContainerRect = videoContainer.getBoundingClientRect();
-    // Return raw container size
     return [videoContainerRect.width, videoContainerRect.height];
   };
 
   inputInstance.ongamepadconnected = (gamepad_id) => {
     gamepad.gamepadState = 'connected';
     gamepad.gamepadName = gamepad_id;
+    console.log(`Client: Gamepad "${gamepad_id}" connected. isSharedMode: ${isSharedMode}, isGamepadEnabled (global toggle): ${isGamepadEnabled}`);
     if (window.webrtcInput && window.webrtcInput.gamepadManager) {
-      if (!isGamepadEnabled) { 
-        window.webrtcInput.gamepadManager.disable();
-        console.log("Gamepad connected, but master gamepad toggle is OFF. Disabling manager.");
-      } else {
-        console.log("Gamepad connected, master gamepad toggle is ON. Manager should be active.");
-      }
+        if (isSharedMode) {
+            window.webrtcInput.gamepadManager.enable();
+            console.log("Shared mode: Gamepad connected, ensuring its GamepadManager is active for polling.");
+        } else {
+            if (!isGamepadEnabled) {
+                window.webrtcInput.gamepadManager.disable();
+                console.log("Primary mode: Gamepad connected, but master gamepad toggle is OFF. Disabling its GamepadManager.");
+            } else {
+                window.webrtcInput.gamepadManager.enable();
+                console.log("Primary mode: Gamepad connected, master gamepad toggle is ON. Ensuring its GamepadManager is active.");
+            }
+        }
     } else {
-      console.error("Gamepad connected callback: window.webrtcInput.gamepadManager not found.");
+        console.warn("Client: window.webrtcInput.gamepadManager not found in ongamepadconnected. Cannot control its polling state.");
     }
   };
 
@@ -927,37 +1038,43 @@ const initializeInput = () => {
 
   inputInstance.attach();
 
-  // Define the actual resize logic that will be called by the event listener or manually
+
   const handleResizeUI = () => {
+    if (isSharedMode) {
+        console.log("Shared mode: handleResizeUI (auto-resize logic) skipped.");
+        // In shared mode, canvas buffer size is driven by stream dimensions.
+        // CSS scaling is re-applied on window resize by a listener in initializeUI.
+        if (manualWidth && manualHeight && manualWidth > 0 && manualHeight > 0) {
+            applyManualCanvasStyle(manualWidth, manualHeight, true);
+        }
+        return;
+    }
     if (window.isManualResolutionMode) {
       console.log("handleResizeUI: Auto-resize skipped, manual resolution mode is active.");
-      // In manual mode, the resolution is fixed and set by 'setManualResolution' or initial load.
-      // Local scaling is handled by directManualLocalScalingHandler or applyManualCanvasStyle.
       return;
     }
 
     console.log("handleResizeUI: Auto-resize triggered (e.g., by window resize event).");
-    // This should only be called for *subsequent* resizes after initial landing.
     const windowResolution = inputInstance.getWindowResolution();
     const evenWidth = roundDownToEven(windowResolution[0]);
     const evenHeight = roundDownToEven(windowResolution[1]);
 
-    // Check if dimensions are valid before sending
     if (evenWidth <= 0 || evenHeight <= 0) {
       console.warn(`handleResizeUI: Calculated invalid dimensions (${evenWidth}x${evenHeight}). Skipping resize send.`);
       return;
     }
 
     sendResolutionToServer(evenWidth, evenHeight);
-    // Update canvas buffer and reset style for auto mode to match the new stream dimensions
     resetCanvasStyle(evenWidth, evenHeight);
   };
 
-  handleResizeUI_globalRef = handleResizeUI; // Store for potential external calls if needed
-
-  // Debounced handler for actual window resize events
+  handleResizeUI_globalRef = handleResizeUI;
   originalWindowResizeHandler = debounce(handleResizeUI, 500);
-  if (!window.isManualResolutionMode) {
+
+  if (isSharedMode) {
+    console.log("Shared mode: Auto-resize event listener (originalWindowResizeHandler) NOT attached.");
+    // Shared mode has its own simple window resize listener in initializeUI for CSS adjustments.
+  } else if (!window.isManualResolutionMode) {
     console.log("initializeInput: Auto-resolution mode. Attaching 'resize' event listener for subsequent changes.");
     window.addEventListener('resize', originalWindowResizeHandler);
     const videoContainer = document.querySelector('.video-container');
@@ -977,54 +1094,53 @@ const initializeInput = () => {
     }
     resetCanvasStyle(currentAutoWidth, currentAutoHeight);
     console.log(`initializeInput: Canvas style reset to reflect current auto-dimensions: ${currentAutoWidth}x${currentAutoHeight}. Initial resolution was already sent by onopen.`);
-
-  } else {
+  } else { // Non-shared, manual mode
     console.log("initializeInput: Manual resolution mode active. Initial resolution already sent by onopen.");
     if (manualWidth != null && manualHeight != null && manualWidth > 0 && manualHeight > 0) {
-      applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
-      disableAutoResize(); // This will remove originalWindowResizeHandler and add directManualLocalScalingHandler
+      // applyManualCanvasStyle is called in initializeUI for this case
+      disableAutoResize(); // Sets up directManualLocalScalingHandler
     } else {
       console.warn("initializeInput: Manual mode is set, but manualWidth/Height are invalid. Canvas might not display correctly.");
     }
   }
 
-  // Attach drag and drop listeners to the overlay for file uploads
-  if (overlayInput) {
+  if (overlayInput && !isSharedMode) {
     overlayInput.addEventListener('dragover', handleDragOver);
     overlayInput.addEventListener('drop', handleDrop);
+  } else if (overlayInput && isSharedMode) {
+    console.log("Shared mode: Drag/drop file upload listeners NOT attached to overlayInput.");
   } else {
     console.warn("initializeInput: overlayInput not found, cannot attach drag/drop listeners.");
   }
 
-  // Make the input instance globally accessible if needed
   window.webrtcInput = inputInstance;
 
-  // Setup keyboard input assist listeners
   const keyboardInputAssist = document.getElementById('keyboard-input-assist');
-  if (keyboardInputAssist && inputInstance) {
+  if (keyboardInputAssist && inputInstance && !isSharedMode) { // Keyboard assist only for non-shared
     keyboardInputAssist.addEventListener('input', (event) => {
       const typedString = keyboardInputAssist.value;
       if (typedString) {
         inputInstance._typeString(typedString);
-        keyboardInputAssist.value = ''; // Clear after processing
+        keyboardInputAssist.value = '';
       }
     });
     keyboardInputAssist.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.keyCode === 13) {
-        const enterKeysym = 0xFF0D; // XK_Return
+        const enterKeysym = 0xFF0D;
         inputInstance._guac_press(enterKeysym);
         setTimeout(() => inputInstance._guac_release(enterKeysym), 5);
         event.preventDefault();
         keyboardInputAssist.value = '';
       } else if (event.key === 'Backspace' || event.keyCode === 8) {
-        const backspaceKeysym = 0xFF08; // XK_BackSpace
+        const backspaceKeysym = 0xFF08;
         inputInstance._guac_press(backspaceKeysym);
         setTimeout(() => inputInstance._guac_release(backspaceKeysym), 5);
         event.preventDefault();
       }
-      // Other keys are handled by the 'input' event or by main overlayInput if focused
     });
     console.log("initializeInput: Added 'input' and 'keydown' listeners to #keyboard-input-assist.");
+  } else if (isSharedMode) {
+    console.log("Shared mode: Keyboard input assist listeners NOT attached.");
   } else {
     console.error("initializeInput: Could not add listeners to keyboard assist: Element or Input handler instance not found.");
   }
@@ -1091,6 +1207,10 @@ function receiveMessage(event) {
   }
   switch (message.type) {
     case 'setScaleLocally':
+      if (isSharedMode) {
+        console.log("Shared mode: setScaleLocally message ignored (forced true behavior).");
+        break;
+      }
       if (typeof message.value === 'boolean') {
         scaleLocallyManual = message.value;
         setBoolParam('scaleLocallyManual', scaleLocallyManual);
@@ -1104,6 +1224,10 @@ function receiveMessage(event) {
       }
       break;
     case 'showVirtualKeyboard':
+      if (isSharedMode) {
+        console.log("Shared mode: showVirtualKeyboard message ignored.");
+        break;
+      }
       console.log("Received 'showVirtualKeyboard' message.");
       const kbdAssistInput = document.getElementById('keyboard-input-assist');
       const mainInteractionOverlay = document.getElementById('overlayInput');
@@ -1127,6 +1251,10 @@ function receiveMessage(event) {
       }
       break;
     case 'setManualResolution':
+      if (isSharedMode) {
+        console.log("Shared mode: setManualResolution message ignored.");
+        break;
+      }
       const width = parseInt(message.width, 10);
       const height = parseInt(message.height, 10);
       if (isNaN(width) || width <= 0 || isNaN(height) || height <= 0) {
@@ -1152,6 +1280,10 @@ function receiveMessage(event) {
       }
       break;
     case 'resetResolutionToWindow':
+      if (isSharedMode) {
+        console.log("Shared mode: resetResolutionToWindow message ignored.");
+        break;
+      }
       console.log("Resetting resolution to window size.");
       window.isManualResolutionMode = false;
       manualWidth = null;
@@ -1173,7 +1305,7 @@ function receiveMessage(event) {
       break;
     case 'settings':
       console.log('Received settings message:', message.settings);
-      handleSettingsMessage(message.settings);
+      handleSettingsMessage(message.settings); // handleSettingsMessage itself gates server sends if isSharedMode
       break;
     case 'getStats':
       console.log('Received getStats message.');
@@ -1181,6 +1313,10 @@ function receiveMessage(event) {
       break;
     case 'clipboardUpdateFromUI':
       console.log('Received clipboardUpdateFromUI message.');
+      if (isSharedMode) {
+        console.log("Shared mode: Clipboard write to server blocked.");
+        break;
+      }
       const newClipboardText = message.text;
       if (websocket && websocket.readyState === WebSocket.OPEN) {
         try {
@@ -1260,11 +1396,19 @@ function receiveMessage(event) {
           postSidebarButtonUpdate();
         }
         if (wsMessage && websocket && websocket.readyState === WebSocket.OPEN) {
-          websocket.send(wsMessage);
+          if (isSharedMode) {
+            console.log(`Shared mode: Blocked sending ${wsMessage} for pipeline ${pipeline}.`);
+          } else {
+            websocket.send(wsMessage);
+          }
         } else if (wsMessage) {
           console.warn(`Cannot send ${pipeline} pipelineControl command: Websocket not open.`);
         }
       } else if (pipeline === 'microphone') {
+        if (isSharedMode) {
+          console.log("Shared mode: Microphone control blocked.");
+          break;
+        }
         if (desiredState) {
           startMicrophoneCapture();
         } else {
@@ -1276,6 +1420,10 @@ function receiveMessage(event) {
       break;
     case 'audioDeviceSelected':
       console.log('Received audioDeviceSelected message:', message);
+      if (isSharedMode && message.context === 'input') {
+          console.log("Shared mode: Audio input device selection ignored.");
+          break;
+      }
       const {
         context, deviceId
       } = message;
@@ -1304,16 +1452,28 @@ function receiveMessage(event) {
         setBoolParam('isGamepadEnabled', isGamepadEnabled);
         postSidebarButtonUpdate();
         if (window.webrtcInput && window.webrtcInput.gamepadManager) {
-          if (isGamepadEnabled) {
-            window.webrtcInput.gamepadManager.enable();
-          } else {
-            window.webrtcInput.gamepadManager.disable();
-          }
+            if (isSharedMode) {
+                // In shared mode, the shared client's gamepad manager should always be enabled for polling,
+                window.webrtcInput.gamepadManager.enable();
+                console.log("Shared mode: Gamepad control message received, ensuring its GamepadManager remains active for polling.");
+            } else {
+                // Primary client: respect the toggle
+                if (isGamepadEnabled) {
+                    window.webrtcInput.gamepadManager.enable();
+                    console.log("Primary mode: Gamepad toggle ON. Enabling GamepadManager polling.");
+                } else {
+                    window.webrtcInput.gamepadManager.disable();
+                    console.log("Primary mode: Gamepad toggle OFF. Disabling GamepadManager polling.");
+                }
+            }
+        } else {
+            console.warn("Client: window.webrtcInput.gamepadManager not found in 'gamepadControl' message handler.");
         }
       }
       break;
     case 'gamepadButtonUpdate':
     case 'gamepadAxisUpdate':
+      if (isSharedMode) break; // Gamepad input not sent
       if (message.gamepadIndex === 0) {
         if (!gamepadStates[0]) gamepadStates[0] = {
           buttons: {},
@@ -1333,6 +1493,10 @@ function receiveMessage(event) {
       enterFullscreen();
       break;
     case 'command':
+      if (isSharedMode) {
+        console.log("Shared mode: Arbitrary command sending to server blocked.");
+        break;
+      }
       if (typeof message.value === 'string') {
         const commandString = message.value;
         console.log(`Received 'command' message with value: "${commandString}". Forwarding to WebSocket.`);
@@ -1360,22 +1524,22 @@ function handleSettingsMessage(settings) {
   if (settings.videoBitRate !== undefined) {
     videoBitRate = parseInt(settings.videoBitRate);
     setIntParam('videoBitRate', videoBitRate);
-    if (websocket && websocket.readyState === WebSocket.OPEN) {
+    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
       const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
       console.log(`Sent websocket message: ${message}`);
       websocket.send(message);
-    } else {
+    } else if (!isSharedMode) {
       console.warn("Websocket connection not open, cannot send video bitrate setting.");
     }
   }
   if (settings.videoFramerate !== undefined) {
     videoFramerate = parseInt(settings.videoFramerate);
     setIntParam('videoFramerate', videoFramerate);
-    if (websocket && websocket.readyState === WebSocket.OPEN) {
+    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
       const message = `SET_FRAMERATE,${videoFramerate}`;
       console.log(`Sent websocket message: ${message}`);
       websocket.send(message);
-    } else {
+    } else if (!isSharedMode) {
       console.warn("Websocket connection not open, cannot send framerate setting.");
     }
   }
@@ -1392,11 +1556,11 @@ function handleSettingsMessage(settings) {
       currentEncoderMode = newEncoderSetting;
       setStringParam('encoder', currentEncoderMode);
 
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
         const message = `SET_ENCODER,${currentEncoderMode}`;
         console.log(`Sent websocket message: ${message}`);
         websocket.send(message);
-      } else {
+      } else if (!isSharedMode) {
         console.warn("Websocket connection not open, cannot send encoder setting.");
       }
 
@@ -1433,7 +1597,12 @@ function handleSettingsMessage(settings) {
       } else if (isNewJpeg) {
         console.log("Encoder changed to JPEG. Ensuring canvas buffer is correctly sized.");
         let currentTargetWidth, currentTargetHeight;
-        if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
+        if (isSharedMode) { // In shared mode, use its manualWidth/Height
+            currentTargetWidth = manualWidth;
+            currentTargetHeight = manualHeight;
+            if (currentTargetWidth && currentTargetHeight) applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, true);
+
+        } else if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
           currentTargetWidth = manualWidth;
           currentTargetHeight = manualHeight;
           applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, scaleLocallyManual);
@@ -1454,7 +1623,7 @@ function handleSettingsMessage(settings) {
       const wasStripedOrJpeg = isOldJpeg || isOldStripedH264;
       if (wasStripedOrJpeg && isNewVideoPipeline) {
         console.log(`Switched from ${oldEncoderActual} (striped/jpeg) to ${newEncoderSetting} (video pipeline). Resending video bitrate ${videoBitRate} kbit/s.`);
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
+        if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
           const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
           websocket.send(message);
         }
@@ -1472,11 +1641,11 @@ function handleSettingsMessage(settings) {
     videoCRF = parseInt(settings.videoCRF, 10);
     setIntParam('videoCRF', videoCRF);
     console.log(`Applied Video CRF setting: ${videoCRF}.`);
-    if (websocket && websocket.readyState === WebSocket.OPEN) {
+    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
       const message = `SET_CRF,${videoCRF}`;
       console.log(`Sent websocket message: ${message}`);
       websocket.send(message);
-    } else {
+    } else if (!isSharedMode) {
       console.warn("Websocket connection not open, cannot send CRF setting.");
     }
   }
@@ -1487,7 +1656,6 @@ function handleSettingsMessage(settings) {
     debug = settings.debug;
     setBoolParam('debug', debug);
     console.log(`Applied debug setting: ${debug}. Reloading...`);
-    // If reload is generally desired for debug changes, keep it.
     setTimeout(() => {
       window.location.reload();
     }, 700);
@@ -1496,7 +1664,7 @@ function handleSettingsMessage(settings) {
 
 function sendStatsMessage() {
   const stats = {
-    connection: connectionStat, // This might need WebSocket specific population
+    connection: connectionStat,
     gpu: gpuStat,
     cpu: cpuStat,
     clientFps: window.fps,
@@ -1522,7 +1690,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     let targetWidth = 1280;
     let targetHeight = 720;
-    if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
+
+    if (isSharedMode) { // In shared mode, use its manualWidth/Height which are updated by stream
+        targetWidth = manualWidth > 0 ? manualWidth : 1280;
+        targetHeight = manualHeight > 0 ? manualHeight : 720;
+    } else if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
       targetWidth = manualWidth;
       targetHeight = manualHeight;
     } else if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
@@ -1577,6 +1749,7 @@ document.addEventListener('DOMContentLoaded', () => {
   );
 
   window.addEventListener('focus', () => {
+    if (isSharedMode) return; // No key reset or clipboard sending in shared mode on focus
     if (websocket && websocket.readyState === WebSocket.OPEN) {
       websocket.send('kr'); // Key reset
     }
@@ -1594,13 +1767,19 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   window.addEventListener('blur', () => {
+    if (isSharedMode) return; // No key reset in shared mode on blur
     if (websocket && websocket.readyState === WebSocket.OPEN) {
       websocket.send('kr'); // Key reset
     }
   });
 
   document.addEventListener('visibilitychange', () => {
-    // clientMode check is removed as it will always be 'websockets' or null before connection
+    if (isSharedMode) {
+      console.log("Shared mode: Tab visibility changed, stream control bypassed. Current state:", document.hidden ? "hidden" : "visible");
+      // Rendering loop (paintVideoFrame) already checks document.hidden for drawing frames.
+      // Audio continues regardless.
+      return;
+    }
     if (document.hidden) {
       console.log('Tab is hidden, stopping video pipeline.');
       if (websocket && websocket.readyState === WebSocket.OPEN) {
@@ -1611,7 +1790,7 @@ document.addEventListener('DOMContentLoaded', () => {
             type: 'pipelineStatusUpdate',
             video: false
           }, window.location.origin);
-          if (currentEncoderMode === 'x264enc-striped') { // Check if this mode is active
+          if (currentEncoderMode === 'x264enc-striped') {
             console.log("Tab hidden in VNC mode, clearing stripe decoders.");
             clearAllVncStripeDecoders();
           }
@@ -1659,13 +1838,22 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleDecodedFrame(frame) {
-    if (document.hidden) {
+    if (document.hidden && !isSharedMode) { // Shared mode processes even if hidden (audio must continue)
       frame.close();
       return;
     }
-    if (!isVideoPipelineActive && clientMode === 'websockets') {
+    if (!isVideoPipelineActive && clientMode === 'websockets' && !isSharedMode) {
       frame.close();
       return;
+    }
+
+    if (isSharedMode) {
+      if ((manualWidth !== frame.codedWidth || manualHeight !== frame.codedHeight) && frame.codedWidth > 0 && frame.codedHeight > 0) {
+        manualWidth = frame.codedWidth;
+        manualHeight = frame.codedHeight;
+        console.log(`Shared mode: Updated manual dimensions from H.264 frame: ${manualWidth}x${manualHeight}`);
+        applyManualCanvasStyle(manualWidth, manualHeight, true);
+      }
     }
     videoFrameBuffer.push(frame);
   }
@@ -1678,13 +1866,41 @@ document.addEventListener('DOMContentLoaded', () => {
       requestAnimationFrame(paintVideoFrame);
       return;
     }
+
+    if (isSharedMode) {
+      if (manualWidth && manualHeight && manualWidth > 0 && manualHeight > 0 &&
+          (canvas.width !== manualWidth || canvas.height !== manualHeight)) {
+        console.log(`Shared mode (paintVideoFrame): Canvas buffer ${canvas.width}x${canvas.height} out of sync with manual ${manualWidth}x${manualHeight}. Re-applying style.`);
+        applyManualCanvasStyle(manualWidth, manualHeight, true);
+      }
+    }
+    
+    // For shared mode, rendering continues even if tab is "logically" hidden to keep audio sync,
+    // but actual drawing to canvas can be skipped if truly not visible.
+    // However, the prompt says "Continue to process and decode incoming video and audio data as it arrives, regardless of tab visibility."
+    // and implies rendering continues. For simplicity, let's assume drawing continues if frames are available.
+    // The `handleDecodedFrame` already has a `document.hidden` check for non-shared mode.
+
     let videoPaintedThisFrame = false;
     let jpegPaintedThisFrame = false;
 
     if (currentEncoderMode === 'x264enc-striped') {
+      if (isSharedMode && decodedStripesQueue.length > 0) {
+          const firstStripeFrame = decodedStripesQueue[0].frame;
+          if (firstStripeFrame && firstStripeFrame.codedWidth > 0 && manualWidth !== firstStripeFrame.codedWidth) {
+              manualWidth = firstStripeFrame.codedWidth;
+              console.log(`Shared mode: Updated manualWidth from VNC stripe: ${manualWidth}`);
+              // manualHeight is not updated from stripes, it's from full frame or default
+              if (manualHeight && manualWidth && manualHeight > 0) {
+                  applyManualCanvasStyle(manualWidth, manualHeight, true);
+              }
+          }
+      }
       let paintedSomethingThisCycle = false;
       for (const stripeData of decodedStripesQueue) {
-        canvasContext.drawImage(stripeData.frame, 0, stripeData.yPos);
+        if (canvas.width > 0 && canvas.height > 0) { // Ensure canvas is ready
+            canvasContext.drawImage(stripeData.frame, 0, stripeData.yPos);
+        }
         stripeData.frame.close();
         paintedSomethingThisCycle = true;
       }
@@ -1694,6 +1910,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else if (currentEncoderMode === 'jpeg') {
       if (canvasContext && jpegStripeRenderQueue.length > 0) {
+        if (isSharedMode && jpegStripeRenderQueue.length > 0) {
+            const firstStripeImage = jpegStripeRenderQueue[0].image;
+            if (firstStripeImage && firstStripeImage.codedWidth > 0 && manualWidth !== firstStripeImage.codedWidth) {
+                manualWidth = firstStripeImage.codedWidth;
+                console.log(`Shared mode: Updated manualWidth from JPEG stripe: ${manualWidth}`);
+                // manualHeight is not updated from stripes
+                if (manualHeight && manualWidth && manualHeight > 0) {
+                    applyManualCanvasStyle(manualWidth, manualHeight, true);
+                }
+            }
+        }
         if ((canvas.width === 0 || canvas.height === 0) || (canvas.width === 300 && canvas.height === 150)) {
           const firstStripe = jpegStripeRenderQueue[0];
           if (firstStripe && firstStripe.image && (firstStripe.startY + firstStripe.image.height > canvas.height || firstStripe.image.width > canvas.width)) {
@@ -1704,7 +1931,9 @@ document.addEventListener('DOMContentLoaded', () => {
           const segment = jpegStripeRenderQueue.shift();
           if (segment && segment.image) {
             try {
-              canvasContext.drawImage(segment.image, 0, segment.startY);
+              if (canvas.width > 0 && canvas.height > 0) { // Ensure canvas is ready
+                canvasContext.drawImage(segment.image, 0, segment.startY);
+              }
               segment.image.close();
               jpegPaintedThisFrame = true;
             } catch (e) {
@@ -1717,21 +1946,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (jpegPaintedThisFrame && !streamStarted) {
           startStream();
-          if (!inputInitialized) initializeInput();
+          if (!inputInitialized && !isSharedMode) initializeInput(); // Input only for non-shared
         }
       }
-    } else { // Default to full-frame video
-      if (!document.hidden && isVideoPipelineActive && videoFrameBuffer.length > videoBufferSize) {
-        const frameToPaint = videoFrameBuffer.shift();
-        if (frameToPaint) {
-          canvasContext.drawImage(frameToPaint, 0, 0);
-          frameToPaint.close();
-          videoPaintedThisFrame = true;
-          frameCount++;
-          if (!streamStarted) {
-            startStream();
-            if (!inputInitialized) initializeInput(); // Initialize input if not already
-          }
+    } else { 
+      if (!document.hidden || isSharedMode) { // Draw if visible or in shared mode
+        if (isVideoPipelineActive || isSharedMode) { // Also draw if shared mode, regardless of isVideoPipelineActive server state (as we want to show what we get)
+           if (videoFrameBuffer.length > videoBufferSize) {
+                const frameToPaint = videoFrameBuffer.shift();
+                if (frameToPaint) {
+                    if (canvas.width > 0 && canvas.height > 0) { // Ensure canvas is ready
+                        canvasContext.drawImage(frameToPaint, 0, 0);
+                    }
+                    frameToPaint.close();
+                    videoPaintedThisFrame = true;
+                    frameCount++;
+                    if (!streamStarted) {
+                        startStream();
+                        if (!inputInitialized && !isSharedMode) initializeInput();
+                    }
+                }
+            }
         }
       }
     }
@@ -1874,7 +2109,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (type === 'decodedAudioData') {
           const pcmBufferFromWorker = event.data.pcmBuffer;
           if (pcmBufferFromWorker && audioWorkletProcessorPort && audioContext && audioContext.state === 'running') {
-            if (window.currentAudioBufferSize < 10) {
+            if (window.currentAudioBufferSize < 10) { // Keep buffer low for Opus
               audioWorkletProcessorPort.postMessage({
                 audioData: pcmBufferFromWorker
               }, [pcmBufferFromWorker]);
@@ -1893,7 +2128,7 @@ document.addEventListener('DOMContentLoaded', () => {
         audioDecoderWorker.postMessage({
           type: 'init',
           data: {
-            initialPipelineStatus: isAudioPipelineActive
+            initialPipelineStatus: isAudioPipelineActive // Or true for shared mode initially
           }
         });
         console.log('[Main] Audio Decoder Worker created and init message sent.');
@@ -1932,6 +2167,8 @@ document.addEventListener('DOMContentLoaded', () => {
   websocket.binaryType = 'arraybuffer';
 
   const sendClientMetrics = () => {
+    if (isSharedMode) return; // Shared mode does not send metrics like cfps or frame_ack
+
     if (websocket && websocket.readyState === WebSocket.OPEN) {
       if (audioWorkletProcessorPort) {
         audioWorkletProcessorPort.postMessage({
@@ -1980,105 +2217,100 @@ document.addEventListener('DOMContentLoaded', () => {
 
   websocket.onopen = () => {
     console.log('[websockets] Connection opened!');
-    status = 'connected_waiting_mode'; // More specific status
+    status = 'connected_waiting_mode';
     loadingText = 'Connection established. Waiting for server mode...';
     updateStatusDisplay();
 
-    const settingsPrefix = `${appName}_`; // Ensure appName is defined
-    const settingsToSend = {};
-    let foundSettings = false;
+    if (!isSharedMode) {
+      const settingsPrefix = `${appName}_`;
+      const settingsToSend = {};
+      let foundSettings = false;
+      let initialClientWidthForSettings, initialClientHeightForSettings;
 
-    let initialClientWidthForSettings, initialClientHeightForSettings;
-    for (const key in localStorage) {
-      if (Object.hasOwnProperty.call(localStorage, key) && key.startsWith(settingsPrefix)) {
-        const unprefixedKey = key.substring(settingsPrefix.length);
-        let serverExpectedKey = null;
+      for (const key in localStorage) {
+        if (Object.hasOwnProperty.call(localStorage, key) && key.startsWith(settingsPrefix)) {
+          const unprefixedKey = key.substring(settingsPrefix.length);
+          let serverExpectedKey = null;
+          if (unprefixedKey === 'videoBitRate') serverExpectedKey = 'webrtc_videoBitRate';
+          else if (unprefixedKey === 'videoFramerate') serverExpectedKey = 'webrtc_videoFramerate';
+          else if (unprefixedKey === 'videoCRF') serverExpectedKey = 'webrtc_videoCRF';
+          else if (unprefixedKey === 'encoder') serverExpectedKey = 'webrtc_encoder';
+          else if (unprefixedKey === 'resizeRemote') serverExpectedKey = 'webrtc_resizeRemote';
+          else if (unprefixedKey === 'isManualResolutionMode') serverExpectedKey = 'webrtc_isManualResolutionMode';
+          else if (unprefixedKey === 'manualWidth') serverExpectedKey = 'webrtc_manualWidth';
+          else if (unprefixedKey === 'manualHeight') serverExpectedKey = 'webrtc_manualHeight';
+          else if (unprefixedKey === 'audioBitRate') serverExpectedKey = 'webrtc_audioBitRate';
+          else if (unprefixedKey === 'videoBufferSize') serverExpectedKey = 'webrtc_videoBufferSize';
 
-        if (unprefixedKey === 'videoBitRate') serverExpectedKey = 'webrtc_videoBitRate';
-        else if (unprefixedKey === 'videoFramerate') serverExpectedKey = 'webrtc_videoFramerate';
-        else if (unprefixedKey === 'videoCRF') serverExpectedKey = 'webrtc_videoCRF';
-        else if (unprefixedKey === 'encoder') serverExpectedKey = 'webrtc_encoder';
-        else if (unprefixedKey === 'resizeRemote') serverExpectedKey = 'webrtc_resizeRemote';
-        else if (unprefixedKey === 'isManualResolutionMode') serverExpectedKey = 'webrtc_isManualResolutionMode';
-        else if (unprefixedKey === 'manualWidth') serverExpectedKey = 'webrtc_manualWidth';
-        else if (unprefixedKey === 'manualHeight') serverExpectedKey = 'webrtc_manualHeight';
-        else if (unprefixedKey === 'audioBitRate') serverExpectedKey = 'webrtc_audioBitRate';
-        else if (unprefixedKey === 'videoBufferSize') serverExpectedKey = 'webrtc_videoBufferSize';
-
-        if (serverExpectedKey) {
-          let value = localStorage.getItem(key);
-          if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode') {
-            value = (value === 'true');
-          } else if (['webrtc_videoBitRate', 'webrtc_videoFramerate', 'webrtc_videoCRF',
-              'webrtc_manualWidth', 'webrtc_manualHeight', 'webrtc_audioBitRate',
-              'webrtc_videoBufferSize'
-            ].includes(serverExpectedKey)) {
-            value = parseInt(value, 10);
-            if (isNaN(value)) {
-              value = localStorage.getItem(key);
+          if (serverExpectedKey) {
+            let value = localStorage.getItem(key);
+            if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode') {
+              value = (value === 'true');
+            } else if (['webrtc_videoBitRate', 'webrtc_videoFramerate', 'webrtc_videoCRF',
+                'webrtc_manualWidth', 'webrtc_manualHeight', 'webrtc_audioBitRate',
+                'webrtc_videoBufferSize'
+              ].includes(serverExpectedKey)) {
+              value = parseInt(value, 10);
+              if (isNaN(value)) value = localStorage.getItem(key);
             }
+            settingsToSend[serverExpectedKey] = value;
+            foundSettings = true;
           }
-          settingsToSend[serverExpectedKey] = value;
-          foundSettings = true;
         }
       }
-    }
 
-    // Add current/manual resolution to the SETTINGS payload
-    if (isManualResolutionMode && manualWidth != null && manualHeight != null) {
-      initialClientWidthForSettings = manualWidth;
-      initialClientHeightForSettings = manualHeight;
-      // Ensure these are in settingsToSend if not already picked from localStorage
-      if (settingsToSend['webrtc_isManualResolutionMode'] === undefined) settingsToSend['webrtc_isManualResolutionMode'] = true;
-      if (settingsToSend['webrtc_manualWidth'] === undefined) settingsToSend['webrtc_manualWidth'] = manualWidth;
-      if (settingsToSend['webrtc_manualHeight'] === undefined) settingsToSend['webrtc_manualHeight'] = manualHeight;
-    } else {
-      const videoContainer = document.querySelector('.video-container');
-      const rect = videoContainer ? videoContainer.getBoundingClientRect() : {
-        width: window.innerWidth,
-        height: window.innerHeight
-      };
-      initialClientWidthForSettings = roundDownToEven(rect.width);
-      initialClientHeightForSettings = roundDownToEven(rect.height);
-      settingsToSend['webrtc_isManualResolutionMode'] = false; // Explicitly set if not manual
-      settingsToSend['webrtc_initialClientWidth'] = initialClientWidthForSettings;
-      settingsToSend['webrtc_initialClientHeight'] = initialClientHeightForSettings;
-    }
-
-    try {
-      const settingsJson = JSON.stringify(settingsToSend);
-      const message = `SETTINGS,${settingsJson}`;
-      websocket.send(message);
-      console.log('[websockets] Sent initial settings (including resolution) to server:', settingsToSend);
-
-      // Also post these initial settings for any UI components listening
-      window.postMessage({
-        type: 'initialClientSettings',
-        settings: settingsToSend // Send the mapped settings
-      }, window.location.origin);
-
-    } catch (e) {
-      console.error('[websockets] Error constructing or sending initial settings:', e);
-    }
-
-    // 2. Send initial video bitrate if the encoder is a GStreamer one (not JPEG/striped)
-    const isCurrentModeStripedH264_ws = currentEncoderMode === 'x264enc-striped';
-    const isCurrentModeJpeg_ws = currentEncoderMode === 'jpeg';
-    const isCurrentModeVideoPipeline_ws = !isCurrentModeStripedH264_ws && !isCurrentModeJpeg_ws;
-
-    if (isCurrentModeVideoPipeline_ws) {
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        const bitrateMessage = `SET_VIDEO_BITRATE,${videoBitRate}`;
-        websocket.send(bitrateMessage);
-        console.log(`[websockets] Sent initial SET_VIDEO_BITRATE,${videoBitRate} for GStreamer encoder.`);
+      if (isManualResolutionMode && manualWidth != null && manualHeight != null) {
+        initialClientWidthForSettings = manualWidth;
+        initialClientHeightForSettings = manualHeight;
+        if (settingsToSend['webrtc_isManualResolutionMode'] === undefined) settingsToSend['webrtc_isManualResolutionMode'] = true;
+        if (settingsToSend['webrtc_manualWidth'] === undefined) settingsToSend['webrtc_manualWidth'] = manualWidth;
+        if (settingsToSend['webrtc_manualHeight'] === undefined) settingsToSend['webrtc_manualHeight'] = manualHeight;
+      } else {
+        const videoContainer = document.querySelector('.video-container');
+        const rect = videoContainer ? videoContainer.getBoundingClientRect() : {
+          width: window.innerWidth,
+          height: window.innerHeight
+        };
+        initialClientWidthForSettings = roundDownToEven(rect.width);
+        initialClientHeightForSettings = roundDownToEven(rect.height);
+        settingsToSend['webrtc_isManualResolutionMode'] = false;
+        settingsToSend['webrtc_initialClientWidth'] = initialClientWidthForSettings;
+        settingsToSend['webrtc_initialClientHeight'] = initialClientHeightForSettings;
       }
+
+      try {
+        const settingsJson = JSON.stringify(settingsToSend);
+        const message = `SETTINGS,${settingsJson}`;
+        websocket.send(message);
+        console.log('[websockets] Sent initial settings (including resolution) to server:', settingsToSend);
+        window.postMessage({
+          type: 'initialClientSettings',
+          settings: settingsToSend
+        }, window.location.origin);
+      } catch (e) {
+        console.error('[websockets] Error constructing or sending initial settings:', e);
+      }
+
+      const isCurrentModeStripedH264_ws = currentEncoderMode === 'x264enc-striped';
+      const isCurrentModeJpeg_ws = currentEncoderMode === 'jpeg';
+      const isCurrentModeVideoPipeline_ws = !isCurrentModeStripedH264_ws && !isCurrentModeJpeg_ws;
+
+      if (isCurrentModeVideoPipeline_ws) {
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+          const bitrateMessage = `SET_VIDEO_BITRATE,${videoBitRate}`;
+          websocket.send(bitrateMessage);
+          console.log(`[websockets] Sent initial SET_VIDEO_BITRATE,${videoBitRate} for GStreamer encoder.`);
+        }
+      }
+
+      const pixelRatio = window.devicePixelRatio;
+      websocket.send(`s,${pixelRatio}`);
+      console.log(`[websockets] Sent initial pixel ratio: ${pixelRatio}.`);
+    } else {
+        console.log("Shared mode: Skipping sending SETTINGS and pixel ratio onopen.");
     }
 
-    const pixelRatio = window.devicePixelRatio;
-    websocket.send(`s,${pixelRatio}`);
-    console.log(`[websockets] Sent initial pixel ratio: ${pixelRatio}. Initial resolution sent via SETTINGS.`);
-
-    websocket.send('cr');
+    websocket.send('cr'); // Request clipboard content (read-only is fine)
     console.log('[websockets] Sent initial clipboard request (cr) to server.');
 
     isVideoPipelineActive = true;
@@ -2089,10 +2321,10 @@ document.addEventListener('DOMContentLoaded', () => {
       audio: true
     }, window.location.origin);
 
-    isMicrophoneActive = false; // Mic always starts off
+    isMicrophoneActive = false;
     updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
 
-    if (metricsIntervalId === null) {
+    if (metricsIntervalId === null && !isSharedMode) { // Metrics only for non-shared
       metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
       console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
     }
@@ -2107,9 +2339,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (dataTypeByte === 0) { // Full H.264 frame
         if (arrayBuffer.byteLength < 4) return;
         const frameTypeFlag = dataView.getUint8(1);
-        lastReceivedVideoFrameId = dataView.getUint16(2, false);
+        if (!isSharedMode) lastReceivedVideoFrameId = dataView.getUint16(2, false); // No ack in shared
         const videoDataArrayBuffer = arrayBuffer.slice(4);
-        if (!isVideoPipelineActive) return;
+        if (!isVideoPipelineActive && !isSharedMode) return; // Shared mode processes always
         if (decoder && decoder.state === 'configured') {
           const chunk = new EncodedVideoChunk({
             type: frameTypeFlag === 1 ? 'key' : 'delta',
@@ -2126,13 +2358,13 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!decoder || decoder.state === 'closed') initializeDecoder();
         }
       } else if (dataTypeByte === 1) { // Audio frame
-        if (window.currentAudioBufferSize >= 5) return;
-        if (!isAudioPipelineActive) return;
+        if (window.currentAudioBufferSize >= 5 && !isSharedMode) return; // Shared mode might buffer more aggressively if needed, or just play
+        if (!isAudioPipelineActive && !isSharedMode) return; // Shared mode processes always
         if (audioDecoderWorker) {
           if (audioContext && audioContext.state !== 'running') {
             audioContext.resume().catch(e => console.error("Error resuming audio context", e));
           }
-          const opusDataArrayBuffer = arrayBuffer.slice(2); // Assuming 2 bytes header (type + flags/id)
+          const opusDataArrayBuffer = arrayBuffer.slice(2);
           if (opusDataArrayBuffer.byteLength > 0) {
             audioDecoderWorker.postMessage({
               type: 'decode',
@@ -2143,16 +2375,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }, [opusDataArrayBuffer]);
           }
         } else {
-          initializeAudio().then(() => {
+          initializeAudio().then(() => { // Ensure audio pipeline is up
             if (audioDecoderWorker) {
               const opusDataArrayBuffer = arrayBuffer.slice(2);
               if (opusDataArrayBuffer.byteLength > 0) {
                 audioDecoderWorker.postMessage({
                   type: 'decode',
-                  data: {
-                    opusBuffer: opusDataArrayBuffer,
-                    timestamp: performance.now() * 1000
-                  }
+                  data: { opusBuffer: opusDataArrayBuffer, timestamp: performance.now() * 1000 }
                 }, [opusDataArrayBuffer]);
               }
             }
@@ -2160,20 +2389,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } else if (dataTypeByte === 0x03) { // JPEG Stripe
         if (arrayBuffer.byteLength < 6) return;
+        if (!isSharedMode) lastReceivedVideoFrameId = dataView.getUint16(2, false);
         const stripe_y_start = dataView.getUint16(4, false);
-        lastReceivedVideoFrameId = dataView.getUint16(2, false);
         const jpegDataBuffer = arrayBuffer.slice(6);
         if (jpegDataBuffer.byteLength === 0) return;
         decodeAndQueueJpegStripe(stripe_y_start, jpegDataBuffer);
       } else if (dataTypeByte === 0x04) { // H.264 VNC Stripe
-        if (!isVideoPipelineActive) return;
-        if (typeof window.vncStripesArrivedThisPeriod !== 'undefined') window.vncStripesArrivedThisPeriod++;
+        if (!isVideoPipelineActive && !isSharedMode) return;
+        if (typeof window.vncStripesArrivedThisPeriod !== 'undefined' && !isSharedMode) window.vncStripesArrivedThisPeriod++;
         const EXPECTED_HEADER_LENGTH = 10;
         if (arrayBuffer.byteLength < EXPECTED_HEADER_LENGTH) return;
         const video_frame_type_byte = dataView.getUint8(1);
         const vncFrameID = dataView.getUint16(2, false);
-        lastReceivedVideoFrameId = vncFrameID;
-        uniqueStripedFrameIdsThisPeriod.add(lastReceivedVideoFrameId);
+        if (!isSharedMode) {
+            lastReceivedVideoFrameId = vncFrameID;
+            uniqueStripedFrameIdsThisPeriod.add(lastReceivedVideoFrameId);
+        }
         const vncStripeYStart = dataView.getUint16(4, false);
         const stripeWidth = dataView.getUint16(6, false);
         const stripeHeight = dataView.getUint16(8, false);
@@ -2245,33 +2476,51 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingText = 'Initializing WebSocket mode...';
         updateStatusDisplay();
 
-        // Cleanup potentially existing resources (though less critical if only one mode)
-        if (decoder && decoder.state !== "closed") decoder.close(); // Close if exists from a previous session/error
+        if (decoder && decoder.state !== "closed") decoder.close();
         clearAllVncStripeDecoders();
         cleanupVideoBuffer();
         cleanupJpegStripeQueue();
-        stopMicrophoneCapture(); // Ensure mic is stopped before re-init
+        if (!isSharedMode) stopMicrophoneCapture(); // Mic only for non-shared
 
         if (currentEncoderMode !== 'x264enc-striped' && currentEncoderMode !== 'jpeg') {
           initializeDecoder();
         }
-        initializeAudio().then(() => { // Ensure audio context and worker are up
-          initializeDecoderAudio(); // Then initialize the audio decoder within the worker
+        initializeAudio().then(() => {
+          initializeDecoderAudio();
         });
+        
         initializeInput();
 
+
         if (playButtonElement) playButtonElement.classList.add('hidden');
-        if (statusDisplayElement) statusDisplayElement.classList.remove('hidden'); // Show status during init
+        if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
 
         console.log('Starting video painting loop (requestAnimationFrame).');
         requestAnimationFrame(paintVideoFrame);
 
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-          websocket.send('cr'); // Request clipboard
-          if (!document.hidden && !isVideoPipelineActive) websocket.send('START_VIDEO');
-          if (!isAudioPipelineActive) websocket.send('START_AUDIO');
+        if (isSharedMode) {
+            console.log("Shared mode: Received MODE websockets. Sending STOP_VIDEO then START_VIDEO for keyframe.");
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+              websocket.send('STOP_VIDEO');
+              setTimeout(() => {
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                  websocket.send('START_VIDEO');
+                  console.log("Shared mode: Sent START_VIDEO after delay.");
+                }
+              }, 100);
+              // Local pipeline active flags should reflect an attempt to view
+              isVideoPipelineActive = true;
+              isAudioPipelineActive = true;
+              window.postMessage({ type: 'pipelineStatusUpdate', video: true, audio: true }, window.location.origin);
+            }
+        } else { // Non-shared mode logic
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+              websocket.send('cr'); // Request clipboard
+              if (!document.hidden && !isVideoPipelineActive) websocket.send('START_VIDEO');
+              if (!isAudioPipelineActive) websocket.send('START_AUDIO');
+            }
         }
-        loadingText = 'Waiting for stream...'; // Update status after init
+        loadingText = 'Waiting for stream...';
         updateStatusDisplay();
 
       } 
@@ -2319,6 +2568,53 @@ document.addEventListener('DOMContentLoaded', () => {
               video: isVideoPipelineActive,
               audio: isAudioPipelineActive
             }, window.location.origin);
+         } else if (obj.type === 'stream_resolution') {
+           if (isSharedMode) {
+             const newWidth = parseInt(obj.width, 10);
+             const newHeight = parseInt(obj.height, 10);
+
+             if (newWidth > 0 && newHeight > 0 && (manualWidth !== newWidth || manualHeight !== newHeight)) {
+               console.log(`Shared mode: Received stream_resolution from server: ${newWidth}x${newHeight}. Current manual: ${manualWidth}x${manualHeight}`);
+               manualWidth = newWidth;
+               manualHeight = newHeight;
+               applyManualCanvasStyle(manualWidth, manualHeight, true); // true for scaleToFit
+
+               // Handle decoder and canvas updates based on current encoder mode
+               if (currentEncoderMode !== 'x264enc-striped' && currentEncoderMode !== 'jpeg') {
+                 // This is for the main video pipeline (e.g., full H.264 frames)
+                 console.log(`Shared mode: Stream resolution changed to ${newWidth}x${newHeight} for main video pipeline (${currentEncoderMode}). Ensuring decoder is (re)initialized.`);
+                 // triggerInitializeDecoder will use the updated manualWidth/manualHeight
+                 // to configure or reconfigure the main VideoDecoder.
+                 triggerInitializeDecoder();
+               } else if (currentEncoderMode === 'x264enc-striped') {
+                 // This is for VNC-style H.264 stripes
+                 console.log(`Shared mode: Stream resolution changed to ${newWidth}x${newHeight} for x264enc-striped. Clearing stripe decoders and canvas.`);
+                 clearAllVncStripeDecoders(); // Clears individual H.264 stripe decoders
+                 if (canvasContext) {
+                   canvasContext.setTransform(1, 0, 0, 1, 0, 0);
+                   // canvas.width/height have been updated by applyManualCanvasStyle
+                   canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+                 }
+               } else if (currentEncoderMode === 'jpeg') {
+                 // This is for JPEG stripes/frames
+                 console.log(`Shared mode: Stream resolution changed to ${newWidth}x${newHeight} for JPEG. Clearing canvas.`);
+                 // No specific decoder objects to clear for JPEG, but canvas clear is good.
+                 // clearAllVncStripeDecoders(); // Not needed for JPEG, VNC specific
+                 if (canvasContext) {
+                   canvasContext.setTransform(1, 0, 0, 1, 0, 0);
+                   // canvas.width/height have been updated by applyManualCanvasStyle
+                   canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+                 }
+               }
+
+             } else if (!(newWidth > 0 && newHeight > 0)) {
+                 console.warn(`Shared mode: Received invalid stream_resolution dimensions: ${obj.width}x${obj.height}`);
+             }
+           } else {
+             // In non-shared mode, we generally don't use this message to override client-driven resolution.
+             // However, you could log it or use it for informational purposes if desired.
+             console.log(`Non-shared mode: Received stream_resolution (ignored for control): ${obj.width}x${obj.height}`);
+           }
           } else {
             console.warn(`Unexpected JSON message type: ${obj.type}`, obj);
           }
@@ -2326,20 +2622,22 @@ document.addEventListener('DOMContentLoaded', () => {
           try {
             const cursorData = JSON.parse(event.data.substring(7));
             if (parseInt(cursorData.handle, 10) === 0) {
-              overlayInput.style.cursor = 'auto';
+              if(overlayInput) overlayInput.style.cursor = 'auto';
               return;
             }
             let cursorStyle = `url('data:image/png;base64,${cursorData.curdata}')`;
             if (cursorData.hotspot) cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
             else cursorStyle += ', auto';
-            overlayInput.style.cursor = cursorStyle;
+            if(overlayInput) overlayInput.style.cursor = cursorStyle;
           } catch (e) {
             console.error('Error parsing cursor data:', e);
           }
         } else if (event.data.startsWith('clipboard,')) {
           try {
             const clipboardData = atob(event.data.substring(10));
-            navigator.clipboard.writeText(clipboardData).catch(err => console.error('Could not copy: ' + err));
+            // In shared mode, we can still display clipboard content from server.
+            // Writing to system clipboard might be desired.
+            navigator.clipboard.writeText(clipboardData).catch(err => console.error('Could not copy server clipboard to local: ' + err));
             window.postMessage({
               type: 'clipboardContentUpdate',
               text: clipboardData
@@ -2393,8 +2691,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           });
         } else {
-          if (window.webrtcInput && window.webrtcInput.on_message) {
-            window.webrtcInput.on_message(event.data); // Let input handler try
+          if (window.webrtcInput && window.webrtcInput.on_message && !isSharedMode) { // Input messages only for non-shared
+            window.webrtcInput.on_message(event.data);
           }
         }
       }
@@ -2430,9 +2728,9 @@ document.addEventListener('DOMContentLoaded', () => {
       audioDecoderWorker.postMessage({
         type: 'close'
       });
-      audioDecoderWorker = null;
+      audioDecoderWorker = null; // Terminate and nullify in worker's close handler
     }
-    stopMicrophoneCapture();
+    if (!isSharedMode) stopMicrophoneCapture();
     isVideoPipelineActive = false;
     isAudioPipelineActive = false;
     isMicrophoneActive = false;
@@ -2441,18 +2739,16 @@ document.addEventListener('DOMContentLoaded', () => {
       video: false,
       audio: false
     }, window.location.origin);
-    // Reconnect logic is below
   };
 
   setInterval(() => {
     if (clientMode === 'websockets' && websocket && websocket.readyState === WebSocket.OPEN) {
       // Connection is fine
     } else {
-      // Attempt to reload if not connected or clientMode isn't set (implies initial failure or disconnect)
       console.log("WebSocket not open or not in WebSocket mode, reloading page to reconnect.");
       location.reload();
     }
-  }, 3000); // Check every 3 seconds for robust reconnection
+  }, 3000);
 });
 
 function cleanupVideoBuffer() {
@@ -2506,7 +2802,7 @@ const audioDecoderWorkerCode = `
         console.error('[AudioWorker] AudioDecoder error:', e.message, e);
         currentDecodeQueueSize = Math.max(0, currentDecodeQueueSize -1);
         if (e.message.includes('fatal') || (decoderAudio && (decoderAudio.state === 'closed' || decoderAudio.state === 'unconfigured'))) {
-          initializeDecoderInWorker();
+          // initializeDecoderInWorker(); // Avoid rapid re-init loops on persistent errors
         }
       },
     });
@@ -2531,10 +2827,11 @@ const audioDecoderWorkerCode = `
         if(frame && typeof frame.close === 'function') { try { frame.close(); } catch(e) { /* ignore */ } }
         return;
     }
-    if (!pipelineActive) {
-      try { frame.close(); } catch(e) { /* ignore */ }
-      return;
-    }
+    // In shared mode, pipelineActive is effectively always true from worker's perspective for processing
+    // if (!pipelineActive) { 
+    //   try { frame.close(); } catch(e) { /* ignore */ }
+    //   return;
+    // }
     let pcmDataArrayBuffer;
     try {
       const requiredByteLength = frame.allocationSize({ planeIndex: 0, format: 'f32' });
@@ -2563,14 +2860,21 @@ const audioDecoderWorkerCode = `
         await initializeDecoderInWorker();
         break;
       case 'decode':
-        if (!pipelineActive) return;
+        // if (!pipelineActive) return; // Allow decode even if main thread says inactive, for shared mode to always process
         if (decoderAudio && decoderAudio.state === 'configured') {
           const chunk = new EncodedAudioChunk({ type: 'key', timestamp: data.timestamp || (performance.now() * 1000), data: data.opusBuffer });
           try {
-            if (currentDecodeQueueSize < 20) { decoderAudio.decode(chunk); currentDecodeQueueSize++; }
-          } catch (e) { if (decoderAudio.state === 'closed' || decoderAudio.state === 'unconfigured') await initializeDecoderInWorker(); }
+            if (currentDecodeQueueSize < 20) { // Limit queue to prevent OOM with bad data
+                 decoderAudio.decode(chunk); currentDecodeQueueSize++; 
+            } else {
+                // console.warn('[AudioWorker] Decode queue full, dropping audio chunk.');
+            }
+          } catch (e) { 
+              currentDecodeQueueSize = Math.max(0, currentDecodeQueueSize - 1);
+              if (decoderAudio.state === 'closed' || decoderAudio.state === 'unconfigured') await initializeDecoderInWorker(); 
+          }
         } else if (!decoderAudio || (decoderAudio && decoderAudio.state !== 'configuring')) {
-          await initializeDecoderInWorker();
+          await initializeDecoderInWorker(); // Try to reinit if not configured
         }
         break;
       case 'reinitialize': await initializeDecoderInWorker(); break;
@@ -2602,6 +2906,12 @@ registerProcessor('mic-worklet-processor', MicWorkletProcessor);
 `;
 
 async function startMicrophoneCapture() {
+  if (isSharedMode) {
+    console.log("Shared mode: Microphone capture blocked.");
+    isMicrophoneActive = false;
+    postSidebarButtonUpdate();
+    return;
+  }
   if (isMicrophoneActive || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     if (!isMicrophoneActive) isMicrophoneActive = false;
     postSidebarButtonUpdate();
@@ -2666,17 +2976,15 @@ async function startMicrophoneCapture() {
     postSidebarButtonUpdate();
   } catch (error) {
     console.error('Failed to start microphone capture:', error);
-    // Simplified error alerting for brevity in this refactor
     alert(`Microphone error: ${error.name} - ${error.message}`);
-    stopMicrophoneCapture();
-    isMicrophoneActive = false;
-    postSidebarButtonUpdate();
+    stopMicrophoneCapture(); // This will set isMicrophoneActive = false and update UI
   }
 }
 
 function stopMicrophoneCapture() {
+  // This function is safe to call even in shared mode, it will just do nothing if mic wasn't active.
   if (!isMicrophoneActive && !micStream && !micAudioContext) {
-    if (isMicrophoneActive) {
+    if (isMicrophoneActive) { // Should not happen if first condition is true, but defensive
       isMicrophoneActive = false;
       postSidebarButtonUpdate();
     }
@@ -2707,7 +3015,7 @@ function stopMicrophoneCapture() {
       micAudioContext = null;
     }
   }
-  if (isMicrophoneActive) {
+  if (isMicrophoneActive) { // Only update if it was active
     isMicrophoneActive = false;
     postSidebarButtonUpdate();
   }
@@ -2721,8 +3029,8 @@ function cleanup() {
   if (window.isCleaningUp) return;
   window.isCleaningUp = true;
   console.log("Cleanup: Starting cleanup process...");
-  stopMicrophoneCapture();
-  // WebRTC specific cleanup removed (signaling, webrtc instances)
+  if (!isSharedMode) stopMicrophoneCapture(); // Microphone only for non-shared
+
   if (websocket) {
     websocket.onopen = null;
     websocket.onmessage = null;
@@ -2741,7 +3049,7 @@ function cleanup() {
     if (audioDecoderWorker) {
       audioDecoderWorker.postMessage({
         type: 'close'
-      });
+      }); // Worker will terminate itself
       audioDecoderWorker = null;
     }
   }
@@ -2758,16 +3066,15 @@ function cleanup() {
   loadingText = '';
   showStart = true;
   streamStarted = false;
-  inputInitialized = false;
+  inputInitialized = false; // Reset input initialization flag
   if (statusDisplayElement) statusDisplayElement.textContent = 'Connecting...';
   if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
-  if (playButtonElement) playButtonElement.classList.remove('hidden'); // Should be hidden by default in WS
+  if (playButtonElement) playButtonElement.classList.remove('hidden');
   if (overlayInput) overlayInput.style.cursor = 'auto';
   serverClipboardContent = '';
   isVideoPipelineActive = true;
   isAudioPipelineActive = true;
   isMicrophoneActive = false;
-  // Reset stats objects if necessary
   window.fps = 0;
   frameCount = 0;
   lastFpsUpdateTime = performance.now();
@@ -2776,6 +3083,11 @@ function cleanup() {
 }
 
 function handleDragOver(ev) {
+  if (isSharedMode) { // Prevent drop indication in shared mode
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'none';
+      return;
+  }
   ev.preventDefault();
   ev.dataTransfer.dropEffect = 'copy';
 }
@@ -2783,6 +3095,10 @@ function handleDragOver(ev) {
 async function handleDrop(ev) {
   ev.preventDefault();
   ev.stopPropagation();
+  if (isSharedMode) {
+    console.log("Shared mode: File upload via drag-drop blocked.");
+    return;
+  }
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
     window.postMessage({
       type: 'fileUpload',
@@ -2800,11 +3116,11 @@ async function handleDrop(ev) {
       const entry = ev.dataTransfer.items[i].webkitGetAsEntry() || ev.dataTransfer.items[i].getAsEntry();
       if (entry) entriesToProcess.push(entry);
     }
-  } else if (ev.dataTransfer.files.length > 0) { // Fallback for browsers not supporting .items or .getAsEntry()
+  } else if (ev.dataTransfer.files.length > 0) {
     for (let i = 0; i < ev.dataTransfer.files.length; i++) {
       await uploadFileObject(ev.dataTransfer.files[i], ev.dataTransfer.files[i].name);
     }
-    return; // Processed legacy files, exit.
+    return;
   }
 
   try {
@@ -2892,18 +3208,21 @@ function uploadFileObject(file, pathToSend) {
     const reader = new FileReader();
     reader.onload = function(e) {
       if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-        /* similar error handling */
-        reject(new Error("WS closed during upload"));
+        const uploadErrorMsg = `WS closed during upload of ${pathToSend}`;
+        window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: uploadErrorMsg }}, window.location.origin);
+        reject(new Error(uploadErrorMsg));
         return;
       }
       if (e.target.error) {
-        /* similar error handling */
+        const readErrorMsg = `File read error for ${pathToSend}: ${e.target.error}`;
+        window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: readErrorMsg }}, window.location.origin);
+        websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:File read error`);
         reject(e.target.error);
         return;
       }
       try {
         const prefixedView = new Uint8Array(1 + e.target.result.byteLength);
-        prefixedView[0] = 0x01;
+        prefixedView[0] = 0x01; // Data prefix for file chunk
         prefixedView.set(new Uint8Array(e.target.result), 1);
         websocket.send(prefixedView.buffer);
         offset += e.target.result.byteLength;
@@ -2931,16 +3250,24 @@ function uploadFileObject(file, pathToSend) {
           resolve();
         }
       } catch (wsError) {
+        const sendErrorMsg = `WS send error during upload of ${pathToSend}: ${wsError.message || wsError}`;
+        window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: sendErrorMsg }}, window.location.origin);
+        websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:WS send error`);
         reject(wsError);
       }
     };
     reader.onerror = function(e) {
+      const generalReadError = `General file reader error for ${pathToSend}: ${e.target.error}`;
+      window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: generalReadError }}, window.location.origin);
+      websocket.send(`FILE_UPLOAD_ERROR:${pathToSend}:General file reader error`);
       reject(e.target.error);
     };
 
     function readChunk(startOffset) {
       if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-        reject(new Error("WS closed before next chunk"));
+        const chunkReadError = `WS closed before reading next chunk of ${pathToSend}`;
+         window.postMessage({ type: 'fileUpload', payload: { status: 'error', fileName: pathToSend, message: chunkReadError }}, window.location.origin);
+        reject(new Error(chunkReadError));
         return;
       }
       const slice = file.slice(startOffset, Math.min(startOffset + UPLOAD_CHUNK_SIZE, file.size));

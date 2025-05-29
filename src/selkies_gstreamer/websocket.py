@@ -303,27 +303,26 @@ class GSTStreamingApp:
                         frame_type_byte = b"\x00"
                         data_type_byte = b"\x01"
                         prefixed_data = data_type_byte + frame_type_byte + data_copy
-                        if (
-                            self.data_streaming_server
-                            and self.data_streaming_server.data_ws
-                        ):
-                            try:
-                                if (
-                                    self.async_event_loop
-                                    and self.async_event_loop.is_running()
-                                ):
-                                    asyncio.run_coroutine_threadsafe(
-                                        self.data_streaming_server.data_ws.send(
-                                            prefixed_data
-                                        ),
-                                        self.async_event_loop,
-                                    )
-                                else:
-                                    data_logger.warning(
-                                        "Async event loop not running for audio."
-                                    )
-                            except Exception as e:
-                                data_logger.error(f"Error sending audio data: {e}")
+                        if self.data_streaming_server and \
+                           hasattr(self.data_streaming_server, 'clients') and \
+                           self.data_streaming_server.clients and \
+                           self.async_event_loop and self.async_event_loop.is_running():
+
+                            clients_ref = self.data_streaming_server.clients
+                            data_to_broadcast_ref = prefixed_data
+
+                            async def _broadcast_audio_data_helper():
+                                websockets.broadcast(clients_ref, data_to_broadcast_ref)
+
+                            asyncio.run_coroutine_threadsafe(
+                                _broadcast_audio_data_helper(),
+                                self.async_event_loop
+                            )
+                        else:
+                            if not (self.data_streaming_server and hasattr(self.data_streaming_server, 'clients') and self.data_streaming_server.clients):
+                                data_logger.warning("Cannot broadcast GStreamer audio: data_streaming_server.clients not available or empty.")
+                            elif not (self.async_event_loop and self.async_event_loop.is_running()):
+                                data_logger.warning("Cannot broadcast GStreamer audio: async event loop not available or not running.")
                         buffer.unmap(map_info)
                     else:
                         logger_gst_app.error("Error mapping audio buffer")
@@ -333,22 +332,46 @@ class GSTStreamingApp:
         audio_sink.connect("new-sample", on_new_audio_sample)
         return self.audio_ws_pipeline
 
-    def send_ws_clipboard_data(self, data):
-        if self.data_streaming_server and self.data_streaming_server.data_ws:
-            msg = f"clipboard,{base64.b64encode(data.encode()).decode()}"
-            if self.async_event_loop and self.async_event_loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    self.data_streaming_server.data_ws.send(msg), self.async_event_loop
-                )
+    def send_ws_clipboard_data(self, data): # Assumed to be called from a threaded context based on original run_coroutine_threadsafe
+        if self.data_streaming_server and \
+           hasattr(self.data_streaming_server, 'clients') and \
+           self.data_streaming_server.clients and \
+           self.async_event_loop and self.async_event_loop.is_running():
 
-    def send_ws_cursor_data(self, data):
-        if self.data_streaming_server and self.data_streaming_server.data_ws:
+            msg_to_broadcast = f"clipboard,{base64.b64encode(data.encode()).decode()}"
+            clients_ref = self.data_streaming_server.clients
+
+            async def _broadcast_clipboard_helper():
+                websockets.broadcast(clients_ref, msg_to_broadcast)
+
+            asyncio.run_coroutine_threadsafe(
+                _broadcast_clipboard_helper(),
+                self.async_event_loop
+            )
+        else:
+            data_logger.warning("Cannot broadcast clipboard data: prerequisites not met.")
+
+
+    def send_ws_cursor_data(self, data): # Assumed to be called from a threaded context
+        if self.data_streaming_server and \
+           hasattr(self.data_streaming_server, 'clients') and \
+           self.data_streaming_server.clients and \
+           self.async_event_loop and self.async_event_loop.is_running():
+
             msg_str = json.dumps(data)
-            msg = f"cursor,{msg_str}"
-            if self.async_event_loop and self.async_event_loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    self.data_streaming_server.data_ws.send(msg), self.async_event_loop
-                )
+            msg_to_broadcast = f"cursor,{msg_str}"
+            clients_ref = self.data_streaming_server.clients
+
+            async def _broadcast_cursor_helper():
+                websockets.broadcast(clients_ref, msg_to_broadcast)
+
+            asyncio.run_coroutine_threadsafe(
+                _broadcast_cursor_helper(),
+                self.async_event_loop
+            )
+        else:
+            data_logger.warning("Cannot broadcast cursor data: prerequisites not met.")
+
 
     def start_ws_pipeline(self):
         if not GSTREAMER_AVAILABLE:
@@ -620,23 +643,26 @@ class GSTStreamingApp:
                     )
                     prefixed_data = header + data_copy
 
-                    if (
-                        self.data_streaming_server
-                        and self.data_streaming_server.data_ws
-                    ):
-                        try:
-                            if (
-                                self.async_event_loop
-                                and self.async_event_loop.is_running()
-                            ):
-                                asyncio.run_coroutine_threadsafe(
-                                    self.data_streaming_server.data_ws.send(
-                                        prefixed_data
-                                    ),
-                                    self.async_event_loop,
-                                )
-                        except Exception as e:
-                            data_logger.error(f"Error sending video data: {e}")
+                    if self.data_streaming_server and \
+                       hasattr(self.data_streaming_server, 'clients') and \
+                       self.data_streaming_server.clients and \
+                       self.async_event_loop and self.async_event_loop.is_running():
+
+                        clients_ref = self.data_streaming_server.clients
+                        data_to_broadcast_ref = prefixed_data
+
+                        async def _broadcast_gst_video_data_helper():
+                            websockets.broadcast(clients_ref, data_to_broadcast_ref)
+
+                        asyncio.run_coroutine_threadsafe(
+                            _broadcast_gst_video_data_helper(),
+                            self.async_event_loop
+                        )
+                    else:
+                        if not (self.data_streaming_server and hasattr(self.data_streaming_server, 'clients') and self.data_streaming_server.clients):
+                            data_logger.warning("Cannot broadcast GStreamer video: data_streaming_server.clients not available or empty.")
+                        elif not (self.async_event_loop and self.async_event_loop.is_running()):
+                             data_logger.warning("Cannot broadcast GStreamer video: async event loop not available or not running.")
                     buffer.unmap(map_info)
             return Gst.FlowReturn.OK
         return Gst.FlowReturn.OK
@@ -1250,7 +1276,8 @@ class DataStreamingServer:
         self.mode = "websockets"
         self.server = None
         self.stop_server = None
-        self.data_ws = None
+        self.data_ws = None # Represents the specific connection in a ws_handler context
+        self.clients = set() # Set of all active client WebSocket connections
         self.app = app
         self.cli_args = cli_args
         self._latest_client_render_fps = 0.0
@@ -1308,12 +1335,35 @@ class DataStreamingServer:
             MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE, MIN_VIDEO_BITRATE_KBPS
         )
 
+    async def broadcast_stream_resolution(self):
+        if self.app and hasattr(self.app, 'display_width') and hasattr(self.app, 'display_height'):
+            # Ensure resolution is valid before broadcasting
+            if self.app.display_width > 0 and self.app.display_height > 0:
+                message = {
+                    "type": "stream_resolution",
+                    "width": self.app.display_width,
+                    "height": self.app.display_height,
+                }
+                message_str = json.dumps(message)
+                data_logger.info(f"Broadcasting stream resolution: {message_str}")
+                if self.clients:
+                    websockets.broadcast(self.clients, message_str)
+            else:
+                data_logger.warning(
+                    f"Skipping stream resolution broadcast due to invalid dimensions: "
+                    f"{self.app.display_width}x{self.app.display_height}"
+                )
+        else:
+            data_logger.warning(
+                "Cannot broadcast stream resolution: GSTStreamingApp instance or its display dimensions not available."
+            )
+
     def _x264_striped_stripe_callback(self, result_ptr, user_data):
-        current_async_loop = self.jpeg_capture_loop
+        current_async_loop = self.jpeg_capture_loop # This is the loop for DataStreamingServer
         if (
             not self.is_x264_striped_capturing
             or not current_async_loop
-            or not self.data_ws
+            or not self.clients # Check self.clients instead of self.data_ws for broadcast
             or not result_ptr
         ):
             return
@@ -1325,24 +1375,20 @@ class DataStreamingServer:
                         result.data, ctypes.POINTER(ctypes.c_ubyte * result.size)
                     ).contents
                 )
-                if self.data_ws:
+                
+                clients_ref = self.clients
+                data_to_send_ref = payload_from_cpp
+                frame_id_ref = result.frame_id
 
-                    async def send_data_async():
-                        try:
-                            if self.data_ws:
-                                await self.data_ws.send(payload_from_cpp)
-                                self.update_last_sent_frame_id(result.frame_id)
-                        except websockets.exceptions.ConnectionClosed:
-                            data_logger.debug("X264-Striped: WS closed.")
-                        except Exception as e:
-                            data_logger.error(
-                                f"X264-Striped send error: {e}", exc_info=False
-                            )
+                async def _broadcast_x264_data_and_update_frame_id():
+                    if clients_ref:
+                        websockets.broadcast(clients_ref, data_to_send_ref)
+                    self.update_last_sent_frame_id(frame_id_ref)
 
-                    if current_async_loop.is_running():
-                        asyncio.run_coroutine_threadsafe(
-                            send_data_async(), current_async_loop
-                        )
+                if current_async_loop and current_async_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        _broadcast_x264_data_and_update_frame_id(), current_async_loop
+                    )
             except Exception as e:
                 data_logger.error(f"X264-Striped callback error: {e}", exc_info=True)
 
@@ -1412,10 +1458,11 @@ class DataStreamingServer:
         return True
 
     def _jpeg_stripe_callback(self, result_ptr, user_data):
+        current_async_loop = self.jpeg_capture_loop # This is the loop for DataStreamingServer
         if (
             not self.is_jpeg_capturing
-            or not self.jpeg_capture_loop
-            or not self.data_ws
+            or not current_async_loop
+            or not self.clients # Check self.clients for broadcast
             or not result_ptr
         ):
             return
@@ -1427,23 +1474,20 @@ class DataStreamingServer:
                         result.data, ctypes.POINTER(ctypes.c_ubyte * result.size)
                     ).contents
                 )
-                self.update_last_sent_frame_id(result.frame_id)
-                if self.data_ws:
+                
+                clients_ref = self.clients
+                prefixed_jpeg_data = b"\x03\x00" + jpeg_buffer
+                frame_id_ref = result.frame_id
 
-                    async def send_jpeg_async():
-                        try:
-                            if self.data_ws:
-                                prefixed_jpeg = b"\x03\x00" + jpeg_buffer
-                                await self.data_ws.send(prefixed_jpeg)
-                        except websockets.exceptions.ConnectionClosed:
-                            data_logger.debug("JPEG: WS closed.")
-                        except Exception as e:
-                            data_logger.error(f"JPEG send error: {e}", exc_info=False)
+                async def _broadcast_jpeg_data_and_update_frame_id():
+                    if clients_ref:
+                        websockets.broadcast(clients_ref, prefixed_jpeg_data)
+                    self.update_last_sent_frame_id(frame_id_ref)
 
-                    if self.jpeg_capture_loop.is_running():
-                        asyncio.run_coroutine_threadsafe(
-                            send_jpeg_async(), self.jpeg_capture_loop
-                        )
+                if current_async_loop and current_async_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        _broadcast_jpeg_data_and_update_frame_id(), current_async_loop
+                    )
             except Exception as e:
                 data_logger.error(f"JPEG callback error: {e}", exc_info=True)
 
@@ -1528,12 +1572,12 @@ class DataStreamingServer:
         if hasattr(self, "_sent_frames_log"):
             self._sent_frames_log.append((now, frame_id))
 
-    async def _send_error_to_client(self, error_message):
-        if self.data_ws:
+    async def _send_error_to_client(self, websocket_obj, error_message): # Added websocket_obj
+        if websocket_obj: # Send error to the specific client this handler is managing
             try:
-                await self.data_ws.send(f"ERROR {error_message}")
+                await websocket_obj.send(f"ERROR {error_message}")
             except Exception:
-                pass
+                pass # Error sending error, not much to do
 
     def _parse_settings_payload(self, payload_str: str) -> dict:
         settings_data = json.loads(payload_str)
@@ -1587,7 +1631,7 @@ class DataStreamingServer:
         data_logger.debug(f"Parsed client settings: {parsed}")
         return parsed
 
-    async def _apply_client_settings(self, settings: dict, is_initial_settings: bool):
+    async def _apply_client_settings(self, websocket_obj, settings: dict, is_initial_settings: bool):
         data_logger.info(
             f"Applying client settings (initial={is_initial_settings}): {settings}"
         )
@@ -1645,9 +1689,7 @@ class DataStreamingServer:
                 data_logger.info(
                     f"Effective resize enabled. Calling on_resize_handler for: {self.app.display_width}x{self.app.display_height}"
                 )
-                on_resize_handler(
-                    f"{self.app.display_width}x{self.app.display_height}", self.app
-                )
+                on_resize_handler(f"{self.app.display_width}x{self.app.display_height}", self.app, self)
                 # on_resize_handler updates self.app.display_width/height based on xrandr's outcome
                 # and also sets self.app.last_resize_success
             else:
@@ -1718,6 +1760,7 @@ class DataStreamingServer:
                 and not X11_CAPTURE_AVAILABLE
             ):
                 await self._send_error_to_client(
+                    websocket_obj,
                     f"{new_encoder_from_payload} (pixelflux) not available."
                 )
             else:
@@ -1846,8 +1889,9 @@ class DataStreamingServer:
         global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
         raddr = websocket.remote_address
         data_logger.info(f"Data WebSocket connected from {raddr}")
+        self.clients.add(websocket)
+        self.data_ws = websocket # self.data_ws is specific to this handler instance/connection
         self.jpeg_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
-        self.data_ws = websocket
         self.client_settings_received = asyncio.Event()
         initial_settings_processed = False
         self._sent_frames_log = deque(
@@ -1859,7 +1903,11 @@ class DataStreamingServer:
 
         try:
             await websocket.send(f"MODE {self.mode}")
+            await self.broadcast_stream_resolution()
         except websockets.exceptions.ConnectionClosed:
+            self.clients.discard(websocket) # Ensure removal on early exit
+            if self.data_ws is websocket:
+                self.data_ws = None
             return
 
         available_encoders = []
@@ -1879,6 +1927,9 @@ class DataStreamingServer:
         try:
             await websocket.send(json.dumps(server_settings_payload))
         except websockets.exceptions.ConnectionClosed:
+            self.clients.discard(websocket) # Ensure removal on early exit
+            if self.data_ws is websocket:
+                self.data_ws = None
             return
 
         self._initial_target_bitrate_kbps = self.app.video_bitrate
@@ -1944,7 +1995,7 @@ class DataStreamingServer:
                 _collect_gpu_stats_ws(self._shared_stats_ws, gpu_id=gpu_id_for_stats)
             )
         self._stats_sender_task_ws = asyncio.create_task(
-            _send_stats_periodically_ws(websocket, self._shared_stats_ws)
+            _send_stats_periodically_ws(websocket, self._shared_stats_ws) # Stats are per-client
         )
 
         try:
@@ -2211,7 +2262,9 @@ class DataStreamingServer:
                             _, payload_str = message.split(",", 1)
                             parsed_settings = self._parse_settings_payload(payload_str)
                             await self._apply_client_settings(
-                                parsed_settings, not initial_settings_processed
+                                websocket, # Pass the current connection's websocket
+                                parsed_settings,
+                                not initial_settings_processed
                             )
                             if not initial_settings_processed:
                                 self.client_settings_received.set()
@@ -2306,7 +2359,8 @@ class DataStreamingServer:
                         active_upload_target_path_conn = None
 
                     elif message == "START_VIDEO":
-                        await self.client_settings_received.wait()
+                        # Pulled for shared mode and likely too protective
+                        #await self.client_settings_received.wait()
                         current_encoder = getattr(self.app, "encoder", None)
                         data_logger.info(
                             f"Received START_VIDEO for encoder: {current_encoder}"
@@ -2356,30 +2410,43 @@ class DataStreamingServer:
                                 await self.app.stop_websocket_audio_pipeline()
 
                     elif message.startswith("r,"):
-                        await self.client_settings_received.wait()
+                        raddr = websocket.remote_address # Get raddr for logging if not already available in this scope
+                        data_logger.info(f"SERVER: Raw resize message '{message}' received from {raddr}")
+
                         target_res_str = message[2:]
-                        data_logger.info(f"Received resize request: {target_res_str}")
+                        data_logger.info(f"Received resize request: {target_res_str} from {raddr}")
 
                         video_was_running = False
                         current_encoder_on_resize = getattr(self.app, "encoder", None)
+                        data_logger.info(f"Resize handler: Current encoder is {current_encoder_on_resize}. Video running states: JPEG={self.is_jpeg_capturing}, X264Striped={self.is_x264_striped_capturing}, GSTreamer={getattr(self.app, 'pipeline_running', False)}")
+
                         if self.is_jpeg_capturing:
+                            data_logger.info("Resize handler: Stopping JPEG pipeline.")
                             await self._stop_jpeg_pipeline()
                             video_was_running = True
                         elif self.is_x264_striped_capturing:
+                            data_logger.info("Resize handler: Stopping X264-striped pipeline.")
                             await self._stop_x264_striped_pipeline()
                             video_was_running = True
                         elif GSTREAMER_AVAILABLE and getattr(
                             self.app, "pipeline_running", False
                         ):
+                            data_logger.info("Resize handler: Stopping GStreamer video pipeline.")
                             await self.app.stop_websocket_video_pipeline()
                             video_was_running = True
 
-                        on_resize_handler(target_res_str, self.app)
+                        data_logger.info(f"Resize handler: Calling on_resize_handler with '{target_res_str}' for {raddr}")
+                        on_resize_handler(target_res_str, self.app, self)
+                        data_logger.info(f"Resize handler: on_resize_handler call completed for {raddr}. Last resize success: {getattr(self.app, 'last_resize_success', 'Unknown')}")
 
-                        if video_was_running:
+
+                        if getattr(self.app, 'last_resize_success', False) and video_was_running:
                             data_logger.info(
-                                f"Restarting video ({current_encoder_on_resize}) after resize to {self.app.display_width}x{self.app.display_height}"
+                                f"Resize handler: Restarting video ({current_encoder_on_resize}) after successful resize to {self.app.display_width}x{self.app.display_height} for {raddr}"
                             )
+                            # Ensure frame IDs are reset since resolution and likely keyframe changed
+                            await self._reset_frame_ids_and_notify("resize_event")
+
                             if current_encoder_on_resize == "jpeg":
                                 await self._start_jpeg_pipeline()
                             elif current_encoder_on_resize == "x264enc-striped":
@@ -2388,6 +2455,10 @@ class DataStreamingServer:
                                 self.app, "start_websocket_video_pipeline"
                             ):
                                 await self.app.start_websocket_video_pipeline()
+                        elif not getattr(self.app, 'last_resize_success', False):
+                            data_logger.error(f"Resize handler: Resize failed for {target_res_str}, {raddr}. Video not restarted if it was running.")
+                        elif not video_was_running:
+                            data_logger.info(f"Resize handler: Video was not running for {raddr}, no restart needed after resize.")
 
                     elif message.startswith("SET_ENCODER,"):
                         await self.client_settings_received.wait()
@@ -2511,6 +2582,11 @@ class DataStreamingServer:
             )
         finally:
             data_logger.info(f"Cleaning up Data WS handler for {raddr}...")
+            self.clients.discard(websocket) # Client is removed from the set HERE
+            if self.data_ws is websocket:
+                self.data_ws = None
+
+            # Cancel tasks specific to this ws_handler connection (these are fine)
             tasks_to_cancel_ws = [
                 self._frame_backpressure_task,
                 self._system_monitor_task_ws,
@@ -2520,56 +2596,74 @@ class DataStreamingServer:
             for task in tasks_to_cancel_ws:
                 if task and not task.done():
                     task.cancel()
-            if self.is_jpeg_capturing:
-                await self._stop_jpeg_pipeline()
-            if self.is_x264_striped_capturing:
-                await self._stop_x264_striped_pipeline()
-            if GSTREAMER_AVAILABLE:
-                if getattr(self.app, "pipeline_running", False):
-                    await self.app.stop_websocket_video_pipeline()
-                if getattr(self.app, "audio_pipeline_running_ws_flag", False):
-                    await self.app.stop_websocket_audio_pipeline()
+            
+            # Check if any clients remain *after* this one has been removed.
+            # If no clients are left, then it's safe to stop the global pipelines.
+            if not self.clients: # self.clients is the set of *all* connected clients
+                data_logger.info(f"Last client from {raddr} disconnected. Stopping global pipelines.")
+                if self.is_jpeg_capturing:
+                    await self._stop_jpeg_pipeline()
+                if self.is_x264_striped_capturing:
+                    await self._stop_x264_striped_pipeline()
+                
+                if GSTREAMER_AVAILABLE:
+                    if hasattr(self.app, "pipeline_running") and self.app.pipeline_running:
+                        if hasattr(self.app, "stop_websocket_video_pipeline"):
+                            await self.app.stop_websocket_video_pipeline()
+                    if hasattr(self.app, "audio_pipeline_running_ws_flag") and self.app.audio_pipeline_running_ws_flag:
+                        if hasattr(self.app, "stop_websocket_audio_pipeline"):
+                             await self.app.stop_websocket_audio_pipeline()
+                
+                # PulseAudio specific cleanup (mic forwarding related)
+                # This also should likely only happen if no clients are left, 
+                # or if the disconnecting client was the only one using the mic.
+                # For simplicity now, tie it to last client disconnect.
+                if pa_stream:
+                    try:
+                        pa_stream.close()
+                    except:
+                        pass
+                    pa_stream = None # Ensure it's reset
+                if pa_module_index is not None and pulse:
+                    try:
+                        data_logger.info(
+                            f"Unloading PulseAudio module {pa_module_index} for virtual mic (last client)."
+                        )
+                        pulse.module_unload(pa_module_index)
+                    except Exception as e_unload_final:
+                        data_logger.error(
+                            f"Error unloading PulseAudio module {pa_module_index}: {e_unload_final}"
+                        )
+                    pa_module_index = None # Ensure it's reset
+                if pulse:
+                    try:
+                        pulse.close()
+                    except:
+                        pass
+                    pulse = None # Ensure it's reset
+                mic_setup_done = False # Reset mic setup state
+                # Cleanup for file uploads specific to this connection
+                if (
+                    active_upload_target_path_conn
+                    and active_upload_target_path_conn in active_uploads_by_path_conn
+                ):
+                    active_uploads_by_path_conn[active_upload_target_path_conn].close()
+                    try:
+                        os.remove(active_upload_target_path_conn)
+                    except OSError:
+                        pass
+    
+                # Input handler disconnect is per-handler, so this is fine.
+                if self.input_handler and hasattr(self.input_handler, "disconnect"):
+                    try:
+                        await self.input_handler.disconnect()
+                    except Exception as e_dc:
+                        data_logger.error(f"Error disconnecting input_handler for {raddr}: {e_dc}")
+   
+                data_logger.info(f"Data WS handler for {raddr} finished cleanup.")
 
-            if pa_stream:
-                try:
-                    pa_stream.close()
-                except:
-                    pass
-            if (
-                pa_module_index is not None and pulse
-            ):  # Unload the virtual mic module if it was loaded
-                try:
-                    data_logger.info(
-                        f"Unloading PulseAudio module {pa_module_index} for virtual mic."
-                    )
-                    pulse.module_unload(pa_module_index)
-                except Exception as e_unload_final:
-                    data_logger.error(
-                        f"Error unloading PulseAudio module {pa_module_index}: {e_unload_final}"
-                    )
-            if pulse:  # Close the main pulsectl connection
-                try:
-                    pulse.close()
-                except:
-                    pass
-
-            if (
-                active_upload_target_path_conn
-                and active_upload_target_path_conn in active_uploads_by_path_conn
-            ):
-                active_uploads_by_path_conn[active_upload_target_path_conn].close()
-                try:
-                    os.remove(active_upload_target_path_conn)
-                except OSError:
-                    pass
-            if self.input_handler and hasattr(self.input_handler, "disconnect"):
-                try:
-                    await self.input_handler.disconnect()
-                except Exception as e_dc:
-                    data_logger.error(f"Error disconnecting input_handler: {e_dc}")
-            self.data_ws = None
-            self.jpeg_capture_loop = None
-            data_logger.info(f"Data WS handler for {raddr} finished cleanup.")
+            else:
+                data_logger.info(f"Client from {raddr} disconnected, but other clients ({len(self.clients)}) remain. Global pipelines NOT stopped.")
 
     async def _reset_frame_ids_and_notify(
         self, pipeline_reset_reason="backpressure_adjustment"
@@ -2583,11 +2677,9 @@ class DataStreamingServer:
             self.app, "gstreamer_ws_current_frame_id"
         ):
             self.app.gstreamer_ws_current_frame_id = 0
-        if self.data_ws:
-            try:
-                await self.data_ws.send("PIPELINE_RESETTING 0")
-            except Exception:
-                pass
+        if self.clients: # Check if there are any clients to broadcast to
+            websockets.broadcast(self.clients, "PIPELINE_RESETTING 0")
+
 
     async def _restart_active_video_pipeline_for_backpressure(self, reason: str):
         data_logger.info(
@@ -2774,8 +2866,8 @@ async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5
             system_stats = shared_data.pop("system", None)
             gpu_stats = shared_data.pop("gpu", None)
             try:
-                if not websocket:
-                    data_logger.info("Stats sender: WS closed.")
+                if not websocket: # Check if websocket is still valid
+                    data_logger.info("Stats sender: WS closed or invalid.")
                     break
                 if system_stats:
                     await websocket.send(json.dumps(system_stats))
@@ -2792,7 +2884,7 @@ async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5
         data_logger.error(f"Stats sender (WS) error: {e}", exc_info=True)
 
 
-def on_resize_handler(res_str, current_app_instance):
+def on_resize_handler(res_str, current_app_instance, data_server_instance=None):
     """
     Handles client resize request. Updates app state and calls xrandr.
     """
@@ -2814,6 +2906,8 @@ def on_resize_handler(res_str, current_app_instance):
                 f"resize_display('{target_w}x{target_h}') reported success."
             )
             current_app_instance.last_resize_success = True
+            if data_server_instance:
+                asyncio.create_task(data_server_instance.broadcast_stream_resolution())
         else:
             logger_gst_app_resize.error(
                 f"resize_display('{target_w}x{target_h}') reported failure."
@@ -2955,11 +3049,15 @@ async def main():
         input_handler.on_audio_encoder_bit_rate = app.set_audio_bitrate
     if hasattr(app, "set_pointer_visible"):
         input_handler.on_mouse_pointer_visible = app.set_pointer_visible
-    if hasattr(input_handler, "send_clipboard_data"):
-        input_handler.on_clipboard_read = input_handler.send_clipboard_data
+    
+    # Assuming send_ws_clipboard_data and send_ws_cursor_data in GSTStreamingApp
+    # are the intended targets for these callbacks.
+    input_handler.on_clipboard_read = app.send_ws_clipboard_data
+    # input_handler.on_cursor_data = app.send_ws_cursor_data # Assuming similar setup if cursor data is sourced this way
+
     input_handler.on_set_fps = app.set_framerate
     if ENABLE_RESIZE:
-        input_handler.on_resize = lambda res_str: on_resize_handler(res_str, app)
+        input_handler.on_resize = lambda res_str: on_resize_handler(res_str, app, data_server)
         input_handler.on_scaling_ratio = lambda scale_val: on_scaling_ratio_handler(
             scale_val, app
         )
@@ -2969,8 +3067,10 @@ async def main():
             "Scaling disabled."
         )
 
-    input_handler.on_client_fps = lambda fps_val: metrics.set_fps(fps_val)
-    input_handler.on_client_latency = lambda lat_val: metrics.set_latency(lat_val)
+    # These metrics setters are not defined in the provided code.
+    # input_handler.on_client_fps = lambda fps_val: metrics.set_fps(fps_val)
+    # input_handler.on_client_latency = lambda lat_val: metrics.set_latency(lat_val)
+
 
     tasks_to_run = []
     data_server_task = asyncio.create_task(data_server.run_server(), name="DataServer")
