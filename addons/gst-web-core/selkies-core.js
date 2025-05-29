@@ -1486,7 +1486,6 @@ function receiveMessage(event) {
           if (!gamepadStates[0].axes) gamepadStates[0].axes = {};
           gamepadStates[0].axes[message.axisIndex] = Math.max(-1, Math.min(1, message.value));
         }
-        updateGamepadVisuals(0);
       }
       break;
     case 'requestFullscreen':
