@@ -151,51 +151,87 @@ ABS_TRIGGER_MAX_VAL = 255 # Or 1023, or ABS_MAX_VAL depending on driver expectat
 ABS_HAT_MIN_VAL = -1
 ABS_HAT_MAX_VAL = 1
 
-
 STANDARD_XPAD_CONFIG = {
-    "name": "Selkies Xbox360 Controller",
-    "vendor_id": 0x045e,  # Microsoft
-    "product_id": 0x028e, # Xbox 360 Wired Controller (example, 028f is also common)
-    "version_id": 0x0101, # Example version
-    # EVDEV codes, indexed by internal abstract button number (0 to N-1)
+    "name": "Microsoft X-Box 360 pad", # To match fake_udev.c (interposer will hardcode this for ioctls)
+    "vendor_id": 0x045e,               # To match fake_udev.c (interposer will hardcode this)
+    "product_id": 0x028e,              # To match fake_udev.c (interposer will hardcode this)
+    "version_id": 0x0114,              # To match fake_udev.c (interposer will hardcode this)
+
+    # EVDEV codes. The order here defines your internal abstract button indices (0 to N-1).
+    # This list should reflect the buttons supported by fake_udev's "capabilities/key".
     "btn_map": [
-        BTN_A, BTN_B, BTN_X, BTN_Y, BTN_TL, BTN_TR,
-        BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL, BTN_THUMBR,
+        BTN_A,      # Internal abstract button 0
+        BTN_B,      # Internal abstract button 1
+        BTN_X,      # Internal abstract button 2
+        BTN_Y,      # Internal abstract button 3
+        BTN_TL,     # Internal abstract button 4 (Left Bumper)
+        BTN_TR,     # Internal abstract button 5 (Right Bumper)
+        # BTN_TL2,  # Consider if Left Trigger is also a button (fake_udev caps/key implies it)
+        # BTN_TR2,  # Consider if Right Trigger is also a button (fake_udev caps/key implies it)
+        BTN_SELECT, # Internal abstract button 6
+        BTN_START,  # Internal abstract button 7
+        BTN_MODE,   # Internal abstract button 8 (Xbox Guide)
+        BTN_THUMBL, # Internal abstract button 9 (Left Stick Click)
+        BTN_THUMBR, # Internal abstract button 10 (Right Stick Click)
+        # Add BTN_DPAD_UP, BTN_DPAD_DOWN, etc. IF your fake_udev intends DPad as buttons
+        # AND NOT primarily as ABS_HAT0X/Y.
+        # Given "dpad_to_hat" mapping below, DPad is HAT based.
     ],
-    # EVDEV codes, indexed by internal abstract axis number (0 to N-1)
+
+    # EVDEV codes. The order here defines your internal abstract axis indices (0 to M-1).
+    # This list should reflect the axes supported by fake_udev's "capabilities/abs = 3003f".
     "axes_map": [
-        ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ, ABS_HAT0X, ABS_HAT0Y
+        ABS_X,     # Internal abstract axis 0
+        ABS_Y,     # Internal abstract axis 1
+        ABS_Z,     # Internal abstract axis 2 (Often Left Trigger for XInput)
+        ABS_RX,    # Internal abstract axis 3
+        ABS_RY,    # Internal abstract axis 4
+        ABS_RZ,    # Internal abstract axis 5 (Often Right Trigger for XInput)
+        ABS_HAT0X, # Internal abstract axis 6
+        ABS_HAT0Y  # Internal abstract axis 7
     ],
-    "mapping": { # Maps client (e.g., HTML5 Gamepad API) button/axis numbers
-                 # to our internal abstract button/axis *indices* (0 to N-1)
-        "btns": { # client_btn_idx -> internal_abstract_btn_idx
-            0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5,
-            8: 6, 9: 7, 16: 8, 10: 9, 11: 10,
+
+    "mapping": {
+        # Maps client (e.g., HTML5 Gamepad API) button/axis numbers
+        # to our internal abstract button/axis *indices* created by the order in btn_map/axes_map above.
+        "btns": { # client_btn_idx -> internal_abstract_btn_idx (index into "btn_map" list)
+            0: 0,  # Client A -> internal_btn_idx 0 (BTN_A)
+            1: 1,  # Client B -> internal_btn_idx 1 (BTN_B)
+            2: 2,  # Client X -> internal_btn_idx 2 (BTN_X)
+            3: 3,  # Client Y -> internal_btn_idx 3 (BTN_Y)
+            4: 4,  # Client LB -> internal_btn_idx 4 (BTN_TL)
+            5: 5,  # Client RB -> internal_btn_idx 5 (BTN_TR)
+            # Client LT (button 6) is mapped to an axis below
+            # Client RT (button 7) is mapped to an axis below
+            8: 6,  # Client Select/Back -> internal_btn_idx 6 (BTN_SELECT)
+            9: 7,  # Client Start -> internal_btn_idx 7 (BTN_START)
+            10: 9, # Client Left Stick Press -> internal_btn_idx 9 (BTN_THUMBL)
+            11: 10,# Client Right Stick Press -> internal_btn_idx 10 (BTN_THUMBR)
+            16: 8, # Client Xbox/Home -> internal_btn_idx 8 (BTN_MODE)
         },
-        "axes": { # client_axis_idx -> internal_abstract_axis_idx
-            0: 0, # Left Stick X  -> internal abstract idx 0 (ABS_X)
-            1: 1, # Left Stick Y  -> internal abstract idx 1 (ABS_Y)
-            2: 3, # Right Stick X -> internal abstract idx 3 (ABS_RX)
-            3: 4, # Right Stick Y -> internal abstract idx 4 (ABS_RY)
+        "axes": { # client_axis_idx -> internal_abstract_axis_idx (index into "axes_map" list)
+            0: 0, # Client Left Stick X  -> internal_axis_idx 0 (ABS_X)
+            1: 1, # Client Left Stick Y  -> internal_axis_idx 1 (ABS_Y)
+            2: 3, # Client Right Stick X -> internal_axis_idx 3 (ABS_RX)
+            3: 4, # Client Right Stick Y -> internal_axis_idx 4 (ABS_RY)
         },
-        # Client buttons that map to an internal abstract axis
-        # client_btn_idx -> internal_abstract_axis_idx
+        # Client buttons that map to an internal abstract axis (index into "axes_map" list)
         "client_btns_to_internal_axes": {
-            6: 2, # Client Btn 6 (LT) -> internal abstract axis idx 2 (ABS_Z)
-            7: 5, # Client Btn 7 (RT) -> internal abstract axis idx 5 (ABS_RZ)
+            6: 2, # Client Btn 6 (LT) -> internal_axis_idx 2 (ABS_Z)
+            7: 5, # Client Btn 7 (RT) -> internal_axis_idx 5 (ABS_RZ)
         },
-        # Client buttons that map to HAT axes
-        # client_btn_idx -> (internal_abstract_axis_idx_for_HAT, hat_direction_value)
+        # Client DPad buttons map to internal abstract HAT axes (indices into "axes_map" list)
         "dpad_to_hat": {
-            12: (7, -1), # Up    -> internal abstract HAT Y (idx 7 is ABS_HAT0Y), value -1
-            13: (7, 1),  # Down  -> internal abstract HAT Y (idx 7 is ABS_HAT0Y), value 1
-            14: (6, -1), # Left  -> internal abstract HAT X (idx 6 is ABS_HAT0X), value -1
-            15: (6, 1),  # Right -> internal abstract HAT X (idx 6 is ABS_HAT0X), value 1
+            # client_btn_idx -> (internal_abstract_axis_idx_for_HAT, hat_direction_value)
+            12: (7, -1), # Up    -> internal_axis_idx 7 (ABS_HAT0Y), value -1
+            13: (7, 1),  # Down  -> internal_axis_idx 7 (ABS_HAT0Y), value 1
+            14: (6, -1), # Left  -> internal_axis_idx 6 (ABS_HAT0X), value -1
+            15: (6, 1),  # Right -> internal_axis_idx 6 (ABS_HAT0X), value 1
         },
-        # Internal abstract axis indices that are triggers (and expect 0-1 values from client)
-        "trigger_internal_abstract_axis_indices": [2, 5], # ABS_Z, ABS_RZ
-        # Internal abstract axis indices that are HATs
-        "hat_internal_abstract_axis_indices": [6, 7], # ABS_HAT0X, ABS_HAT0Y
+        # Internal abstract axis indices (indices into "axes_map" list) that are triggers
+        "trigger_internal_abstract_axis_indices": [2, 5], # Corresponds to ABS_Z, ABS_RZ
+        # Internal abstract axis indices (indices into "axes_map" list) that are HATs
+        "hat_internal_abstract_axis_indices": [6, 7],   # Corresponds to ABS_HAT0X, ABS_HAT0Y
     }
 }
 
