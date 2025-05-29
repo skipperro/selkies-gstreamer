@@ -1038,30 +1038,23 @@ int udev_enumerate_scan_devices(struct udev_enumerate *udev_enumerate) {
 }
 
 struct udev_list_entry *udev_enumerate_get_list_entry(struct udev_enumerate *udev_enumerate) {
-    FAKE_UDEV_LOG_INFO("called for enumerate %p", (void*)udev_enumerate);
     if (!udev_enumerate) {
         FAKE_UDEV_LOG_WARN("  udev_enumerate is NULL");
         return NULL;
     }
-    FAKE_UDEV_LOG_DEBUG("  Returning current_scan_results (list head): %p", (void*)udev_enumerate->current_scan_results);
     return udev_enumerate->current_scan_results;
 }
 
 struct udev_monitor *udev_monitor_new_from_netlink(struct udev *udev, const char *name) {
-    FAKE_UDEV_LOG_INFO("called (name: %s, udev_ctx: %p)", name ? name : "NULL", (void*)udev);
     if (!udev) {
-        FAKE_UDEV_LOG_ERROR("udev context is NULL. Cannot create monitor.");
         return NULL;
     }
     struct udev_monitor *mon = (struct udev_monitor *)calloc(1, sizeof(struct udev_monitor));
     if (!mon) {
-        FAKE_UDEV_LOG_ERROR("calloc failed for udev_monitor. Out of memory?");
         return NULL;
     }
-    FAKE_UDEV_LOG_DEBUG("  Allocated udev_monitor %p", (void*)mon);
     mon->udev_ctx = udev_ref(udev);
     if (!mon->udev_ctx) {
-        FAKE_UDEV_LOG_ERROR("udev_ref returned NULL for a non-NULL udev context. This is unexpected.");
         free(mon);
         return NULL;
     }
@@ -1073,31 +1066,24 @@ struct udev_monitor *udev_monitor_new_from_netlink(struct udev *udev, const char
         strncpy(mon->name, "(unnamed_monitor)", sizeof(mon->name) -1);
         mon->name[sizeof(mon->name)-1] = '\0';
     }
-    FAKE_UDEV_LOG_INFO("Created FAKE monitor %p (ref %d) for udev context %p, name '%s'", (void*)mon, mon->n_ref, (void*)udev, mon->name);
     return mon;
 }
 
 struct udev_monitor *udev_monitor_ref(struct udev_monitor *udev_monitor) {
-    FAKE_UDEV_LOG_DEBUG("Enter for monitor %p", (void*)udev_monitor);
     if (!udev_monitor) {
-        FAKE_UDEV_LOG_WARN("  udev_monitor is NULL");
         return NULL;
     }
     udev_monitor->n_ref++;
-    FAKE_UDEV_LOG_DEBUG("monitor %p (name: %s) new ref_count %d", (void*)udev_monitor, udev_monitor->name, udev_monitor->n_ref);
     return udev_monitor;
 }
 
 struct udev_monitor *udev_monitor_unref(struct udev_monitor *udev_monitor) {
     FAKE_UDEV_LOG_DEBUG("Enter for monitor %p", (void*)udev_monitor);
     if (!udev_monitor) {
-        FAKE_UDEV_LOG_WARN("  udev_monitor is NULL");
         return NULL;
     }
     udev_monitor->n_ref--;
-    FAKE_UDEV_LOG_DEBUG("monitor %p (name: %s) new ref_count %d", (void*)udev_monitor, udev_monitor->name, udev_monitor->n_ref);
     if (udev_monitor->n_ref <= 0) {
-        FAKE_UDEV_LOG_INFO("Freeing FAKE monitor %p (name: %s)", (void*)udev_monitor, udev_monitor->name);
         udev_unref(udev_monitor->udev_ctx);
         free(udev_monitor);
         return NULL;
@@ -1106,22 +1092,16 @@ struct udev_monitor *udev_monitor_unref(struct udev_monitor *udev_monitor) {
 }
 
 int udev_monitor_enable_receiving(struct udev_monitor *udev_monitor) {
-    FAKE_UDEV_LOG_INFO("STUB called for monitor %p (name: %s). Returning 0 (success).",
-                  (void*)udev_monitor, udev_monitor ? udev_monitor->name : "NULL_MONITOR");
     if (!udev_monitor) return -EINVAL;
     return 0;
 }
 
 int udev_monitor_get_fd(struct udev_monitor *udev_monitor) {
-    FAKE_UDEV_LOG_INFO("STUB called for monitor %p (name: %s). Returning dummy FD (STDIN_FILENO: %d).",
-                  (void*)udev_monitor, udev_monitor ? udev_monitor->name : "NULL_MONITOR", STDIN_FILENO);
     if (!udev_monitor) return -1;
     return STDIN_FILENO;
 }
 
 struct udev_device *udev_monitor_receive_device(struct udev_monitor *udev_monitor) {
-    FAKE_UDEV_LOG_INFO("STUB called for monitor %p (name: %s). No events to report. Returning NULL.",
-                  (void*)udev_monitor, udev_monitor ? udev_monitor->name : "NULL_MONITOR");
     if (!udev_monitor) return NULL;
     return NULL;
 }
@@ -1130,9 +1110,6 @@ int udev_monitor_filter_add_match_subsystem_devtype(
         struct udev_monitor *udev_monitor,
         const char *subsystem,
         const char *devtype) {
-    FAKE_UDEV_LOG_INFO("STUB called for monitor %p (name: %s) (subsystem: %s, devtype: %s). Returning 0 (success).",
-                  (void*)udev_monitor, udev_monitor ? udev_monitor->name : "NULL_MONITOR",
-                  subsystem ? subsystem : "NULL", devtype ? devtype : "NULL");
     if (!udev_monitor) return -EINVAL;
     return 0;
 }
