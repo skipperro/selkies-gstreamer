@@ -1,4 +1,12 @@
 import argparse
+import sys
+import os
+if __name__ == "__main__" and __package__ is None:
+    current_script_dir = os.path.dirname(os.path.abspath(__file__))
+    package_container_dir = os.path.dirname(current_script_dir)
+    if package_container_dir not in sys.path:
+        sys.path.insert(0, package_container_dir)
+
 from selkies_gstreamer.websocket import ws_entrypoint
 from selkies_gstreamer.webrtc import wr_entrypoint
 
