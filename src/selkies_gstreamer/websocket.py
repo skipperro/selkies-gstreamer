@@ -303,11 +303,13 @@ class GSTStreamingApp:
                         frame_type_byte = b"\x00"
                         data_type_byte = b"\x01"
                         prefixed_data = data_type_byte + frame_type_byte + data_copy
-                        if self.data_streaming_server and \
-                           hasattr(self.data_streaming_server, 'clients') and \
-                           self.data_streaming_server.clients and \
-                           self.async_event_loop and self.async_event_loop.is_running():
 
+                        clients_available = (self.data_streaming_server and
+                                             hasattr(self.data_streaming_server, 'clients') and
+                                             self.data_streaming_server.clients)
+                        loop_ok = (self.async_event_loop and self.async_event_loop.is_running())
+
+                        if clients_available and loop_ok:
                             clients_ref = self.data_streaming_server.clients
                             data_to_broadcast_ref = prefixed_data
 
@@ -319,10 +321,24 @@ class GSTStreamingApp:
                                 self.async_event_loop
                             )
                         else:
-                            if not (self.data_streaming_server and hasattr(self.data_streaming_server, 'clients') and self.data_streaming_server.clients):
-                                data_logger.warning("Cannot broadcast GStreamer audio: data_streaming_server.clients not available or empty.")
-                            elif not (self.async_event_loop and self.async_event_loop.is_running()):
-                                data_logger.warning("Cannot broadcast GStreamer audio: async event loop not available or not running.")
+                            if not clients_available:
+                                if self.audio_pipeline_running_ws_flag:
+                                    data_logger.warning(
+                                        "Cannot broadcast GStreamer audio: data_streaming_server.clients not available or empty. "
+                                        "Scheduling audio pipeline shutdown."
+                                    )
+                                    if loop_ok:
+                                        asyncio.run_coroutine_threadsafe(
+                                            self.stop_websocket_audio_pipeline(),
+                                            self.async_event_loop
+                                        )
+                                    else:
+                                        data_logger.error(
+                                            "Cannot schedule audio pipeline shutdown (no clients): Async event loop not running."
+                                            " Audio pipeline may continue running without consumers."
+                                        )
+                            elif not loop_ok:
+                                data_logger.warning("Cannot broadcast GStreamer audio: async event loop not available or not running. Pipeline not shut down for this specific reason.")
                         buffer.unmap(map_info)
                     else:
                         logger_gst_app.error("Error mapping audio buffer")
@@ -643,11 +659,12 @@ class GSTStreamingApp:
                     )
                     prefixed_data = header + data_copy
 
-                    if self.data_streaming_server and \
-                       hasattr(self.data_streaming_server, 'clients') and \
-                       self.data_streaming_server.clients and \
-                       self.async_event_loop and self.async_event_loop.is_running():
+                    clients_available = (self.data_streaming_server and
+                                         hasattr(self.data_streaming_server, 'clients') and
+                                         self.data_streaming_server.clients)
+                    loop_ok = (self.async_event_loop and self.async_event_loop.is_running())
 
+                    if clients_available and loop_ok:
                         clients_ref = self.data_streaming_server.clients
                         data_to_broadcast_ref = prefixed_data
 
@@ -659,10 +676,24 @@ class GSTStreamingApp:
                             self.async_event_loop
                         )
                     else:
-                        if not (self.data_streaming_server and hasattr(self.data_streaming_server, 'clients') and self.data_streaming_server.clients):
-                            data_logger.warning("Cannot broadcast GStreamer video: data_streaming_server.clients not available or empty.")
-                        elif not (self.async_event_loop and self.async_event_loop.is_running()):
-                             data_logger.warning("Cannot broadcast GStreamer video: async event loop not available or not running.")
+                        if not clients_available:
+                            if self.pipeline_running:
+                                data_logger.warning(
+                                    "Cannot broadcast GStreamer video: data_streaming_server.clients not available or empty. "
+                                    "Scheduling video pipeline shutdown."
+                                )
+                                if loop_ok:
+                                    asyncio.run_coroutine_threadsafe(
+                                        self.stop_websocket_video_pipeline(),
+                                        self.async_event_loop
+                                    )
+                                else:
+                                    data_logger.error(
+                                        "Cannot schedule video pipeline shutdown (no clients): Async event loop not running."
+                                        " Video pipeline may continue running without consumers."
+                                    )
+                        elif not loop_ok:
+                             data_logger.warning("Cannot broadcast GStreamer video: async event loop not available or not running. Pipeline not shut down for this specific reason.")
                     buffer.unmap(map_info)
             return Gst.FlowReturn.OK
         return Gst.FlowReturn.OK
