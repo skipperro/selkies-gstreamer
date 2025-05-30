@@ -1966,24 +1966,8 @@ class DataStreamingServer:
             "output.monitor"
         )
 
-        try:
-            self.input_handler = InputHandler(
-                self.app,
-                UINPUT_MOUSE_SOCKET,
-                JS_SOCKET_PATH,
-                str(ENABLE_CLIPBOARD).lower(),
-                ENABLE_CURSORS,
-                CURSOR_SIZE,
-                1.0,
-                DEBUG_CURSORS,
-            )
-            if hasattr(self.input_handler, "connect") and asyncio.iscoroutinefunction(
-                self.input_handler.connect
-            ):
-                await self.input_handler.connect()
-        except Exception as e:
-            logger.error(f"Failed to init InputHandler: {e}", exc_info=True)
-            self.input_handler = None
+        if not self.input_handler:
+            logger.error(f"Data WS handler for {raddr}: Critical - self.input_handler (global) is not set. Input processing will fail.")
 
         self._shared_stats_ws = {}
         gpu_id_for_stats = getattr(self.app, "gpu_id", GPU_ID_DEFAULT)
@@ -2653,12 +2637,6 @@ class DataStreamingServer:
                     except OSError:
                         pass
     
-                # Input handler disconnect is per-handler, so this is fine.
-                if self.input_handler and hasattr(self.input_handler, "disconnect"):
-                    try:
-                        await self.input_handler.disconnect()
-                    except Exception as e_dc:
-                        data_logger.error(f"Error disconnecting input_handler for {raddr}: {e_dc}")
    
                 data_logger.info(f"Data WS handler for {raddr} finished cleanup.")
 
