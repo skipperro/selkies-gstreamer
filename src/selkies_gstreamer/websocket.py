@@ -1666,8 +1666,29 @@ class DataStreamingServer:
             data_logger.info(
                 f"Settings: Auto Resolution Mode (initial). Client size: {target_w_for_app}x{target_h_for_app}"
             )
-        # else (auto mode, not initial settings): resolution is primarily handled by 'r,' messages.
-        # We don't change app.display_width/height from subsequent SETTINGS for auto mode unless specific keys are present.
+
+        if target_w_for_app <= 0 or target_h_for_app <= 0:
+            data_logger.warning(
+                f"Received invalid target dimensions {target_w_for_app}x{target_h_for_app} from client settings. "
+                f"Reverting to previous valid dimensions {old_display_width}x{old_display_height}."
+            )
+            target_w_for_app = old_display_width
+            target_h_for_app = old_display_height
+        
+        if target_w_for_app % 2 != 0:
+            data_logger.debug(f"Adjusting odd width {target_w_for_app} to {target_w_for_app - 1}")
+            target_w_for_app -= 1
+        if target_h_for_app % 2 != 0:
+            data_logger.debug(f"Adjusting odd height {target_h_for_app} to {target_h_for_app - 1}")
+            target_h_for_app -= 1
+        
+        if target_w_for_app <= 0 or target_h_for_app <= 0:
+            data_logger.warning(
+                f"Dimensions became invalid ({target_w_for_app}x{target_h_for_app}) after odd adjustment. "
+                f"Reverting to previous valid dimensions {old_display_width}x{old_display_height}."
+            )
+            target_w_for_app = old_display_width
+            target_h_for_app = old_display_height
 
         dimensions_changed_by_settings = (
             target_w_for_app != old_display_width
@@ -2566,82 +2587,140 @@ class DataStreamingServer:
             )
         finally:
             data_logger.info(f"Cleaning up Data WS handler for {raddr}...")
-            self.clients.discard(websocket) # Client is removed from the set HERE
+
+            # 1. Remove current client from the central set
+            self.clients.discard(websocket)
             if self.data_ws is websocket:
                 self.data_ws = None
 
-            # Cancel tasks specific to this ws_handler connection (these are fine)
-            tasks_to_cancel_ws = [
-                self._frame_backpressure_task,
-                self._system_monitor_task_ws,
-                self._gpu_monitor_task_ws,
-                self._stats_sender_task_ws,
-            ]
-            for task in tasks_to_cancel_ws:
-                if task and not task.done():
-                    task.cancel()
+            # 2. Cancel tasks created specifically for THIS connection's ws_handler instance
+            if '_stats_sender_task_ws' in locals():
+                _task_to_cancel = locals()['_stats_sender_task_ws']
+                if _task_to_cancel and not _task_to_cancel.done():
+                    _task_to_cancel.cancel()
+                    try: await _task_to_cancel
+                    except asyncio.CancelledError: pass
             
-            # Check if any clients remain *after* this one has been removed.
-            # If no clients are left, then it's safe to stop the global pipelines.
-            if not self.clients: # self.clients is the set of *all* connected clients
-                data_logger.info(f"Last client from {raddr} disconnected. Stopping global pipelines.")
-                if self.is_jpeg_capturing:
-                    await self._stop_jpeg_pipeline()
-                if self.is_x264_striped_capturing:
-                    await self._stop_x264_striped_pipeline()
+            if '_system_monitor_task_ws' in locals():
+                _task_to_cancel = locals()['_system_monitor_task_ws']
+                if _task_to_cancel and not _task_to_cancel.done():
+                    _task_to_cancel.cancel()
+                    try: await _task_to_cancel
+                    except asyncio.CancelledError: pass
+
+            if '_gpu_monitor_task_ws' in locals():
+                _task_to_cancel = locals()['_gpu_monitor_task_ws']
+                if _task_to_cancel and not _task_to_cancel.done():
+                    _task_to_cancel.cancel()
+                    try: await _task_to_cancel
+                    except asyncio.CancelledError: pass
+            
+            # 3. Clean up resources specific to THIS connection's ws_handler instance
+            if 'pa_stream' in locals() and locals()['pa_stream']:
+                try:
+                    locals()['pa_stream'].close()
+                    data_logger.debug(f"Closed PulseAudio stream for {raddr}.")
+                except Exception as e_pa_close:
+                    data_logger.error(f"Error closing PulseAudio stream for {raddr}: {e_pa_close}")
+            
+            if 'pulse' in locals() and locals()['pulse']:
+                _local_pulse = locals()['pulse']
+                if 'pa_module_index' in locals() and locals()['pa_module_index'] is not None:
+                    _local_pa_module_index = locals()['pa_module_index']
+                    try:
+                        data_logger.info(f"Unloading PulseAudio module {_local_pa_module_index} for virtual mic (client: {raddr}).")
+                        _local_pulse.module_unload(_local_pa_module_index)
+                    except Exception as e_unload_final:
+                        data_logger.error(f"Error unloading PulseAudio module {_local_pa_module_index} for {raddr}: {e_unload_final}")
+                try:
+                    _local_pulse.close()
+                    data_logger.debug(f"Closed PulseAudio connection for {raddr}.")
+                except Exception as e_pulse_close:
+                    data_logger.error(f"Error closing PulseAudio connection for {raddr}: {e_pulse_close}")
+            
+            if ('active_upload_target_path_conn' in locals() and locals()['active_upload_target_path_conn'] and
+                'active_uploads_by_path_conn' in locals() and 
+                locals()['active_upload_target_path_conn'] in locals()['active_uploads_by_path_conn']):
+                _local_active_path = locals()['active_upload_target_path_conn']
+                _local_active_uploads = locals()['active_uploads_by_path_conn']
+                try:
+                    file_handle = _local_active_uploads.pop(_local_active_path, None)
+                    if file_handle:
+                        file_handle.close()
+                    os.remove(_local_active_path) # os is imported globally
+                    data_logger.info(f"Cleaned up incomplete file upload: {_local_active_path} for {raddr}")
+                except OSError as e_os_remove:
+                    data_logger.warning(f"Could not remove incomplete upload file {_local_active_path} for {raddr}: {e_os_remove}")
+                except Exception as e_file_cleanup:
+                    data_logger.error(f"Error cleaning up file upload {_local_active_path} for {raddr}: {e_file_cleanup}")
+
+            # 4. Decide whether to stop global pipelines based on OTHER clients
+            stop_pipelines_flag = False
+            if not self.clients: # No other clients were in the set to begin with
+                data_logger.info(f"No other clients in set after {raddr} disconnected. Marking pipelines for stop.")
+                stop_pipelines_flag = True
+            else: # Other clients *appear* to remain in the set, check their responsiveness
+                data_logger.info(f"Client from {raddr} disconnected. Checking responsiveness of remaining {len(self.clients)} client(s)...")
+                active_clients_found_after_check = False
+                clients_to_remove_as_stale = []
                 
-                if GSTREAMER_AVAILABLE:
+                current_remaining_clients = list(self.clients) # Snapshot for iteration
+
+                for other_client_ws in current_remaining_clients:
+                    try:
+                        # Attempt to ping. If this fails, the client is considered unresponsive.
+                        pong_waiter = await other_client_ws.ping()
+                        await asyncio.wait_for(pong_waiter, timeout=3.0) # Short timeout for this check
+                        data_logger.info(f"  Remaining client {other_client_ws.remote_address} is responsive.")
+                        active_clients_found_after_check = True
+                    except asyncio.TimeoutError:
+                        data_logger.warning(f"  Remaining client {other_client_ws.remote_address} timed out on ping. Marking as stale.")
+                        clients_to_remove_as_stale.append(other_client_ws)
+                    except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK) as e_conn_closed:
+                        data_logger.warning(f"  Remaining client {other_client_ws.remote_address} connection definitively closed during ping: {type(e_conn_closed).__name__}. Marking as stale.")
+                        clients_to_remove_as_stale.append(other_client_ws)
+                    except Exception as e_ping: # Catch any other error during ping, e.g., OS errors if socket is truly gone
+                        data_logger.error(f"  Error pinging remaining client {other_client_ws.remote_address}: {e_ping}. Marking as stale.")
+                        clients_to_remove_as_stale.append(other_client_ws)
+                
+                # Remove all identified stale clients from the central set
+                if clients_to_remove_as_stale:
+                    for stale_ws in clients_to_remove_as_stale:
+                        self.clients.discard(stale_ws)
+                        # Attempt to close from server-side; websockets library handles if already closed.
+                        try:
+                            await stale_ws.close(code=1001, reason="Stale client detected on other client disconnect")
+                        except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK):
+                            pass # Already closed or closing
+                        except Exception as e_close_stale: 
+                            data_logger.debug(f"Minor error closing stale client {stale_ws.remote_address}: {e_close_stale}") # Best effort
+
+                # Now, re-evaluate if any truly active clients are left OR if self.clients is now empty
+                if not self.clients: # All "other" clients were stale and removed
+                    data_logger.info(f"All other clients were stale or disconnected. Marking pipelines for stop after {raddr} disconnect.")
+                    stop_pipelines_flag = True
+                elif not active_clients_found_after_check: # No responsive clients were found among the remaining
+                    data_logger.info(f"No responsive clients remain after check for {raddr}'s disconnect. Marking pipelines for stop.")
+                    stop_pipelines_flag = True
+                else:
+                    data_logger.info(f"Client from {raddr} disconnected. Responsive clients ({len(self.clients)}) remain. Global pipelines will NOT be stopped by this handler.")
+
+            # 5. Stop global pipelines if the flag is set
+            if stop_pipelines_flag:
+                data_logger.info(f"Stopping global pipelines due to disconnect logic for {raddr}.")
+                if self.is_jpeg_capturing: 
+                    await self._stop_jpeg_pipeline()
+                if self.is_x264_striped_capturing: 
+                    await self._stop_x264_striped_pipeline()
+                if GSTREAMER_AVAILABLE: # GSTREAMER_AVAILABLE is a global constant
                     if hasattr(self.app, "pipeline_running") and self.app.pipeline_running:
-                        if hasattr(self.app, "stop_websocket_video_pipeline"):
+                        if hasattr(self.app, "stop_websocket_video_pipeline"): 
                             await self.app.stop_websocket_video_pipeline()
                     if hasattr(self.app, "audio_pipeline_running_ws_flag") and self.app.audio_pipeline_running_ws_flag:
-                        if hasattr(self.app, "stop_websocket_audio_pipeline"):
-                             await self.app.stop_websocket_audio_pipeline()
-                
-                # PulseAudio specific cleanup (mic forwarding related)
-                # This also should likely only happen if no clients are left, 
-                # or if the disconnecting client was the only one using the mic.
-                # For simplicity now, tie it to last client disconnect.
-                if pa_stream:
-                    try:
-                        pa_stream.close()
-                    except:
-                        pass
-                    pa_stream = None # Ensure it's reset
-                if pa_module_index is not None and pulse:
-                    try:
-                        data_logger.info(
-                            f"Unloading PulseAudio module {pa_module_index} for virtual mic (last client)."
-                        )
-                        pulse.module_unload(pa_module_index)
-                    except Exception as e_unload_final:
-                        data_logger.error(
-                            f"Error unloading PulseAudio module {pa_module_index}: {e_unload_final}"
-                        )
-                    pa_module_index = None # Ensure it's reset
-                if pulse:
-                    try:
-                        pulse.close()
-                    except:
-                        pass
-                    pulse = None # Ensure it's reset
-                mic_setup_done = False # Reset mic setup state
-                # Cleanup for file uploads specific to this connection
-                if (
-                    active_upload_target_path_conn
-                    and active_upload_target_path_conn in active_uploads_by_path_conn
-                ):
-                    active_uploads_by_path_conn[active_upload_target_path_conn].close()
-                    try:
-                        os.remove(active_upload_target_path_conn)
-                    except OSError:
-                        pass
-    
-   
-                data_logger.info(f"Data WS handler for {raddr} finished cleanup.")
-
-            else:
-                data_logger.info(f"Client from {raddr} disconnected, but other clients ({len(self.clients)}) remain. Global pipelines NOT stopped.")
+                        if hasattr(self.app, "stop_websocket_audio_pipeline"): 
+                            await self.app.stop_websocket_audio_pipeline()
+            
+            data_logger.info(f"Data WS handler for {raddr} finished all cleanup.")
 
     async def _reset_frame_ids_and_notify(
         self, pipeline_reset_reason="backpressure_adjustment"
@@ -2870,6 +2949,32 @@ def on_resize_handler(res_str, current_app_instance, data_server_instance=None):
     try:
         w_str, h_str = res_str.split("x")
         target_w, target_h = int(w_str), int(h_str)
+
+        # Ensure dimensions are positive
+        if target_w <= 0 or target_h <= 0:
+            logger_gst_app_resize.error(
+                f"Invalid target dimensions in resize request: {target_w}x{target_h}. Ignoring."
+            )
+            if current_app_instance:
+                current_app_instance.last_resize_success = False
+            return # Do not proceed with invalid dimensions
+
+        # Ensure dimensions are even
+        if target_w % 2 != 0:
+            logger_gst_app_resize.debug(f"Adjusting odd width {target_w} to {target_w - 1}")
+            target_w -= 1
+        if target_h % 2 != 0:
+            logger_gst_app_resize.debug(f"Adjusting odd height {target_h} to {target_h - 1}")
+            target_h -= 1
+        
+        # Re-check positivity after odd adjustment
+        if target_w <= 0 or target_h <= 0:
+            logger_gst_app_resize.error(
+                f"Dimensions became invalid ({target_w}x{target_h}) after odd adjustment. Ignoring."
+            )
+            if current_app_instance:
+                current_app_instance.last_resize_success = False
+            return # Do not proceed
 
         current_app_instance.display_width = target_w
         current_app_instance.display_height = target_h

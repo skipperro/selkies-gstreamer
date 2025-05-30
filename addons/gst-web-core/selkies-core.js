@@ -25,8 +25,6 @@
  *   limitations under the License.
  */
 
-// WebRTCDemoSignaling class removed as it's WebRTC specific.
-
 import {
   GamepadManager
 } from './lib/gamepad.js';
@@ -98,9 +96,33 @@ let vncStripeDecoders = {};
 let vncStripeFrameMetadata = {};
 let currentEncoderMode = 'x264enc-stiped';
 
-const isSharedMode = window.location.hash === '#shared';
+let detectedSharedModeType = null;
+let playerInputTargetIndex = 0; // Default for primary player
+
+const hash = window.location.hash;
+if (hash === '#shared') {
+    detectedSharedModeType = 'shared';
+    playerInputTargetIndex = undefined;
+} else if (hash === '#player2') {
+    detectedSharedModeType = 'player2';
+    playerInputTargetIndex = 1;
+} else if (hash === '#player3') {
+    detectedSharedModeType = 'player3';
+    playerInputTargetIndex = 2;
+} else if (hash === '#player4') {
+    detectedSharedModeType = 'player4';
+    playerInputTargetIndex = 3;
+}
+let sharedClientState = 'idle'; // Possible states: 'idle', 'awaiting_identification', 'configuring', 'ready', 'error'
+let identifiedEncoderModeForShared = null; // e.g., 'h264_full_frame', 'jpeg', 'x264enc-striped'
+const SHARED_PROBING_TIMEOUT_MS = 7000; // Timeout for waiting for the first video packet
+let sharedProbingTimeoutId = null;
+let sharedProbingAttempts = 0;
+const MAX_SHARED_PROBING_ATTEMPTS = 3; // e.g., initial + 2 retries
+const isSharedMode = detectedSharedModeType !== null;
+
 if (isSharedMode) {
-  console.log("Client is running in SHARED read-only mode.");
+  console.log(`Client is running in ${detectedSharedModeType} mode.`);
 }
 
 window.onload = () => {
@@ -976,6 +998,11 @@ const initializeInput = () => {
     console.log("Input already initialized. Skipping.");
     return;
   }
+  if (detectedSharedModeType === 'shared') {
+    inputInitialized = true;
+    console.log("Generic #shared mode: Input system instance creation skipped.");
+    return;
+  }
   inputInitialized = true;
   console.log("Initializing Input system...");
 
@@ -996,7 +1023,7 @@ const initializeInput = () => {
     return;
   }
 
-  inputInstance = new Input(overlayInput, sendInputFunction, isSharedMode);
+  inputInstance = new Input(overlayInput, sendInputFunction, isSharedMode, playerInputTargetIndex);
 
   inputInstance.getWindowResolution = () => {
     const videoContainer = document.querySelector('.video-container');
@@ -1681,6 +1708,47 @@ function sendStatsMessage() {
   console.log('Sent stats message via window.postMessage:', stats);
 }
 
+function sendStopStartVideoCommandsForSharedMode() {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        console.log(`Shared mode (${sharedClientState}): Sending STOP_VIDEO then START_VIDEO.`);
+        websocket.send('STOP_VIDEO');
+        setTimeout(() => {
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                websocket.send('START_VIDEO');
+                console.log(`Shared mode (${sharedClientState}): Sent START_VIDEO.`);
+            }
+        }, 150);
+    } else {
+        console.warn(`Shared mode (${sharedClientState}): Cannot send STOP/START_VIDEO, WebSocket not open.`);
+    }
+}
+
+function startSharedModeProbingTimeout() {
+    clearTimeout(sharedProbingTimeoutId);
+    sharedProbingTimeoutId = setTimeout(() => {
+        console.warn(`Shared mode: Timeout waiting for video identification packet (attempt ${sharedProbingAttempts + 1}/${MAX_SHARED_PROBING_ATTEMPTS}).`);
+        sharedProbingAttempts++;
+        if (sharedProbingAttempts < MAX_SHARED_PROBING_ATTEMPTS) {
+            console.log("Shared mode: Retrying video stream restart for identification.");
+            if (sharedClientState === 'awaiting_identification') {
+                sendStopStartVideoCommandsForSharedMode();
+                startSharedModeProbingTimeout();
+            } else {
+                 console.log(`Shared mode: Probing timeout fired but state is ${sharedClientState}. Not retrying automatically.`);
+            }
+        } else {
+            console.error("Shared mode: Failed to identify video type after multiple attempts. Entering error state.");
+            sharedClientState = 'error';
+        }
+    }, SHARED_PROBING_TIMEOUT_MS);
+}
+
+function clearSharedModeProbingTimeout() {
+    clearTimeout(sharedProbingTimeoutId);
+    sharedProbingTimeoutId = null;
+}
+
+
 document.addEventListener('DOMContentLoaded', () => {
   async function initializeDecoder() {
     if (decoder && decoder.state !== 'closed') {
@@ -1690,7 +1758,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let targetWidth = 1280;
     let targetHeight = 720;
 
-    if (isSharedMode) { // In shared mode, use its manualWidth/Height which are updated by stream
+    if (isSharedMode) {
         targetWidth = manualWidth > 0 ? manualWidth : 1280;
         targetHeight = manualHeight > 0 ? manualHeight : 720;
     } else if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
@@ -1713,8 +1781,19 @@ document.addEventListener('DOMContentLoaded', () => {
       output: handleDecodedFrame,
       error: (e) => {
         console.error('VideoDecoder error:', e.message);
-        if (e.message.includes('fatal') || decoder.state === 'closed' || decoder.state === 'unconfigured') {
-          initializeDecoder();
+        if (isSharedMode && (sharedClientState === 'configuring' || sharedClientState === 'ready' || sharedClientState === 'awaiting_identification')) {
+            if (decoder && e.target === decoder) {
+                 console.error(`Shared mode: Main VideoDecoder error in state ${sharedClientState}. Message: ${e.message}. Transitioning to error state.`);
+                 sharedClientState = 'error';
+            } else if (!decoder && identifiedEncoderModeForShared === 'h264_full_frame') {
+                 console.error(`Shared mode: Main VideoDecoder (expected for h264_full_frame) is null and an error occurred. State: ${sharedClientState}. Message: ${e.message}. Transitioning to error state.`);
+                 sharedClientState = 'error';
+            }
+        } else if (!isSharedMode) {
+            if (e.message.includes('fatal') || (decoder && (decoder.state === 'closed' || decoder.state === 'unconfigured'))) {
+              console.warn("Non-shared mode: Main VideoDecoder fatal error or closed/unconfigured. Attempting re-initialization.");
+              initializeDecoder();
+            }
         }
       },
     });
@@ -1727,18 +1806,20 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const support = await VideoDecoder.isConfigSupported(decoderConfig);
       if (support.supported) {
-        decoder.configure(decoderConfig);
+        await decoder.configure(decoderConfig);
         console.log('Main VideoDecoder configured successfully with config:', decoderConfig);
+        return true;
       } else {
         console.error('Main VideoDecoder configuration not supported:', support, decoderConfig);
         decoder = null;
+        return false;
       }
     } catch (e) {
       console.error('Error configuring Main VideoDecoder with config:', e, decoderConfig);
       decoder = null;
+      return false;
     }
   }
-
   initializeUI();
 
 
@@ -1837,21 +1918,26 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleDecodedFrame(frame) {
-    if (document.hidden && !isSharedMode) { // Shared mode processes even if hidden (audio must continue)
+    if (document.hidden && !isSharedMode) {
       frame.close();
       return;
     }
-    if (!isVideoPipelineActive && clientMode === 'websockets' && !isSharedMode) {
+
+    if (!isSharedMode && clientMode === 'websockets' && !isVideoPipelineActive) {
       frame.close();
       return;
     }
 
     if (isSharedMode) {
-      if ((manualWidth !== frame.codedWidth || manualHeight !== frame.codedHeight) && frame.codedWidth > 0 && frame.codedHeight > 0) {
-        manualWidth = frame.codedWidth;
-        manualHeight = frame.codedHeight;
-        console.log(`Shared mode: Updated manual dimensions from H.264 frame: ${manualWidth}x${manualHeight}`);
-        applyManualCanvasStyle(manualWidth, manualHeight, true);
+      if (sharedClientState === 'ready') {
+        const frameCodedWidth = roundDownToEven(frame.codedWidth);
+        const frameCodedHeight = roundDownToEven(frame.codedHeight);
+        if ((manualWidth !== frameCodedWidth || manualHeight !== frameCodedHeight) && frameCodedWidth > 0 && frameCodedHeight > 0) {
+            manualWidth = frameCodedWidth;
+            manualHeight = frameCodedHeight;
+            console.log(`Shared mode (decoded H264): Updated manual dimensions from H.264 frame to ${manualWidth}x${manualHeight}`);
+            applyManualCanvasStyle(manualWidth, manualHeight, true);
+        }
       }
     }
     videoFrameBuffer.push(frame);
@@ -1874,30 +1960,26 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    // For shared mode, rendering continues even if tab is "logically" hidden to keep audio sync,
-    // but actual drawing to canvas can be skipped if truly not visible.
-    // However, the prompt says "Continue to process and decode incoming video and audio data as it arrives, regardless of tab visibility."
-    // and implies rendering continues. For simplicity, let's assume drawing continues if frames are available.
-    // The `handleDecodedFrame` already has a `document.hidden` check for non-shared mode.
-
     let videoPaintedThisFrame = false;
     let jpegPaintedThisFrame = false;
 
     if (currentEncoderMode === 'x264enc-striped') {
-      if (isSharedMode && decodedStripesQueue.length > 0) {
+      if (isSharedMode && sharedClientState === 'ready' && decodedStripesQueue.length > 0) {
           const firstStripeFrame = decodedStripesQueue[0].frame;
-          if (firstStripeFrame && firstStripeFrame.codedWidth > 0 && manualWidth !== firstStripeFrame.codedWidth) {
-              manualWidth = firstStripeFrame.codedWidth;
-              console.log(`Shared mode: Updated manualWidth from VNC stripe: ${manualWidth}`);
-              // manualHeight is not updated from stripes, it's from full frame or default
-              if (manualHeight && manualWidth && manualHeight > 0) {
-                  applyManualCanvasStyle(manualWidth, manualHeight, true);
+          if (firstStripeFrame && firstStripeFrame.codedWidth > 0) {
+              const stripeCodedWidth = roundDownToEven(firstStripeFrame.codedWidth);
+              if (manualWidth !== stripeCodedWidth && stripeCodedWidth > 0) {
+                  manualWidth = stripeCodedWidth;
+                  console.log(`Shared mode (VNC stripe paint): Updated manualWidth from VNC stripe to ${manualWidth}`);
+                  if (manualHeight && manualWidth > 0 && manualHeight > 0) {
+                      applyManualCanvasStyle(manualWidth, manualHeight, true);
+                  }
               }
           }
       }
       let paintedSomethingThisCycle = false;
       for (const stripeData of decodedStripesQueue) {
-        if (canvas.width > 0 && canvas.height > 0) { // Ensure canvas is ready
+        if (canvas.width > 0 && canvas.height > 0) {
             canvasContext.drawImage(stripeData.frame, 0, stripeData.yPos);
         }
         stripeData.frame.close();
@@ -1909,14 +1991,16 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else if (currentEncoderMode === 'jpeg') {
       if (canvasContext && jpegStripeRenderQueue.length > 0) {
-        if (isSharedMode && jpegStripeRenderQueue.length > 0) {
+        if (isSharedMode && sharedClientState === 'ready' && jpegStripeRenderQueue.length > 0) {
             const firstStripeImage = jpegStripeRenderQueue[0].image;
-            if (firstStripeImage && firstStripeImage.codedWidth > 0 && manualWidth !== firstStripeImage.codedWidth) {
-                manualWidth = firstStripeImage.codedWidth;
-                console.log(`Shared mode: Updated manualWidth from JPEG stripe: ${manualWidth}`);
-                // manualHeight is not updated from stripes
-                if (manualHeight && manualWidth && manualHeight > 0) {
-                    applyManualCanvasStyle(manualWidth, manualHeight, true);
+            if (firstStripeImage && firstStripeImage.codedWidth > 0) {
+                const imageCodedWidth = roundDownToEven(firstStripeImage.codedWidth);
+                if (manualWidth !== imageCodedWidth && imageCodedWidth > 0) {
+                    manualWidth = imageCodedWidth;
+                    console.log(`Shared mode (JPEG stripe paint): Updated manualWidth from JPEG stripe to ${manualWidth}`);
+                    if (manualHeight && manualWidth > 0 && manualHeight > 0) {
+                        applyManualCanvasStyle(manualWidth, manualHeight, true);
+                    }
                 }
             }
         }
@@ -1930,7 +2014,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const segment = jpegStripeRenderQueue.shift();
           if (segment && segment.image) {
             try {
-              if (canvas.width > 0 && canvas.height > 0) { // Ensure canvas is ready
+              if (canvas.width > 0 && canvas.height > 0) {
                 canvasContext.drawImage(segment.image, 0, segment.startY);
               }
               segment.image.close();
@@ -1938,23 +2022,25 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {
               console.error("[paintVideoFrame] Error drawing JPEG segment:", e, segment);
               if (segment.image && typeof segment.image.close === 'function') {
-                segment.image.close();
+                try { segment.image.close(); } catch (closeError) { /* ignore */ }
               }
             }
           }
         }
         if (jpegPaintedThisFrame && !streamStarted) {
           startStream();
-          if (!inputInitialized && !isSharedMode) initializeInput(); // Input only for non-shared
+          if (!inputInitialized && !isSharedMode) initializeInput();
         }
       }
-    } else { 
-      if (!document.hidden || isSharedMode) { // Draw if visible or in shared mode
-        if (isVideoPipelineActive || isSharedMode) { // Also draw if shared mode, regardless of isVideoPipelineActive server state (as we want to show what we get)
-           if (videoFrameBuffer.length > videoBufferSize) {
+    } else if ( (isSharedMode && currentEncoderMode === 'h264_full_frame' && sharedClientState === 'ready') || 
+                (!isSharedMode && currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc-striped') ) {
+      if (!document.hidden || (isSharedMode && sharedClientState === 'ready')) {
+        if ( (isSharedMode && sharedClientState === 'ready') || (!isSharedMode && isVideoPipelineActive) ) {
+           const bufferLimit = (isSharedMode && sharedClientState === 'ready') ? 0 : videoBufferSize;
+           if (videoFrameBuffer.length > bufferLimit) {
                 const frameToPaint = videoFrameBuffer.shift();
                 if (frameToPaint) {
-                    if (canvas.width > 0 && canvas.height > 0) { // Ensure canvas is ready
+                    if (canvas.width > 0 && canvas.height > 0) {
                         canvasContext.drawImage(frameToPaint, 0, 0);
                     }
                     frameToPaint.close();
@@ -2306,10 +2392,10 @@ document.addEventListener('DOMContentLoaded', () => {
       websocket.send(`s,${pixelRatio}`);
       console.log(`[websockets] Sent initial pixel ratio: ${pixelRatio}.`);
     } else {
-        console.log("Shared mode: Skipping sending SETTINGS and pixel ratio onopen.");
+        console.log("Shared mode: WebSocket opened. Waiting for 'MODE websockets' from server to start identification sequence.");
     }
 
-    websocket.send('cr'); // Request clipboard content (read-only is fine)
+    websocket.send('cr');
     console.log('[websockets] Sent initial clipboard request (cr) to server.');
 
     isVideoPipelineActive = true;
@@ -2320,14 +2406,16 @@ document.addEventListener('DOMContentLoaded', () => {
       audio: true
     }, window.location.origin);
 
-    isMicrophoneActive = false;
-    updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
-
-    if (metricsIntervalId === null && !isSharedMode) { // Metrics only for non-shared
-      metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
-      console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
+    if (!isSharedMode) {
+        isMicrophoneActive = false;
+        updateToggleButtonAppearance(micToggleButtonElement, isMicrophoneActive);
+        if (metricsIntervalId === null) {
+          metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
+          console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
+        }
     }
   };
+
   websocket.onmessage = (event) => {
     if (event.data instanceof ArrayBuffer) {
       const arrayBuffer = event.data;
@@ -2335,69 +2423,200 @@ document.addEventListener('DOMContentLoaded', () => {
       if (arrayBuffer.byteLength < 1) return;
       const dataTypeByte = dataView.getUint8(0);
 
-      if (dataTypeByte === 0) { // Full H.264 frame
-        if (arrayBuffer.byteLength < 4) return;
-        const frameTypeFlag = dataView.getUint8(1);
-        if (!isSharedMode) lastReceivedVideoFrameId = dataView.getUint16(2, false); // No ack in shared
-        const videoDataArrayBuffer = arrayBuffer.slice(4);
-        if (!isVideoPipelineActive && !isSharedMode) return; // Shared mode processes always
-        if (decoder && decoder.state === 'configured') {
-          const chunk = new EncodedVideoChunk({
-            type: frameTypeFlag === 1 ? 'key' : 'delta',
-            timestamp: performance.now() * 1000,
-            data: videoDataArrayBuffer,
-          });
-          try {
-            decoder.decode(chunk);
-          } catch (e) {
-            console.error('Video Decoding error:', e);
-            if (decoder.state === 'closed' || decoder.state === 'unconfigured') initializeDecoder();
-          }
-        } else {
-          if (!decoder || decoder.state === 'closed') initializeDecoder();
+      if (isSharedMode) {
+        if (sharedClientState === 'awaiting_identification') {
+            let identifiedType = null;
+            if (dataTypeByte === 0) identifiedType = 'h264_full_frame';
+            else if (dataTypeByte === 0x03) identifiedType = 'jpeg';
+            else if (dataTypeByte === 0x04) identifiedType = 'x264enc-striped';
+
+            if (identifiedType) {
+                clearSharedModeProbingTimeout();
+                sharedProbingAttempts = 0;
+                identifiedEncoderModeForShared = identifiedType;
+                console.log(`Shared mode: Identified video encoding type as '${identifiedEncoderModeForShared}' from first packet (type 0x${dataTypeByte.toString(16)}). State: configuring.`);
+                sharedClientState = 'configuring';
+
+                console.log("Shared mode: Cleaning up existing video pipeline elements for reconfiguration.");
+                if (decoder && decoder.state !== 'closed') {
+                    try { decoder.close(); } catch (e) { console.warn("Shared mode: Error closing main H.264 decoder during cleanup:", e); }
+                    decoder = null;
+                }
+                clearAllVncStripeDecoders();
+                cleanupVideoBuffer();
+                cleanupJpegStripeQueue();
+                decodedStripesQueue = [];
+
+                if (canvasContext && canvas) {
+                    console.log("Shared mode: Resetting canvas display.");
+                    canvasContext.setTransform(1, 0, 0, 1, 0, 0);
+                    canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+                }
+
+                currentEncoderMode = identifiedEncoderModeForShared;
+                console.log(`Shared mode: Set global currentEncoderMode to '${currentEncoderMode}'.`);
+
+                if (identifiedEncoderModeForShared === 'h264_full_frame') {
+                    console.log("Shared mode: Initializing main H.264 decoder for the identified type.");
+                    triggerInitializeDecoder().then(success => {
+                        if (success) {
+                            console.log("Shared mode: H.264 decoder configured. Requesting fresh video stream.");
+                            sendStopStartVideoCommandsForSharedMode();
+                            sharedClientState = 'ready';
+                            console.log(`Shared mode: Client is now ready to process video of type '${identifiedEncoderModeForShared}'.`);
+                        } else {
+                            console.error("Shared mode: Main H.264 decoder failed to initialize or configure. Entering error state.");
+                            sharedClientState = 'error';
+                        }
+                    }).catch(initError => {
+                        console.error("Shared mode: Exception during H.264 decoder initialization. Entering error state.", initError);
+                        sharedClientState = 'error';
+                    });
+                } else if (identifiedEncoderModeForShared === 'jpeg' || identifiedEncoderModeForShared === 'x264enc-striped') {
+                    console.log(`Shared mode: Configured for ${identifiedEncoderModeForShared}. Specific decoders (if any) are managed on-demand or not needed centrally.`);
+                    if (manualWidth && manualHeight && manualWidth > 0 && manualHeight > 0) {
+                         applyManualCanvasStyle(manualWidth, manualHeight, true);
+                    }
+                    console.log("Shared mode: Reconfiguration process for non-H264 initiated. Requesting fresh video stream from server.");
+                    sendStopStartVideoCommandsForSharedMode();
+                    sharedClientState = 'ready';
+                    console.log(`Shared mode: Client is now ready to process video of type '${identifiedEncoderModeForShared}'.`);
+                }
+                return;
+            } else if (dataTypeByte !== 1) {
+                console.warn(`Shared mode (awaiting_identification): Received non-identifying binary packet type 0x${dataTypeByte.toString(16)}. Still waiting for a video packet.`);
+                return;
+            }
+        } else if (sharedClientState === 'ready') {
+            let packetIsVideo = (dataTypeByte === 0 || dataTypeByte === 0x03 || dataTypeByte === 0x04);
+            if (packetIsVideo) {
+                let packetMatchesIdentifiedType = false;
+                if (identifiedEncoderModeForShared === 'h264_full_frame' && dataTypeByte === 0) packetMatchesIdentifiedType = true;
+                else if (identifiedEncoderModeForShared === 'jpeg' && dataTypeByte === 0x03) packetMatchesIdentifiedType = true;
+                else if (identifiedEncoderModeForShared === 'x264enc-striped' && dataTypeByte === 0x04) packetMatchesIdentifiedType = true;
+                
+                if (!packetMatchesIdentifiedType) {
+                    console.warn(`Shared mode (ready): Received video packet type 0x${dataTypeByte.toString(16)} which does NOT match identified type '${identifiedEncoderModeForShared}'. Discarding packet.`);
+                    return;
+                }
+            }
+        } else if (sharedClientState === 'configuring' || sharedClientState === 'error' || sharedClientState === 'idle') {
+            let packetIsVideo = (dataTypeByte === 0 || dataTypeByte === 0x03 || dataTypeByte === 0x04);
+            if (packetIsVideo) {
+                 console.log(`Shared mode: Video packet (type 0x${dataTypeByte.toString(16)}) received while in state '${sharedClientState}'. Discarding.`);
+                 return; 
+            }
         }
-      } else if (dataTypeByte === 1) { // Audio frame
-        if (window.currentAudioBufferSize >= 5 && !isSharedMode) return; // Shared mode might buffer more aggressively if needed, or just play
-        if (!isAudioPipelineActive && !isSharedMode) return; // Shared mode processes always
-        if (audioDecoderWorker) {
-          if (audioContext && audioContext.state !== 'running') {
-            audioContext.resume().catch(e => console.error("Error resuming audio context", e));
-          }
-          const opusDataArrayBuffer = arrayBuffer.slice(2);
-          if (opusDataArrayBuffer.byteLength > 0) {
-            audioDecoderWorker.postMessage({
-              type: 'decode',
-              data: {
-                opusBuffer: opusDataArrayBuffer,
-                timestamp: performance.now() * 1000
-              }
-            }, [opusDataArrayBuffer]);
-          }
-        } else {
-          initializeAudio().then(() => { // Ensure audio pipeline is up
-            if (audioDecoderWorker) {
-              const opusDataArrayBuffer = arrayBuffer.slice(2);
-              if (opusDataArrayBuffer.byteLength > 0) {
-                audioDecoderWorker.postMessage({
-                  type: 'decode',
-                  data: { opusBuffer: opusDataArrayBuffer, timestamp: performance.now() * 1000 }
-                }, [opusDataArrayBuffer]);
+      }
+
+
+      if (dataTypeByte === 0) {
+        const headerLength = isSharedMode ? 2 : 4;
+        if (arrayBuffer.byteLength < headerLength) return;
+
+        const frameTypeFlag = dataView.getUint8(1);
+        if (!isSharedMode) lastReceivedVideoFrameId = dataView.getUint16(2, false);
+        const videoDataArrayBuffer = arrayBuffer.slice(headerLength);
+
+        const canProcessFullH264 =
+          (isSharedMode && sharedClientState === 'ready' && currentEncoderMode === 'h264_full_frame') ||
+          (!isSharedMode && isVideoPipelineActive && currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc-striped');
+
+        if (canProcessFullH264) {
+          if (decoder && decoder.state === 'configured') {
+            const chunk = new EncodedVideoChunk({
+              type: frameTypeFlag === 1 ? 'key' : 'delta',
+              timestamp: performance.now() * 1000,
+              data: videoDataArrayBuffer,
+            });
+            try {
+              decoder.decode(chunk);
+            } catch (e) {
+              console.error('Video Decoding error (Full H.264):', e.message, e);
+              if (!isSharedMode && (decoder.state === 'closed' || decoder.state === 'unconfigured')) {
+                console.warn("Re-initializing main decoder due to error.");
+                initializeDecoder();
+              } else if (isSharedMode && (decoder.state === 'closed' || decoder.state === 'unconfigured')) {
+                console.error("Shared mode: Main H.264 decoder error after configuration. Entering error state.");
+                sharedClientState = 'error';
               }
             }
-          });
+          } else {
+            if (!isSharedMode && (!decoder || decoder.state === 'closed' || decoder.state === 'unconfigured')) {
+              console.warn(`Main decoder not ready for Full H.264 frame (mode: ${currentEncoderMode}, state: ${decoder ? decoder.state : 'null'}). Attempting init. Frame might be dropped.`);
+              initializeDecoder();
+            } else if (isSharedMode && (!decoder || decoder.state === 'closed' || decoder.state === 'unconfigured')) {
+                 console.error(`Shared mode: Main H.264 decoder not available or not configured when expected. State: ${sharedClientState}. Decoder state: ${decoder ? decoder.state : 'null'}. Entering error state.`);
+                 sharedClientState = 'error';
+            } else {
+              console.warn(`Main decoder exists but not configured (state: ${decoder.state}). Full H.264 frame dropped.`);
+            }
+          }
         }
-      } else if (dataTypeByte === 0x03) { // JPEG Stripe
-        if (arrayBuffer.byteLength < 6) return;
+
+
+      } else if (dataTypeByte === 1) {
+        const audioHeaderLength = 2;
+        if (arrayBuffer.byteLength < audioHeaderLength) return;
+
+        if ((isAudioPipelineActive || isSharedMode)) {
+          if (audioDecoderWorker) {
+            if (audioContext && audioContext.state !== 'running') {
+              audioContext.resume().catch(e => console.error("Error resuming audio context", e));
+            }
+            const opusDataArrayBuffer = arrayBuffer.slice(audioHeaderLength);
+            if (opusDataArrayBuffer.byteLength > 0) {
+              if (!isSharedMode && window.currentAudioBufferSize >= 5) {
+                return;
+              }
+              audioDecoderWorker.postMessage({
+                type: 'decode',
+                data: {
+                  opusBuffer: opusDataArrayBuffer,
+                  timestamp: performance.now() * 1000
+                }
+              }, [opusDataArrayBuffer]);
+            }
+          } else {
+            console.warn("AudioDecoderWorker not ready. Attempting to initialize audio pipeline.");
+            initializeAudio().then(() => {
+              if (audioDecoderWorker) {
+                const opusDataArrayBuffer = arrayBuffer.slice(audioHeaderLength);
+                if (opusDataArrayBuffer.byteLength > 0) {
+                  if (!isSharedMode && window.currentAudioBufferSize >= 5) return;
+                  audioDecoderWorker.postMessage({
+                    type: 'decode',
+                    data: { opusBuffer: opusDataArrayBuffer, timestamp: performance.now() * 1000 }
+                  }, [opusDataArrayBuffer]);
+                }
+              }
+            });
+          }
+        }
+
+
+      } else if (dataTypeByte === 0x03) {
+        const jpegHeaderLength = isSharedMode ? 4 : 6;
+        if (arrayBuffer.byteLength < jpegHeaderLength) return;
+
         if (!isSharedMode) lastReceivedVideoFrameId = dataView.getUint16(2, false);
-        const stripe_y_start = dataView.getUint16(4, false);
-        const jpegDataBuffer = arrayBuffer.slice(6);
-        if (jpegDataBuffer.byteLength === 0) return;
-        decodeAndQueueJpegStripe(stripe_y_start, jpegDataBuffer);
-      } else if (dataTypeByte === 0x04) { // H.264 VNC Stripe
-        if (!isVideoPipelineActive && !isSharedMode) return;
-        if (typeof window.vncStripesArrivedThisPeriod !== 'undefined' && !isSharedMode) window.vncStripesArrivedThisPeriod++;
+        const stripe_y_start = dataView.getUint16(isSharedMode ? 2 : 4, false);
+        const jpegDataBuffer = arrayBuffer.slice(jpegHeaderLength);
+
+        const canProcessJpeg =
+          (isSharedMode && sharedClientState === 'ready' && currentEncoderMode === 'jpeg') ||
+          (!isSharedMode && isVideoPipelineActive && currentEncoderMode === 'jpeg');
+
+        if (canProcessJpeg) {
+          if (jpegDataBuffer.byteLength === 0) return;
+          decodeAndQueueJpegStripe(stripe_y_start, jpegDataBuffer);
+        }
+
+
+      } else if (dataTypeByte === 0x04) {
         const EXPECTED_HEADER_LENGTH = 10;
         if (arrayBuffer.byteLength < EXPECTED_HEADER_LENGTH) return;
+
         const video_frame_type_byte = dataView.getUint8(1);
         const vncFrameID = dataView.getUint16(2, false);
         if (!isSharedMode) {
@@ -2408,62 +2627,87 @@ document.addEventListener('DOMContentLoaded', () => {
         const stripeWidth = dataView.getUint16(6, false);
         const stripeHeight = dataView.getUint16(8, false);
         const h264Payload = arrayBuffer.slice(EXPECTED_HEADER_LENGTH);
-        if (h264Payload.byteLength === 0) return;
-        let decoderInfo = vncStripeDecoders[vncStripeYStart];
-        const chunkType = (video_frame_type_byte === 0x01) ? 'key' : 'delta';
-        if (!decoderInfo) {
-          const newStripeDecoder = new VideoDecoder({
-            output: handleDecodedVncStripeFrame.bind(null, vncStripeYStart, vncFrameID),
-            error: (e) => console.error(`Error in VideoDecoder for VNC stripe Y=${vncStripeYStart} (FrameID: ${vncFrameID}):`, e.message)
-          });
-          const decoderConfig = {
-            codec: 'avc1.42E01E',
-            codedWidth: stripeWidth,
-            codedHeight: stripeHeight,
-            optimizeForLatency: true
-          };
-          vncStripeDecoders[vncStripeYStart] = {
-            decoder: newStripeDecoder,
-            pendingChunks: []
-          };
-          decoderInfo = vncStripeDecoders[vncStripeYStart];
-          VideoDecoder.isConfigSupported(decoderConfig)
-            .then(support => {
-              if (support.supported) return newStripeDecoder.configure(decoderConfig);
-              else {
-                delete vncStripeDecoders[vncStripeYStart];
-                return Promise.reject("Config not supported");
-              }
-            })
-            .then(() => processPendingChunksForStripe(vncStripeYStart))
-            .catch(e => {
-              console.error(`Error configuring VNC stripe decoder Y=${vncStripeYStart}:`, e);
-              if (vncStripeDecoders[vncStripeYStart] && vncStripeDecoders[vncStripeYStart].decoder === newStripeDecoder) {
-                try {
-                  if (newStripeDecoder.state !== 'closed') newStripeDecoder.close();
-                } catch (_) {}
-                delete vncStripeDecoders[vncStripeYStart];
-              }
-            });
-        }
-        if (decoderInfo) {
-          const chunkTimestamp = performance.now() * 1000;
-          const chunkData = {
-            type: chunkType,
-            timestamp: chunkTimestamp,
-            data: h264Payload
-          };
-          if (decoderInfo.decoder.state === "configured") {
-            const chunk = new EncodedVideoChunk(chunkData);
-            try {
-              decoderInfo.decoder.decode(chunk);
-            } catch (e) {
-              console.error(`Error decoding VNC stripe chunk Y=${vncStripeYStart}:`, e);
+
+        const canProcessVncStripe =
+            (isSharedMode && sharedClientState === 'ready' && currentEncoderMode === 'x264enc-striped') ||
+            (!isSharedMode && isVideoPipelineActive && currentEncoderMode === 'x264enc-striped');
+
+        if (canProcessVncStripe) {
+            if (typeof window.vncStripesArrivedThisPeriod !== 'undefined' && !isSharedMode) window.vncStripesArrivedThisPeriod++;
+            if (h264Payload.byteLength === 0) return;
+
+            let decoderInfo = vncStripeDecoders[vncStripeYStart];
+            const chunkType = (video_frame_type_byte === 0x01) ? 'key' : 'delta';
+            if (!decoderInfo || decoderInfo.decoder.state === 'closed' ||
+                (decoderInfo.decoder.state === 'configured' && (decoderInfo.width !== stripeWidth || decoderInfo.height !== stripeHeight))) {
+                
+                if(decoderInfo && decoderInfo.decoder.state !== 'closed') {
+                    try { decoderInfo.decoder.close(); } catch(e) { console.warn("Error closing old VNC stripe decoder:", e); }
+                }
+
+                const newStripeDecoder = new VideoDecoder({
+                    output: handleDecodedVncStripeFrame.bind(null, vncStripeYStart, vncFrameID),
+                    error: (e) => console.error(`Error in VideoDecoder for VNC stripe Y=${vncStripeYStart} (FrameID: ${vncFrameID}):`, e.message)
+                });
+                const decoderConfig = {
+                    codec: 'avc1.42E01E',
+                    codedWidth: stripeWidth,
+                    codedHeight: stripeHeight,
+                    optimizeForLatency: true
+                };
+                vncStripeDecoders[vncStripeYStart] = {
+                    decoder: newStripeDecoder,
+                    pendingChunks: [],
+                    width: stripeWidth,
+                    height: stripeHeight
+                };
+                decoderInfo = vncStripeDecoders[vncStripeYStart];
+
+                VideoDecoder.isConfigSupported(decoderConfig)
+                    .then(support => {
+                        if (support.supported) {
+                            return newStripeDecoder.configure(decoderConfig);
+                        } else {
+                            console.error(`VNC stripe decoder config not supported for Y=${vncStripeYStart}:`, decoderConfig);
+                            delete vncStripeDecoders[vncStripeYStart];
+                            return Promise.reject("Config not supported");
+                        }
+                    })
+                    .then(() => {
+                        processPendingChunksForStripe(vncStripeYStart);
+                    })
+                    .catch(e => {
+                        console.error(`Error configuring VNC stripe decoder Y=${vncStripeYStart}:`, e);
+                        if (vncStripeDecoders[vncStripeYStart] && vncStripeDecoders[vncStripeYStart].decoder === newStripeDecoder) {
+                            try { if (newStripeDecoder.state !== 'closed') newStripeDecoder.close(); } catch (_) {}
+                            delete vncStripeDecoders[vncStripeYStart];
+                        }
+                    });
             }
-          } else {
-            decoderInfo.pendingChunks.push(chunkData);
-          }
+
+            if (decoderInfo) {
+                const chunkTimestamp = performance.now() * 1000;
+                const chunkData = {
+                    type: chunkType,
+                    timestamp: chunkTimestamp,
+                    data: h264Payload
+                };
+                if (decoderInfo.decoder.state === "configured") {
+                    const chunk = new EncodedVideoChunk(chunkData);
+                    try {
+                        decoderInfo.decoder.decode(chunk);
+                    } catch (e) {
+                        console.error(`Error decoding VNC stripe chunk Y=${vncStripeYStart}:`, e.message, e);
+                    }
+                } else if (decoderInfo.decoder.state === "unconfigured" || decoderInfo.decoder.state === "configuring") {
+                    decoderInfo.pendingChunks.push(chunkData);
+                } else {
+                     console.warn(`VNC stripe decoder for Y=${vncStripeYStart} in unexpected state: ${decoderInfo.decoder.state}. Dropping chunk.`);
+                }
+            }
         }
+
+
       } else {
         console.warn('Unknown binary data payload type received:', dataTypeByte);
       }
@@ -2475,48 +2719,48 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingText = 'Initializing WebSocket mode...';
         updateStatusDisplay();
 
-        if (decoder && decoder.state !== "closed") decoder.close();
+        if (decoder && decoder.state !== "closed") {
+            try { decoder.close(); } catch(e){}
+            decoder = null;
+        }
         clearAllVncStripeDecoders();
         cleanupVideoBuffer();
         cleanupJpegStripeQueue();
-        if (!isSharedMode) stopMicrophoneCapture(); // Mic only for non-shared
-
-        if (currentEncoderMode !== 'x264enc-striped' && currentEncoderMode !== 'jpeg') {
-          initializeDecoder();
+        decodedStripesQueue = [];
+        
+        if (!isSharedMode) {
+            stopMicrophoneCapture();
+            if (currentEncoderMode !== 'x264enc-striped' && currentEncoderMode !== 'jpeg') {
+              initializeDecoder();
+            }
         }
+        
         initializeAudio().then(() => {
           initializeDecoderAudio();
         });
         
         initializeInput();
 
-
         if (playButtonElement) playButtonElement.classList.add('hidden');
         if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
 
-        console.log('Starting video painting loop (requestAnimationFrame).');
         requestAnimationFrame(paintVideoFrame);
 
         if (isSharedMode) {
-            console.log("Shared mode: Received MODE websockets. Sending STOP_VIDEO then START_VIDEO for keyframe.");
+            sharedClientState = 'awaiting_identification';
+            sharedProbingAttempts = 0;
+            identifiedEncoderModeForShared = null;
+            console.log("Shared mode: Received 'MODE websockets'. Initializing video type identification sequence. State: awaiting_identification.");
+            sendStopStartVideoCommandsForSharedMode();
+            startSharedModeProbingTimeout();
+
+            isVideoPipelineActive = true;
+            isAudioPipelineActive = true;
+            window.postMessage({ type: 'pipelineStatusUpdate', video: true, audio: true }, window.location.origin);
+        } else {
             if (websocket && websocket.readyState === WebSocket.OPEN) {
-              websocket.send('STOP_VIDEO');
-              setTimeout(() => {
-                if (websocket && websocket.readyState === WebSocket.OPEN) {
-                  websocket.send('START_VIDEO');
-                  console.log("Shared mode: Sent START_VIDEO after delay.");
-                }
-              }, 100);
-              // Local pipeline active flags should reflect an attempt to view
-              isVideoPipelineActive = true;
-              isAudioPipelineActive = true;
-              window.postMessage({ type: 'pipelineStatusUpdate', video: true, audio: true }, window.location.origin);
-            }
-        } else { // Non-shared mode logic
-            if (websocket && websocket.readyState === WebSocket.OPEN) {
-              websocket.send('cr'); // Request clipboard
-              if (!document.hidden && !isVideoPipelineActive) websocket.send('START_VIDEO');
-              if (!isAudioPipelineActive) websocket.send('START_AUDIO');
+              if (!document.hidden && isVideoPipelineActive) websocket.send('START_VIDEO');
+              if (isAudioPipelineActive) websocket.send('START_AUDIO');
             }
         }
         loadingText = 'Waiting for stream...';
@@ -2550,7 +2794,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (obj.video !== undefined && obj.video !== isVideoPipelineActive) {
               isVideoPipelineActive = obj.video;
               statusChanged = true;
-              if (!isVideoPipelineActive && currentEncoderMode === 'x264enc-striped') clearAllVncStripeDecoders();
+              if (!isVideoPipelineActive && currentEncoderMode === 'x264enc-striped' && !isSharedMode) {
+                  clearAllVncStripeDecoders();
+              }
             }
             if (obj.audio !== undefined && obj.audio !== isAudioPipelineActive) {
               isAudioPipelineActive = obj.audio;
@@ -2569,49 +2815,39 @@ document.addEventListener('DOMContentLoaded', () => {
             }, window.location.origin);
          } else if (obj.type === 'stream_resolution') {
            if (isSharedMode) {
-             const newWidth = parseInt(obj.width, 10);
-             const newHeight = parseInt(obj.height, 10);
+             if (sharedClientState === 'error' || sharedClientState === 'idle') {
+                 console.log(`Shared mode: Received stream_resolution while in state '${sharedClientState}'. Ignoring.`);
+             } else {
+                 const newWidth = parseInt(obj.width, 10);
+                 const newHeight = parseInt(obj.height, 10);
 
-             if (newWidth > 0 && newHeight > 0 && (manualWidth !== newWidth || manualHeight !== newHeight)) {
-               console.log(`Shared mode: Received stream_resolution from server: ${newWidth}x${newHeight}. Current manual: ${manualWidth}x${manualHeight}`);
-               manualWidth = newWidth;
-               manualHeight = newHeight;
-               applyManualCanvasStyle(manualWidth, manualHeight, true); // true for scaleToFit
+                 if (newWidth > 0 && newHeight > 0) {
+                     const evenNewWidth = roundDownToEven(newWidth);
+                     const evenNewHeight = roundDownToEven(newHeight);
+                     let dimensionsChanged = (manualWidth !== evenNewWidth || manualHeight !== evenNewHeight);
 
-               // Handle decoder and canvas updates based on current encoder mode
-               if (currentEncoderMode !== 'x264enc-striped' && currentEncoderMode !== 'jpeg') {
-                 // This is for the main video pipeline (e.g., full H.264 frames)
-                 console.log(`Shared mode: Stream resolution changed to ${newWidth}x${newHeight} for main video pipeline (${currentEncoderMode}). Ensuring decoder is (re)initialized.`);
-                 // triggerInitializeDecoder will use the updated manualWidth/manualHeight
-                 // to configure or reconfigure the main VideoDecoder.
-                 triggerInitializeDecoder();
-               } else if (currentEncoderMode === 'x264enc-striped') {
-                 // This is for VNC-style H.264 stripes
-                 console.log(`Shared mode: Stream resolution changed to ${newWidth}x${newHeight} for x264enc-striped. Clearing stripe decoders and canvas.`);
-                 clearAllVncStripeDecoders(); // Clears individual H.264 stripe decoders
-                 if (canvasContext) {
-                   canvasContext.setTransform(1, 0, 0, 1, 0, 0);
-                   // canvas.width/height have been updated by applyManualCanvasStyle
-                   canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+                     if (dimensionsChanged) {
+                         console.log(`Shared mode: Received stream_resolution from server: ${newWidth}x${newHeight} (rounded to ${evenNewWidth}x${evenNewHeight}). Current manual: ${manualWidth}x${manualHeight}. Current state: ${sharedClientState}.`);
+                         manualWidth = evenNewWidth;
+                         manualHeight = evenNewHeight;
+                         applyManualCanvasStyle(manualWidth, manualHeight, true);
+                     }
+
+                     if (sharedClientState === 'ready' && dimensionsChanged && identifiedEncoderModeForShared === 'h264_full_frame') {
+                         console.log(`Shared mode (stream_resolution, ready state): Identified mode is h264_full_frame. Triggering main decoder re-init for new resolution ${manualWidth}x${manualHeight}.`);
+                         triggerInitializeDecoder();
+                     } else if (sharedClientState === 'ready' && dimensionsChanged && (identifiedEncoderModeForShared === 'x264enc-striped' || identifiedEncoderModeForShared === 'jpeg')) {
+                         console.log(`Shared mode (stream_resolution, ready state): Mode is ${identifiedEncoderModeForShared}. Clearing canvas due to base resolution change.`);
+                         if (canvasContext && canvas.width > 0 && canvas.height > 0) {
+                             canvasContext.setTransform(1, 0, 0, 1, 0, 0);
+                             canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+                         }
+                     }
+                 } else {
+                     console.warn(`Shared mode: Received invalid stream_resolution dimensions: ${obj.width}x${obj.height}`);
                  }
-               } else if (currentEncoderMode === 'jpeg') {
-                 // This is for JPEG stripes/frames
-                 console.log(`Shared mode: Stream resolution changed to ${newWidth}x${newHeight} for JPEG. Clearing canvas.`);
-                 // No specific decoder objects to clear for JPEG, but canvas clear is good.
-                 // clearAllVncStripeDecoders(); // Not needed for JPEG, VNC specific
-                 if (canvasContext) {
-                   canvasContext.setTransform(1, 0, 0, 1, 0, 0);
-                   // canvas.width/height have been updated by applyManualCanvasStyle
-                   canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-                 }
-               }
-
-             } else if (!(newWidth > 0 && newHeight > 0)) {
-                 console.warn(`Shared mode: Received invalid stream_resolution dimensions: ${obj.width}x${obj.height}`);
              }
            } else {
-             // In non-shared mode, we generally don't use this message to override client-driven resolution.
-             // However, you could log it or use it for informational purposes if desired.
              console.log(`Non-shared mode: Received stream_resolution (ignored for control): ${obj.width}x${obj.height}`);
            }
           } else {
@@ -2634,8 +2870,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (event.data.startsWith('clipboard,')) {
           try {
             const clipboardData = atob(event.data.substring(10));
-            // In shared mode, we can still display clipboard content from server.
-            // Writing to system clipboard might be desired.
             navigator.clipboard.writeText(clipboardData).catch(err => console.error('Could not copy server clipboard to local: ' + err));
             window.postMessage({
               type: 'clipboardContentUpdate',
@@ -2651,46 +2885,24 @@ document.addEventListener('DOMContentLoaded', () => {
           } catch (e) {
             console.error('Error parsing system data:', e);
           }
-        } else if (event.data === 'VIDEO_STARTED' && !isVideoPipelineActive) {
+        } else if (event.data === 'VIDEO_STARTED' && !isVideoPipelineActive && !isSharedMode) {
           isVideoPipelineActive = true;
-          window.postMessage({
-            type: 'pipelineStatusUpdate',
-            video: true
-          }, window.location.origin);
-        } else if (event.data === 'VIDEO_STOPPED' && isVideoPipelineActive) {
+          window.postMessage({ type: 'pipelineStatusUpdate', video: true }, window.location.origin);
+        } else if (event.data === 'VIDEO_STOPPED' && isVideoPipelineActive && !isSharedMode) {
           isVideoPipelineActive = false;
-          window.postMessage({
-            type: 'pipelineStatusUpdate',
-            video: false
-          }, window.location.origin);
+          window.postMessage({ type: 'pipelineStatusUpdate', video: false }, window.location.origin);
           cleanupVideoBuffer();
           if (currentEncoderMode === 'x264enc-striped') clearAllVncStripeDecoders();
-        } else if (event.data === 'AUDIO_STARTED' && !isAudioPipelineActive) {
+        } else if (event.data === 'AUDIO_STARTED' && !isAudioPipelineActive && !isSharedMode) {
           isAudioPipelineActive = true;
-          window.postMessage({
-            type: 'pipelineStatusUpdate',
-            audio: true
-          }, window.location.origin);
-          if (audioDecoderWorker) audioDecoderWorker.postMessage({
-            type: 'updatePipelineStatus',
-            data: {
-              isActive: true
-            }
-          });
-        } else if (event.data === 'AUDIO_STOPPED' && isAudioPipelineActive) {
+          window.postMessage({ type: 'pipelineStatusUpdate', audio: true }, window.location.origin);
+          if (audioDecoderWorker) audioDecoderWorker.postMessage({ type: 'updatePipelineStatus', data: { isActive: true } });
+        } else if (event.data === 'AUDIO_STOPPED' && isAudioPipelineActive && !isSharedMode) {
           isAudioPipelineActive = false;
-          window.postMessage({
-            type: 'pipelineStatusUpdate',
-            audio: false
-          }, window.location.origin);
-          if (audioDecoderWorker) audioDecoderWorker.postMessage({
-            type: 'updatePipelineStatus',
-            data: {
-              isActive: false
-            }
-          });
+          window.postMessage({ type: 'pipelineStatusUpdate', audio: false }, window.location.origin);
+          if (audioDecoderWorker) audioDecoderWorker.postMessage({ type: 'updatePipelineStatus', data: { isActive: false } });
         } else {
-          if (window.webrtcInput && window.webrtcInput.on_message && !isSharedMode) { // Input messages only for non-shared
+          if (window.webrtcInput && window.webrtcInput.on_message && !isSharedMode) {
             window.webrtcInput.on_message(event.data);
           }
         }
@@ -2706,6 +2918,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (metricsIntervalId) {
       clearInterval(metricsIntervalId);
       metricsIntervalId = null;
+    }
+    if (isSharedMode) {
+        console.error("Shared mode: WebSocket error. Resetting shared state to 'error'.");
+        sharedClientState = 'error';
+        clearSharedModeProbingTimeout();
+        sharedProbingAttempts = 0;
     }
   };
 
@@ -2727,7 +2945,7 @@ document.addEventListener('DOMContentLoaded', () => {
       audioDecoderWorker.postMessage({
         type: 'close'
       });
-      audioDecoderWorker = null; // Terminate and nullify in worker's close handler
+      audioDecoderWorker = null; 
     }
     if (!isSharedMode) stopMicrophoneCapture();
     isVideoPipelineActive = false;
@@ -2738,6 +2956,13 @@ document.addEventListener('DOMContentLoaded', () => {
       video: false,
       audio: false
     }, window.location.origin);
+    if (isSharedMode) {
+        console.log("Shared mode: WebSocket closed. Resetting shared state to 'idle'.");
+        sharedClientState = 'idle';
+        clearSharedModeProbingTimeout();
+        sharedProbingAttempts = 0;
+        identifiedEncoderModeForShared = null;
+    }
   };
 
   setInterval(() => {

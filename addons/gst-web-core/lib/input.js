@@ -384,14 +384,15 @@ export class Input {
      * @param {function} [send] Function used to send input events to server.
      * @param {boolean} [isSharedMode=false] Indicates if the client is in shared mode.
      */
-    constructor(element, send, isSharedMode = false) {
+    constructor(element, send, isSharedMode = false, playerIndex = 0) {
         /** @type {Element} */
         this.element = element;
         /** @type {function} */
         this.send = send;
         /** @type {boolean} */
         this.isSharedMode = isSharedMode;
-        // console.log(`Input.js: Constructor - isSharedMode: ${this.isSharedMode}, send function: ${send ? 'provided' : 'NOT provided'}`);
+        /** @type {number} */
+        this.playerIndex = playerIndex;
         /** @type {boolean} */
         this.mouseRelative = false; // Should be managed by pointer lock status
         /** @type {Object} */
@@ -1509,53 +1510,38 @@ export class Input {
     }
 
     _gamepadConnected(event) {
-        console.log(`Input.js: _gamepadConnected event. Gamepad ID: ${event.gamepad.id}, Physical Index: ${event.gamepad.index}. isSharedMode: ${this.isSharedMode}`);
+        console.log(`Input.js: _gamepadConnected event. Gamepad ID: ${event.gamepad.id}, Physical Index: ${event.gamepad.index}. PlayerIndex for this client: ${this.playerIndex}`);
         if (!this.gamepadManager) {
             this.gamepadManager = new GamepadManager(event.gamepad, this._gamepadButton.bind(this), this._gamepadAxis.bind(this));
-            // console.log('Input.js: GamepadManager created.');
         }
-        // If in shared mode, always send as server gamepad 1. Otherwise, use the physical index.
-        const server_gp_num = this.isSharedMode ? 1 : event.gamepad.index;
-        // console.log(`Input.js: Mapping physical gamepad index ${event.gamepad.index} to server_gp_num ${server_gp_num}`);
+        const server_gp_num = this.playerIndex;
         const connectMsg = "js,c," + server_gp_num + "," + btoa(event.gamepad.id) + "," + event.gamepad.axes.length + "," + event.gamepad.buttons.length;
-        // console.log(`Input.js: Sending connect message: ${connectMsg}`);
         this.send(connectMsg);
         if (this.ongamepadconnected !== null) { this.ongamepadconnected(event.gamepad.id); }
     }
 
     _gamepadDisconnect(event) {
-        // console.log(`Input.js: _gamepadDisconnect event. Gamepad ID: ${event.gamepad.id}, Physical Index: ${event.gamepad.index}. isSharedMode: ${this.isSharedMode}`);
+        // console.log(`Input.js: _gamepadDisconnect event. Gamepad ID: ${event.gamepad.id}, Physical Index: ${event.gamepad.index}. PlayerIndex for this client: ${this.playerIndex}`);
          if (this.ongamepaddisconneceted !== null) { this.ongamepaddisconneceted(); }
-         // If in shared mode, always send as server gamepad 1. Otherwise, use the physical index.
-         const server_gp_num = this.isSharedMode ? 1 : event.gamepad.index;
-         // console.log(`Input.js: Mapping physical gamepad index ${event.gamepad.index} to server_gp_num ${server_gp_num} for disconnect.`);
+         const server_gp_num = this.playerIndex;
          const disconnectMsg = "js,d," + server_gp_num;
-         // console.log(`Input.js: Sending disconnect message: ${disconnectMsg}`);
          this.send(disconnectMsg);
     }
 
     _gamepadButton(gp_num, btn_num, val) {
         // gp_num is the physical index from GamepadManager
-        // console.log(`Input.js: _gamepadButton callback. Physical gp_num: ${gp_num}, btn_num: ${btn_num}, val: ${val}. isSharedMode: ${this.isSharedMode}`);
-        // If in shared mode, always send as server gamepad 1. Otherwise, use the physical gp_num.
-        const server_gp_num = this.isSharedMode ? 1 : gp_num;
-        // console.log(`Input.js: Mapping physical button event from gp_num ${gp_num} to server_gp_num ${server_gp_num}`);
+        const server_gp_num = this.playerIndex;
         const buttonMsg = "js,b," + server_gp_num + "," + btn_num + "," + val;
-        // console.log(`Input.js: Sending button message: ${buttonMsg}`);
         this.send(buttonMsg);
-        window.postMessage({ type: 'gamepadButtonUpdate', gamepadIndex: gp_num, buttonIndex: btn_num, value: val }, window.location.origin);
+        window.postMessage({ type: 'gamepadButtonUpdate', gamepadIndex: server_gp_num, buttonIndex: btn_num, value: val }, window.location.origin);
     }
 
     _gamepadAxis(gp_num, axis_num, val) {
         // gp_num is the physical index from GamepadManager
-        // console.log(`Input.js: _gamepadAxis callback. Physical gp_num: ${gp_num}, axis_num: ${axis_num}, val: ${val}. isSharedMode: ${this.isSharedMode}`);
-        // If in shared mode, always send as server gamepad 1. Otherwise, use the physical gp_num.
-        const server_gp_num = this.isSharedMode ? 1 : gp_num;
-        // console.log(`Input.js: Mapping physical axis event from gp_num ${gp_num} to server_gp_num ${server_gp_num}`);
+        const server_gp_num = this.playerIndex;
         const axisMsg = "js,a," + server_gp_num + "," + axis_num + "," + val;
-        // console.log(`Input.js: Sending axis message: ${axisMsg}`);
         this.send(axisMsg);
-        window.postMessage({ type: 'gamepadAxisUpdate', gamepadIndex: gp_num, axisIndex: axis_num, value: val }, window.location.origin);
+        window.postMessage({ type: 'gamepadAxisUpdate', gamepadIndex: server_gp_num, axisIndex: axis_num, value: val }, window.location.origin);
     }
 
     _onFullscreenChange() {
