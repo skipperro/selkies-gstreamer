@@ -877,6 +877,61 @@ int udev_enumerate_add_match_property(struct udev_enumerate *udev_enumerate, con
     return 0; // Success
 }
 
+int udev_enumerate_add_match_sysattr(struct udev_enumerate *udev_enumerate, const char *sysattr, const char *value) {
+    if (!udev_enumerate) {
+        return -EINVAL; // Standard error for invalid argument
+    }
+    // No-op, always succeed for now.
+    return 0;
+}
+
+int udev_enumerate_add_nomatch_sysattr(struct udev_enumerate *udev_enumerate, const char *sysattr, const char *value) {
+    if (!udev_enumerate) {
+        return -EINVAL;
+    }
+    // No-op, always succeed for now.
+    return 0;
+}
+
+int udev_enumerate_add_match_tag(struct udev_enumerate *udev_enumerate, const char *tag) {
+    if (!udev_enumerate) {
+        return -EINVAL;
+    }
+    // No-op, always succeed for now.
+    return 0;
+}
+
+int udev_enumerate_add_match_parent(struct udev_enumerate *udev_enumerate, struct udev_device *parent) {
+    if (!udev_enumerate) return -EINVAL;
+    return 0; // No-op
+}
+int udev_enumerate_add_match_is_initialized(struct udev_enumerate *udev_enumerate) {
+    if (!udev_enumerate) return -EINVAL;
+    return 0; // No-op
+}
+int udev_enumerate_add_match_sysnum(struct udev_enumerate *udev_enumerate, const char *sysnum) {
+   if (!udev_enumerate) return -EINVAL;
+   return 0; // No-op
+}
+int udev_enumerate_add_match_devicenode(struct udev_enumerate *udev_enumerate, const char *devnode) {
+   if (!udev_enumerate) return -EINVAL;
+   return 0; // No-op
+}
+int udev_enumerate_add_syspath(struct udev_enumerate *udev_enumerate, const char *syspath) {
+   if (!udev_enumerate) return -EINVAL;
+   return 0; // No-op
+}
+int udev_enumerate_scan_children(struct udev_enumerate *udev_enumerate, struct udev_device *parent) {
+   if (!udev_enumerate || !parent) return -EINVAL;
+   // For scanning children, we would typically not find any for our virtual devices.
+   // Clear any existing scan results.
+   if (udev_enumerate->current_scan_results) {
+       free_udev_list(udev_enumerate->current_scan_results);
+       udev_enumerate->current_scan_results = NULL;
+   }
+   return 0;
+}
+
 // C-compatible helper function for adding to scan results
 static void add_syspath_to_results_list(
     struct udev_list_entry **head_ptr,
@@ -1267,4 +1322,308 @@ struct udev_list_entry *udev_device_get_tags_list_entry(struct udev_device *udev
     const char* syspath = udev_device ? udev_device_get_syspath(udev_device) : "NULL_DEVICE";
     FAKE_UDEV_LOG_INFO("STUB called for device %p (%s), returning NULL", (void*)udev_device, syspath);
     return NULL;
+}
+
+// --- udev context ---
+void udev_set_log_fn(struct udev *udev,
+                            void (*log_fn)(struct udev *udev,
+                                           int priority, const char *file, int line, const char *fn,
+                                           const char *format, va_list args)) {
+    (void)udev; (void)log_fn; // Suppress unused parameter warnings
+    FAKE_UDEV_LOG_INFO("STUB: udev_set_log_fn called.");
+    // No-op
+}
+
+int udev_get_log_priority(struct udev *udev) {
+    (void)udev;
+    FAKE_UDEV_LOG_INFO("STUB: udev_get_log_priority called, returning 0.");
+    return 0;
+}
+
+void udev_set_log_priority(struct udev *udev, int priority) {
+    (void)udev; (void)priority;
+    FAKE_UDEV_LOG_INFO("STUB: udev_set_log_priority called with priority %d.", priority);
+    // No-op
+}
+
+void *udev_get_userdata(struct udev *udev) {
+    (void)udev;
+    FAKE_UDEV_LOG_INFO("STUB: udev_get_userdata called, returning NULL.");
+    return NULL;
+}
+
+void udev_set_userdata(struct udev *udev, void *userdata) {
+    (void)udev; (void)userdata;
+    FAKE_UDEV_LOG_INFO("STUB: udev_set_userdata called.");
+    // No-op
+}
+
+// --- udev_list_entry ---
+struct udev_list_entry *udev_list_entry_get_by_name(struct udev_list_entry *list_entry, const char *name) {
+    (void)list_entry; (void)name;
+    FAKE_UDEV_LOG_INFO("STUB: udev_list_entry_get_by_name called for name '%s', returning NULL.", name ? name : "NULL");
+    // A real implementation would iterate through the list.
+    // For a simple stub, just return NULL.
+    struct udev_list_entry *current = list_entry;
+    while (current) {
+        if (current->name && name && strcmp(current->name, name) == 0) {
+            FAKE_UDEV_LOG_DEBUG("  Found match for '%s'", name);
+            return current;
+        }
+        current = current->next;
+    }
+    FAKE_UDEV_LOG_DEBUG("  No match found for '%s'", name ? name : "NULL");
+    return NULL;
+}
+
+// --- udev_device ---
+struct udev_device *udev_device_new_from_device_id(struct udev *udev, const char *id) {
+    (void)udev; (void)id;
+    FAKE_UDEV_LOG_INFO("STUB: udev_device_new_from_device_id called for id '%s', returning NULL.", id ? id : "NULL");
+    return NULL;
+}
+
+struct udev_device *udev_device_new_from_environment(struct udev *udev) {
+    (void)udev;
+    FAKE_UDEV_LOG_INFO("STUB: udev_device_new_from_environment called, returning NULL.");
+    return NULL;
+}
+
+const char *udev_device_get_sysnum(struct udev_device *udev_device) {
+    const char* syspath = udev_device ? udev_device_get_syspath(udev_device) : "NULL_DEVICE";
+    FAKE_UDEV_LOG_INFO("STUB: udev_device_get_sysnum called for device %p (%s), returning NULL.", (void*)udev_device, syspath);
+    return NULL;
+}
+
+struct udev_list_entry *udev_device_get_current_tags_list_entry(struct udev_device *udev_device) {
+    const char* syspath = udev_device ? udev_device_get_syspath(udev_device) : "NULL_DEVICE";
+    FAKE_UDEV_LOG_INFO("STUB: udev_device_get_current_tags_list_entry called for device %p (%s), returning NULL.", (void*)udev_device, syspath);
+    return NULL;
+}
+
+const char *udev_device_get_driver(struct udev_device *udev_device) {
+    const char* syspath = udev_device ? udev_device_get_syspath(udev_device) : "NULL_DEVICE";
+    FAKE_UDEV_LOG_INFO("STUB: udev_device_get_driver called for device %p (%s), returning NULL.", (void*)udev_device, syspath);
+    return NULL;
+}
+
+unsigned long long int udev_device_get_seqnum(struct udev_device *udev_device) {
+    const char* syspath = udev_device ? udev_device_get_syspath(udev_device) : "NULL_DEVICE";
+    FAKE_UDEV_LOG_INFO("STUB: udev_device_get_seqnum called for device %p (%s), returning 0.", (void*)udev_device, syspath);
+    return 0;
+}
+
+unsigned long long int udev_device_get_usec_since_initialized(struct udev_device *udev_device) {
+    const char* syspath = udev_device ? udev_device_get_syspath(udev_device) : "NULL_DEVICE";
+    FAKE_UDEV_LOG_INFO("STUB: udev_device_get_usec_since_initialized called for device %p (%s), returning 0.", (void*)udev_device, syspath);
+    return 0;
+}
+
+int udev_device_set_sysattr_value(struct udev_device *udev_device, const char *sysattr, const char *value) {
+    const char* dev_syspath = udev_device ? udev_device_get_syspath(udev_device) : "NULL_DEVICE";
+    FAKE_UDEV_LOG_INFO("STUB: udev_device_set_sysattr_value called for device %p (%s), sysattr '%s', value '%s'. Returning 0 (success).",
+                  (void*)udev_device, dev_syspath, sysattr ? sysattr : "NULL", value ? value : "NULL");
+    return 0; // Indicate success, though it's a no-op
+}
+
+int udev_device_has_tag(struct udev_device *udev_device, const char *tag) {
+    const char* syspath = udev_device ? udev_device_get_syspath(udev_device) : "NULL_DEVICE";
+    FAKE_UDEV_LOG_INFO("STUB: udev_device_has_tag called for device %p (%s), tag '%s'. Returning 0 (false).",
+                  (void*)udev_device, syspath, tag ? tag : "NULL");
+    return 0;
+}
+
+int udev_device_has_current_tag(struct udev_device *udev_device, const char *tag) {
+    const char* syspath = udev_device ? udev_device_get_syspath(udev_device) : "NULL_DEVICE";
+    FAKE_UDEV_LOG_INFO("STUB: udev_device_has_current_tag called for device %p (%s), tag '%s'. Returning 0 (false).",
+                  (void*)udev_device, syspath, tag ? tag : "NULL");
+    return 0;
+}
+
+// --- udev_monitor ---
+struct udev *udev_monitor_get_udev(struct udev_monitor *udev_monitor) {
+    FAKE_UDEV_LOG_INFO("STUB: udev_monitor_get_udev called for monitor %p.", (void*)udev_monitor);
+    if (!udev_monitor) return NULL;
+    return udev_monitor->udev_ctx; // Assuming udev_monitor struct has udev_ctx
+}
+
+int udev_monitor_set_receive_buffer_size(struct udev_monitor *udev_monitor, int size) {
+    (void)udev_monitor; (void)size;
+    FAKE_UDEV_LOG_INFO("STUB: udev_monitor_set_receive_buffer_size called for monitor %p, size %d. Returning 0.", (void*)udev_monitor, size);
+    return 0;
+}
+
+int udev_monitor_filter_add_match_tag(struct udev_monitor *udev_monitor, const char *tag) {
+    (void)udev_monitor; (void)tag;
+    FAKE_UDEV_LOG_INFO("STUB: udev_monitor_filter_add_match_tag called for monitor %p, tag '%s'. Returning 0.",
+                  (void*)udev_monitor, tag ? tag : "NULL");
+    return 0;
+}
+
+int udev_monitor_filter_update(struct udev_monitor *udev_monitor) {
+    (void)udev_monitor;
+    FAKE_UDEV_LOG_INFO("STUB: udev_monitor_filter_update called for monitor %p. Returning 0.", (void*)udev_monitor);
+    return 0;
+}
+
+int udev_monitor_filter_remove(struct udev_monitor *udev_monitor) {
+    (void)udev_monitor;
+    FAKE_UDEV_LOG_INFO("STUB: udev_monitor_filter_remove called for monitor %p. Returning 0.", (void*)udev_monitor);
+    return 0;
+}
+
+// --- udev_enumerate ---
+struct udev *udev_enumerate_get_udev(struct udev_enumerate *udev_enumerate) {
+    FAKE_UDEV_LOG_INFO("STUB: udev_enumerate_get_udev called for enumerate %p.", (void*)udev_enumerate);
+    if (!udev_enumerate) return NULL;
+    return udev_enumerate->udev_ctx; // Assuming udev_enumerate struct has udev_ctx
+}
+
+int udev_enumerate_add_nomatch_subsystem(struct udev_enumerate *udev_enumerate, const char *subsystem) {
+    (void)udev_enumerate; (void)subsystem;
+    FAKE_UDEV_LOG_INFO("STUB: udev_enumerate_add_nomatch_subsystem called for enumerate %p, subsystem '%s'. Returning 0.",
+                  (void*)udev_enumerate, subsystem ? subsystem : "NULL");
+    // This would typically invert the logic of add_match_subsystem or add to a separate list.
+    // For a simple stub, just return 0.
+    return 0;
+}
+
+int udev_enumerate_scan_subsystems(struct udev_enumerate *udev_enumerate) {
+    (void)udev_enumerate;
+    FAKE_UDEV_LOG_INFO("STUB: udev_enumerate_scan_subsystems called for enumerate %p. Returning 0.", (void*)udev_enumerate);
+    // This would scan for subsystems and populate current_scan_results with subsystem names.
+    // For a simple stub, clear existing results and return 0.
+    if (udev_enumerate && udev_enumerate->current_scan_results) {
+        free_udev_list(udev_enumerate->current_scan_results);
+        udev_enumerate->current_scan_results = NULL;
+    }
+    return 0;
+}
+
+// --- udev_queue ---
+// (Need to define struct udev_queue if not already done, e.g., in libudev.h or locally if opaque)
+// Assuming struct udev_queue is defined similarly to udev_monitor or udev_enumerate for ref counting
+struct udev_queue {
+    struct udev *udev_ctx;
+    int n_ref;
+    // Add other necessary fields if any specific logic is ever implemented
+};
+
+
+struct udev_queue *udev_queue_new(struct udev *udev) {
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_new called for udev_ctx %p.", (void*)udev);
+    if (!udev) return NULL;
+    struct udev_queue *q = (struct udev_queue *)calloc(1, sizeof(struct udev_queue));
+    if (!q) {
+        FAKE_UDEV_LOG_ERROR("calloc failed for udev_queue");
+        return NULL;
+    }
+    q->udev_ctx = udev_ref(udev);
+    if (!q->udev_ctx) {
+        FAKE_UDEV_LOG_ERROR("udev_ref failed for udev_queue context");
+        free(q);
+        return NULL;
+    }
+    q->n_ref = 1;
+    FAKE_UDEV_LOG_DEBUG("  Created udev_queue %p", (void*)q);
+    return q;
+}
+
+struct udev_queue *udev_queue_ref(struct udev_queue *udev_queue) {
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_ref called for queue %p.", (void*)udev_queue);
+    if (!udev_queue) return NULL;
+    udev_queue->n_ref++;
+    FAKE_UDEV_LOG_DEBUG("  udev_queue %p new ref_count %d", (void*)udev_queue, udev_queue->n_ref);
+    return udev_queue;
+}
+
+struct udev_queue *udev_queue_unref(struct udev_queue *udev_queue) {
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_unref called for queue %p.", (void*)udev_queue);
+    if (!udev_queue) return NULL;
+    udev_queue->n_ref--;
+    FAKE_UDEV_LOG_DEBUG("  udev_queue %p new ref_count %d", (void*)udev_queue, udev_queue->n_ref);
+    if (udev_queue->n_ref <= 0) {
+        FAKE_UDEV_LOG_DEBUG("  Freeing udev_queue %p", (void*)udev_queue);
+        udev_unref(udev_queue->udev_ctx);
+        free(udev_queue);
+        return NULL;
+    }
+    return udev_queue;
+}
+
+struct udev *udev_queue_get_udev(struct udev_queue *udev_queue) {
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_get_udev called for queue %p.", (void*)udev_queue);
+    if (!udev_queue) return NULL;
+    return udev_queue->udev_ctx;
+}
+
+unsigned long long int udev_queue_get_kernel_seqnum(struct udev_queue *udev_queue) {
+    (void)udev_queue;
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_get_kernel_seqnum called for queue %p, returning 0.", (void*)udev_queue);
+    return 0;
+}
+
+unsigned long long int udev_queue_get_udev_seqnum(struct udev_queue *udev_queue) {
+    (void)udev_queue;
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_get_udev_seqnum called for queue %p, returning 0.", (void*)udev_queue);
+    return 0;
+}
+
+int udev_queue_get_udev_is_active(struct udev_queue *udev_queue) {
+    (void)udev_queue;
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_get_udev_is_active called for queue %p, returning 0 (false).", (void*)udev_queue);
+    return 0;
+}
+
+int udev_queue_get_queue_is_empty(struct udev_queue *udev_queue) {
+    (void)udev_queue;
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_get_queue_is_empty called for queue %p, returning 1 (true).", (void*)udev_queue);
+    return 1; // Typically means empty
+}
+
+int udev_queue_get_seqnum_is_finished(struct udev_queue *udev_queue, unsigned long long int seqnum) {
+    (void)udev_queue; (void)seqnum;
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_get_seqnum_is_finished called for queue %p, seqnum %llu, returning 1 (true).", (void*)udev_queue, seqnum);
+    return 1; // Typically means finished
+}
+
+int udev_queue_get_seqnum_sequence_is_finished(struct udev_queue *udev_queue,
+                                               unsigned long long int start, unsigned long long int end) {
+    (void)udev_queue; (void)start; (void)end;
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_get_seqnum_sequence_is_finished called for queue %p, start %llu, end %llu, returning 1 (true).",
+                  (void*)udev_queue, start, end);
+    return 1; // Typically means finished
+}
+
+int udev_queue_get_fd(struct udev_queue *udev_queue) {
+    (void)udev_queue;
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_get_fd called for queue %p, returning -1.", (void*)udev_queue);
+    return -1; // No valid fd for a stub
+}
+
+int udev_queue_flush(struct udev_queue *udev_queue) {
+    (void)udev_queue;
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_flush called for queue %p, returning 0.", (void*)udev_queue);
+    return 0;
+}
+
+struct udev_list_entry *udev_queue_get_queued_list_entry(struct udev_queue *udev_queue) {
+    (void)udev_queue;
+    FAKE_UDEV_LOG_INFO("STUB: udev_queue_get_queued_list_entry called for queue %p, returning NULL.", (void*)udev_queue);
+    return NULL;
+}
+
+// --- udev_util ---
+int udev_util_encode_string(const char *str, char *str_enc, size_t len) {
+    FAKE_UDEV_LOG_INFO("STUB: udev_util_encode_string called for str '%s', len %zu.", str ? str : "NULL", len);
+    if (!str || !str_enc || len == 0) return 0; // Or -EINVAL
+    // Simple passthrough, not actual encoding. Ensure null termination if space.
+    size_t copy_len = strlen(str);
+    if (copy_len >= len) {
+        copy_len = len - 1;
+    }
+    memcpy(str_enc, str, copy_len);
+    str_enc[copy_len] = '\0';
+    FAKE_UDEV_LOG_DEBUG("  Copied '%s' to encoded string.", str_enc);
+    return (int)copy_len; // Return number of bytes written (excluding null)
 }
