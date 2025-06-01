@@ -1347,10 +1347,15 @@ function receiveMessage(event) {
       const newClipboardText = message.text;
       if (websocket && websocket.readyState === WebSocket.OPEN) {
         try {
-          const encodedText = btoa(newClipboardText);
+          const utf8Bytes = new TextEncoder().encode(newClipboardText);
+          let binaryString = '';
+          for (let i = 0; i < utf8Bytes.length; i++) {
+            binaryString += String.fromCharCode(utf8Bytes[i]);
+          }
+          const encodedText = btoa(binaryString);
           const clipboardMessage = `cw,${encodedText}`;
           websocket.send(clipboardMessage);
-          console.log(`Sent clipboard update from UI to server: cw,...`);
+          console.log(`Sent clipboard update from UI to server (UTF-8 Base64): cw,...`);
         } catch (e) {
           console.error('Failed to encode or send clipboard text from UI:', e);
         }
@@ -1836,9 +1841,15 @@ document.addEventListener('DOMContentLoaded', () => {
     navigator.clipboard
       .readText()
       .then((text) => {
-        const encodedText = btoa(text);
+        const utf8Bytes = new TextEncoder().encode(text);
+        let binaryString = '';
+        for (let i = 0; i < utf8Bytes.length; i++) {
+          binaryString += String.fromCharCode(utf8Bytes[i]);
+        }
+        const encodedText = btoa(binaryString);
         if (websocket && websocket.readyState === WebSocket.OPEN) {
           websocket.send(`cw,${encodedText}`); // Clipboard write
+          console.log("Sent clipboard on focus (UTF-8 Base64)");
         }
       })
       .catch((err) => {
