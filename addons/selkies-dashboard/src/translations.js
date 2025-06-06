@@ -104,8 +104,11 @@ const en = {
         },
         apps: {
           title: "Apps",
-          openButtonTitle: "Manage Apps", // Tooltip for the button
-          openButton: "Manage Apps"      // Text on the button
+          openButtonTitle: "Manage Apps",
+          openButton: "Manage Apps"
+        },
+        sharing: {
+            title: "Sharing"
         }
     },
     resolutionPresets: {
@@ -120,7 +123,7 @@ const en = {
         "640x480": "640 x 480 (VGA 4:3)",
         "320x240": "320 x 240 (QVGA 4:3)",
     },
-    appsModal: { // New section for "AppsModal"
+    appsModal: { 
         closeAlt: "Close apps modal",
         loading: "Loading apps...",
         errorLoading: "Failed to load app data. Please try again.",
@@ -142,6 +145,10 @@ const en = {
         uploadFailed: "Upload Failed",
         errorPrefix: "Error:",
         unknownError: "An unknown error occurred.",
+        copiedTitle: "Copied: {label}",
+        copiedMessage: "Link copied to clipboard: {textToCopy}",
+        copyFailedTitle: "Copy Failed: {label}",
+        copyFailedError: "Could not copy link to clipboard.",
     },
     alerts: {
         invalidResolution: "Please enter valid positive integers for Width and Height.",
@@ -251,6 +258,9 @@ const es = {
           title: "Aplicaciones",
           openButtonTitle: "Gestionar Aplicaciones",
           openButton: "Gestionar Aplicaciones"
+        },
+        sharing: {
+            title: "Compartir"
         }
     },
     resolutionPresets: {
@@ -287,6 +297,10 @@ const es = {
         uploadFailed: "Subida Fallida",
         errorPrefix: "Error:",
         unknownError: "Ocurrió un error desconocido.",
+        copiedTitle: "Copiado: {label}",
+        copiedMessage: "Enlace copiado al portapapeles: {textToCopy}",
+        copyFailedTitle: "Error al Copiar: {label}",
+        copyFailedError: "No se pudo copiar el enlace al portapapeles.",
     },
     alerts: {
         invalidResolution: "Por favor, introduzca números enteros positivos válidos para Ancho y Alto.",
@@ -396,6 +410,9 @@ const zh = {
           title: "应用程序",
           openButtonTitle: "管理应用程序",
           openButton: "管理应用程序"
+        },
+        sharing: {
+            title: "共享"
         }
     },
     resolutionPresets: {
@@ -432,6 +449,10 @@ const zh = {
         uploadFailed: "上传失败",
         errorPrefix: "错误:",
         unknownError: "发生未知错误。",
+        copiedTitle: "已复制: {label}",
+        copiedMessage: "链接已复制到剪贴板: {textToCopy}",
+        copyFailedTitle: "复制失败: {label}",
+        copyFailedError: "无法将链接复制到剪贴板。",
     },
     alerts: {
         invalidResolution: "请输入有效的正整数作为宽度和高度。",
@@ -541,6 +562,9 @@ const hi = {
           title: "ऐप्स",
           openButtonTitle: "ऐप्स प्रबंधित करें",
           openButton: "ऐप्स प्रबंधित करें"
+        },
+        sharing: {
+            title: "साझा करना"
         }
     },
     resolutionPresets: {
@@ -577,6 +601,10 @@ const hi = {
         uploadFailed: "अपलोड विफल",
         errorPrefix: "त्रुटि:",
         unknownError: "एक अज्ञात त्रुटि हुई।",
+        copiedTitle: "कॉपी किया गया: {label}",
+        copiedMessage: "लिंक क्लिपबोर्ड पर कॉपी किया गया: {textToCopy}",
+        copyFailedTitle: "कॉपी करने में विफल: {label}",
+        copyFailedError: "लिंक क्लिपबोर्ड पर कॉपी नहीं किया जा सका।",
     },
     alerts: {
         invalidResolution: "कृपया चौड़ाई और ऊंचाई के लिए मान्य धनात्मक पूर्णांक दर्ज करें।",
@@ -686,6 +714,9 @@ const pt = {
           title: "Aplicativos",
           openButtonTitle: "Gerenciar Aplicativos",
           openButton: "Gerenciar Aplicativos"
+        },
+        sharing: {
+            title: "Compartilhamento"
         }
     },
     resolutionPresets: {
@@ -722,6 +753,10 @@ const pt = {
         uploadFailed: "Falha no Carregamento",
         errorPrefix: "Erro:",
         unknownError: "Ocorreu um erro desconhecido.",
+        copiedTitle: "Copiado: {label}",
+        copiedMessage: "Link copiado para a área de transferência: {textToCopy}",
+        copyFailedTitle: "Falha ao Copiar: {label}",
+        copyFailedError: "Não foi possível copiar o link para a área de transferência.",
     },
     alerts: {
         invalidResolution: "Por favor, insira inteiros positivos válidos para Largura e Altura.",
@@ -831,6 +866,9 @@ const fr = {
           title: "Applications",
           openButtonTitle: "Gérer les applications",
           openButton: "Gérer les applications"
+        },
+        sharing: {
+            title: "Partage"
         }
     },
     resolutionPresets: {
@@ -867,6 +905,10 @@ const fr = {
         uploadFailed: "Échec du téléversement",
         errorPrefix: "Erreur :",
         unknownError: "Une erreur inconnue s'est produite.",
+        copiedTitle: "Copié : {label}",
+        copiedMessage: "Lien copié dans le presse-papiers : {textToCopy}",
+        copyFailedTitle: "Échec de la copie : {label}",
+        copyFailedError: "Impossible de copier le lien dans le presse-papiers.",
     },
     alerts: {
         invalidResolution: "Veuillez entrer des entiers positifs valides pour la Largeur et la Hauteur.",
@@ -976,6 +1018,9 @@ const ru = {
           title: "Приложения",
           openButtonTitle: "Управление приложениями",
           openButton: "Управление приложениями"
+        },
+        sharing: {
+            title: "Общий доступ"
         }
     },
     resolutionPresets: {
@@ -1012,6 +1057,10 @@ const ru = {
         uploadFailed: "Ошибка загрузки",
         errorPrefix: "Ошибка:",
         unknownError: "Произошла неизвестная ошибка.",
+        copiedTitle: "Скопировано: {label}",
+        copiedMessage: "Ссылка скопирована в буфер обмена: {textToCopy}",
+        copyFailedTitle: "Ошибка копирования: {label}",
+        copyFailedError: "Не удалось скопировать ссылку в буфер обмена.",
     },
     alerts: {
         invalidResolution: "Пожалуйста, введите действительные положительные целые числа для Ширины и Высоты.",
@@ -1121,6 +1170,9 @@ const de = {
           title: "Anwendungen",
           openButtonTitle: "Anwendungen verwalten",
           openButton: "Anwendungen verwalten"
+        },
+        sharing: {
+            title: "Teilen"
         }
     },
     resolutionPresets: {
@@ -1157,6 +1209,10 @@ const de = {
         uploadFailed: "Hochladen fehlgeschlagen",
         errorPrefix: "Fehler:",
         unknownError: "Ein unbekannter Fehler ist aufgetreten.",
+        copiedTitle: "Kopiert: {label}",
+        copiedMessage: "Link in die Zwischenablage kopiert: {textToCopy}",
+        copyFailedTitle: "Kopieren fehlgeschlagen: {label}",
+        copyFailedError: "Link konnte nicht in die Zwischenablage kopiert werden.",
     },
     alerts: {
         invalidResolution: "Bitte geben Sie gültige positive ganze Zahlen für Breite und Höhe ein.",
@@ -1266,6 +1322,9 @@ const tr = {
           title: "Uygulamalar",
           openButtonTitle: "Uygulamaları Yönet",
           openButton: "Uygulamaları Yönet"
+        },
+        sharing: {
+            title: "Paylaşım"
         }
     },
     resolutionPresets: {
@@ -1302,6 +1361,10 @@ const tr = {
         uploadFailed: "Yükleme Başarısız Oldu",
         errorPrefix: "Hata:",
         unknownError: "Bilinmeyen bir hata oluştu.",
+        copiedTitle: "Kopyalandı: {label}",
+        copiedMessage: "Bağlantı panoya kopyalandı: {textToCopy}",
+        copyFailedTitle: "Kopyalama Başarısız: {label}",
+        copyFailedError: "Bağlantı panoya kopyalanamadı.",
     },
     alerts: {
         invalidResolution: "Lütfen Genişlik ve Yükseklik için geçerli pozitif tam sayılar girin.",
@@ -1411,6 +1474,9 @@ const it = {
           title: "Applicazioni",
           openButtonTitle: "Gestisci Applicazioni",
           openButton: "Gestisci Applicazioni"
+        },
+        sharing: {
+            title: "Condivisione"
         }
     },
     resolutionPresets: {
@@ -1447,6 +1513,10 @@ const it = {
         uploadFailed: "Caricamento Fallito",
         errorPrefix: "Errore:",
         unknownError: "Si è verificato un errore sconosciuto.",
+        copiedTitle: "Copiato: {label}",
+        copiedMessage: "Link copiato negli appunti: {textToCopy}",
+        copyFailedTitle: "Copia Fallita: {label}",
+        copyFailedError: "Impossibile copiare il link negli appunti.",
     },
     alerts: {
         invalidResolution: "Inserisci numeri interi positivi validi per Larghezza e Altezza.",
@@ -1556,6 +1626,9 @@ const nl = {
           title: "Applicaties",
           openButtonTitle: "Applicaties beheren",
           openButton: "Applicaties beheren"
+        },
+        sharing: {
+            title: "Delen"
         }
     },
     resolutionPresets: {
@@ -1592,6 +1665,10 @@ const nl = {
         uploadFailed: "Upload Mislukt",
         errorPrefix: "Fout:",
         unknownError: "Er is een onbekende fout opgetreden.",
+        copiedTitle: "Gekopieerd: {label}",
+        copiedMessage: "Link gekopieerd naar klembord: {textToCopy}",
+        copyFailedTitle: "Kopiëren Mislukt: {label}",
+        copyFailedError: "Kon link niet naar klembord kopiëren.",
     },
     alerts: {
         invalidResolution: "Voer geldige positieve gehele getallen in voor Breedte en Hoogte.",
@@ -1701,6 +1778,9 @@ const ar = {
           title: "التطبيقات",
           openButtonTitle: "إدارة التطبيقات",
           openButton: "إدارة التطبيقات"
+        },
+        sharing: {
+            title: "المشاركة"
         }
     },
     resolutionPresets: {
@@ -1737,6 +1817,10 @@ const ar = {
         uploadFailed: "فشل التحميل",
         errorPrefix: "خطأ:",
         unknownError: "حدث خطأ غير معروف.",
+        copiedTitle: "تم النسخ: {label}",
+        copiedMessage: "تم نسخ الرابط إلى الحافظة: {textToCopy}",
+        copyFailedTitle: "فشل النسخ: {label}",
+        copyFailedError: "تعذر نسخ الرابط إلى الحافظة.",
     },
     alerts: {
         invalidResolution: "الرجاء إدخال أعداد صحيحة موجبة صالحة للعرض والارتفاع.",
@@ -1846,6 +1930,9 @@ const ko = {
           title: "앱",
           openButtonTitle: "앱 관리",
           openButton: "앱 관리"
+        },
+        sharing: {
+            title: "공유"
         }
     },
     resolutionPresets: {
@@ -1882,6 +1969,10 @@ const ko = {
         uploadFailed: "업로드 실패",
         errorPrefix: "오류:",
         unknownError: "알 수 없는 오류가 발생했습니다.",
+        copiedTitle: "복사됨: {label}",
+        copiedMessage: "링크가 클립보드에 복사되었습니다: {textToCopy}",
+        copyFailedTitle: "복사 실패: {label}",
+        copyFailedError: "링크를 클립보드에 복사할 수 없습니다.",
     },
     alerts: {
         invalidResolution: "너비와 높이에 유효한 양의 정수를 입력하십시오.",
@@ -1991,6 +2082,9 @@ const ja = {
           title: "アプリ",
           openButtonTitle: "アプリを管理",
           openButton: "アプリを管理"
+        },
+        sharing: {
+            title: "共有"
         }
     },
     resolutionPresets: {
@@ -2027,6 +2121,10 @@ const ja = {
         uploadFailed: "アップロード失敗",
         errorPrefix: "エラー:",
         unknownError: "不明なエラーが発生しました。",
+        copiedTitle: "コピーしました: {label}",
+        copiedMessage: "リンクをクリップボードにコピーしました: {textToCopy}",
+        copyFailedTitle: "コピーに失敗しました: {label}",
+        copyFailedError: "リンクをクリップボードにコピーできませんでした。",
     },
     alerts: {
         invalidResolution: "幅と高さに有効な正の整数を入力してください。",
@@ -2136,6 +2234,9 @@ const vi = {
           title: "Ứng dụng",
           openButtonTitle: "Quản lý Ứng dụng",
           openButton: "Quản lý Ứng dụng"
+        },
+        sharing: {
+            title: "Chia sẻ"
         }
     },
     resolutionPresets: {
@@ -2172,6 +2273,10 @@ const vi = {
         uploadFailed: "Tải lên Thất bại",
         errorPrefix: "Lỗi:",
         unknownError: "Đã xảy ra lỗi không xác định.",
+        copiedTitle: "Đã sao chép: {label}",
+        copiedMessage: "Đã sao chép liên kết vào bộ nhớ tạm: {textToCopy}",
+        copyFailedTitle: "Sao chép Thất bại: {label}",
+        copyFailedError: "Không thể sao chép liên kết vào bộ nhớ tạm.",
     },
     alerts: {
         invalidResolution: "Vui lòng nhập số nguyên dương hợp lệ cho Chiều rộng và Chiều cao.",
@@ -2281,6 +2386,9 @@ const th = {
           title: "แอป",
           openButtonTitle: "จัดการแอป",
           openButton: "จัดการแอป"
+        },
+        sharing: {
+            title: "การแชร์"
         }
     },
     resolutionPresets: {
@@ -2317,6 +2425,10 @@ const th = {
         uploadFailed: "การอัปโหลดล้มเหลว",
         errorPrefix: "ข้อผิดพลาด:",
         unknownError: "เกิดข้อผิดพลาดที่ไม่รู้จัก",
+        copiedTitle: "คัดลอกแล้ว: {label}",
+        copiedMessage: "คัดลอกลิงก์ไปยังคลิปบอร์ดแล้ว: {textToCopy}",
+        copyFailedTitle: "การคัดลอกล้มเหลว: {label}",
+        copyFailedError: "ไม่สามารถคัดลอกลิงก์ไปยังคลิปบอร์ดได้",
     },
     alerts: {
         invalidResolution: "โปรดป้อนจำนวนเต็มบวกที่ถูกต้องสำหรับความกว้างและความสูง",
@@ -2426,6 +2538,9 @@ const fil = {
           title: "Mga App",
           openButtonTitle: "Pamahalaan ang mga App",
           openButton: "Pamahalaan ang mga App"
+        },
+        sharing: {
+            title: "Pagbabahagi"
         }
     },
     resolutionPresets: {
@@ -2462,6 +2577,10 @@ const fil = {
         uploadFailed: "Nabigo ang Pag-upload",
         errorPrefix: "Error:",
         unknownError: "May naganap na hindi kilalang error.",
+        copiedTitle: "Kinopya: {label}",
+        copiedMessage: "Nakopya ang link sa clipboard: {textToCopy}",
+        copyFailedTitle: "Nabigo ang Pagkopya: {label}",
+        copyFailedError: "Hindi makopya ang link sa clipboard.",
     },
     alerts: {
         invalidResolution: "Mangyaring maglagay ng mga wastong positibong integer para sa Lapad at Taas.",
@@ -2571,6 +2690,9 @@ const da = {
           title: "Apps",
           openButtonTitle: "Administrer Apps",
           openButton: "Administrer Apps"
+        },
+        sharing: {
+            title: "Deling"
         }
     },
     resolutionPresets: {
@@ -2607,6 +2729,10 @@ const da = {
         uploadFailed: "Upload Mislykkedes",
         errorPrefix: "Fejl:",
         unknownError: "Der opstod en ukendt fejl.",
+        copiedTitle: "Kopieret: {label}",
+        copiedMessage: "Link kopieret til udklipsholder: {textToCopy}",
+        copyFailedTitle: "Kopiering Mislykkedes: {label}",
+        copyFailedError: "Kunne ikke kopiere link til udklipsholder.",
     },
     alerts: {
         invalidResolution: "Indtast venligst gyldige positive heltal for Bredde og Højde.",

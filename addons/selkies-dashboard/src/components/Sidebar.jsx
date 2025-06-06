@@ -110,6 +110,11 @@ function debounce(func, delay) {
 }
 
 // --- Icons ---
+const CopyIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style={{ display: 'block' }}>
+    <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+  </svg>
+);
 const GamingModeIcon = () => (
   <svg viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none" width="18" height="18">
     <circle cx="12" cy="12" r="1.5" fill="currentColor" />
@@ -595,6 +600,7 @@ function Sidebar({ isOpen }) {
     gamepads: false,
     files: false,
     apps: false,
+    sharing: false,
   });
   const [notifications, setNotifications] = useState([]);
   const notificationTimeouts = useRef({});
@@ -740,7 +746,72 @@ function Sidebar({ isOpen }) {
     },
     [sectionsOpen, populateAudioDevices]
   );
-
+  const baseUrl = typeof window !== 'undefined' ? window.location.href.split('#')[0] : '';
+  const sharingLinks = [
+    {
+      id: "shared",
+      label: "Read only viewer",
+      tooltip: "Read only client for viewing, as many clients as needed can connect to this endpoint and see the live session",
+      hash: "#shared",
+    },
+    {
+      id: "player2",
+      label: "Controller 2",
+      tooltip: "Player 2 gamepad input, this endpoint has full control over the player 2 gamepad",
+      hash: "#player2",
+    },
+    {
+      id: "player3",
+      label: "Controller 3",
+      tooltip: "Player 3 gamepad input, this endpoint has full control over the player 3 gamepad",
+      hash: "#player3",
+    },
+    {
+      id: "player4",
+      label: "Controller 4",
+      tooltip: "Player 4 gamepad input, this endpoint has full control over the player 4 gamepad",
+      hash: "#player4",
+    },
+  ];
+  const handleCopyLink = async (textToCopy, label) => {
+    if (!navigator.clipboard) {
+      console.warn("Clipboard API not available.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      const id = `copy-success-${label.toLowerCase().replace(/\s+/g, '-')}`;
+      setNotifications(prev => {
+        const filtered = prev.filter(n => n.id !== id);
+        const newNotifs = [...filtered, {
+          id,
+          fileName: t("notifications.copiedTitle", { label: label }),
+          status: 'end',
+          message: t("notifications.copiedMessage", { textToCopy: textToCopy }),
+          timestamp: Date.now(),
+          fadingOut: false,
+        }];
+        return newNotifs.slice(-MAX_NOTIFICATIONS);
+      });
+      scheduleNotificationRemoval(id, NOTIFICATION_TIMEOUT_SUCCESS);
+    } catch (err) {
+      console.error("Failed to copy link: ", err);
+      const id = `copy-error-${label.toLowerCase().replace(/\s+/g, '-')}`;
+      setNotifications(prev => {
+        const filtered = prev.filter(n => n.id !== id);
+        const newNotifs = [...filtered, {
+          id,
+          fileName: t("notifications.copyFailedTitle", { label: label }),
+          status: 'error',
+          message: t('notifications.copyFailedError'),
+          timestamp: Date.now(),
+          fadingOut: false,
+        }];
+        return newNotifs.slice(-MAX_NOTIFICATIONS);
+      });
+      scheduleNotificationRemoval(id, NOTIFICATION_TIMEOUT_ERROR);
+    }
+  };
   const handleEncoderChange = (event) => {
     const selectedEncoder = event.target.value;
     setEncoder(selectedEncoder);
@@ -2330,6 +2401,55 @@ function Sidebar({ isOpen }) {
           )}
         </div>
 
+        <div className="sidebar-section">
+          <div
+            className="sidebar-section-header"
+            onClick={() => toggleSection("sharing")}
+            role="button"
+            aria-expanded={sectionsOpen.sharing}
+            aria-controls="sharing-content"
+            tabIndex="0"
+            onKeyDown={(e) =>
+              (e.key === "Enter" || e.key === " ") && toggleSection("sharing")
+            }
+          >
+            <h3>{t("sections.sharing.title", "Sharing")}</h3>
+            <span className="section-toggle-icon">
+              {sectionsOpen.sharing ? <CaretUpIcon /> : <CaretDownIcon />}
+            </span>
+          </div>
+          {sectionsOpen.sharing && (
+            <div className="sidebar-section-content" id="sharing-content">
+              {sharingLinks.map(link => {
+                const fullUrl = `${baseUrl}${link.hash}`;
+                return (
+                  <div key={link.id} className="sharing-link-item" title={link.tooltip}>
+                    <span className="sharing-link-label">{link.label}</span>
+                    <div className="sharing-link-actions">
+                      <a
+                        href={fullUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="sharing-link"
+                        title={`Open ${link.label} link in new tab`}
+                      >
+                        {fullUrl}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyLink(fullUrl, link.label)}
+                        className="copy-button"
+                        title={`Copy ${link.label} link`}
+                      >
+                        <CopyIcon />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
         {
           <div className="sidebar-section">
             <div
@@ -2485,7 +2605,7 @@ function Sidebar({ isOpen }) {
                 <>
                   {" "}
                   <span className="notification-status-text">
-                    {t("notifications.uploadComplete")}
+                    {n.message ? n.message : t("notifications.uploadComplete")}
                   </span>{" "}
                   <div className="notification-progress-bar-outer">
                     <div

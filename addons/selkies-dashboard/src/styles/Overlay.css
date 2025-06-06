@@ -1419,3 +1419,80 @@ a:active {
 .apps-modal-loading svg {
     stroke: var(--sidebar-header-color);
 }
+
+/* Styles for the main container of an individual sharing link. */
+.sharing-link-item {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--item-border);
+    gap: 5px;
+}
+
+/* Adjusts the last sharing link item to remove its bottom border and padding. */
+.sharing-link-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+/* Removes top padding for the first sharing link item when it's inside a sidebar section's content. */
+.sidebar-section-content > .sharing-link-item:first-child {
+    padding-top: 0;
+}
+
+/* Styles the label text associated with a sharing link. */
+.sharing-link-label {
+    font-weight: bold;
+    font-size: 0.9em;
+    color: var(--sidebar-text);
+}
+
+/* Container for action elements, like buttons, related to a sharing link. */
+.sharing-link-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+/* Styles the clickable sharing link URL text. */
+.sharing-link {
+    color: var(--sidebar-header-color);
+    text-decoration: none;
+    font-size: 0.85em;
+    word-break: break-all;
+    flex-grow: 1;
+    margin-right: 5px;
+}
+
+/* Adds an underline to the sharing link on hover. */
+.sharing-link:hover {
+    text-decoration: underline;
+}
+
+/* Styles for the button used to copy the sharing link. */
+.copy-button {
+    background: none;
+    border: 1px solid var(--item-border);
+    color: var(--sidebar-text);
+    padding: 5px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* Hover state for the copy button, changing background, border, and text/icon color. */
+.copy-button:hover {
+    background-color: var(--input-bg);
+    border-color: var(--sidebar-header-color);
+    color: var(--sidebar-header-color);
+}
+
+/* Ensures SVG icons inside the copy button inherit the button's current text color. */
+.copy-button svg {
+    fill: currentColor;
+}
