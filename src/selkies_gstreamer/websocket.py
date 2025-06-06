@@ -1632,45 +1632,66 @@ class DataStreamingServer:
 
     async def _start_x264_striped_pipeline(self):
         if not X11_CAPTURE_AVAILABLE:
+            data_logger.error("Cannot start x264-striped: pixelflux library not available.") # Added log
             return False
         if self.is_x264_striped_capturing:
+            data_logger.info("x264-striped pipeline is already capturing.") # Added log
             return True
         if not self.app:
+            data_logger.error("Cannot start x264-striped: self.app (GSTStreamingApp instance) is not available.") # Added log
             return False
+        
         self.jpeg_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
         if not self.jpeg_capture_loop:
+            data_logger.error("Cannot start x264-striped: asyncio event loop not found for executor.") # Added log
             return False
 
         width = getattr(self.app, "display_width", 1024)
         height = getattr(self.app, "display_height", 768)
         fps = float(getattr(self.app, "framerate", TARGET_FRAMERATE))
-        crf = self.h264_crf
+        
+        crf = self.h264_crf 
 
         data_logger.info(
             f"Starting x264-striped: {width}x{height} @ {fps}fps, CRF: {crf}"
         )
         try:
             cs = CaptureSettings()
-            (
-                cs.capture_width,
-                cs.capture_height,
-                cs.target_fps,
-                cs.output_mode,
-                cs.h264_crf,
-            ) = (width, height, fps, 1, crf)
+            cs.capture_width = width
+            cs.capture_height = height
+            cs.target_fps = fps
+            cs.output_mode = 1
+            cs.h264_crf = crf
+
+            cs.use_paint_over_quality = True
+            cs.paint_over_trigger_frames = 2
+            cs.damage_block_threshold = 15
+            cs.damage_block_duration = 30
+            
+            cs.capture_x = 0
+            cs.capture_y = 0
+
+            data_logger.debug(f"x264-striped CaptureSettings: w={cs.capture_width}, h={cs.capture_height}, fps={cs.target_fps}, "
+                              f"crf={cs.h264_crf}, use_paint_over={cs.use_paint_over_quality}, "
+                              f"trigger_frames={cs.paint_over_trigger_frames}, "
+                              f"dmg_thresh={cs.damage_block_threshold}, dmg_dur={cs.damage_block_duration}")
+
             cb = StripeCallback(self._x264_striped_stripe_callback)
+            
+            # Ensure module is fresh if it existed
+            if self.x264_striped_capture_module:
+                del self.x264_striped_capture_module
             self.x264_striped_capture_module = ScreenCapture()
+            
             await self.jpeg_capture_loop.run_in_executor(
                 None, self.x264_striped_capture_module.start_capture, cs, cb
             )
             self.is_x264_striped_capturing = True
             await self._start_backpressure_task_if_needed()
+            data_logger.info("x264-striped capture started successfully.")
             return True
         except Exception as e:
             data_logger.error(f"Failed to start x264-striped: {e}", exc_info=True)
-            await self._send_error_to_client(
-                f"Error starting x264-striped: {str(e)[:50]}"
-            )
             self.is_x264_striped_capturing = False
             if self.x264_striped_capture_module:
                 del self.x264_striped_capture_module
