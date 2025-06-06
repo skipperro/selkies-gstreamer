@@ -20,29 +20,16 @@
 #   limitations under the License.
 
 # Constants
-FPS_DIFFERENCE_THRESHOLD = 5
-BITRATE_DECREASE_STEP_KBPS = 2000
-BITRATE_INCREASE_STEP_KBPS = 1000
-BACKPRESSURE_CHECK_INTERVAL_SECONDS = 2.0
-RAMP_UP_STABILITY_SECONDS = 20.0
-MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE = 1000
-FRAME_DIFFERENCE_THRESHOLD_LOW = 5
-FRAME_DIFFERENCE_THRESHOLD_HIGH = 15
-FRAME_DIFFERENCE_THRESHOLD_SEVERE = 45
+BACKPRESSURE_ALLOWED_DESYNC_MS = 2000
+BACKPRESSURE_LATENCY_THRESHOLD_MS = 50
+BACKPRESSURE_CHECK_INTERVAL_S = 0.5
+MAX_UINT16_FRAME_ID = 65535
+FRAME_ID_SUSPICIOUS_GAP_THRESHOLD = (
+    MAX_UINT16_FRAME_ID // 2
+)
 STALLED_CLIENT_TIMEOUT_SECONDS = 4.0
-CRF_INCREASE_STEP = 3
-CRF_DECREASE_STEP = 2
-MAX_X264_CRF_BACKPRESSURE = 45
-MIN_JPEG_QUALITY_BACKPRESSURE = 20
-JPEG_QUALITY_DECREASE_STEP = 10
-DEFAULT_JPEG_QUALITY_SEVERE_LAG = 30
-DEFAULT_X264_CRF_SEVERE_LAG = 35
-DEFAULT_GSTREAMER_BITRATE_SEVERE_LAG_KBPS = 2000
 RTT_SMOOTHING_SAMPLES = 20
 SENT_FRAME_TIMESTAMP_HISTORY_SIZE = 1000
-SENT_FRAMES_LOG_HISTORY_SECONDS = 5
-CONSECUTIVE_LAG_REPORTS_THRESHOLD = 2
-MIN_ADJUSTMENT_INTERVAL_SECONDS = 10.0
 TARGET_FRAMERATE = 60
 TARGET_VIDEO_BITRATE_KBPS = 16000
 MIN_VIDEO_BITRATE_KBPS = 500
@@ -128,7 +115,6 @@ except ImportError:
 from input_handler import WebRTCInput as InputHandler, SelkiesGamepad, GamepadMapper
 import psutil
 import GPUtil
-import traceback
 
 upload_dir_path = os.path.expanduser("~/Desktop")
 try:
@@ -303,11 +289,21 @@ class GSTStreamingApp:
                         frame_type_byte = b"\x00"
                         data_type_byte = b"\x01"
                         prefixed_data = data_type_byte + frame_type_byte + data_copy
-
-                        clients_available = (self.data_streaming_server and
-                                             hasattr(self.data_streaming_server, 'clients') and
-                                             self.data_streaming_server.clients)
-                        loop_ok = (self.async_event_loop and self.async_event_loop.is_running())
+                        # Check backpressure for audio
+                        if (
+                            self.data_streaming_server
+                            and not self.data_streaming_server._backpressure_send_frames_enabled
+                        ):
+                            buffer.unmap(map_info)
+                            return Gst.FlowReturn.OK
+                        clients_available = (
+                            self.data_streaming_server
+                            and hasattr(self.data_streaming_server, "clients")
+                            and self.data_streaming_server.clients
+                        )
+                        loop_ok = (
+                            self.async_event_loop and self.async_event_loop.is_running()
+                        )
 
                         if clients_available and loop_ok:
                             clients_ref = self.data_streaming_server.clients
@@ -317,8 +313,7 @@ class GSTStreamingApp:
                                 websockets.broadcast(clients_ref, data_to_broadcast_ref)
 
                             asyncio.run_coroutine_threadsafe(
-                                _broadcast_audio_data_helper(),
-                                self.async_event_loop
+                                _broadcast_audio_data_helper(), self.async_event_loop
                             )
                         else:
                             if not clients_available:
@@ -330,7 +325,7 @@ class GSTStreamingApp:
                                     if loop_ok:
                                         asyncio.run_coroutine_threadsafe(
                                             self.stop_websocket_audio_pipeline(),
-                                            self.async_event_loop
+                                            self.async_event_loop,
                                         )
                                     else:
                                         data_logger.error(
@@ -338,7 +333,9 @@ class GSTStreamingApp:
                                             " Audio pipeline may continue running without consumers."
                                         )
                             elif not loop_ok:
-                                data_logger.warning("Cannot broadcast GStreamer audio: async event loop not available or not running. Pipeline not shut down for this specific reason.")
+                                data_logger.warning(
+                                    "Cannot broadcast GStreamer audio: async event loop not available or not running. Pipeline not shut down for this specific reason."
+                                )
                         buffer.unmap(map_info)
                     else:
                         logger_gst_app.error("Error mapping audio buffer")
@@ -348,11 +345,16 @@ class GSTStreamingApp:
         audio_sink.connect("new-sample", on_new_audio_sample)
         return self.audio_ws_pipeline
 
-    def send_ws_clipboard_data(self, data): # Assumed to be called from a threaded context based on original run_coroutine_threadsafe
-        if self.data_streaming_server and \
-           hasattr(self.data_streaming_server, 'clients') and \
-           self.data_streaming_server.clients and \
-           self.async_event_loop and self.async_event_loop.is_running():
+    def send_ws_clipboard_data(
+        self, data
+    ):  # Assumed to be called from a threaded context based on original run_coroutine_threadsafe
+        if (
+            self.data_streaming_server
+            and hasattr(self.data_streaming_server, "clients")
+            and self.data_streaming_server.clients
+            and self.async_event_loop
+            and self.async_event_loop.is_running()
+        ):
 
             msg_to_broadcast = f"clipboard,{base64.b64encode(data.encode()).decode()}"
             clients_ref = self.data_streaming_server.clients
@@ -361,18 +363,21 @@ class GSTStreamingApp:
                 websockets.broadcast(clients_ref, msg_to_broadcast)
 
             asyncio.run_coroutine_threadsafe(
-                _broadcast_clipboard_helper(),
-                self.async_event_loop
+                _broadcast_clipboard_helper(), self.async_event_loop
             )
         else:
-            data_logger.warning("Cannot broadcast clipboard data: prerequisites not met.")
+            data_logger.warning(
+                "Cannot broadcast clipboard data: prerequisites not met."
+            )
 
-
-    def send_ws_cursor_data(self, data): # Assumed to be called from a threaded context
-        if self.data_streaming_server and \
-           hasattr(self.data_streaming_server, 'clients') and \
-           self.data_streaming_server.clients and \
-           self.async_event_loop and self.async_event_loop.is_running():
+    def send_ws_cursor_data(self, data):  # Assumed to be called from a threaded context
+        if (
+            self.data_streaming_server
+            and hasattr(self.data_streaming_server, "clients")
+            and self.data_streaming_server.clients
+            and self.async_event_loop
+            and self.async_event_loop.is_running()
+        ):
 
             msg_str = json.dumps(data)
             msg_to_broadcast = f"cursor,{msg_str}"
@@ -382,12 +387,10 @@ class GSTStreamingApp:
                 websockets.broadcast(clients_ref, msg_to_broadcast)
 
             asyncio.run_coroutine_threadsafe(
-                _broadcast_cursor_helper(),
-                self.async_event_loop
+                _broadcast_cursor_helper(), self.async_event_loop
             )
         else:
             data_logger.warning("Cannot broadcast cursor data: prerequisites not met.")
-
 
     def start_ws_pipeline(self):
         if not GSTREAMER_AVAILABLE:
@@ -646,12 +649,22 @@ class GSTStreamingApp:
                     data_copy = bytes(map_info.data)
                     self.gstreamer_ws_current_frame_id = (
                         self.gstreamer_ws_current_frame_id + 1
-                    ) % 65536
+                    ) % (
+                        MAX_UINT16_FRAME_ID + 1
+                    )  # Use constant
                     if self.data_streaming_server:
                         self.data_streaming_server.update_last_sent_frame_id(
                             self.gstreamer_ws_current_frame_id
                         )
 
+                    # Check backpressure *after* updating frame ID, *before* preparing to send
+                    if (
+                        self.data_streaming_server
+                        and not self.data_streaming_server._backpressure_send_frames_enabled
+                    ):
+                        # data_logger.debug("Backpressure active, discarding GStreamer video frame.") # Can be too noisy
+                        buffer.unmap(map_info)
+                        return Gst.FlowReturn.OK
                     header = (
                         b"\x00"
                         + (b"\x00" if is_delta else b"\x01")
@@ -659,10 +672,14 @@ class GSTStreamingApp:
                     )
                     prefixed_data = header + data_copy
 
-                    clients_available = (self.data_streaming_server and
-                                         hasattr(self.data_streaming_server, 'clients') and
-                                         self.data_streaming_server.clients)
-                    loop_ok = (self.async_event_loop and self.async_event_loop.is_running())
+                    clients_available = (
+                        self.data_streaming_server
+                        and hasattr(self.data_streaming_server, "clients")
+                        and self.data_streaming_server.clients
+                    )
+                    loop_ok = (
+                        self.async_event_loop and self.async_event_loop.is_running()
+                    )
 
                     if clients_available and loop_ok:
                         clients_ref = self.data_streaming_server.clients
@@ -672,8 +689,7 @@ class GSTStreamingApp:
                             websockets.broadcast(clients_ref, data_to_broadcast_ref)
 
                         asyncio.run_coroutine_threadsafe(
-                            _broadcast_gst_video_data_helper(),
-                            self.async_event_loop
+                            _broadcast_gst_video_data_helper(), self.async_event_loop
                         )
                     else:
                         if not clients_available:
@@ -685,7 +701,7 @@ class GSTStreamingApp:
                                 if loop_ok:
                                     asyncio.run_coroutine_threadsafe(
                                         self.stop_websocket_video_pipeline(),
-                                        self.async_event_loop
+                                        self.async_event_loop,
                                     )
                                 else:
                                     data_logger.error(
@@ -693,7 +709,9 @@ class GSTStreamingApp:
                                         " Video pipeline may continue running without consumers."
                                     )
                         elif not loop_ok:
-                             data_logger.warning("Cannot broadcast GStreamer video: async event loop not available or not running. Pipeline not shut down for this specific reason.")
+                            data_logger.warning(
+                                "Cannot broadcast GStreamer video: async event loop not available or not running. Pipeline not shut down for this specific reason."
+                            )
                     buffer.unmap(map_info)
             return Gst.FlowReturn.OK
         return Gst.FlowReturn.OK
@@ -741,6 +759,7 @@ class GSTStreamingApp:
             if self.pipeline:
                 await self.stop_websocket_video_pipeline()
             self.start_ws_pipeline()
+            await self.data_streaming_server._start_backpressure_task_if_needed()
             logger_gst_app.info("GStreamer WebSocket video pipeline started.")
         except Exception as e:
             logger_gst_app.error(
@@ -758,6 +777,7 @@ class GSTStreamingApp:
                 self.pipeline = None
                 self.pipeline_running = False
                 logger_gst_app.info("WebSocket video pipeline stopped.")
+                await self.data_streaming_server._ensure_backpressure_task_is_stopped()
             except Exception as e:
                 logger_gst_app.error(
                     f"Error stopping WebSocket video pipeline: {e}", exc_info=True
@@ -835,9 +855,6 @@ class GSTStreamingApp:
                         if self.keyframe_distance == -1.0
                         else self.keyframe_frame_distance,
                     )
-                elif (
-                    self.encoder == "openh264enc"
-                ):  # This elif is redundant with the one above, but kept as per original logic flow.
                     effective_gop_size = self.keyframe_frame_distance
                     if self.keyframe_distance == -1.0:
                         effective_gop_size = 2147483647
@@ -1238,14 +1255,6 @@ def set_dpi(dpi):
     return False
 
 
-def check_encoder_supported(encoder_name):
-    if encoder_name in ["jpeg", "x264enc-striped"]:
-        return X11_CAPTURE_AVAILABLE
-    if not GSTREAMER_AVAILABLE:
-        return False
-    return bool(Gst.ElementFactory.find(encoder_name))
-
-
 def set_cursor_size(size):
     if not isinstance(size, int) or size <= 0:
         logger_gst_app_resize.error(f"Invalid cursor size: {size}")
@@ -1307,34 +1316,27 @@ class DataStreamingServer:
         self.mode = "websockets"
         self.server = None
         self.stop_server = None
-        self.data_ws = None # Represents the specific connection in a ws_handler context
-        self.clients = set() # Set of all active client WebSocket connections
+        self.data_ws = (
+            None  # Represents the specific connection in a ws_handler context
+        )
+        self.clients = set()  # Set of all active client WebSocket connections
         self.app = app
         self.cli_args = cli_args
         self._latest_client_render_fps = 0.0
-        self._last_backpressure_check_time = 0.0
-        self._last_bitrate_adjustment_time = 0.0
         self._last_time_client_ok = 0.0
-        self._backpressure_task = None
-        self._active_pipeline_last_sent_frame_id = 0
         self._client_acknowledged_frame_id = -1
         self._frame_backpressure_task = None
-        self._consecutive_lag_reports = 0
         self._last_client_acknowledged_frame_id_update_time = 0.0
         self._previous_ack_id_for_stall_check = -1
         self._previous_sent_id_for_stall_check = -1
-        self._last_client_stable_report_time = 0.0
         self._sent_frame_timestamps = OrderedDict()
         self._rtt_samples = deque(maxlen=RTT_SMOOTHING_SAMPLES)
         self._smoothed_rtt_ms = 0.0
         self._sent_frames_log = deque()
         self._initial_x264_crf = self.cli_args.h264_crf
         self.h264_crf = self._initial_x264_crf
-        self._initial_jpeg_quality = 75
-        self._current_jpeg_quality = 75
         self._initial_jpeg_use_paint_over_quality = True
         self._current_jpeg_use_paint_over_quality = True
-        self._jpeg_paint_overs_disabled_this_session = False
         self._system_monitor_task_ws = None
         self._gpu_monitor_task_ws = None
         self._stats_sender_task_ws = None
@@ -1348,26 +1350,221 @@ class DataStreamingServer:
         self.cursor_debug = cursor_debug
         self.input_handler = None
         self._last_adjustment_timestamp = 0.0
-        self._low_fps_condition_start_timestamp = None
         self.jpeg_capture_module = None
         self.is_jpeg_capturing = False
         self.jpeg_capture_loop = None
         self.x264_striped_capture_module = None
         self.is_x264_striped_capturing = False
-        self.x264_python_stripes_received_this_interval = 0
-        self.x264_python_last_stripe_log_time = time.monotonic()
-        self.X264_PYTHON_STRIPE_LOG_INTERVAL_SECONDS = 1.0
         self.client_settings_received = None
         self._initial_target_bitrate_kbps = (
             self.app.video_bitrate if self.app else TARGET_VIDEO_BITRATE_KBPS
         )
         self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
-        self._min_bitrate_kbps = max(
-            MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE, MIN_VIDEO_BITRATE_KBPS
+        # Frame-based backpressure settings
+        self.allowed_desync_ms = BACKPRESSURE_ALLOWED_DESYNC_MS
+        self.latency_threshold_for_adjustment_ms = BACKPRESSURE_LATENCY_THRESHOLD_MS
+        self.backpressure_check_interval_s = BACKPRESSURE_CHECK_INTERVAL_S
+        self._backpressure_send_frames_enabled = True
+        self._last_client_frame_id_report_time = 0.0
+
+    async def _ensure_backpressure_task_is_stopped(self):
+        """
+        Safely cancels and cleans up the _frame_backpressure_task.
+        If the task was running before being stopped, it calls _reset_frame_ids_and_notify.
+        _reset_frame_ids_and_notify will then check for active clients before broadcasting.
+        Sets _backpressure_send_frames_enabled to True by default.
+        """
+        task_was_actually_running_and_cancelled = False
+        if self._frame_backpressure_task and not self._frame_backpressure_task.done():
+            data_logger.debug("Ensuring frame backpressure task is stopped.")
+            self._frame_backpressure_task.cancel()
+            try:
+                await self._frame_backpressure_task
+                task_was_actually_running_and_cancelled = True 
+            except asyncio.CancelledError:
+                data_logger.debug("Frame backpressure task cancelled successfully.")
+                task_was_actually_running_and_cancelled = True 
+            except Exception as e_cancel:
+                data_logger.error(f"Error awaiting backpressure task cancellation: {e_cancel}")
+            self._frame_backpressure_task = None
+        
+        self._backpressure_send_frames_enabled = True 
+
+        if task_was_actually_running_and_cancelled:
+            data_logger.info("Backpressure task was stopped. Calling _reset_frame_ids_and_notify.")
+            await self._reset_frame_ids_and_notify()
+
+    async def _reset_frame_ids_and_notify(self):
+        data_logger.info("Resetting frame IDs.")
+        self._active_pipeline_last_sent_frame_id = 0
+        self._client_acknowledged_frame_id = -1
+        if self.app.encoder not in ["jpeg", "x264enc-striped"] and hasattr(
+            self.app, "gstreamer_ws_current_frame_id"
+        ):
+            self.app.gstreamer_ws_current_frame_id = 0
+        
+        if self.clients:
+            data_logger.info(f"Broadcasting PIPELINE_RESETTING to {len(self.clients)} client(s).")
+            websockets.broadcast(self.clients, "PIPELINE_RESETTING 0")
+        else:
+            data_logger.info("Frame IDs reset, but no clients to notify.")
+            
+        self._backpressure_send_frames_enabled = True
+        self._last_client_acknowledged_frame_id_update_time = (
+            time.monotonic()
         )
 
+    async def _start_backpressure_task_if_needed(self):
+        """
+        Starts the _frame_backpressure_task if a video pipeline is active
+        and client settings have been received.
+        Ensures any old task is stopped first (without client notification from *this specific call*,
+        as pipeline start/restart logic handles its own notifications).
+        """
+        await self._ensure_backpressure_task_is_stopped()
+
+        if not self.client_settings_received or not self.client_settings_received.is_set():
+            data_logger.warning(
+                "Attempting to start backpressure task, but client_settings_received event is not set or None. "
+                "The task will wait for this event. Ensure it's set when initial client settings are processed."
+            )
+            if hasattr(self, 'client_settings_received') and \
+               self.client_settings_received and \
+               isinstance(self.client_settings_received, asyncio.Event) and \
+               not self.client_settings_received.is_set():
+                 data_logger.info("Trying to ensure client_settings_received is set for backpressure task start.")
+                 self.client_settings_received.set()
+
+        if not self._frame_backpressure_task or self._frame_backpressure_task.done():
+            self._frame_backpressure_task = asyncio.create_task(
+                self._run_frame_backpressure_logic()
+            )
+            data_logger.info(f"New frame backpressure task started (current encoder: '{self.app.encoder if self.app else 'N/A'}').")
+        else:
+            data_logger.warning("Frame backpressure task was already running or not properly cleaned up when trying to start. Not starting a new one.")
+
+    async def _run_frame_backpressure_logic(self):
+        data_logger.info("Frame-based backpressure logic task started.")
+        try:
+            await self.client_settings_received.wait() # Ensure initial settings are processed
+            data_logger.info("Client settings received, proceeding with backpressure loop.")
+
+            while True:
+                await asyncio.sleep(self.backpressure_check_interval_s)
+
+                if not self.clients: # No clients connected
+                    self._backpressure_send_frames_enabled = True # Default to sending if no clients
+                    continue
+
+                current_server_frame_id = self._active_pipeline_last_sent_frame_id
+                last_client_acked_frame_id = self._client_acknowledged_frame_id
+
+                # Condition 1: Client hasn't ACKed anything yet after a server reset (ideal state)
+                if last_client_acked_frame_id == -1:
+                    if not self._backpressure_send_frames_enabled:
+                         data_logger.info("Backpressure LIFTED (client ACK is -1). Enabling frame sending.")
+                    self._backpressure_send_frames_enabled = True
+                    self._last_client_acknowledged_frame_id_update_time = time.monotonic() # Reset stall detection with any ACK
+                    continue
+
+                # Condition 2: Client FPS is unknown or zero, cannot reliably calculate frame-based desync
+                client_fps = self._latest_client_render_fps
+                if client_fps <= 0 and self.app: 
+                    client_fps = self.app.framerate
+                if client_fps <= 0: 
+                    if not self._backpressure_send_frames_enabled:
+                        data_logger.info("Backpressure LIFTED (client FPS is 0 or unknown). Enabling frame sending.")
+                    self._backpressure_send_frames_enabled = True 
+                    continue
+                
+                server_id = current_server_frame_id
+                client_id = last_client_acked_frame_id
+
+                # Condition 3: Special handling for server just reset (S:0) and client ACKing small positive ID (C:>0)
+                if server_id == 0 and client_id > 0 and client_id < FRAME_ID_SUSPICIOUS_GAP_THRESHOLD : # check client_id is not a huge number from a wrap
+                    data_logger.debug(
+                        f"Post-reset S:0, C:{client_id} scenario. Allowing frames to flow to resolve."
+                    )
+                    if not self._backpressure_send_frames_enabled:
+                        data_logger.info("Backpressure LIFTED (Post-reset S:0, C:>0 scenario).")
+                    self._backpressure_send_frames_enabled = True
+                    self._last_client_acknowledged_frame_id_update_time = time.monotonic() # Reset stall detection
+                    continue
+
+                # Condition 4: Handle suspected frame ID wrap-around or very large actual desyncs
+                if abs(server_id - client_id) > FRAME_ID_SUSPICIOUS_GAP_THRESHOLD:
+                    data_logger.debug(
+                        f"Frame ID wrap-around suspected or large gap (S:{server_id}, C:{client_id}). "
+                        f"Skipping backpressure decision, ensuring frames flow."
+                    )
+                    if not self._backpressure_send_frames_enabled:
+                        data_logger.info("Backpressure LIFTED due to suspected frame ID wrap/large gap.")
+                    self._backpressure_send_frames_enabled = True
+                    self._last_client_acknowledged_frame_id_update_time = time.monotonic() 
+                    continue
+
+                # --- Normal Desync Calculation ---
+                # Never calculate on init 
+                if server_id == 0:
+                    return
+                # Normal calculations
+                if server_id >= client_id:
+                    frame_desync = server_id - client_id
+                else:
+                    frame_desync = (MAX_UINT16_FRAME_ID - client_id) + server_id + 1
+                
+                if frame_desync < 0: 
+                    frame_desync = 0
+
+                allowed_desync_frames = (self.allowed_desync_ms / 1000.0) * client_fps
+                current_rtt_ms = self._smoothed_rtt_ms
+                latency_adjustment_frames = 0
+                if current_rtt_ms > self.latency_threshold_for_adjustment_ms:
+                    latency_adjustment_frames = (current_rtt_ms / 1000.0) * client_fps
+                effective_desync_frames = frame_desync - latency_adjustment_frames
+
+                time_since_last_ack = time.monotonic() - self._last_client_acknowledged_frame_id_update_time
+                client_stalled = time_since_last_ack > STALLED_CLIENT_TIMEOUT_SECONDS
+
+                if client_stalled:
+                    if self._backpressure_send_frames_enabled:
+                        data_logger.warning(
+                            f"Client stall detected: No ACK update in {time_since_last_ack:.1f}s. "
+                            f"Last ACK ID: {last_client_acked_frame_id}. Forcing backpressure."
+                        )
+                    self._backpressure_send_frames_enabled = False
+                elif effective_desync_frames > allowed_desync_frames:
+                    if self._backpressure_send_frames_enabled: 
+                        data_logger.warning(
+                            f"Backpressure TRIGGERED. S:{server_id}, C:{client_id} (Desync:{frame_desync:.0f}f, "
+                            f"EffDesync:{effective_desync_frames:.1f}f > Allowed:{allowed_desync_frames:.1f}f). "
+                            f"FPS:{client_fps:.1f}, RTT:{current_rtt_ms:.1f}ms. Disabling frame sending."
+                        )
+                    self._backpressure_send_frames_enabled = False
+                else: 
+                    if not self._backpressure_send_frames_enabled: 
+                        data_logger.info(
+                            f"Backpressure LIFTED. S:{server_id}, C:{client_id} (Desync:{frame_desync:.0f}f, "
+                            f"EffDesync:{effective_desync_frames:.1f}f <= Allowed:{allowed_desync_frames:.1f}f). "
+                            f"Enabling frame sending."
+                        )
+                    self._backpressure_send_frames_enabled = True
+
+        except asyncio.CancelledError:
+            data_logger.info("Frame-based backpressure logic task cancelled.")
+        except Exception as e:
+            data_logger.error(f"Error in frame-based backpressure logic: {e}", exc_info=True)
+            self._backpressure_send_frames_enabled = True 
+        finally:
+            data_logger.info("Frame-based backpressure logic task finished.")
+            self._backpressure_send_frames_enabled = True
+
     async def broadcast_stream_resolution(self):
-        if self.app and hasattr(self.app, 'display_width') and hasattr(self.app, 'display_height'):
+        if (
+            self.app
+            and hasattr(self.app, "display_width")
+            and hasattr(self.app, "display_height")
+        ):
             # Ensure resolution is valid before broadcasting
             if self.app.display_width > 0 and self.app.display_height > 0:
                 message = {
@@ -1390,11 +1587,13 @@ class DataStreamingServer:
             )
 
     def _x264_striped_stripe_callback(self, result_ptr, user_data):
-        current_async_loop = self.jpeg_capture_loop # This is the loop for DataStreamingServer
+        current_async_loop = (
+            self.jpeg_capture_loop
+        )  # This is the loop for DataStreamingServer
         if (
             not self.is_x264_striped_capturing
             or not current_async_loop
-            or not self.clients # Check self.clients instead of self.data_ws for broadcast
+            or not self.clients  # Check self.clients instead of self.data_ws for broadcast
             or not result_ptr
         ):
             return
@@ -1406,15 +1605,23 @@ class DataStreamingServer:
                         result.data, ctypes.POINTER(ctypes.c_ubyte * result.size)
                     ).contents
                 )
-                
+
                 clients_ref = self.clients
                 data_to_send_ref = payload_from_cpp
                 frame_id_ref = result.frame_id
 
                 async def _broadcast_x264_data_and_update_frame_id():
+                    # self here refers to DataStreamingServer instance
+                    self.update_last_sent_frame_id(
+                        frame_id_ref
+                    )  # Update server's knowledge of sent frame ID
+
+                    if not self._backpressure_send_frames_enabled:
+                        # data_logger.debug("Backpressure active, discarding x264-striped frame.") # Can be too noisy
+                        return
+
                     if clients_ref:
                         websockets.broadcast(clients_ref, data_to_send_ref)
-                    self.update_last_sent_frame_id(frame_id_ref)
 
                 if current_async_loop and current_async_loop.is_running():
                     asyncio.run_coroutine_threadsafe(
@@ -1425,16 +1632,13 @@ class DataStreamingServer:
 
     async def _start_x264_striped_pipeline(self):
         if not X11_CAPTURE_AVAILABLE:
-            await self._send_error_to_client("x264-striped (pixelflux) not available.")
             return False
         if self.is_x264_striped_capturing:
             return True
         if not self.app:
-            await self._send_error_to_client("Server misconfig (no app).")
             return False
         self.jpeg_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
         if not self.jpeg_capture_loop:
-            await self._send_error_to_client("Server error (no loop).")
             return False
 
         width = getattr(self.app, "display_width", 1024)
@@ -1460,6 +1664,7 @@ class DataStreamingServer:
                 None, self.x264_striped_capture_module.start_capture, cs, cb
             )
             self.is_x264_striped_capturing = True
+            await self._start_backpressure_task_if_needed()
             return True
         except Exception as e:
             data_logger.error(f"Failed to start x264-striped: {e}", exc_info=True)
@@ -1486,14 +1691,17 @@ class DataStreamingServer:
             if self.x264_striped_capture_module:
                 del self.x264_striped_capture_module
                 self.x264_striped_capture_module = None
+            await self._ensure_backpressure_task_is_stopped()
         return True
 
     def _jpeg_stripe_callback(self, result_ptr, user_data):
-        current_async_loop = self.jpeg_capture_loop # This is the loop for DataStreamingServer
+        current_async_loop = (
+            self.jpeg_capture_loop
+        )  # This is the loop for DataStreamingServer
         if (
             not self.is_jpeg_capturing
             or not current_async_loop
-            or not self.clients # Check self.clients for broadcast
+            or not self.clients  # Check self.clients for broadcast
             or not result_ptr
         ):
             return
@@ -1505,15 +1713,22 @@ class DataStreamingServer:
                         result.data, ctypes.POINTER(ctypes.c_ubyte * result.size)
                     ).contents
                 )
-                
+
                 clients_ref = self.clients
                 prefixed_jpeg_data = b"\x03\x00" + jpeg_buffer
                 frame_id_ref = result.frame_id
 
                 async def _broadcast_jpeg_data_and_update_frame_id():
+                    # self here refers to DataStreamingServer instance
+                    self.update_last_sent_frame_id(
+                        frame_id_ref
+                    )  # Update server's knowledge of sent frame ID
+
+                    if not self._backpressure_send_frames_enabled:
+                        return
+
                     if clients_ref:
                         websockets.broadcast(clients_ref, prefixed_jpeg_data)
-                    self.update_last_sent_frame_id(frame_id_ref)
 
                 if current_async_loop and current_async_loop.is_running():
                     asyncio.run_coroutine_threadsafe(
@@ -1524,22 +1739,19 @@ class DataStreamingServer:
 
     async def _start_jpeg_pipeline(self):
         if not X11_CAPTURE_AVAILABLE:
-            await self._send_error_to_client("JPEG (pixelflux) not available.")
             return False
         if self.is_jpeg_capturing:
             return True
         if not self.app:
-            await self._send_error_to_client("Server misconfig (no app).")
             return False
         self.jpeg_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
         if not self.jpeg_capture_loop:
-            await self._send_error_to_client("Server error (no loop).")
             return False
 
         width = getattr(self.app, "display_width", 1024)
         height = getattr(self.app, "display_height", 768)
         fps = float(getattr(self.app, "framerate", TARGET_FRAMERATE))
-        quality = self._current_jpeg_quality
+        quality = 75
 
         data_logger.info(f"Starting JPEG: {width}x{height} @ {fps}fps, Q: {quality}")
         try:
@@ -1568,10 +1780,10 @@ class DataStreamingServer:
             )
             self.is_jpeg_capturing = True
             data_logger.info("X11 JPEG capture started with detailed settings.")
+            await self._start_backpressure_task_if_needed()
             return True
         except Exception as e:
             data_logger.error(f"Failed to start JPEG: {e}", exc_info=True)
-            await self._send_error_to_client(f"Error starting JPEG: {str(e)[:50]}")
             self.is_jpeg_capturing = False
             if self.jpeg_capture_module:
                 del self.jpeg_capture_module
@@ -1592,6 +1804,7 @@ class DataStreamingServer:
             if self.jpeg_capture_module:
                 del self.jpeg_capture_module
                 self.jpeg_capture_module = None
+            await self._ensure_backpressure_task_is_stopped()
         return True
 
     def update_last_sent_frame_id(self, frame_id: int):
@@ -1602,13 +1815,6 @@ class DataStreamingServer:
             self._sent_frame_timestamps.popitem(last=False)
         if hasattr(self, "_sent_frames_log"):
             self._sent_frames_log.append((now, frame_id))
-
-    async def _send_error_to_client(self, websocket_obj, error_message): # Added websocket_obj
-        if websocket_obj: # Send error to the specific client this handler is managing
-            try:
-                await websocket_obj.send(f"ERROR {error_message}")
-            except Exception:
-                pass # Error sending error, not much to do
 
     def _parse_settings_payload(self, payload_str: str) -> dict:
         settings_data = json.loads(payload_str)
@@ -1662,7 +1868,9 @@ class DataStreamingServer:
         data_logger.debug(f"Parsed client settings: {parsed}")
         return parsed
 
-    async def _apply_client_settings(self, websocket_obj, settings: dict, is_initial_settings: bool):
+    async def _apply_client_settings(
+        self, websocket_obj, settings: dict, is_initial_settings: bool
+    ):
         data_logger.info(
             f"Applying client settings (initial={is_initial_settings}): {settings}"
         )
@@ -1705,14 +1913,18 @@ class DataStreamingServer:
             )
             target_w_for_app = old_display_width
             target_h_for_app = old_display_height
-        
+
         if target_w_for_app % 2 != 0:
-            data_logger.debug(f"Adjusting odd width {target_w_for_app} to {target_w_for_app - 1}")
+            data_logger.debug(
+                f"Adjusting odd width {target_w_for_app} to {target_w_for_app - 1}"
+            )
             target_w_for_app -= 1
         if target_h_for_app % 2 != 0:
-            data_logger.debug(f"Adjusting odd height {target_h_for_app} to {target_h_for_app - 1}")
+            data_logger.debug(
+                f"Adjusting odd height {target_h_for_app} to {target_h_for_app - 1}"
+            )
             target_h_for_app -= 1
-        
+
         if target_w_for_app <= 0 or target_h_for_app <= 0:
             data_logger.warning(
                 f"Dimensions became invalid ({target_w_for_app}x{target_h_for_app}) after odd adjustment. "
@@ -1741,7 +1953,11 @@ class DataStreamingServer:
                 data_logger.info(
                     f"Effective resize enabled. Calling on_resize_handler for: {self.app.display_width}x{self.app.display_height}"
                 )
-                on_resize_handler(f"{self.app.display_width}x{self.app.display_height}", self.app, self)
+                on_resize_handler(
+                    f"{self.app.display_width}x{self.app.display_height}",
+                    self.app,
+                    self,
+                )
                 # on_resize_handler updates self.app.display_width/height based on xrandr's outcome
                 # and also sets self.app.last_resize_success
             else:
@@ -1787,35 +2003,12 @@ class DataStreamingServer:
         encoder_actually_changed = (
             False  # Flag to track if encoder was changed by this function call
         )
-        if requested_new_encoder and requested_new_encoder != old_encoder:
-            if (
-                self._frame_backpressure_task
-                and not self._frame_backpressure_task.done()
-            ):
-                self._frame_backpressure_task.cancel()
-                self._frame_backpressure_task = None
-            self._active_pipeline_last_sent_frame_id = 0
-            self._client_acknowledged_frame_id = -1
-            if old_encoder not in ["jpeg", "x264enc-striped"] and hasattr(
-                self.app, "gstreamer_ws_current_frame_id"
-            ):
-                self.app.gstreamer_ws_current_frame_id = 0
-            data_logger.info(
-                f"Frame IDs reset (encoder change): {old_encoder} -> {requested_new_encoder}"
-            )
-            encoder_actually_changed = True
-
         new_encoder_from_payload = settings.get("encoder")
         if new_encoder_from_payload:
             if (
-                new_encoder_from_payload in ["jpeg", "x264enc-striped"]
-                and not X11_CAPTURE_AVAILABLE
+                new_encoder_from_payload not in ["jpeg", "x264enc-striped"]
+                and X11_CAPTURE_AVAILABLE
             ):
-                await self._send_error_to_client(
-                    websocket_obj,
-                    f"{new_encoder_from_payload} (pixelflux) not available."
-                )
-            else:
                 self.app.encoder = new_encoder_from_payload
         elif (
             encoder_actually_changed
@@ -1829,7 +2022,6 @@ class DataStreamingServer:
 
         if "videoBitRate" in settings:
             self.app.video_bitrate = settings["videoBitRate"] // 1000
-            # Update global TARGET_VIDEO_BITRATE_KBPS and initial/current target for backpressure
             global TARGET_VIDEO_BITRATE_KBPS
             TARGET_VIDEO_BITRATE_KBPS = self.app.video_bitrate
             self._initial_target_bitrate_kbps = self.app.video_bitrate
@@ -1855,14 +2047,11 @@ class DataStreamingServer:
             setattr(self.app, "video_buffer_size", settings["videoBufferSize"])
 
         if not is_initial_settings:
-            # For subsequent SETTINGS messages, determine if a restart is needed
-            # Resolution might have been updated by on_resize_handler if dimensions_changed_by_settings was true
             resolution_actually_changed_on_server = (
                 self.app.display_width != old_display_width
                 or self.app.display_height != old_display_height
             )
 
-            # Check if other parameters changed
             bitrate_param_changed = self.app.video_bitrate != old_video_bitrate_kbps
             framerate_param_changed = self.app.framerate != old_framerate
             crf_param_changed = (
@@ -1902,12 +2091,6 @@ class DataStreamingServer:
                 elif hasattr(self.app, "stop_websocket_video_pipeline"):
                     await self.app.stop_websocket_video_pipeline()
 
-                # If encoder didn't change but other params did, notify client about reset
-                if self.app.encoder == old_encoder and not encoder_actually_changed:
-                    await self._reset_frame_ids_and_notify(
-                        "client_settings_param_change_same_encoder"
-                    )
-
                 if self.app.encoder == "jpeg":
                     await self._start_jpeg_pipeline()
                 elif self.app.encoder == "x264enc-striped":
@@ -1924,31 +2107,17 @@ class DataStreamingServer:
                 if hasattr(self.app, "start_websocket_audio_pipeline"):
                     await self.app.start_websocket_audio_pipeline()
 
-        # If encoder changed (either initially or subsequently)
-        if encoder_actually_changed:  # This uses the flag set earlier
-            if (
-                not self._frame_backpressure_task
-                or self._frame_backpressure_task.done()
-            ):
-                data_logger.info(
-                    f"Starting/restarting frame-based backpressure task for new encoder {self.app.encoder}."
-                )
-                self._frame_backpressure_task = asyncio.create_task(
-                    self._run_frame_backpressure_logic()
-                )
-
     async def ws_handler(self, websocket):
         global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
         raddr = websocket.remote_address
         data_logger.info(f"Data WebSocket connected from {raddr}")
         self.clients.add(websocket)
-        self.data_ws = websocket # self.data_ws is specific to this handler instance/connection
+        self.data_ws = (
+            websocket  # self.data_ws is specific to this handler instance/connection
+        )
         self.jpeg_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
         self.client_settings_received = asyncio.Event()
         initial_settings_processed = False
-        self._sent_frames_log = deque(
-            maxlen=int(TARGET_FRAMERATE * SENT_FRAMES_LOG_HISTORY_SECONDS)
-        )
         self._sent_frame_timestamps.clear()
         self._rtt_samples.clear()
         self._smoothed_rtt_ms = 0.0
@@ -1957,7 +2126,7 @@ class DataStreamingServer:
             await websocket.send(f"MODE {self.mode}")
             await self.broadcast_stream_resolution()
         except websockets.exceptions.ConnectionClosed:
-            self.clients.discard(websocket) # Ensure removal on early exit
+            self.clients.discard(websocket)  # Ensure removal on early exit
             if self.data_ws is websocket:
                 self.data_ws = None
             return
@@ -1979,20 +2148,15 @@ class DataStreamingServer:
         try:
             await websocket.send(json.dumps(server_settings_payload))
         except websockets.exceptions.ConnectionClosed:
-            self.clients.discard(websocket) # Ensure removal on early exit
+            self.clients.discard(websocket)  # Ensure removal on early exit
             if self.data_ws is websocket:
                 self.data_ws = None
             return
 
         self._initial_target_bitrate_kbps = self.app.video_bitrate
         self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
-        self._min_bitrate_kbps = max(
-            MIN_VIDEO_BITRATE_KBPS_BACKPRESSURE, MIN_VIDEO_BITRATE_KBPS
-        )
         self._latest_client_render_fps = 0.0
         self._last_adjustment_time = self._last_time_client_ok = time.monotonic()
-        if self._frame_backpressure_task and not self._frame_backpressure_task.done():
-            self._frame_backpressure_task.cancel()
         self._frame_backpressure_task = None
         self._active_pipeline_last_sent_frame_id = 0
         self._client_acknowledged_frame_id = -1
@@ -2002,7 +2166,7 @@ class DataStreamingServer:
         self._last_client_stable_report_time = time.monotonic()
         self._initial_x264_crf = self.cli_args.h264_crf
         self.h264_crf = self._initial_x264_crf
-
+        self._backpressure_send_frames_enabled = True
         active_uploads_by_path_conn = {}
         active_upload_target_path_conn = None
         upload_dir_valid = upload_dir_path is not None
@@ -2014,12 +2178,12 @@ class DataStreamingServer:
 
         # Define virtual source details
         virtual_source_name = "SelkiesVirtualMic"
-        master_monitor = (
-            "output.monitor"
-        )
+        master_monitor = "output.monitor"
 
         if not self.input_handler:
-            logger.error(f"Data WS handler for {raddr}: Critical - self.input_handler (global) is not set. Input processing will fail.")
+            logger.error(
+                f"Data WS handler for {raddr}: Critical - self.input_handler (global) is not set. Input processing will fail."
+            )
 
         self._shared_stats_ws = {}
         gpu_id_for_stats = getattr(self.app, "gpu_id", GPU_ID_DEFAULT)
@@ -2031,7 +2195,9 @@ class DataStreamingServer:
                 _collect_gpu_stats_ws(self._shared_stats_ws, gpu_id=gpu_id_for_stats)
             )
         self._stats_sender_task_ws = asyncio.create_task(
-            _send_stats_periodically_ws(websocket, self._shared_stats_ws) # Stats are per-client
+            _send_stats_periodically_ws(
+                websocket, self._shared_stats_ws
+            )  # Stats are per-client
         )
 
         try:
@@ -2254,35 +2420,62 @@ class DataStreamingServer:
                             data_logger.error("Upload dir invalid, skipping upload.")
                             continue
                         try:
-                            _, rel_path, size_str = message.split(":", 2)
+                            _, rel_path_from_client, size_str = message.split(":", 2)
                             file_size = int(size_str)
-                            clean_basename = re.sub(
-                                r"[^\w.\- ]", "_", os.path.basename(rel_path)
-                            ).strip()
-                            if not clean_basename:
-                                clean_basename = f"uploaded_file_{int(time.time())}"
-                            final_server_path = os.path.join(
-                                upload_dir_path, clean_basename
-                            )
 
+                            sane_rel_path = rel_path_from_client.strip('/\\')
+                            sane_rel_path = os.path.normpath(sane_rel_path)
+
+                            path_components = [comp for comp in sane_rel_path.split(os.sep) if comp and comp != '.']
+
+                            if not path_components or \
+                               sane_rel_path.startswith(os.sep) or \
+                               sane_rel_path.startswith('/') or \
+                               sane_rel_path.startswith('\\') or \
+                               ".." in path_components:
+                                data_logger.error(f"Invalid or malicious relative path from client: '{rel_path_from_client}'. Discarding.")
+                                continue
+                            
+                            sane_rel_path = os.path.join(*path_components)
+
+                            final_server_path = os.path.join(upload_dir_path, sane_rel_path)
+
+                            real_upload_dir = os.path.realpath(upload_dir_path)
+                            intended_parent_dir_abs = os.path.abspath(os.path.dirname(final_server_path))
+                            real_upload_dir_abs = os.path.abspath(real_upload_dir)
+
+                            if not intended_parent_dir_abs.startswith(real_upload_dir_abs):
+                                 data_logger.error(f"Path escape attempt detected: '{final_server_path}' (from client: '{rel_path_from_client}') is outside of '{real_upload_dir_abs}'. Discarding.")
+                                 continue
+
+                            target_dir = os.path.dirname(final_server_path)
+                            
+                            if target_dir and target_dir != real_upload_dir_abs and not os.path.exists(target_dir):
+                                if not os.path.abspath(target_dir).startswith(real_upload_dir_abs):
+                                    data_logger.error(f"Directory creation escape attempt: '{target_dir}' is outside of '{real_upload_dir_abs}'. Discarding.")
+                                    continue
+                                try:
+                                    os.makedirs(target_dir, exist_ok=True)
+                                    data_logger.info(f"Created directory for upload: {target_dir}")
+                                except OSError as e_mkdir:
+                                    data_logger.error(f"Could not create directory {target_dir} for upload: {e_mkdir}")
+                                    continue
+                            
                             if (
                                 active_upload_target_path_conn
                                 and active_upload_target_path_conn
                                 in active_uploads_by_path_conn
                             ):
-                                active_uploads_by_path_conn[
-                                    active_upload_target_path_conn
-                                ].close()
-                                del active_uploads_by_path_conn[
-                                    active_upload_target_path_conn
-                                ]
+                                try:
+                                    active_uploads_by_path_conn[active_upload_target_path_conn].close()
+                                except Exception as e_close_old:
+                                    data_logger.warning(f"Error closing previous upload stream {active_upload_target_path_conn}: {e_close_old}")
+                                del active_uploads_by_path_conn[active_upload_target_path_conn]
 
-                            active_uploads_by_path_conn[final_server_path] = open(
-                                final_server_path, "wb"
-                            )
+                            active_uploads_by_path_conn[final_server_path] = open(final_server_path, "wb")
                             active_upload_target_path_conn = final_server_path
                             data_logger.info(
-                                f"Upload started: {final_server_path} (size: {file_size})"
+                                f"Upload started: {final_server_path} (client rel_path: '{rel_path_from_client}', size: {file_size})"
                             )
                         except ValueError:
                             data_logger.error(
@@ -2290,29 +2483,58 @@ class DataStreamingServer:
                             )
                         except Exception as e_fup_start:
                             data_logger.error(
-                                f"FILE_UPLOAD_START error: {e_fup_start}", exc_info=True
+                                f"FILE_UPLOAD_START processing error: {e_fup_start}", exc_info=True
                             )
+
+                    elif message.startswith("FILE_UPLOAD_END:"):
+                        if (
+                            active_upload_target_path_conn
+                            and active_upload_target_path_conn
+                            in active_uploads_by_path_conn
+                        ):
+                            active_uploads_by_path_conn[
+                                active_upload_target_path_conn
+                            ].close()
+                            data_logger.info(
+                                f"Upload finished: {active_upload_target_path_conn}"
+                            )
+                            del active_uploads_by_path_conn[
+                                active_upload_target_path_conn
+                            ]
+                        active_upload_target_path_conn = None
+
+                    elif message.startswith("FILE_UPLOAD_ERROR:"):
+                        data_logger.error(f"Client reported upload error: {message}")
+                        if (
+                            active_upload_target_path_conn
+                            and active_upload_target_path_conn
+                            in active_uploads_by_path_conn
+                        ):
+                            active_uploads_by_path_conn[
+                                active_upload_target_path_conn
+                            ].close()
+                            try:
+                                os.remove(active_upload_target_path_conn)
+                            except OSError:
+                                pass # Ignore if removal fails, already logged error
+                            del active_uploads_by_path_conn[
+                                active_upload_target_path_conn
+                            ]
+                        active_upload_target_path_conn = None
 
                     elif message.startswith("SETTINGS,"):
                         try:
                             _, payload_str = message.split(",", 1)
                             parsed_settings = self._parse_settings_payload(payload_str)
                             await self._apply_client_settings(
-                                websocket, # Pass the current connection's websocket
+                                websocket,  # Pass the current connection's websocket
                                 parsed_settings,
-                                not initial_settings_processed
+                                not initial_settings_processed,
                             )
                             if not initial_settings_processed:
                                 self.client_settings_received.set()
                                 initial_settings_processed = True
                                 data_logger.info("Initial client settings processed.")
-                                if (
-                                    not self._frame_backpressure_task
-                                    or self._frame_backpressure_task.done()
-                                ):
-                                    self._frame_backpressure_task = asyncio.create_task(
-                                        self._run_frame_backpressure_logic()
-                                    )
                                 current_encoder = getattr(self.app, "encoder", None)
                                 if current_encoder == "jpeg":
                                     await self._start_jpeg_pipeline()
@@ -2322,11 +2544,19 @@ class DataStreamingServer:
                                     self.app, "start_websocket_video_pipeline"
                                 ):
                                     await self.app.start_websocket_video_pipeline()
-                                if GSTREAMER_AVAILABLE and hasattr(self.app, "start_websocket_audio_pipeline"):
-                                    if not getattr(self.app, "audio_pipeline_running_ws_flag", False):
+                                if GSTREAMER_AVAILABLE and hasattr(
+                                    self.app, "start_websocket_audio_pipeline"
+                                ):
+                                    if not getattr(
+                                        self.app,
+                                        "audio_pipeline_running_ws_flag",
+                                        False,
+                                    ):
                                         await self.app.start_websocket_audio_pipeline()
                                 else:
-                                    data_logger.warning("Initial setup: GStreamer audio pipeline (server-to-client) cannot be started (not available or no start method).")
+                                    data_logger.warning(
+                                        "Initial setup: GStreamer audio pipeline (server-to-client) cannot be started (not available or no start method)."
+                                    )
 
                         except json.JSONDecodeError:
                             data_logger.error(f"SETTINGS JSON decode error: {message}")
@@ -2395,8 +2625,6 @@ class DataStreamingServer:
                         active_upload_target_path_conn = None
 
                     elif message == "START_VIDEO":
-                        # Pulled for shared mode and likely too protective
-                        #await self.client_settings_received.wait()
                         current_encoder = getattr(self.app, "encoder", None)
                         data_logger.info(
                             f"Received START_VIDEO for encoder: {current_encoder}"
@@ -2409,13 +2637,17 @@ class DataStreamingServer:
                             self.app, "start_websocket_video_pipeline"
                         ):
                             await self.app.start_websocket_video_pipeline()
+                        websockets.broadcast(self.clients, "VIDEO_STARTED")
 
                     elif message == "STOP_VIDEO":
                         data_logger.info("Received STOP_VIDEO")
+                        pipeline_was_active_and_stopped = False
                         if self.is_jpeg_capturing:
                             await self._stop_jpeg_pipeline()
+                            pipeline_was_active_and_stopped = True
                         elif self.is_x264_striped_capturing:
                             await self._stop_x264_striped_pipeline()
+                            pipeline_was_active_and_stopped = True
                         elif (
                             GSTREAMER_AVAILABLE
                             and hasattr(self.app, "pipeline_running")
@@ -2423,18 +2655,37 @@ class DataStreamingServer:
                         ):
                             if hasattr(self.app, "stop_websocket_video_pipeline"):
                                 await self.app.stop_websocket_video_pipeline()
+                                pipeline_was_active_and_stopped = True
+                        if self.clients:
+                            websockets.broadcast(self.clients, "VIDEO_STOPPED")
 
-                    elif message == "START_AUDIO": # Client requests server-to-client audio start
+                    elif (
+                        message == "START_AUDIO"
+                    ):  # Client requests server-to-client audio start
                         await self.client_settings_received.wait()
-                        data_logger.info("Received START_AUDIO command from client for server-to-client audio.")
-                        if GSTREAMER_AVAILABLE and hasattr(self.app, "start_websocket_audio_pipeline"):
-                            if not getattr(self.app, "audio_pipeline_running_ws_flag", False):
-                                data_logger.info("START_AUDIO: Ensuring GStreamer server-to-client audio pipeline is active.")
+                        data_logger.info(
+                            "Received START_AUDIO command from client for server-to-client audio."
+                        )
+                        if GSTREAMER_AVAILABLE and hasattr(
+                            self.app, "start_websocket_audio_pipeline"
+                        ):
+                            if not getattr(
+                                self.app, "audio_pipeline_running_ws_flag", False
+                            ):
+                                data_logger.info(
+                                    "START_AUDIO: Ensuring GStreamer server-to-client audio pipeline is active."
+                                )
                                 await self.app.start_websocket_audio_pipeline()
                             else:
-                                data_logger.info("START_AUDIO: Server-to-client audio pipeline already reported as active.")
+                                data_logger.info(
+                                    "START_AUDIO: Server-to-client audio pipeline already reported as active."
+                                )
                         else:
-                            data_logger.warning("START_AUDIO: Cannot start server-to-client audio (GStreamer not available or no start method).")
+                            data_logger.warning(
+                                "START_AUDIO: Cannot start server-to-client audio (GStreamer not available or no start method)."
+                            )
+                        websockets.broadcast(self.clients, "AUDIO_STARTED")
+
                     elif message == "STOP_AUDIO":
                         data_logger.info("Received STOP_AUDIO")
                         if GSTREAMER_AVAILABLE and hasattr(
@@ -2444,45 +2695,62 @@ class DataStreamingServer:
                                 self.app, "audio_pipeline_running_ws_flag", False
                             ):
                                 await self.app.stop_websocket_audio_pipeline()
+                        if self.clients:
+                            websockets.broadcast(self.clients, "AUDIO_STOPPED")
 
                     elif message.startswith("r,"):
-                        raddr = websocket.remote_address # Get raddr for logging if not already available in this scope
-                        data_logger.info(f"SERVER: Raw resize message '{message}' received from {raddr}")
+                        raddr = (
+                            websocket.remote_address
+                        )  # Get raddr for logging if not already available in this scope
+                        data_logger.info(
+                            f"SERVER: Raw resize message '{message}' received from {raddr}"
+                        )
 
                         target_res_str = message[2:]
-                        data_logger.info(f"Received resize request: {target_res_str} from {raddr}")
+                        data_logger.info(
+                            f"Received resize request: {target_res_str} from {raddr}"
+                        )
 
                         video_was_running = False
                         current_encoder_on_resize = getattr(self.app, "encoder", None)
-                        data_logger.info(f"Resize handler: Current encoder is {current_encoder_on_resize}. Video running states: JPEG={self.is_jpeg_capturing}, X264Striped={self.is_x264_striped_capturing}, GSTreamer={getattr(self.app, 'pipeline_running', False)}")
+                        data_logger.info(
+                            f"Resize handler: Current encoder is {current_encoder_on_resize}. Video running states: JPEG={self.is_jpeg_capturing}, X264Striped={self.is_x264_striped_capturing}, GSTreamer={getattr(self.app, 'pipeline_running', False)}"
+                        )
 
                         if self.is_jpeg_capturing:
                             data_logger.info("Resize handler: Stopping JPEG pipeline.")
                             await self._stop_jpeg_pipeline()
                             video_was_running = True
                         elif self.is_x264_striped_capturing:
-                            data_logger.info("Resize handler: Stopping X264-striped pipeline.")
+                            data_logger.info(
+                                "Resize handler: Stopping X264-striped pipeline."
+                            )
                             await self._stop_x264_striped_pipeline()
                             video_was_running = True
                         elif GSTREAMER_AVAILABLE and getattr(
                             self.app, "pipeline_running", False
                         ):
-                            data_logger.info("Resize handler: Stopping GStreamer video pipeline.")
+                            data_logger.info(
+                                "Resize handler: Stopping GStreamer video pipeline."
+                            )
                             await self.app.stop_websocket_video_pipeline()
                             video_was_running = True
 
-                        data_logger.info(f"Resize handler: Calling on_resize_handler with '{target_res_str}' for {raddr}")
+                        data_logger.info(
+                            f"Resize handler: Calling on_resize_handler with '{target_res_str}' for {raddr}"
+                        )
                         on_resize_handler(target_res_str, self.app, self)
-                        data_logger.info(f"Resize handler: on_resize_handler call completed for {raddr}. Last resize success: {getattr(self.app, 'last_resize_success', 'Unknown')}")
+                        data_logger.info(
+                            f"Resize handler: on_resize_handler call completed for {raddr}. Last resize success: {getattr(self.app, 'last_resize_success', 'Unknown')}"
+                        )
 
-
-                        if getattr(self.app, 'last_resize_success', False) and video_was_running:
+                        if (
+                            getattr(self.app, "last_resize_success", False)
+                            and video_was_running
+                        ):
                             data_logger.info(
                                 f"Resize handler: Restarting video ({current_encoder_on_resize}) after successful resize to {self.app.display_width}x{self.app.display_height} for {raddr}"
                             )
-                            # Ensure frame IDs are reset since resolution and likely keyframe changed
-                            await self._reset_frame_ids_and_notify("resize_event")
-
                             if current_encoder_on_resize == "jpeg":
                                 await self._start_jpeg_pipeline()
                             elif current_encoder_on_resize == "x264enc-striped":
@@ -2491,10 +2759,14 @@ class DataStreamingServer:
                                 self.app, "start_websocket_video_pipeline"
                             ):
                                 await self.app.start_websocket_video_pipeline()
-                        elif not getattr(self.app, 'last_resize_success', False):
-                            data_logger.error(f"Resize handler: Resize failed for {target_res_str}, {raddr}. Video not restarted if it was running.")
+                        elif not getattr(self.app, "last_resize_success", False):
+                            data_logger.error(
+                                f"Resize handler: Resize failed for {target_res_str}, {raddr}. Video not restarted if it was running."
+                            )
                         elif not video_was_running:
-                            data_logger.info(f"Resize handler: Video was not running for {raddr}, no restart needed after resize.")
+                            data_logger.info(
+                                f"Resize handler: Video was not running for {raddr}, no restart needed after resize."
+                            )
 
                     elif message.startswith("SET_ENCODER,"):
                         await self.client_settings_received.wait()
@@ -2511,10 +2783,6 @@ class DataStreamingServer:
                                 await self.app.stop_websocket_video_pipeline()
 
                             self.app.encoder = new_encoder_cmd
-                            await self._reset_frame_ids_and_notify(
-                                "encoder_change_command"
-                            )
-
                             if new_encoder_cmd == "jpeg":
                                 await self._start_jpeg_pipeline()
                             elif new_encoder_cmd == "x264enc-striped":
@@ -2528,21 +2796,15 @@ class DataStreamingServer:
                                     f"No start method for new encoder {new_encoder_cmd}"
                                 )
 
-                            if (
-                                self._frame_backpressure_task
-                                and not self._frame_backpressure_task.done()
-                            ):
-                                self._frame_backpressure_task.cancel()
-                            self._frame_backpressure_task = asyncio.create_task(
-                                self._run_frame_backpressure_logic()
-                            )
-
                     elif message.startswith("SET_FRAMERATE,"):
                         await self.client_settings_received.wait()
                         new_fps_cmd = int(message.split(",")[1])
                         data_logger.info(f"Received SET_FRAMERATE: {new_fps_cmd}")
-                        self.app.set_framerate(new_fps_cmd)
+                        self.app.set_framerate(
+                            new_fps_cmd
+                        )  # This updates app.framerate
                         current_enc = getattr(self.app, "encoder", None)
+
                         if current_enc == "jpeg" and self.is_jpeg_capturing:
                             await self._stop_jpeg_pipeline()
                             await self._start_jpeg_pipeline()
@@ -2569,7 +2831,9 @@ class DataStreamingServer:
                         data_logger.info(
                             f"Received SET_VIDEO_BITRATE: {new_bitrate_cmd} kbps"
                         )
-                        self.app.set_video_bitrate(new_bitrate_cmd)
+                        self.app.set_video_bitrate(
+                            new_bitrate_cmd
+                        )  # This updates app.video_bitrate
                         current_enc = getattr(self.app, "encoder", None)
                         if (
                             GSTREAMER_AVAILABLE
@@ -2595,6 +2859,7 @@ class DataStreamingServer:
                             data_logger.warning(
                                 f"SET_CRF received but current encoder '{self.app.encoder}' does not use CRF directly via this command."
                             )
+
                     elif message.startswith("cfps,"):
                         try:
                             self._latest_client_render_fps = float(
@@ -2625,184 +2890,341 @@ class DataStreamingServer:
                 self.data_ws = None
 
             # 2. Cancel tasks created specifically for THIS connection's ws_handler instance
-            if '_stats_sender_task_ws' in locals():
-                _task_to_cancel = locals()['_stats_sender_task_ws']
+            if "_stats_sender_task_ws" in locals():
+                _task_to_cancel = locals()["_stats_sender_task_ws"]
                 if _task_to_cancel and not _task_to_cancel.done():
                     _task_to_cancel.cancel()
-                    try: await _task_to_cancel
-                    except asyncio.CancelledError: pass
-            
-            if '_system_monitor_task_ws' in locals():
-                _task_to_cancel = locals()['_system_monitor_task_ws']
-                if _task_to_cancel and not _task_to_cancel.done():
-                    _task_to_cancel.cancel()
-                    try: await _task_to_cancel
-                    except asyncio.CancelledError: pass
+                    try:
+                        await _task_to_cancel
+                    except asyncio.CancelledError:
+                        pass
 
-            if '_gpu_monitor_task_ws' in locals():
-                _task_to_cancel = locals()['_gpu_monitor_task_ws']
+            if "_system_monitor_task_ws" in locals():
+                _task_to_cancel = locals()["_system_monitor_task_ws"]
                 if _task_to_cancel and not _task_to_cancel.done():
                     _task_to_cancel.cancel()
-                    try: await _task_to_cancel
-                    except asyncio.CancelledError: pass
-            
+                    try:
+                        await _task_to_cancel
+                    except asyncio.CancelledError:
+                        pass
+
+            if "_gpu_monitor_task_ws" in locals():
+                _task_to_cancel = locals()["_gpu_monitor_task_ws"]
+                if _task_to_cancel and not _task_to_cancel.done():
+                    _task_to_cancel.cancel()
+                    try:
+                        await _task_to_cancel
+                    except asyncio.CancelledError:
+                        pass
+            if (
+                self._frame_backpressure_task
+                and not self._frame_backpressure_task.done()
+            ):
+                if (
+                    not self.clients
+                ):  # self.clients already had the current websocket removed at this point
+                    data_logger.info(
+                        f"Last client ({raddr}) disconnected. Cancelling frame backpressure task."
+                    )
+                else:
+                    data_logger.info(
+                        f"Client {raddr} disconnected, but other clients remain. Frame backpressure task continues."
+                    )
+
             # 3. Clean up resources specific to THIS connection's ws_handler instance
-            if 'pa_stream' in locals() and locals()['pa_stream']:
+            if "pa_stream" in locals() and locals()["pa_stream"]:
                 try:
-                    locals()['pa_stream'].close()
+                    locals()["pa_stream"].close()
                     data_logger.debug(f"Closed PulseAudio stream for {raddr}.")
                 except Exception as e_pa_close:
-                    data_logger.error(f"Error closing PulseAudio stream for {raddr}: {e_pa_close}")
-            
-            if 'pulse' in locals() and locals()['pulse']:
-                _local_pulse = locals()['pulse']
-                if 'pa_module_index' in locals() and locals()['pa_module_index'] is not None:
-                    _local_pa_module_index = locals()['pa_module_index']
+                    data_logger.error(
+                        f"Error closing PulseAudio stream for {raddr}: {e_pa_close}"
+                    )
+
+            if "pulse" in locals() and locals()["pulse"]:
+                _local_pulse = locals()["pulse"]
+                if (
+                    "pa_module_index" in locals()
+                    and locals()["pa_module_index"] is not None
+                ):
+                    _local_pa_module_index = locals()["pa_module_index"]
                     try:
-                        data_logger.info(f"Unloading PulseAudio module {_local_pa_module_index} for virtual mic (client: {raddr}).")
+                        data_logger.info(
+                            f"Unloading PulseAudio module {_local_pa_module_index} for virtual mic (client: {raddr})."
+                        )
                         _local_pulse.module_unload(_local_pa_module_index)
                     except Exception as e_unload_final:
-                        data_logger.error(f"Error unloading PulseAudio module {_local_pa_module_index} for {raddr}: {e_unload_final}")
+                        data_logger.error(
+                            f"Error unloading PulseAudio module {_local_pa_module_index} for {raddr}: {e_unload_final}"
+                        )
                 try:
                     _local_pulse.close()
                     data_logger.debug(f"Closed PulseAudio connection for {raddr}.")
                 except Exception as e_pulse_close:
-                    data_logger.error(f"Error closing PulseAudio connection for {raddr}: {e_pulse_close}")
-            
-            if ('active_upload_target_path_conn' in locals() and locals()['active_upload_target_path_conn'] and
-                'active_uploads_by_path_conn' in locals() and 
-                locals()['active_upload_target_path_conn'] in locals()['active_uploads_by_path_conn']):
-                _local_active_path = locals()['active_upload_target_path_conn']
-                _local_active_uploads = locals()['active_uploads_by_path_conn']
+                    data_logger.error(
+                        f"Error closing PulseAudio connection for {raddr}: {e_pulse_close}"
+                    )
+
+            if (
+                "active_upload_target_path_conn" in locals()
+                and locals()["active_upload_target_path_conn"]
+                and "active_uploads_by_path_conn" in locals()
+                and locals()["active_upload_target_path_conn"]
+                in locals()["active_uploads_by_path_conn"]
+            ):
+                _local_active_path = locals()["active_upload_target_path_conn"]
+                _local_active_uploads = locals()["active_uploads_by_path_conn"]
                 try:
                     file_handle = _local_active_uploads.pop(_local_active_path, None)
                     if file_handle:
                         file_handle.close()
-                    os.remove(_local_active_path) # os is imported globally
-                    data_logger.info(f"Cleaned up incomplete file upload: {_local_active_path} for {raddr}")
+                    os.remove(_local_active_path)  # os is imported globally
+                    data_logger.info(
+                        f"Cleaned up incomplete file upload: {_local_active_path} for {raddr}"
+                    )
                 except OSError as e_os_remove:
-                    data_logger.warning(f"Could not remove incomplete upload file {_local_active_path} for {raddr}: {e_os_remove}")
+                    data_logger.warning(
+                        f"Could not remove incomplete upload file {_local_active_path} for {raddr}: {e_os_remove}"
+                    )
                 except Exception as e_file_cleanup:
-                    data_logger.error(f"Error cleaning up file upload {_local_active_path} for {raddr}: {e_file_cleanup}")
+                    data_logger.error(
+                        f"Error cleaning up file upload {_local_active_path} for {raddr}: {e_file_cleanup}"
+                    )
 
             # 4. Decide whether to stop global pipelines based on OTHER clients
             stop_pipelines_flag = False
-            if not self.clients: # No other clients were in the set to begin with
-                data_logger.info(f"No other clients in set after {raddr} disconnected. Marking pipelines for stop.")
+            if not self.clients:  # No other clients were in the set to begin with
+                data_logger.info(
+                    f"No other clients in set after {raddr} disconnected. Marking pipelines for stop."
+                )
                 stop_pipelines_flag = True
-            else: # Other clients *appear* to remain in the set, check their responsiveness
-                data_logger.info(f"Client from {raddr} disconnected. Checking responsiveness of remaining {len(self.clients)} client(s)...")
+            else:  # Other clients *appear* to remain in the set, check their responsiveness
+                data_logger.info(
+                    f"Client from {raddr} disconnected. Checking responsiveness of remaining {len(self.clients)} client(s)..."
+                )
                 active_clients_found_after_check = False
                 clients_to_remove_as_stale = []
-                
-                current_remaining_clients = list(self.clients) # Snapshot for iteration
+
+                current_remaining_clients = list(self.clients)  # Snapshot for iteration
 
                 for other_client_ws in current_remaining_clients:
                     try:
                         # Attempt to ping. If this fails, the client is considered unresponsive.
                         pong_waiter = await other_client_ws.ping()
-                        await asyncio.wait_for(pong_waiter, timeout=3.0) # Short timeout for this check
-                        data_logger.info(f"  Remaining client {other_client_ws.remote_address} is responsive.")
+                        await asyncio.wait_for(
+                            pong_waiter, timeout=3.0
+                        )  # Short timeout for this check
+                        data_logger.info(
+                            f"  Remaining client {other_client_ws.remote_address} is responsive."
+                        )
                         active_clients_found_after_check = True
                     except asyncio.TimeoutError:
-                        data_logger.warning(f"  Remaining client {other_client_ws.remote_address} timed out on ping. Marking as stale.")
+                        data_logger.warning(
+                            f"  Remaining client {other_client_ws.remote_address} timed out on ping. Marking as stale."
+                        )
                         clients_to_remove_as_stale.append(other_client_ws)
-                    except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK) as e_conn_closed:
-                        data_logger.warning(f"  Remaining client {other_client_ws.remote_address} connection definitively closed during ping: {type(e_conn_closed).__name__}. Marking as stale.")
+                    except (
+                        websockets.exceptions.ConnectionClosed,
+                        websockets.exceptions.ConnectionClosedError,
+                        websockets.exceptions.ConnectionClosedOK,
+                    ) as e_conn_closed:
+                        data_logger.warning(
+                            f"  Remaining client {other_client_ws.remote_address} connection definitively closed during ping: {type(e_conn_closed).__name__}. Marking as stale."
+                        )
                         clients_to_remove_as_stale.append(other_client_ws)
-                    except Exception as e_ping: # Catch any other error during ping, e.g., OS errors if socket is truly gone
-                        data_logger.error(f"  Error pinging remaining client {other_client_ws.remote_address}: {e_ping}. Marking as stale.")
+                    except Exception as e_ping:  # Catch any other error during ping, e.g., OS errors if socket is truly gone
+                        data_logger.error(
+                            f"  Error pinging remaining client {other_client_ws.remote_address}: {e_ping}. Marking as stale."
+                        )
                         clients_to_remove_as_stale.append(other_client_ws)
-                
+
                 # Remove all identified stale clients from the central set
                 if clients_to_remove_as_stale:
                     for stale_ws in clients_to_remove_as_stale:
                         self.clients.discard(stale_ws)
                         # Attempt to close from server-side; websockets library handles if already closed.
                         try:
-                            await stale_ws.close(code=1001, reason="Stale client detected on other client disconnect")
-                        except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK):
-                            pass # Already closed or closing
-                        except Exception as e_close_stale: 
-                            data_logger.debug(f"Minor error closing stale client {stale_ws.remote_address}: {e_close_stale}") # Best effort
+                            await stale_ws.close(
+                                code=1001,
+                                reason="Stale client detected on other client disconnect",
+                            )
+                        except (
+                            websockets.exceptions.ConnectionClosed,
+                            websockets.exceptions.ConnectionClosedError,
+                            websockets.exceptions.ConnectionClosedOK,
+                        ):
+                            pass  # Already closed or closing
+                        except Exception as e_close_stale:
+                            data_logger.debug(
+                                f"Minor error closing stale client {stale_ws.remote_address}: {e_close_stale}"
+                            )  # Best effort
 
                 # Now, re-evaluate if any truly active clients are left OR if self.clients is now empty
-                if not self.clients: # All "other" clients were stale and removed
-                    data_logger.info(f"All other clients were stale or disconnected. Marking pipelines for stop after {raddr} disconnect.")
+                if not self.clients:  # All "other" clients were stale and removed
+                    data_logger.info(
+                        f"All other clients were stale or disconnected. Marking pipelines for stop after {raddr} disconnect."
+                    )
                     stop_pipelines_flag = True
-                elif not active_clients_found_after_check: # No responsive clients were found among the remaining
-                    data_logger.info(f"No responsive clients remain after check for {raddr}'s disconnect. Marking pipelines for stop.")
+                elif (
+                    not active_clients_found_after_check
+                ):  # No responsive clients were found among the remaining
+                    data_logger.info(
+                        f"No responsive clients remain after check for {raddr}'s disconnect. Marking pipelines for stop."
+                    )
                     stop_pipelines_flag = True
                 else:
-                    data_logger.info(f"Client from {raddr} disconnected. Responsive clients ({len(self.clients)}) remain. Global pipelines will NOT be stopped by this handler.")
+                    data_logger.info(
+                        f"Client from {raddr} disconnected. Responsive clients ({len(self.clients)}) remain. Global pipelines will NOT be stopped by this handler."
+                    )
 
             # 5. Stop global pipelines if the flag is set
             if stop_pipelines_flag:
-                data_logger.info(f"Stopping global pipelines due to disconnect logic for {raddr}.")
-                if self.is_jpeg_capturing: 
+                data_logger.info(
+                    f"Stopping global pipelines due to disconnect logic for {raddr}."
+                )
+                if self.is_jpeg_capturing:
                     await self._stop_jpeg_pipeline()
-                if self.is_x264_striped_capturing: 
+                if self.is_x264_striped_capturing:
                     await self._stop_x264_striped_pipeline()
-                if GSTREAMER_AVAILABLE: # GSTREAMER_AVAILABLE is a global constant
-                    if hasattr(self.app, "pipeline_running") and self.app.pipeline_running:
-                        if hasattr(self.app, "stop_websocket_video_pipeline"): 
+                if GSTREAMER_AVAILABLE:  # GSTREAMER_AVAILABLE is a global constant
+                    if (
+                        hasattr(self.app, "pipeline_running")
+                        and self.app.pipeline_running
+                    ):
+                        if hasattr(self.app, "stop_websocket_video_pipeline"):
                             await self.app.stop_websocket_video_pipeline()
-                    if hasattr(self.app, "audio_pipeline_running_ws_flag") and self.app.audio_pipeline_running_ws_flag:
-                        if hasattr(self.app, "stop_websocket_audio_pipeline"): 
+                    if (
+                        hasattr(self.app, "audio_pipeline_running_ws_flag")
+                        and self.app.audio_pipeline_running_ws_flag
+                    ):
+                        if hasattr(self.app, "stop_websocket_audio_pipeline"):
                             await self.app.stop_websocket_audio_pipeline()
-            
+
             data_logger.info(f"Data WS handler for {raddr} finished all cleanup.")
 
-    async def _reset_frame_ids_and_notify(
-        self, pipeline_reset_reason="backpressure_adjustment"
-    ):
-        data_logger.info(f"Resetting frame IDs due to: {pipeline_reset_reason}")
-        self._active_pipeline_last_sent_frame_id = 0
-        self._client_acknowledged_frame_id = -1
-        self._previous_ack_id_for_stall_check = -1
-        self._previous_sent_id_for_stall_check = -1
-        if self.app.encoder not in ["jpeg", "x264enc-striped"] and hasattr(
-            self.app, "gstreamer_ws_current_frame_id"
-        ):
-            self.app.gstreamer_ws_current_frame_id = 0
-        if self.clients: # Check if there are any clients to broadcast to
-            websockets.broadcast(self.clients, "PIPELINE_RESETTING 0")
+        data_logger.info("Frame-based backpressure logic task started.")
+        try:
+            await self.client_settings_received.wait()  # Ensure initial settings are processed
+            data_logger.info(
+                "Client settings received, proceeding with backpressure loop."
+            )
 
+            while True:
+                await asyncio.sleep(self.backpressure_check_interval_s)
 
-    async def _restart_active_video_pipeline_for_backpressure(self, reason: str):
-        data_logger.info(
-            f"Restarting video for backpressure: {reason}, Encoder: {self.app.encoder}"
-        )
-        current_encoder = self.app.encoder
-        if current_encoder == "jpeg":
-            if self.is_jpeg_capturing:
-                await self._stop_jpeg_pipeline()
-        elif current_encoder == "x264enc-striped":
-            if self.is_x264_striped_capturing:
-                await self._stop_x264_striped_pipeline()
-        elif (
-            GSTREAMER_AVAILABLE
-            and hasattr(self.app, "stop_websocket_video_pipeline")
-            and getattr(self.app, "pipeline_running", False)
-        ):
-            await self.app.stop_websocket_video_pipeline()
+                if not self.clients:  # No clients connected
+                    self._backpressure_send_frames_enabled = (
+                        True  # Default to sending if no clients
+                    )
+                    continue
 
-        await self._reset_frame_ids_and_notify(pipeline_reset_reason=reason)
+                current_server_frame_id = self._active_pipeline_last_sent_frame_id
+                last_client_acked_frame_id = self._client_acknowledged_frame_id
 
-        if current_encoder == "jpeg":
-            await self._start_jpeg_pipeline()
-        elif current_encoder == "x264enc-striped":
-            await self._start_x264_striped_pipeline()
-        elif GSTREAMER_AVAILABLE and hasattr(
-            self.app, "start_websocket_video_pipeline"
-        ):
-            await self.app.start_websocket_video_pipeline()
-        data_logger.info(
-            f"Video pipeline restarted with new parameters for {current_encoder}."
-        )
+                client_fps = self._latest_client_render_fps
+                if (
+                    client_fps <= 0 and self.app
+                ):  # Use app's configured framerate if client FPS unknown
+                    client_fps = self.app.framerate
+                if client_fps <= 0:  # Ultimate fallback
+                    client_fps = TARGET_FRAMERATE
 
-    async def _run_frame_backpressure_logic(self):
-        return  # WIP
+                if last_client_acked_frame_id == -1 or client_fps <= 0:
+                    # If we don't have client ACK or a valid FPS, don't engage backpressure
+                    if not self._backpressure_send_frames_enabled:
+                        data_logger.info(
+                            "Backpressure LIFTED (no client ACK yet or invalid FPS). Enabling frame sending."
+                        )
+                    self._backpressure_send_frames_enabled = True
+                    continue
+
+                server_id = current_server_frame_id
+                client_id = last_client_acked_frame_id
+
+                # Handle frame ID wrap-around with a heuristic:
+                if abs(server_id - client_id) > FRAME_ID_SUSPICIOUS_GAP_THRESHOLD:
+                    data_logger.debug(
+                        f"Frame ID wrap-around suspected or large gap (S:{server_id}, C:{client_id}). "
+                        f"Skipping backpressure decision, ensuring frames flow."
+                    )
+                    if not self._backpressure_send_frames_enabled:
+                        data_logger.info(
+                            "Backpressure LIFTED due to suspected frame ID wrap/large gap."
+                        )
+                    self._backpressure_send_frames_enabled = True
+                    self._last_client_acknowledged_frame_id_update_time = (
+                        time.monotonic()
+                    )  # Reset stall detection
+                    continue
+
+                # Calculate desync, positive if server is ahead
+                if server_id >= client_id:
+                    frame_desync = server_id - client_id
+                else:  # server_id < client_id (and not a huge gap, so server has wrapped)
+                    frame_desync = (MAX_UINT16_FRAME_ID - client_id) + server_id + 1
+
+                if (
+                    frame_desync < 0
+                ):  # Should ideally not happen with correct wrap logic
+                    frame_desync = 0
+
+                # Determine allowed desync in frames
+                allowed_desync_frames = (self.allowed_desync_ms / 1000.0) * client_fps
+
+                # Latency adjustment
+                current_rtt_ms = self._smoothed_rtt_ms
+                latency_adjustment_frames = 0
+                if current_rtt_ms > self.latency_threshold_for_adjustment_ms:
+                    # Only adjust if latency is significant enough
+                    latency_adjustment_frames = (current_rtt_ms / 1000.0) * client_fps
+
+                effective_desync_frames = frame_desync - latency_adjustment_frames
+
+                # Stall detection: if client hasn't ACKed for STALLED_CLIENT_TIMEOUT_SECONDS
+                time_since_last_ack = (
+                    time.monotonic()
+                    - self._last_client_acknowledged_frame_id_update_time
+                )
+                client_stalled = time_since_last_ack > STALLED_CLIENT_TIMEOUT_SECONDS
+
+                if client_stalled:
+                    if self._backpressure_send_frames_enabled:
+                        data_logger.warning(
+                            f"Client stall detected: No ACK update in {time_since_last_ack:.1f}s. "
+                            f"Last ACK ID: {last_client_acked_frame_id}. Forcing backpressure."
+                        )
+                    self._backpressure_send_frames_enabled = False
+                elif effective_desync_frames > allowed_desync_frames:
+                    if self._backpressure_send_frames_enabled:  # Log only on transition
+                        data_logger.warning(
+                            f"Backpressure TRIGGERED. S:{server_id}, C:{client_id} (Desync:{frame_desync:.0f}f, "
+                            f"EffDesync:{effective_desync_frames:.1f}f > Allowed:{allowed_desync_frames:.1f}f). "
+                            f"FPS:{client_fps:.1f}, RTT:{current_rtt_ms:.1f}ms. Disabling frame sending."
+                        )
+                    self._backpressure_send_frames_enabled = False
+                else:  # Client is caught up or within tolerance
+                    if (
+                        not self._backpressure_send_frames_enabled
+                    ):  # Log only on transition
+                        data_logger.info(
+                            f"Backpressure LIFTED. S:{server_id}, C:{client_id} (Desync:{frame_desync:.0f}f, "
+                            f"EffDesync:{effective_desync_frames:.1f}f <= Allowed:{allowed_desync_frames:.1f}f). "
+                            f"Enabling frame sending."
+                        )
+                    self._backpressure_send_frames_enabled = True
+
+        except asyncio.CancelledError:
+            data_logger.info("Frame-based backpressure logic task cancelled.")
+        except Exception as e:
+            data_logger.error(
+                f"Error in frame-based backpressure logic: {e}", exc_info=True
+            )
+            self._backpressure_send_frames_enabled = True  # Fail safe: enable sending
+        finally:
+            data_logger.info("Frame-based backpressure logic task finished.")
+            self._backpressure_send_frames_enabled = (
+                True  # Ensure frames flow if task stops
+            )
 
     async def run_server(self):
         self.stop_server = asyncio.Future()
@@ -2954,7 +3376,7 @@ async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5
             system_stats = shared_data.pop("system", None)
             gpu_stats = shared_data.pop("gpu", None)
             try:
-                if not websocket: # Check if websocket is still valid
+                if not websocket:  # Check if websocket is still valid
                     data_logger.info("Stats sender: WS closed or invalid.")
                     break
                 if system_stats:
@@ -2988,16 +3410,20 @@ def on_resize_handler(res_str, current_app_instance, data_server_instance=None):
             )
             if current_app_instance:
                 current_app_instance.last_resize_success = False
-            return # Do not proceed with invalid dimensions
+            return  # Do not proceed with invalid dimensions
 
         # Ensure dimensions are even
         if target_w % 2 != 0:
-            logger_gst_app_resize.debug(f"Adjusting odd width {target_w} to {target_w - 1}")
+            logger_gst_app_resize.debug(
+                f"Adjusting odd width {target_w} to {target_w - 1}"
+            )
             target_w -= 1
         if target_h % 2 != 0:
-            logger_gst_app_resize.debug(f"Adjusting odd height {target_h} to {target_h - 1}")
+            logger_gst_app_resize.debug(
+                f"Adjusting odd height {target_h} to {target_h - 1}"
+            )
             target_h -= 1
-        
+
         # Re-check positivity after odd adjustment
         if target_w <= 0 or target_h <= 0:
             logger_gst_app_resize.error(
@@ -3005,7 +3431,7 @@ def on_resize_handler(res_str, current_app_instance, data_server_instance=None):
             )
             if current_app_instance:
                 current_app_instance.last_resize_success = False
-            return # Do not proceed
+            return  # Do not proceed
 
         current_app_instance.display_width = target_w
         current_app_instance.display_height = target_h
@@ -3163,7 +3589,7 @@ async def main():
         input_handler.on_audio_encoder_bit_rate = app.set_audio_bitrate
     if hasattr(app, "set_pointer_visible"):
         input_handler.on_mouse_pointer_visible = app.set_pointer_visible
-    
+
     # Assuming send_ws_clipboard_data and send_ws_cursor_data in GSTStreamingApp
     # are the intended targets for these callbacks.
     input_handler.on_clipboard_read = app.send_ws_clipboard_data
@@ -3171,7 +3597,9 @@ async def main():
 
     input_handler.on_set_fps = app.set_framerate
     if ENABLE_RESIZE:
-        input_handler.on_resize = lambda res_str: on_resize_handler(res_str, app, data_server)
+        input_handler.on_resize = lambda res_str: on_resize_handler(
+            res_str, app, data_server
+        )
         input_handler.on_scaling_ratio = lambda scale_val: on_scaling_ratio_handler(
             scale_val, app
         )
@@ -3180,11 +3608,6 @@ async def main():
         input_handler.on_scaling_ratio = lambda scale_val: logger.warning(
             "Scaling disabled."
         )
-
-    # These metrics setters are not defined in the provided code.
-    # input_handler.on_client_fps = lambda fps_val: metrics.set_fps(fps_val)
-    # input_handler.on_client_latency = lambda lat_val: metrics.set_latency(lat_val)
-
 
     tasks_to_run = []
     data_server_task = asyncio.create_task(data_server.run_server(), name="DataServer")
