@@ -111,6 +111,7 @@ function getCookieValue(name) {
 }
 // Set app name from manifest if possible
 let appName = 'Selkies';
+document.title = appName;
 !async function() {
   try {
     const t = await fetch("manifest.json", {
@@ -118,7 +119,8 @@ let appName = 'Selkies';
     });
     if (t.ok) {
       const a = await t.json();
-      a && "string" == typeof a.name && "" !== a.name.trim() && (appName = a.name)
+      appName = a.name;
+      document.title = `${appName}`;
     }
   } catch (t) {}
 }();
@@ -545,7 +547,6 @@ function updateUIForSharedMode() {
 
 const initializeUI = () => {
   injectCSS();
-  document.title = `${appName}`;
   window.addEventListener('requestFileUpload', handleRequestFileUpload);
   const appDiv = document.getElementById('app');
   if (!appDiv) {
