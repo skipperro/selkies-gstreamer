@@ -35,6 +35,7 @@ from PIL import Image
 import Xlib
 from Xlib import display
 from Xlib import X
+from Xlib import XK
 from Xlib.ext import xfixes, xtest
 import msgpack
 
@@ -935,15 +936,112 @@ class WebRTCInput:
 
     def send_x11_keypress(self, keysym, down=True):
         try:
-            if keysym == 60 and self.keyboard._display.keysym_to_keycode(keysym) == 94:
-                keysym = 44
-            keycode = pynput.keyboard.KeyCode(keysym)
+            current_keysym = keysym
+            # Special handling for a specific keysym remapping if needed
+            if current_keysym == 60:
+                try:
+                    if self.keyboard and hasattr(self.keyboard, '_display') and self.keyboard._display:
+                        if self.keyboard._display.keysym_to_keycode(current_keysym) == 94:
+                            current_keysym = 44
+                except Exception as e_remap:
+                    logger_webrtc_input.warning(
+                        f"Error during keysym 60 remapping check: {e_remap}, using original keysym {current_keysym}."
+                    )
+
+            if not self.keyboard:
+                logger_webrtc_input.warning("pynput keyboard controller not available. Attempting xdotool fallback.")
+                self._xdotool_fallback(current_keysym, down)
+                return
+
+            pynput_key = pynput.keyboard.KeyCode.from_vk(current_keysym)
+
             if down:
-                self.keyboard.press(keycode)
+                self.keyboard.press(pynput_key)
             else:
-                self.keyboard.release(keycode)
-        except Exception as e:
-            logger_webrtc_input.error("failed to send keypress: {}".format(e))
+                self.keyboard.release(pynput_key)
+
+        except (Xlib.error.XError, Exception) as e: # Catch Xlib errors and other general exceptions
+            error_type_name = type(e).__name__
+            keysym_name_for_log = XK.keysym_to_string(keysym) if self.xdisplay else str(keysym)
+            self._xdotool_fallback(keysym, down) # Use original keysym for fallback
+
+    def _xdotool_fallback(self, keysym_number, down=True):
+        if not self.xdisplay:
+            logger_webrtc_input.error("xdotool fallback: X display not available.")
+            return
+
+        keysym_name_from_xlib = XK.keysym_to_string(keysym_number)
+
+        if keysym_name_from_xlib is None:
+            if 0x20 <= keysym_number <= 0x7E or keysym_number >= 0xA0:
+                try:
+                    keysym_name_from_xlib = chr(keysym_number)
+                except ValueError:
+                    logger_webrtc_input.error(
+                        f"xdotool fallback: Could not convert keysym number {keysym_number} to a valid char."
+                    )
+                    return
+            else:
+                logger_webrtc_input.error(
+                    f"xdotool fallback: Could not convert keysym number {keysym_number} to a name."
+                )
+                return
+        
+        xdotool_key_arg = keysym_name_from_xlib
+
+        if len(keysym_name_from_xlib) == 1:
+            char_code = ord(keysym_name_from_xlib)
+            if char_code >= 0x80 or (char_code == keysym_number and char_code != 0x00):
+                xdotool_key_arg = f"U{char_code:04X}"
+        elif keysym_number == 0x00a3: # XK_sterling
+             xdotool_key_arg = "sterling"
+
+        action = "keydown" if down else "keyup"
+        command_key = ["xdotool", action, xdotool_key_arg]
+        
+        fallback_attempted = False
+        fallback_succeeded = False
+
+        try:
+            result_key = subprocess.run(command_key, check=False, timeout=1.0, capture_output=True, text=True)
+            fallback_attempted = True
+
+            if result_key.returncode == 0 and not (result_key.stderr and ("No such key name" in result_key.stderr or "Error:" in result_key.stderr.lower())):
+                fallback_succeeded = True
+            else:
+                # If 'key' action failed for a 'keydown' of a single printable character, try 'xdotool type'
+                if down and len(keysym_name_from_xlib) == 1 and (0x20 <= ord(keysym_name_from_xlib) <= 0x7E or ord(keysym_name_from_xlib) >= 0xA0):
+                    command_type = ["xdotool", "type", "--clearmodifiers", keysym_name_from_xlib]
+                    try:
+                        # For 'type', we generally expect it to succeed if 'key' fails for complex chars
+                        subprocess.run(command_type, check=True, timeout=1.0, capture_output=True, text=True)
+                        fallback_succeeded = True # 'type' handles both down and up implicitly for the character
+                    except subprocess.CalledProcessError as cpe_type:
+                        # Log if 'type' also fails
+                        logger_webrtc_input.error(
+                            f"xdotool 'type {keysym_name_from_xlib}' also failed. Stderr: {cpe_type.stderr.strip() if cpe_type.stderr else 'N/A'}"
+                        )
+                    except subprocess.TimeoutExpired:
+                         logger_webrtc_input.error(f"xdotool 'type {keysym_name_from_xlib}' timed out.")
+
+                if not fallback_succeeded:
+                    # Log initial failure if 'type' wasn't attempted or also failed
+                    error_details = f"RC: {result_key.returncode}. Stderr: '{result_key.stderr.strip()}'" if result_key.stderr else f"RC: {result_key.returncode}"
+                    logger_webrtc_input.warning(
+                        f"xdotool '{action} {xdotool_key_arg}' failed. {error_details}"
+                    )
+
+
+        except FileNotFoundError:
+            logger_webrtc_input.error("xdotool command not found. Cannot use fallback.")
+            return # Cannot proceed
+        except subprocess.TimeoutExpired:
+            logger_webrtc_input.error(f"xdotool '{' '.join(command_key)}' timed out.")
+        except Exception as ex:
+            logger_webrtc_input.error(
+                f"xdotool fallback: Unexpected error for '{' '.join(command_key)}': {ex}"
+            )
+
     def send_x11_mouse(self, x, y, button_mask, scroll_magnitude, relative=False):
         if relative:
             self.send_mouse(MOUSE_MOVE, (x, y))
