@@ -1496,3 +1496,201 @@ a:active {
 .copy-button svg {
     fill: currentColor;
 }
+
+/* --- Settings Items within Sections --- */
+/* Styling for individual setting items (e.g., label + input).
+   Default layout is a column (label above input/control).
+   Ensures items within collapsible sections have a transparent background. */
+.dev-setting-item {
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.sidebar-section-content .dev-setting-item {
+    background-color: transparent;
+}
+
+/* Common style for labels of settings. */
+.dev-setting-item label {
+    font-weight: bold;
+    font-size: 0.9em;
+    color: var(--sidebar-text);
+}
+
+/* Specific styling for toggle items (e.g., FullColor 4:4:4).
+   Overrides default flex-direction to row.
+   Aligns label to the left and toggle switch to the right. */
+.dev-setting-item.toggle-item {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+/* Label specific to toggle items.
+   Ensures text is left-aligned and has some space before the toggle. */
+.dev-setting-item.toggle-item label {
+  text-align: left;
+  margin-right: 10px;
+}
+
+/* Style for select elements like #encoderSelect.
+   Custom arrow SVG for dark theme. */
+.dev-setting-item #encoderSelect,
+.dev-setting-item #resolutionPresetSelect,
+.dev-setting-item .audio-device-select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    font-size: 1em;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23abb2bf%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
+    background-repeat: no-repeat;
+    background-position: right 8px top 50%;
+    background-size: 12px auto;
+    transition: border-color 0.2s ease;
+}
+
+/* Custom arrow SVG for light theme select elements. */
+.theme-light .dev-setting-item #encoderSelect,
+.theme-light .dev-setting-item #resolutionPresetSelect,
+.theme-light .dev-setting-item .audio-device-select {
+     background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%22292.4%22%3E%3Cpath%20fill%3D%22%23333%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
+     background-color: var(--input-bg);
+     color: var(--input-text);
+}
+
+/* Hover state for select elements. */
+.dev-setting-item #encoderSelect:hover,
+.dev-setting-item #resolutionPresetSelect:hover,
+.dev-setting-item .audio-device-select:hover {
+    border-color: var(--sidebar-header-color);
+}
+
+/* Focus state for select elements. */
+.dev-setting-item #encoderSelect:focus,
+.dev-setting-item #resolutionPresetSelect:focus,
+.dev-setting-item .audio-device-select:focus {
+   outline: none;
+   border-color: var(--sidebar-header-color);
+   box-shadow: none;
+}
+
+/* Disabled state for audio device select elements. */
+.dev-setting-item .audio-device-select:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* --- Slider Specific Styles --- */
+/* Style for range input elements (sliders). */
+.dev-setting-item input[type="range"] {
+    flex-grow: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+    width: 100%;
+    height: 20px;
+}
+
+/* Remove focus outline for sliders. */
+.dev-setting-item input[type="range"]:focus {
+    outline: none;
+}
+
+/* Slider track style for Webkit browsers. */
+.dev-setting-item input[type="range"]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 8px;
+    background: var(--slider-track-color);
+    border-radius: 4px;
+    transition: background 0.3s ease;
+}
+
+/* Slider thumb style for Webkit browsers. */
+.dev-setting-item input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    margin-top: -4px;
+    width: 16px;
+    height: 16px;
+    background: var(--slider-thumb-color);
+    border: 1px solid var(--item-border);
+    border-radius: 50%;
+    transition: background 0.3s ease, box-shadow 0.1s ease;
+}
+
+.dev-setting-item input[type="range"]::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 4px rgba(var(--sidebar-header-color), 0.5);
+}
+
+/* Slider track style for Mozilla Firefox. */
+.dev-setting-item input[type="range"]::-moz-range-track {
+    width: 100%;
+    height: 8px;
+    background: var(--slider-track-color);
+    border-radius: 4px;
+    transition: background 0.3s ease;
+}
+
+/* Slider thumb style for Mozilla Firefox. */
+.dev-setting-item input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--slider-thumb-color);
+    border: 1px solid var(--item-border);
+    border-radius: 50%;
+    transition: background 0.3s ease, box-shadow 0.1s ease;
+}
+
+.dev-setting-item input[type="range"]::-moz-range-thumb:hover {
+     box-shadow: 0 0 4px rgba(var(--sidebar-header-color), 0.5);
+}
+
+/* --- Toggle Button (Sidebar Specific) --- */
+/* Styles for the small toggle switch button used within sidebar settings. */
+.toggle-button-sidebar {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 26px;
+  background-color: var(--item-bg-hover, #555);
+  border-radius: 13px;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out;
+  border: 1px solid var(--item-border, #444);
+  padding: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+/* Knob part of the toggle switch. */
+.toggle-button-sidebar-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background-color: white;
+  border-radius: 50%;
+  transition: transform 0.2s ease-in-out;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* Active state for the toggle switch (e.g., "ON"). */
+.toggle-button-sidebar.active {
+  background-color: var(--sidebar-header-color, #61dafb);
+}
+
+/* Moves the knob to the right when the toggle is active. */
+.toggle-button-sidebar.active .toggle-button-sidebar-knob {
+  transform: translateX(24px);
+}

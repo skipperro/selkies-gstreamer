@@ -555,6 +555,9 @@ function Sidebar({ isOpen }) {
   const [videoCRF, setVideoCRF] = useState(
     parseInt(localStorage.getItem("videoCRF"), 10) || DEFAULT_VIDEO_CRF
   );
+  const [h264FullColor, setH264FullColor] = useState(
+    localStorage.getItem("h264_fullcolor") === "true"
+  );
   const [manualWidth, setManualWidth] = useState("");
   const [manualHeight, setManualHeight] = useState("");
   const [scaleLocally, setScaleLocally] = useState(() => {
@@ -648,6 +651,17 @@ function Sidebar({ isOpen }) {
       localStorage.setItem("videoCRF", newCRF.toString());
       window.postMessage(
         { type: "settings", settings: { videoCRF: newCRF } },
+        window.location.origin
+      );
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdateH264FullColorSettings = useCallback(
+    debounce((newFullColor) => {
+      localStorage.setItem("h264_fullcolor", newFullColor.toString());
+      window.postMessage(
+        { type: "settings", settings: { h264_fullcolor: newFullColor } },
         window.location.origin
       );
     }, DEBOUNCE_DELAY),
@@ -852,6 +866,11 @@ function Sidebar({ isOpen }) {
       setVideoCRF(selectedCRF); // Immediate UI update
       debouncedUpdateVideoCRFSettings(selectedCRF); // Debounced action
     }
+  };
+  const handleH264FullColorToggle = () => {
+    const newFullColorState = !h264FullColor;
+    setH264FullColor(newFullColorState); // Immediate UI update
+    debouncedUpdateH264FullColorSettings(newFullColorState); // Debounced action
   };
   const handleAudioInputChange = (event) => {
     const deviceId = event.target.value;
@@ -1163,6 +1182,13 @@ function Sidebar({ isOpen }) {
       setVideoCRF(DEFAULT_VIDEO_CRF);
       localStorage.setItem("videoCRF", DEFAULT_VIDEO_CRF.toString());
     }
+    const savedH264FullColor = localStorage.getItem("h264_fullcolor");
+    if (savedH264FullColor !== null) {
+      setH264FullColor(savedH264FullColor === "true");
+    } else {
+      setH264FullColor(false);
+      localStorage.setItem("h264_fullcolor", "false");
+    }
   }, []);
 
   useEffect(() => {
@@ -1407,6 +1433,10 @@ function Sidebar({ isOpen }) {
                     "isGamepadEnabled",
                     isGpEnabled.toString()
                   );
+                } else if (prefixedKey.endsWith("h264_fullcolor")) {
+                  const val = valueStr === true || valueStr === "true";
+                  setH264FullColor(val);
+                  localStorage.setItem("h264_fullcolor", val.toString());
                 }
               }
             }
@@ -1506,6 +1536,7 @@ function Sidebar({ isOpen }) {
     "openh264enc",
   ].includes(encoder);
   const showCRF = ["x264enc-striped"].includes(encoder);
+  const showH264FullColor = ["x264enc-striped"].includes(encoder);
 
   return (
     <>
@@ -1725,6 +1756,23 @@ function Sidebar({ isOpen }) {
                     value={videoCRFOptions.indexOf(videoCRF)}
                     onChange={handleVideoCRFChange}
                   />{" "}
+                </div>
+              )}
+              {showH264FullColor && (
+                <div className="dev-setting-item toggle-item">
+                  <label htmlFor="h264FullColorToggle">
+                    FullColor 4:4:4
+                  </label>
+                  <button
+                    id="h264FullColorToggle"
+                    className={`toggle-button-sidebar ${h264FullColor ? "active" : ""}`}
+                    onClick={handleH264FullColorToggle}
+                    aria-pressed={h264FullColor}
+                    title={t(h264FullColor ? "buttons.h264FullColorDisableTitle" : "buttons.h264FullColorEnableTitle", 
+                               h264FullColor ? "Disable H.264 Full Color" : "Enable H.264 Full Color")}
+                  >
+                    <span className="toggle-button-sidebar-knob"></span>
+                  </button>
                 </div>
               )}
             </div>

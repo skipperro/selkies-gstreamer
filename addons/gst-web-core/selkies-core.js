@@ -128,6 +128,7 @@ document.title = appName;
 let videoBitRate = 8000;
 let videoFramerate = 60;
 let videoCRF = 25;
+let h264_fullcolor = false;
 let audioBitRate = 320000;
 let showStart = true;
 let status = 'connecting';
@@ -226,6 +227,7 @@ const setStringParam = (key, value) => {
 videoBitRate = getIntParam('videoBitRate', videoBitRate);
 videoFramerate = getIntParam('videoFramerate', videoFramerate);
 videoCRF = getIntParam('videoCRF', videoCRF);
+h264_fullcolor = getBoolParam('h264_fullcolor', h264_fullcolor); // New line
 audioBitRate = getIntParam('audioBitRate', audioBitRate);
 resizeRemote = getBoolParam('resizeRemote', resizeRemote);
 debug = getBoolParam('debug', debug);
@@ -1549,6 +1551,25 @@ function handleSettingsMessage(settings) {
       console.warn("Websocket connection not open, cannot send CRF setting.");
     }
   }
+  if (settings.h264_fullcolor !== undefined) {
+    const newFullColorValue = !!settings.h264_fullcolor;
+    if (h264_fullcolor !== newFullColorValue) {
+      h264_fullcolor = newFullColorValue;
+      setBoolParam('h264_fullcolor', h264_fullcolor);
+      console.log(`Applied H.264 Full Color setting: ${h264_fullcolor}.`);
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && currentEncoderMode === 'x264enc-striped') {
+        const message = `SET_H264_FULLCOLOR,${h264_fullcolor}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else if (!isSharedMode && currentEncoderMode !== 'x264enc-striped') {
+        console.log("H.264 Full Color setting changed, but current encoder is not x264enc-striped. WebSocket command not sent.");
+      } else if (!isSharedMode) {
+        console.warn("Websocket connection not open, cannot send H.264 Full Color setting.");
+      }
+    } else {
+      console.log(`H.264 Full Color setting received (${newFullColorValue}), but it's the same as current. No change.`);
+    }
+  }
   if (settings.turnSwitch !== undefined) {
     console.log(`turnSwitch setting received (WebRTC specific): ${settings.turnSwitch}. No action in WebSocket mode.`);
   }
@@ -1575,6 +1596,7 @@ function sendStatsMessage() {
     isMicrophoneActive: isMicrophoneActive,
   };
   stats.encoderName = currentEncoderMode;
+  stats.h264_fullcolor = h264_fullcolor;
   window.parent.postMessage({
     type: 'stats',
     data: stats
@@ -2211,10 +2233,11 @@ function handleDecodedFrame(frame) {
           else if (unprefixedKey === 'manualHeight') serverExpectedKey = 'webrtc_manualHeight';
           else if (unprefixedKey === 'audioBitRate') serverExpectedKey = 'webrtc_audioBitRate';
           else if (unprefixedKey === 'videoBufferSize') serverExpectedKey = 'webrtc_videoBufferSize';
+          else if (unprefixedKey === 'h264_fullcolor') serverExpectedKey = 'webrtc_h264_fullcolor';
 
           if (serverExpectedKey) {
             let value = localStorage.getItem(key);
-            if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode') {
+            if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode' || serverExpectedKey === 'webrtc_h264_fullcolor') {
               value = (value === 'true');
             } else if (['webrtc_videoBitRate', 'webrtc_videoFramerate', 'webrtc_videoCRF',
                 'webrtc_manualWidth', 'webrtc_manualHeight', 'webrtc_audioBitRate',

@@ -1335,6 +1335,8 @@ class DataStreamingServer:
         self._sent_frames_log = deque()
         self._initial_x264_crf = self.cli_args.h264_crf
         self.h264_crf = self._initial_x264_crf
+        self._initial_h264_fullcolor = self.cli_args.h264_fullcolor
+        self.h264_fullcolor = self._initial_h264_fullcolor
         self._initial_jpeg_use_paint_over_quality = True
         self._current_jpeg_use_paint_over_quality = True
         self._system_monitor_task_ws = None
@@ -1667,6 +1669,7 @@ class DataStreamingServer:
             cs.paint_over_trigger_frames = 2
             cs.damage_block_threshold = 15
             cs.damage_block_duration = 30
+            cs.h264_fullcolor = self.h264_fullcolor
             
             cs.capture_x = 0
             cs.capture_y = 0
@@ -1859,6 +1862,7 @@ class DataStreamingServer:
         parsed["videoFramerate"] = get_int("webrtc_videoFramerate", self.app.framerate)
         parsed["videoCRF"] = get_int("webrtc_videoCRF", self.h264_crf)
         parsed["encoder"] = get_str("webrtc_encoder", self.app.encoder)
+        parsed["h264_fullcolor"] = get_bool("webrtc_h264_fullcolor", self.h264_fullcolor)
         parsed["resizeRemote"] = get_bool(
             "webrtc_resizeRemote",
             getattr(self.app, "client_preferred_resize_enabled", True),
@@ -1901,6 +1905,7 @@ class DataStreamingServer:
         old_video_bitrate_kbps = self.app.video_bitrate
         old_framerate = self.app.framerate
         old_h264_crf = self.h264_crf
+        old_h264_fullcolor = self.h264_fullcolor
         old_audio_bitrate_bps = self.app.audio_bitrate
         old_display_width = self.app.display_width
         old_display_height = self.app.display_height
@@ -2062,8 +2067,12 @@ class DataStreamingServer:
             self.h264_crf = settings["videoCRF"]
             self._initial_x264_crf = self.h264_crf
 
+        if "h264_fullcolor" in settings and self.app.encoder == "x264enc-striped": # Apply if present
+            self.h264_fullcolor = settings["h264_fullcolor"]
+
         if "audioBitRate" in settings:
             self.app.audio_bitrate = settings["audioBitRate"]
+
         if "videoBufferSize" in settings:
             setattr(self.app, "video_buffer_size", settings["videoBufferSize"])
 
@@ -2078,6 +2087,9 @@ class DataStreamingServer:
             crf_param_changed = (
                 self.app.encoder == "x264enc-striped" and self.h264_crf != old_h264_crf
             )
+            h264_fullcolor_param_changed = (
+                self.app.encoder == "x264enc-striped" and self.h264_fullcolor != old_h264_fullcolor
+            )
             audio_bitrate_param_changed = (
                 self.app.audio_bitrate != old_audio_bitrate_bps
             )
@@ -2088,6 +2100,7 @@ class DataStreamingServer:
                 or bitrate_param_changed
                 or framerate_param_changed
                 or crf_param_changed
+                or h264_fullcolor_param_changed
             )
             restart_audio_pipeline = audio_bitrate_param_changed
 
@@ -2881,6 +2894,28 @@ class DataStreamingServer:
                                 f"SET_CRF received but current encoder '{self.app.encoder}' does not use CRF directly via this command."
                             )
 
+                    elif message.startswith("SET_H264_FULLCOLOR,"): # New message handler
+                        await self.client_settings_received.wait()
+                        try:
+                            new_fullcolor_cmd_str = message.split(",")[1].strip().lower()
+                            new_fullcolor_cmd = new_fullcolor_cmd_str == "true"
+                            data_logger.info(f"Received SET_H264_FULLCOLOR: {new_fullcolor_cmd}")
+                            if self.app.encoder == "x264enc-striped":
+                                if self.h264_fullcolor != new_fullcolor_cmd:
+                                    self.h264_fullcolor = new_fullcolor_cmd
+                                    if self.is_x264_striped_capturing:
+                                        data_logger.info(f"Restarting x264-striped pipeline for H264_FULLCOLOR change to {self.h264_fullcolor}")
+                                        await self._stop_x264_striped_pipeline()
+                                        await self._start_x264_striped_pipeline()
+                                else:
+                                    data_logger.info(f"SET_H264_FULLCOLOR: Value {new_fullcolor_cmd} is already set. No change.")
+                            else:
+                                data_logger.warning(
+                                    f"SET_H264_FULLCOLOR received but current encoder '{self.app.encoder}' is not x264enc-striped."
+                                )
+                        except IndexError:
+                            data_logger.warning(f"Malformed SET_H264_FULLCOLOR message: {message}")
+
                     elif message.startswith("cfps,"):
                         try:
                             self._latest_client_render_fps = float(
@@ -3536,6 +3571,12 @@ async def main():
         default=os.environ.get("SELKIES_H264_CRF", "25"),
         type=int,
         help="H.264 CRF for x264enc-striped (0-51)",
+    )
+    parser.add_argument(
+        "--h264_fullcolor",
+        default=os.environ.get("SELKIES_H264_FULLCOLOR", "False").lower() == "true",
+        type=lambda x: (str(x).lower() == 'true'),
+        help="Enable H.264 full color range for x264enc-striped (default: False)",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args, unknown = parser.parse_known_args()
