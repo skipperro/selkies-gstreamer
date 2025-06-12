@@ -26,6 +26,8 @@ const en = {
         gamepadEnableTitle: "Enable Gamepad Input",
         gamepadDisableTitle: "Disable Gamepad Input",
         virtualKeyboardButtonTitle: "Pop Keyboard",
+        h264FullColorEnableTitle: "Enable H.264 Full Color",
+        h264FullColorDisableTitle: "Disable H.264 Full Color",
     },
     sections: {
         video: {
@@ -36,6 +38,7 @@ const en = {
             bufferLabelImmediate: "Video Buffer Size (0 (Immediate)):",
             bufferLabelFrames: "Video Buffer Size ({videoBufferSize} frames):",
             crfLabel: "Video CRF ({crf}):",
+            fullColorLabel: "FullColor 4:4:4:",
         },
         audio: {
             title: "Audio Settings",
@@ -178,6 +181,8 @@ const es = {
         gamepadEnableTitle: "Activar Entrada de Mando",
         gamepadDisableTitle: "Desactivar Entrada de Mando",
         virtualKeyboardButtonTitle: "Mostrar Teclado",
+        h264FullColorEnableTitle: "Activar H.264 Color Completo",
+        h264FullColorDisableTitle: "Desactivar H.264 Color Completo",
     },
     sections: {
         video: {
@@ -188,6 +193,7 @@ const es = {
             bufferLabelImmediate: "Tamaño del Búfer de Vídeo (0 (Inmediato)):",
             bufferLabelFrames: "Tamaño del Búfer de Vídeo ({videoBufferSize} fotogramas):",
             crfLabel: "CRF de Vídeo ({crf}):",
+            fullColorLabel: "Color Completo 4:4:4:",
         },
         audio: {
              title: "Configuración de Audio",
@@ -330,6 +336,8 @@ const zh = {
         gamepadEnableTitle: "启用游戏手柄输入",
         gamepadDisableTitle: "禁用游戏手柄输入",
         virtualKeyboardButtonTitle: "弹出键盘",
+        h264FullColorEnableTitle: "启用 H.264 全彩",
+        h264FullColorDisableTitle: "禁用 H.264 全彩",
     },
     sections: {
         video: {
@@ -339,7 +347,8 @@ const zh = {
             bitrateLabel: "视频比特率 ({bitrate} Mbps):",
             bufferLabelImmediate: "视频缓冲大小 (0 (立即)):",
             bufferLabelFrames: "视频缓冲大小 ({videoBufferSize} 帧):",
-            crfLabel: "视频 CRF ({crf}):", 
+            crfLabel: "视频 CRF ({crf}):",
+            fullColorLabel: "全彩 4:4:4:",
         },
         audio: {
             title: "音频设置",
@@ -482,6 +491,8 @@ const hi = {
         gamepadEnableTitle: "गेमपैड इनपुट सक्षम करें",
         gamepadDisableTitle: "गेमपैड इनपुट अक्षम करें",
         virtualKeyboardButtonTitle: "कीबोर्ड दिखाएँ",
+        h264FullColorEnableTitle: "H.264 फुल कलर सक्षम करें",
+        h264FullColorDisableTitle: "H.264 फुल कलर अक्षम करें",
     },
     sections: {
         video: {
@@ -492,6 +503,7 @@ const hi = {
             bufferLabelImmediate: "वीडियो बफर आकार (0 (तत्काल)):",
             bufferLabelFrames: "वीडियो बफर आकार ({videoBufferSize} फ्रेम):",
             crfLabel: "वीडियो CRF ({crf}):",
+            fullColorLabel: "फुल कलर 4:4:4:",
         },
         audio: {
             title: "ऑडियो सेटिंग्स",
@@ -634,6 +646,8 @@ const pt = {
         gamepadEnableTitle: "Ativar Entrada de Gamepad",
         gamepadDisableTitle: "Desativar Entrada de Gamepad",
         virtualKeyboardButtonTitle: "Exibir Teclado",
+        h264FullColorEnableTitle: "Ativar H.264 Cor Completa",
+        h264FullColorDisableTitle: "Desativar H.264 Cor Completa",
     },
     sections: {
         video: {
@@ -644,6 +658,7 @@ const pt = {
             bufferLabelImmediate: "Tamanho do Buffer de Vídeo (0 (Imediato)):",
             bufferLabelFrames: "Tamanho do Buffer de Vídeo ({videoBufferSize} quadros):",
             crfLabel: "CRF de Vídeo ({crf}):",
+            fullColorLabel: "Cor Completa 4:4:4:",
         },
         audio: {
             title: "Configurações de Áudio",
@@ -786,6 +801,8 @@ const fr = {
         gamepadEnableTitle: "Activer l'entrée manette",
         gamepadDisableTitle: "Désactiver l'entrée manette",
         virtualKeyboardButtonTitle: "Afficher le Clavier",
+        h264FullColorEnableTitle: "Activer H.264 Couleur Complète",
+        h264FullColorDisableTitle: "Désactiver H.264 Couleur Complète",
     },
     sections: {
         video: {
@@ -796,6 +813,7 @@ const fr = {
             bufferLabelImmediate: "Taille du tampon vidéo (0 (Immédiat)) :",
             bufferLabelFrames: "Taille du tampon vidéo ({videoBufferSize} images) :",
             crfLabel: "CRF Vidéo ({crf}) :",
+            fullColorLabel: "Couleur Complète 4:4:4:",
         },
         audio: {
             title: "Paramètres audio",
@@ -937,7 +955,9 @@ const ru = {
         microphoneDisableTitle: "Отключить микрофон",
         gamepadEnableTitle: "Включить ввод с геймпада",
         gamepadDisableTitle: "Отключить ввод с геймпада",
-        virtualKeyboardButtonTitle: "Показать Клавиатуру"
+        virtualKeyboardButtonTitle: "Показать Клавиатуру",
+        h264FullColorEnableTitle: "Включить H.264 Полный цвет",
+        h264FullColorDisableTitle: "Отключить H.264 Полный цвет",
     },
     sections: {
         video: {
@@ -948,6 +968,7 @@ const ru = {
             bufferLabelImmediate: "Размер буфера видео (0 (Немедленно)):",
             bufferLabelFrames: "Размер буфера видео ({videoBufferSize} кадров):",
             crfLabel: "CRF видео ({crf}):",
+            fullColorLabel: "Полный цвет 4:4:4:",
         },
         audio: {
             title: "Настройки аудио",
@@ -1090,6 +1111,8 @@ const de = {
         gamepadEnableTitle: "Gamepad-Eingabe aktivieren",
         gamepadDisableTitle: "Gamepad-Eingabe deaktivieren",
         virtualKeyboardButtonTitle: "Tastatur einblenden",
+        h264FullColorEnableTitle: "H.264 Vollfarbe aktivieren",
+        h264FullColorDisableTitle: "H.264 Vollfarbe deaktivieren",
     },
     sections: {
         video: {
@@ -1100,6 +1123,7 @@ const de = {
             bufferLabelImmediate: "Video-Puffergröße (0 (Sofort)):",
             bufferLabelFrames: "Video-Puffergröße ({videoBufferSize} Frames):",
             crfLabel: "Video CRF ({crf}):",
+            fullColorLabel: "Vollfarbe 4:4:4:",
         },
         audio: {
             title: "Audioeinstellungen",
@@ -1242,6 +1266,8 @@ const tr = {
         gamepadEnableTitle: "Oyun Kumandası Girişini Etkinleştir",
         gamepadDisableTitle: "Oyun Kumandası Girişini Devre Dışı Bırak",
         virtualKeyboardButtonTitle: "Klavyeyi Göster",
+        h264FullColorEnableTitle: "H.264 Tam Renk Etkinleştir",
+        h264FullColorDisableTitle: "H.264 Tam Renk Devre Dışı Bırak",
     },
     sections: {
         video: {
@@ -1252,6 +1278,7 @@ const tr = {
             bufferLabelImmediate: "Video Tampon Boyutu (0 (Anında)):",
             bufferLabelFrames: "Video Tampon Boyutu ({videoBufferSize} kare):",
             crfLabel: "Video CRF ({crf}):",
+            fullColorLabel: "Tam Renk 4:4:4:",
         },
         audio: {
             title: "Ses Ayarları",
@@ -1394,6 +1421,8 @@ const it = {
         gamepadEnableTitle: "Abilita Input Gamepad",
         gamepadDisableTitle: "Disabilita Input Gamepad",
         virtualKeyboardButtonTitle: "Mostra Tastiera",
+        h264FullColorEnableTitle: "Abilita H.264 Colore Completo",
+        h264FullColorDisableTitle: "Disabilita H.264 Colore Completo",
     },
     sections: {
         video: {
@@ -1404,6 +1433,7 @@ const it = {
             bufferLabelImmediate: "Dimensione Buffer Video (0 (Immediato)):",
             bufferLabelFrames: "Dimensione Buffer Video ({videoBufferSize} frame):",
             crfLabel: "CRF Video ({crf}):",
+            fullColorLabel: "Colore Completo 4:4:4:",
         },
         audio: {
             title: "Impostazioni Audio",
@@ -1546,6 +1576,8 @@ const nl = {
         gamepadEnableTitle: "Gamepad-invoer inschakelen",
         gamepadDisableTitle: "Gamepad-invoer uitschakelen",
         virtualKeyboardButtonTitle: "Toetsenbord Weergeven",
+        h264FullColorEnableTitle: "H.264 Volledige Kleur inschakelen",
+        h264FullColorDisableTitle: "H.264 Volledige Kleur uitschakelen",
     },
     sections: {
         video: {
@@ -1556,6 +1588,7 @@ const nl = {
             bufferLabelImmediate: "Video Buffergrootte (0 (Onmiddellijk)):",
             bufferLabelFrames: "Video Buffergrootte ({videoBufferSize} frames):",
             crfLabel: "Video CRF ({crf}):",
+            fullColorLabel: "Volledige Kleur 4:4:4:",
         },
         audio: {
             title: "Audio-instellingen",
@@ -1698,6 +1731,8 @@ const ar = {
         gamepadEnableTitle: "تمكين إدخال لوحة الألعاب",
         gamepadDisableTitle: "تعطيل إدخال لوحة الألعاب",
         virtualKeyboardButtonTitle: "إظهار لوحة المفاتيح",
+        h264FullColorEnableTitle: "تمكين H.264 ألوان كاملة",
+        h264FullColorDisableTitle: "تعطيل H.264 ألوان كاملة",
     },
     sections: {
         video: {
@@ -1708,6 +1743,7 @@ const ar = {
             bufferLabelImmediate: "حجم مخزن الفيديو المؤقت (0 (فوري)):",
             bufferLabelFrames: "حجم مخزن الفيديو المؤقت ({videoBufferSize} إطارات):",
             crfLabel: "CRF الفيديو ({crf}):",
+            fullColorLabel: "ألوان كاملة 4:4:4:",
         },
         audio: {
             title: "إعدادات الصوت",
@@ -1850,6 +1886,8 @@ const ko = {
         gamepadEnableTitle: "게임패드 입력 활성화",
         gamepadDisableTitle: "게임패드 입력 비활성화",
         virtualKeyboardButtonTitle: "키보드 표시",
+        h264FullColorEnableTitle: "H.264 전체 색상 활성화",
+        h264FullColorDisableTitle: "H.264 전체 색상 비활성화",
     },
     sections: {
         video: {
@@ -1860,6 +1898,7 @@ const ko = {
             bufferLabelImmediate: "비디오 버퍼 크기 (0 (즉시)):",
             bufferLabelFrames: "비디오 버퍼 크기 ({videoBufferSize} 프레임):",
             crfLabel: "비디오 CRF ({crf}):",
+            fullColorLabel: "전체 색상 4:4:4:",
         },
         audio: {
             title: "오디오 설정",
@@ -2002,6 +2041,8 @@ const ja = {
         gamepadEnableTitle: "ゲームパッド入力を有効にする",
         gamepadDisableTitle: "ゲームパッド入力を無効にする",
         virtualKeyboardButtonTitle: "キーボードを表示",
+        h264FullColorEnableTitle: "H.264 フルカラーを有効にする",
+        h264FullColorDisableTitle: "H.264 フルカラーを無効にする",
     },
     sections: {
         video: {
@@ -2012,6 +2053,7 @@ const ja = {
             bufferLabelImmediate: "ビデオバッファサイズ (0 (即時)):",
             bufferLabelFrames: "ビデオバッファサイズ ({videoBufferSize} フレーム):",
             crfLabel: "ビデオ CRF ({crf}):",
+            fullColorLabel: "フルカラー 4:4:4:",
         },
         audio: {
             title: "オーディオ設定",
@@ -2154,6 +2196,8 @@ const vi = {
         gamepadEnableTitle: "Bật Đầu vào Tay cầm chơi game",
         gamepadDisableTitle: "Tắt Đầu vào Tay cầm chơi game",
         virtualKeyboardButtonTitle: "Hiển thị Bàn phím",
+        h264FullColorEnableTitle: "Bật H.264 Đầy đủ Màu sắc",
+        h264FullColorDisableTitle: "Tắt H.264 Đầy đủ Màu sắc",
     },
     sections: {
         video: {
@@ -2164,6 +2208,7 @@ const vi = {
             bufferLabelImmediate: "Kích thước Bộ đệm Video (0 (Ngay lập tức)):",
             bufferLabelFrames: "Kích thước Bộ đệm Video ({videoBufferSize} khung hình):",
             crfLabel: "CRF Video ({crf}):",
+            fullColorLabel: "Đầy đủ Màu sắc 4:4:4:",
         },
         audio: {
             title: "Cài đặt Âm thanh",
@@ -2306,6 +2351,8 @@ const th = {
         gamepadEnableTitle: "เปิดใช้งานอินพุตเกมแพด",
         gamepadDisableTitle: "ปิดใช้งานอินพุตเกมแพด",
         virtualKeyboardButtonTitle: "แสดงแป้นพิมพ์",
+        h264FullColorEnableTitle: "เปิดใช้งาน H.264 สีสมบูรณ์",
+        h264FullColorDisableTitle: "ปิดใช้งาน H.264 สีสมบูรณ์",
     },
     sections: {
         video: {
@@ -2316,6 +2363,7 @@ const th = {
             bufferLabelImmediate: "ขนาดบัฟเฟอร์วิดีโอ (0 (ทันที)):",
             bufferLabelFrames: "ขนาดบัฟเฟอร์วิดีโอ ({videoBufferSize} เฟรม):",
             crfLabel: "วิดีโอ CRF ({crf}):",
+            fullColorLabel: "สีสมบูรณ์ 4:4:4:",
         },
         audio: {
             title: "การตั้งค่าเสียง",
@@ -2458,6 +2506,8 @@ const fil = {
         gamepadEnableTitle: "Paganahin ang Gamepad Input",
         gamepadDisableTitle: "Huwag paganahin ang Gamepad Input",
         virtualKeyboardButtonTitle: "Ipakita ang Keyboard",
+        h264FullColorEnableTitle: "Paganahin ang H.264 Buong Kulay",
+        h264FullColorDisableTitle: "Huwag paganahin ang H.264 Buong Kulay",
     },
     sections: {
         video: {
@@ -2468,6 +2518,7 @@ const fil = {
             bufferLabelImmediate: "Laki ng Video Buffer (0 (Agad)):",
             bufferLabelFrames: "Laki ng Video Buffer ({videoBufferSize} frames):",
             crfLabel: "Video CRF ({crf}):",
+            fullColorLabel: "Buong Kulay 4:4:4:",
         },
         audio: {
             title: "Mga Setting ng Audio",
@@ -2610,6 +2661,8 @@ const da = {
         gamepadEnableTitle: "Aktiver Gamepad-input",
         gamepadDisableTitle: "Deaktiver Gamepad-input",
         virtualKeyboardButtonTitle: "Vis tastatur",
+        h264FullColorEnableTitle: "Paganahin ang H.264 Buong Kulay",
+        h264FullColorDisableTitle: "Huwag paganahin ang H.264 Buong Kulay",
     },
     sections: {
         video: {
@@ -2620,6 +2673,7 @@ const da = {
             bufferLabelImmediate: "Videobufferstørrelse (0 (Øjeblikkelig)):",
             bufferLabelFrames: "Videobufferstørrelse ({videoBufferSize} billeder):",
             crfLabel: "Video CRF ({crf}):",
+            fullColorLabel: "Fuld Farve 4:4:4:",
         },
         audio: {
             title: "Lydindstillinger",

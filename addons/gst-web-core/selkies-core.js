@@ -232,7 +232,7 @@ audioBitRate = getIntParam('audioBitRate', audioBitRate);
 resizeRemote = getBoolParam('resizeRemote', resizeRemote);
 debug = getBoolParam('debug', debug);
 videoBufferSize = getIntParam('videoBufferSize', 0);
-currentEncoderMode = getStringParam('encoder', 'x264enc-striped');
+currentEncoderMode = getStringParam('encoder', 'x264enc');
 scaleLocallyManual = getBoolParam('scaleLocallyManual', true);
 isManualResolutionMode = getBoolParam('isManualResolutionMode', false);
 isGamepadEnabled = getBoolParam('isGamepadEnabled', true);
@@ -474,23 +474,43 @@ function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
 
 function resetCanvasStyle(streamWidth, streamHeight) {
   if (!canvas) return;
-   if (streamWidth <=0 || streamHeight <=0) {
+  if (streamWidth <= 0 || streamHeight <= 0) {
     console.warn(`Cannot reset canvas style: Invalid stream dimensions ${streamWidth}x${streamHeight}`);
     return;
   }
+
+  // Set canvas buffer size (internal resolution)
   if (canvas.width !== streamWidth || canvas.height !== streamHeight) {
     canvas.width = streamWidth;
     canvas.height = streamHeight;
     console.log(`Canvas internal buffer reset to: ${streamWidth}x${streamHeight}`);
   }
-  canvas.style.position = 'absolute';
-  canvas.style.width = '100%';
-  canvas.style.height = '100%';
-  canvas.style.top = '0px';
-  canvas.style.left = '0px';
-  canvas.style.objectFit = 'contain';
-  canvas.style.display = 'block';
-  console.log(`Reset canvas CSS style to 100% width/height, object-fit: contain. Buffer: ${streamWidth}x${streamHeight}`);
+
+  // Set canvas CSS display size to explicitly match the buffer size
+  canvas.style.width = `${streamWidth}px`;
+  canvas.style.height = `${streamHeight}px`;
+
+  const container = canvas.parentElement;
+  if (container) {
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+
+    const leftOffset = Math.floor((containerWidth - streamWidth) / 2);
+    const topOffset = Math.floor((containerHeight - streamHeight) / 2);
+
+    canvas.style.position = 'absolute'; // Ensure position is absolute for top/left to work
+    canvas.style.top = `${topOffset}px`;
+    canvas.style.left = `${leftOffset}px`;
+    console.log(`Reset canvas CSS to ${streamWidth}px x ${streamHeight}px, Pos ${leftOffset},${topOffset}, object-fit: fill. Buffer: ${streamWidth}x${streamHeight}`);
+  } else {
+    canvas.style.position = 'absolute';
+    canvas.style.top = '0px';
+    canvas.style.left = '0px';
+    console.log(`Reset canvas CSS to ${streamWidth}px x ${streamHeight}px, Pos 0,0 (no parent metrics), object-fit: fill. Buffer: ${streamWidth}x${streamHeight}`);
+  }
+
+  canvas.style.objectFit = 'fill';
+  canvas.style.display = 'block'; // Ensure canvas is displayed
 }
 
 function enableAutoResize() {
@@ -1176,7 +1196,7 @@ function receiveMessage(event) {
       disableAutoResize();
       sendResolutionToServer(manualWidth, manualHeight);
       applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
-      if (currentEncoderMode === 'x264enc-striped') {
+      if (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped') {
         console.log("Clearing VNC stripe decoders due to manual resolution change.");
         clearAllVncStripeDecoders();
         if (canvasContext) canvasContext.setTransform(1, 0, 0, 1, 0, 0);
@@ -1199,7 +1219,7 @@ function receiveMessage(event) {
       const autoWidth = roundDownToEven(currentWindowRes[0]);
       const autoHeight = roundDownToEven(currentWindowRes[1]);
       resetCanvasStyle(autoWidth, autoHeight);
-      if (currentEncoderMode === 'x264enc-striped') {
+      if (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped') {
         console.log("Clearing VNC stripe decoders due to resolution reset to window.");
         clearAllVncStripeDecoders();
         if (canvasContext) canvasContext.setTransform(1, 0, 0, 1, 0, 0);
@@ -1466,16 +1486,17 @@ function handleSettingsMessage(settings) {
         console.warn("Websocket connection not open, cannot send encoder setting.");
       }
 
-      const isNewStripedH264 = newEncoderSetting === 'x264enc-striped';
-      const isOldStripedH264 = oldEncoderActual === 'x264enc-striped';
+      const isNewPixelfluxH264 = newEncoderSetting === 'x264enc' || newEncoderSetting === 'x264enc-striped';
+      const isOldPixelfluxH264 = oldEncoderActual === 'x264enc' || oldEncoderActual === 'x264enc-striped';
       const isNewJpeg = newEncoderSetting === 'jpeg';
       const isOldJpeg = oldEncoderActual === 'jpeg';
-      const isNewVideoPipeline = !isNewJpeg && !isNewStripedH264;
-      const isOldVideoPipeline = !isOldJpeg && !isOldStripedH264;
+      const isNewVideoPipeline = !isNewJpeg && !isNewPixelfluxH264;
+      const isOldVideoPipeline = !isOldJpeg && !isOldPixelfluxH264;
+      const isOldStripedH264 = oldEncoderActual === 'x264enc-striped';
+      const isNewStripedH264 = newEncoderSetting === 'x264enc-striped';
 
       if (isOldStripedH264 && !isNewStripedH264) {
         clearAllVncStripeDecoders();
-        console.log(`Switched away from ${oldEncoderActual}, cleared stripe decoders.`);
       }
       if ((isOldVideoPipeline || isOldStripedH264) && isNewJpeg) {
         if (decoder && decoder.state !== 'closed') {
@@ -1485,7 +1506,7 @@ function handleSettingsMessage(settings) {
         }
       }
 
-      if (isNewStripedH264) {
+      if (isNewPixelfluxH264) {
         if (canvasContext) {
           canvasContext.setTransform(1, 0, 0, 1, 0, 0);
           canvasContext.clearRect(0, 0, canvas.width, canvas.height);
@@ -1557,11 +1578,11 @@ function handleSettingsMessage(settings) {
       h264_fullcolor = newFullColorValue;
       setBoolParam('h264_fullcolor', h264_fullcolor);
       console.log(`Applied H.264 Full Color setting: ${h264_fullcolor}.`);
-      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && currentEncoderMode === 'x264enc-striped') {
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped')) {
         const message = `SET_H264_FULLCOLOR,${h264_fullcolor}`;
         console.log(`Sent websocket message: ${message}`);
         websocket.send(message);
-      } else if (!isSharedMode && currentEncoderMode !== 'x264enc-striped') {
+      } else if (!isSharedMode && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped') {
         console.log("H.264 Full Color setting changed, but current encoder is not x264enc-striped. WebSocket command not sent.");
       } else if (!isSharedMode) {
         console.warn("Websocket connection not open, cannot send H.264 Full Color setting.");
@@ -1696,7 +1717,7 @@ document.addEventListener('DOMContentLoaded', () => {
       codec: 'avc1.42E01E',
       codedWidth: targetWidth,
       codedHeight: targetHeight,
-      optimizeForLatency: true,
+      optimizeForLatency: true
     };
     try {
       const support = await VideoDecoder.isConfigSupported(decoderConfig);
@@ -1817,7 +1838,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function handleDecodedFrame(frame) {
     const isGStreamerH264Mode =
-        (currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc-striped' && !isSharedMode) ||
+        (currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc-striped' && currentEncoderMode !== 'x264enc' && !isSharedMode) ||
         (isSharedMode && identifiedEncoderModeForShared === 'h264_full_frame');
 
     // close the frame immediately to prevent memory buildup.
@@ -1870,7 +1891,7 @@ function handleDecodedFrame(frame) {
     let videoPaintedThisFrame = false;
     let jpegPaintedThisFrame = false;
 
-    if (currentEncoderMode === 'x264enc-striped') {
+    if (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped') {
       if (isSharedMode && sharedClientState === 'ready' && decodedStripesQueue.length > 0) {
           const firstStripeFrame = decodedStripesQueue[0].frame;
           if (firstStripeFrame && firstStripeFrame.codedWidth > 0) {
@@ -1940,7 +1961,7 @@ function handleDecodedFrame(frame) {
         }
       }
     } else if ( (isSharedMode && currentEncoderMode === 'h264_full_frame' && sharedClientState === 'ready') || 
-                (!isSharedMode && currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc-striped') ) {
+                (!isSharedMode && currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped') ) { 
       if (!document.hidden || (isSharedMode && sharedClientState === 'ready')) {
         if ( (isSharedMode && sharedClientState === 'ready') || (!isSharedMode && isVideoPipelineActive) ) {
            const bufferLimit = (isSharedMode && sharedClientState === 'ready') ? 0 : videoBufferSize;
@@ -2284,11 +2305,11 @@ function handleDecodedFrame(frame) {
         console.error('[websockets] Error constructing or sending initial settings:', e);
       }
 
-      const isCurrentModeStripedH264_ws = currentEncoderMode === 'x264enc-striped';
+      const isCurrentModePixelfluxH264_ws = currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped';
       const isCurrentModeJpeg_ws = currentEncoderMode === 'jpeg';
-      const isCurrentModeVideoPipeline_ws = !isCurrentModeStripedH264_ws && !isCurrentModeJpeg_ws;
+      const isCurrentModeGStreamerPipeline_ws = !isCurrentModePixelfluxH264_ws && !isCurrentModeJpeg_ws; // GStreamer H.264
 
-      if (isCurrentModeVideoPipeline_ws) {
+      if (isCurrentModeGStreamerPipeline_ws) {
         if (websocket && websocket.readyState === WebSocket.OPEN) {
           const bitrateMessage = `SET_VIDEO_BITRATE,${videoBitRate}`;
           websocket.send(bitrateMessage);
@@ -2424,8 +2445,8 @@ function handleDecodedFrame(frame) {
         const videoDataArrayBuffer = arrayBuffer.slice(headerLength);
 
         const canProcessFullH264 =
-          (isSharedMode && sharedClientState === 'ready' && currentEncoderMode === 'h264_full_frame') ||
-          (!isSharedMode && isVideoPipelineActive && currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc-striped');
+          (isSharedMode && sharedClientState === 'ready' && currentEncoderMode === 'h264_full_frame') || 
+          (!isSharedMode && isVideoPipelineActive && currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped');
 
         if (canProcessFullH264) {
           if (decoder && decoder.state === 'configured') {
@@ -2534,8 +2555,8 @@ function handleDecodedFrame(frame) {
         const h264Payload = arrayBuffer.slice(EXPECTED_HEADER_LENGTH);
 
         const canProcessVncStripe =
-            (isSharedMode && sharedClientState === 'ready' && currentEncoderMode === 'x264enc-striped') ||
-            (!isSharedMode && isVideoPipelineActive && currentEncoderMode === 'x264enc-striped');
+            (isSharedMode && sharedClientState === 'ready' && (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped')) ||
+            (!isSharedMode && isVideoPipelineActive && (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped'));
 
         if (canProcessVncStripe) {
             if (h264Payload.byteLength === 0) return;
@@ -2634,7 +2655,7 @@ function handleDecodedFrame(frame) {
         
         if (!isSharedMode) {
             stopMicrophoneCapture();
-            if (currentEncoderMode !== 'x264enc-striped' && currentEncoderMode !== 'jpeg') {
+            if (currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped') {
               initializeDecoder();
             }
         }
@@ -2702,7 +2723,7 @@ function handleDecodedFrame(frame) {
             if (obj.video !== undefined && obj.video !== isVideoPipelineActive) {
               isVideoPipelineActive = obj.video;
               statusChanged = true;
-              if (!isVideoPipelineActive && currentEncoderMode === 'x264enc-striped' && !isSharedMode) {
+              if (!isVideoPipelineActive && (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped') && !isSharedMode) {
                   clearAllVncStripeDecoders();
               }
             }
@@ -3452,9 +3473,8 @@ function performServerInitiatedVideoReset(reason = "unknown") {
   cleanupJpegStripeQueue();
   decodedStripesQueue = [];
 
-  if (currentEncoderMode === 'x264enc-striped') {
+  if (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped') {
     clearAllVncStripeDecoders(); 
-    console.log("  Cleared VNC stripe decoders due to server reset.");
   } else if (currentEncoderMode !== 'jpeg') { 
     if (decoder && decoder.state !== 'closed') {
       console.log("  Closing main video decoder due to server reset.");
@@ -3464,7 +3484,7 @@ function performServerInitiatedVideoReset(reason = "unknown") {
     console.log("  Main video decoder instance set to null.");
   }
 
-  if (canvasContext && canvas && currentEncoderMode !== 'x264enc-striped') { 
+  if (canvasContext && canvas && !(currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped')) { 
     try {
       canvasContext.setTransform(1, 0, 0, 1, 0, 0);
       canvasContext.clearRect(0, 0, canvas.width, canvas.height);
@@ -3475,7 +3495,7 @@ function performServerInitiatedVideoReset(reason = "unknown") {
   }
 
   if (!isSharedMode) {
-    if (currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc-striped') {
+    if (currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped') {
       console.log("  Ensuring main video decoder is re-initialized after server reset.");
       if (isVideoPipelineActive) { 
          triggerInitializeDecoder(); 

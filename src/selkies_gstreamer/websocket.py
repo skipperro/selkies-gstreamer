@@ -46,9 +46,10 @@ AUDIO_CHANNELS_DEFAULT = 2
 AUDIO_BITRATE_DEFAULT = 128000
 GPU_ID_DEFAULT = 0
 KEYFRAME_DISTANCE_DEFAULT = -1.0
+PIXELFLUX_VIDEO_ENCODERS = ["jpeg", "x264enc", "x264enc-striped"]
+GSTREAMER_VIDEO_ENCODERS = ["nvh264enc"]
 
 import logging
-
 LOGLEVEL = logging.INFO
 logging.basicConfig(level=LOGLEVEL)
 logger_selkies_gamepad = logging.getLogger("selkies_gamepad")
@@ -82,7 +83,6 @@ from signal import SIGINT, signal
 
 try:
     import gi
-
     gi.require_version("GLib", "2.0")
     gi.require_version("Gst", "1.0")
     from gi.repository import GLib, Gst
@@ -158,20 +158,15 @@ def perform_initial_gstreamer_check(cli_selected_encoder=None):
         "opusenc",
     ]
 
-    if cli_selected_encoder and cli_selected_encoder not in ["jpeg", "x264enc-striped"]:
+    if cli_selected_encoder and cli_selected_encoder not in PIXELFLUX_VIDEO_ENCODERS:
         base_elements.extend(["ximagesrc", "videoconvert"])
         supported_gst_video_encoders = [
-            "x264enc",
             "nvh264enc",
-            "vah264enc",
-            "openh264enc",
         ]
         if cli_selected_encoder in supported_gst_video_encoders:
             base_elements.append(cli_selected_encoder)
             if cli_selected_encoder == "nvh264enc":
                 base_elements.append("cudaupload")
-            elif cli_selected_encoder == "vah264enc":
-                base_elements.append("vapostproc")
         else:
             logger.warning(
                 f"Encoder '{cli_selected_encoder}' is not in the known list of GStreamer encoders. "
@@ -398,7 +393,7 @@ class GSTStreamingApp:
                 "Cannot start GStreamer video pipeline: GStreamer not available."
             )
             return None
-        if self.encoder in ["jpeg", "x264enc-striped"]:
+        if self.encoder in PIXELFLUX_VIDEO_ENCODERS:
             logger_gst_app.error(
                 f"start_ws_pipeline called for non-GStreamer encoder '{self.encoder}'. This should not happen."
             )
@@ -444,41 +439,7 @@ class GSTStreamingApp:
         encoder_chain_elements = []
         videoconvert_output_format = "NV12"
 
-        if self.encoder == "x264enc":
-            videoconvert_output_format = "I420"
-            encoder = Gst.ElementFactory.make("x264enc", "encoder")
-            if not encoder:
-                raise GSTAppError("Failed to create x264enc")
-            encoder.set_property("threads", os.cpu_count())
-            encoder.set_property("aud", False)
-            encoder.set_property("b-adapt", False)
-            encoder.set_property("bframes", 0)
-            encoder.set_property(
-                "key-int-max",
-                2147483647
-                if self.keyframe_distance == -1.0
-                else self.keyframe_frame_distance,
-            )
-            encoder.set_property("mb-tree", False)
-            encoder.set_property("rc-lookahead", 0)
-            encoder.set_property("sync-lookahead", 0)
-            encoder.set_property(
-                "vbv-buf-capacity",
-                int(
-                    (1000 + self.framerate - 1)
-                    // self.framerate
-                    * self.vbv_multiplier_sw
-                ),
-            )
-            encoder.set_property("sliced-threads", True)
-            encoder.set_property("byte-stream", True)
-            encoder.set_property("pass", "cbr")
-            encoder.set_property("speed-preset", "ultrafast")
-            encoder.set_property("tune", "zerolatency")
-            encoder.set_property("bitrate", self.video_bitrate)
-            encoder_chain_elements = [encoder]
-
-        elif self.encoder == "nvh264enc":
+        if self.encoder == "nvh264enc":
             videoconvert_output_format = "NV12"
             base_name = (
                 "nvcudah264enc"
@@ -518,49 +479,6 @@ class GSTStreamingApp:
                 raise GSTAppError("Failed to create capsfilter for nvh264enc")
             h264_capsfilter_nv.set_property("caps", h264_caps)
             encoder_chain_elements = [encoder, h264_capsfilter_nv]
-
-        elif self.encoder == "vah264enc":
-            videoconvert_output_format = "NV12"
-            vapostproc = Gst.ElementFactory.make("vapostproc", "vapostproc_el")
-            if not vapostproc:
-                raise GSTAppError("Failed to create vapostproc for vah264enc")
-            encoder = Gst.ElementFactory.make("vah264enc", "encoder")
-            if not encoder:
-                raise GSTAppError("Failed to create vah264enc")
-            encoder.set_property("bitrate", self.video_bitrate)
-
-            h264_caps = Gst.caps_from_string(
-                "video/x-h264,profile=main,stream-format=byte-stream"
-            )
-            h264_capsfilter_va = Gst.ElementFactory.make(
-                "capsfilter", "h264enc_capsfilter_va"
-            )
-            if not h264_capsfilter_va:
-                raise GSTAppError("Failed to create capsfilter for vah264enc")
-            h264_capsfilter_va.set_property("caps", h264_caps)
-            encoder_chain_elements = [vapostproc, encoder, h264_capsfilter_va]
-
-        elif self.encoder == "openh264enc":
-            videoconvert_output_format = "I420"
-            encoder = Gst.ElementFactory.make("openh264enc", "encoder")
-            if not encoder:
-                raise GSTAppError("Failed to create openh264enc")
-            encoder.set_property("usage-type", "screen")
-            encoder.set_property("rate-control", "bitrate")
-            encoder.set_property("bitrate", self.video_bitrate * 1000)
-            effective_gop_size = self.keyframe_frame_distance
-            if self.keyframe_distance == -1.0:
-                effective_gop_size = 2147483647
-            encoder.set_property("gop-size", effective_gop_size)
-
-            h264_caps = Gst.caps_from_string("video/x-h264,stream-format=byte-stream")
-            h264_capsfilter_openh264 = Gst.ElementFactory.make(
-                "capsfilter", "h264enc_capsfilter_openh264"
-            )
-            if not h264_capsfilter_openh264:
-                raise GSTAppError("Failed to create capsfilter for openh264enc")
-            h264_capsfilter_openh264.set_property("caps", h264_caps)
-            encoder_chain_elements = [encoder, h264_capsfilter_openh264]
 
         else:
             raise GSTAppError(
@@ -741,7 +659,7 @@ class GSTStreamingApp:
                 "Cannot start GStreamer video: GStreamer not available."
             )
             return
-        if self.encoder in ["jpeg", "x264enc-striped"]:
+        if self.encoder in PIXELFLUX_VIDEO_ENCODERS:
             logger_gst_app.info(
                 f"Video encoder '{self.encoder}' is handled by pixelflux, not GStreamer pipeline. Call corresponding start method."
             )
@@ -776,6 +694,8 @@ class GSTStreamingApp:
                 await asyncio.to_thread(self.pipeline.set_state, Gst.State.NULL)
                 self.pipeline = None
                 self.pipeline_running = False
+                self.ximagesrc = None
+                self.ximagesrc_caps = None
                 logger_gst_app.info("WebSocket video pipeline stopped.")
                 await self.data_streaming_server._ensure_backpressure_task_is_stopped()
             except Exception as e:
@@ -844,11 +764,11 @@ class GSTStreamingApp:
         if (
             self.pipeline
             and self.pipeline_running
-            and self.encoder not in ["jpeg", "x264enc-striped"]
+            and self.encoder not in PIXELFLUX_VIDEO_ENCODERS
         ):
             encoder_el = self.pipeline.get_by_name("encoder")
             if encoder_el:
-                if self.encoder.startswith("nv") or self.encoder == "openh264enc":
+                if self.encoder.startswith("nv"):
                     encoder_el.set_property(
                         "gop-size",
                         -1
@@ -859,13 +779,6 @@ class GSTStreamingApp:
                     if self.keyframe_distance == -1.0:
                         effective_gop_size = 2147483647
                     encoder_el.set_property("gop-size", effective_gop_size)
-                elif self.encoder.startswith("va") or self.encoder == "x264enc":
-                    encoder_el.set_property(
-                        "key-int-max",
-                        2147483647
-                        if self.keyframe_distance == -1.0
-                        else self.keyframe_frame_distance,
-                    )
 
             vc_capsfilter = self.pipeline.get_by_name("videoconvert_capsfilter")
             if vc_capsfilter:
@@ -900,34 +813,15 @@ class GSTStreamingApp:
         if (
             self.pipeline
             and self.pipeline_running
-            and self.encoder not in ["jpeg", "x264enc-striped"]
+            and self.encoder not in PIXELFLUX_VIDEO_ENCODERS
         ):
             encoder_el = self.pipeline.get_by_name("encoder")
             if encoder_el:
                 if self.encoder.startswith("nv"):
-                    encoder_el.set_property(
-                        "vbv-buffer-size",
-                        int(
-                            (self.video_bitrate + self.framerate - 1)
-                            // self.framerate
-                            * self.vbv_multiplier_nv
-                        ),
-                    )
+                    avg_bits_per_frame = (self.video_bitrate * 1000) / self.framerate
+                    vbv_buffer_calc_value = int(avg_bits_per_frame * self.vbv_multiplier_nv)
+                    encoder_el.set_property("vbv-buffer-size", vbv_buffer_calc_value)
                     encoder_el.set_property("bitrate", self.video_bitrate)
-                elif self.encoder.startswith("va"):
-                    encoder_el.set_property(
-                        "cpb-size",
-                        int(
-                            (self.video_bitrate + self.framerate - 1)
-                            // self.framerate
-                            * self.vbv_multiplier_va
-                        ),
-                    )
-                    encoder_el.set_property("bitrate", self.video_bitrate)
-                elif self.encoder == "x264enc":
-                    encoder_el.set_property("bitrate", self.video_bitrate)
-                elif self.encoder == "openh264enc":
-                    encoder_el.set_property("bitrate", self.video_bitrate * 1000)
                 logger_gst_app.info(
                     "GStreamer video bitrate set to: %d kbps" % self.video_bitrate
                 )
@@ -956,7 +850,7 @@ class GSTStreamingApp:
         if (
             self.pipeline
             and self.pipeline_running
-            and self.encoder not in ["jpeg", "x264enc-striped"]
+            and self.encoder not in PIXELFLUX_VIDEO_ENCODERS
         ):
             ximagesrc_el = self.pipeline.get_by_name("source")
             if ximagesrc_el:
@@ -1536,6 +1430,8 @@ class DataStreamingServer:
                         )
                     self._backpressure_send_frames_enabled = False
                 elif effective_desync_frames > allowed_desync_frames:
+                    if frame_desync > 10000:
+                      return
                     if self._backpressure_send_frames_enabled: 
                         data_logger.warning(
                             f"Backpressure TRIGGERED. S:{server_id}, C:{client_id} (Desync:{frame_desync:.0f}f, "
@@ -1634,18 +1530,18 @@ class DataStreamingServer:
 
     async def _start_x264_striped_pipeline(self):
         if not X11_CAPTURE_AVAILABLE:
-            data_logger.error("Cannot start x264-striped: pixelflux library not available.") # Added log
+            data_logger.error("Cannot start x264-striped/x264enc: pixelflux library not available.")
             return False
         if self.is_x264_striped_capturing:
-            data_logger.info("x264-striped pipeline is already capturing.") # Added log
+            data_logger.info(f"{self.app.encoder} pipeline is already capturing.")
             return True
         if not self.app:
-            data_logger.error("Cannot start x264-striped: self.app (GSTStreamingApp instance) is not available.") # Added log
+            data_logger.error(f"Cannot start {self.app.encoder}: self.app (GSTStreamingApp instance) is not available.")
             return False
         
         self.jpeg_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
         if not self.jpeg_capture_loop:
-            data_logger.error("Cannot start x264-striped: asyncio event loop not found for executor.") # Added log
+            data_logger.error(f"Cannot start {self.app.encoder}: asyncio event loop not found for executor.")
             return False
 
         width = getattr(self.app, "display_width", 1024)
@@ -1654,8 +1550,14 @@ class DataStreamingServer:
         
         crf = self.h264_crf 
 
+        # Determine if fullframe should be enabled based on the specific encoder string
+        enable_fullframe = False
+        if self.app.encoder == "x264enc": # The new default pixelflux mode
+            enable_fullframe = True
+        # For "x264enc-striped", fullframe remains False by default here.
+
         data_logger.info(
-            f"Starting x264-striped: {width}x{height} @ {fps}fps, CRF: {crf}"
+            f"Starting {self.app.encoder}: {width}x{height} @ {fps}fps, CRF: {crf}, FullFrame: {enable_fullframe}"
         )
         try:
             cs = CaptureSettings()
@@ -1670,14 +1572,16 @@ class DataStreamingServer:
             cs.damage_block_threshold = 15
             cs.damage_block_duration = 30
             cs.h264_fullcolor = self.h264_fullcolor
+            cs.h264_fullframe = enable_fullframe
             
             cs.capture_x = 0
             cs.capture_y = 0
 
-            data_logger.debug(f"x264-striped CaptureSettings: w={cs.capture_width}, h={cs.capture_height}, fps={cs.target_fps}, "
+            data_logger.debug(f"{self.app.encoder} CaptureSettings: w={cs.capture_width}, h={cs.capture_height}, fps={cs.target_fps}, "
                               f"crf={cs.h264_crf}, use_paint_over={cs.use_paint_over_quality}, "
                               f"trigger_frames={cs.paint_over_trigger_frames}, "
-                              f"dmg_thresh={cs.damage_block_threshold}, dmg_dur={cs.damage_block_duration}")
+                              f"dmg_thresh={cs.damage_block_threshold}, dmg_dur={cs.damage_block_duration}, "
+                              f"fullframe={cs.h264_fullframe}, fullcolor={cs.h264_fullcolor}")
 
             cb = StripeCallback(self._x264_striped_stripe_callback)
             
@@ -1691,10 +1595,10 @@ class DataStreamingServer:
             )
             self.is_x264_striped_capturing = True
             await self._start_backpressure_task_if_needed()
-            data_logger.info("x264-striped capture started successfully.")
+            data_logger.info(f"{self.app.encoder} capture started successfully.")
             return True
         except Exception as e:
-            data_logger.error(f"Failed to start x264-striped: {e}", exc_info=True)
+            data_logger.error(f"Failed to start {self.app.encoder}: {e}", exc_info=True)
             self.is_x264_striped_capturing = False
             if self.x264_striped_capture_module:
                 del self.x264_striped_capture_module
@@ -1883,7 +1787,6 @@ class DataStreamingServer:
         parsed["videoBufferSize"] = get_int(
             "webrtc_videoBufferSize", getattr(self.app, "video_buffer_size", 0)
         )
-        # New keys for initial client dimensions if in auto mode
         parsed["initialClientWidth"] = get_int(
             "webrtc_initialClientWidth", self.app.display_width
         )
@@ -1900,7 +1803,6 @@ class DataStreamingServer:
             f"Applying client settings (initial={is_initial_settings}): {settings}"
         )
 
-        # Store old values for comparison to see if restart is needed for non-initial changes
         old_encoder = self.app.encoder
         old_video_bitrate_kbps = self.app.video_bitrate
         old_framerate = self.app.framerate
@@ -1910,168 +1812,80 @@ class DataStreamingServer:
         old_display_width = self.app.display_width
         old_display_height = self.app.display_height
 
-        # --- Apply Resolution Settings First ---
-        # This determines the target self.app.display_width/height before xrandr or pipeline decisions.
         is_manual_res_mode_from_settings = settings.get(
             "isManualResolutionMode",
             getattr(self.app, "client_is_manual_resolution_mode", False),
         )
-
         target_w_for_app, target_h_for_app = old_display_width, old_display_height
-
         if is_manual_res_mode_from_settings:
             target_w_for_app = settings.get("manualWidth", old_display_width)
             target_h_for_app = settings.get("manualHeight", old_display_height)
-            data_logger.info(
-                f"Settings: Manual Resolution Mode. Target: {target_w_for_app}x{target_h_for_app}"
-            )
-        elif is_initial_settings:  # Auto mode, and it's the first settings message
+        elif is_initial_settings:
             target_w_for_app = settings.get("initialClientWidth", old_display_width)
             target_h_for_app = settings.get("initialClientHeight", old_display_height)
-            data_logger.info(
-                f"Settings: Auto Resolution Mode (initial). Client size: {target_w_for_app}x{target_h_for_app}"
-            )
 
-        if target_w_for_app <= 0 or target_h_for_app <= 0:
-            data_logger.warning(
-                f"Received invalid target dimensions {target_w_for_app}x{target_h_for_app} from client settings. "
-                f"Reverting to previous valid dimensions {old_display_width}x{old_display_height}."
-            )
-            target_w_for_app = old_display_width
-            target_h_for_app = old_display_height
+        if target_w_for_app <= 0: target_w_for_app = old_display_width
+        if target_h_for_app <= 0: target_h_for_app = old_display_height
+        if target_w_for_app % 2 != 0: target_w_for_app -= 1
+        if target_h_for_app % 2 != 0: target_h_for_app -= 1
+        if target_w_for_app <= 0: target_w_for_app = old_display_width
+        if target_h_for_app <= 0: target_h_for_app = old_display_height
 
-        if target_w_for_app % 2 != 0:
-            data_logger.debug(
-                f"Adjusting odd width {target_w_for_app} to {target_w_for_app - 1}"
-            )
-            target_w_for_app -= 1
-        if target_h_for_app % 2 != 0:
-            data_logger.debug(
-                f"Adjusting odd height {target_h_for_app} to {target_h_for_app - 1}"
-            )
-            target_h_for_app -= 1
-
-        if target_w_for_app <= 0 or target_h_for_app <= 0:
-            data_logger.warning(
-                f"Dimensions became invalid ({target_w_for_app}x{target_h_for_app}) after odd adjustment. "
-                f"Reverting to previous valid dimensions {old_display_width}x{old_display_height}."
-            )
-            target_w_for_app = old_display_width
-            target_h_for_app = old_display_height
-
-        dimensions_changed_by_settings = (
-            target_w_for_app != old_display_width
-            or target_h_for_app != old_display_height
-        )
-
-        if dimensions_changed_by_settings:
+        if (target_w_for_app != old_display_width or target_h_for_app != old_display_height):
             self.app.display_width = target_w_for_app
             self.app.display_height = target_h_for_app
-            data_logger.info(
-                f"App display dimensions updated to {self.app.display_width}x{self.app.display_height} based on settings."
-            )
-
-            effective_resize_enabled = ENABLE_RESIZE and settings.get(
-                "resizeRemote",
-                getattr(self.app, "client_preferred_resize_enabled", True),
-            )
+            effective_resize_enabled = ENABLE_RESIZE and settings.get("resizeRemote", True)
             if effective_resize_enabled:
-                data_logger.info(
-                    f"Effective resize enabled. Calling on_resize_handler for: {self.app.display_width}x{self.app.display_height}"
-                )
-                on_resize_handler(
-                    f"{self.app.display_width}x{self.app.display_height}",
-                    self.app,
-                    self,
-                )
-                # on_resize_handler updates self.app.display_width/height based on xrandr's outcome
-                # and also sets self.app.last_resize_success
-            else:
-                data_logger.info(
-                    "Xrandr resize skipped as per effective_resize_enabled flag."
-                )
+                await on_resize_handler(f"{self.app.display_width}x{self.app.display_height}", self.app, self)
+        setattr(self.app, "client_is_manual_resolution_mode", is_manual_res_mode_from_settings)
+        if is_manual_res_mode_from_settings:
+            setattr(self.app, "client_manual_width", settings.get("manualWidth", getattr(self.app, "client_manual_width", old_display_width)))
+            setattr(self.app, "client_manual_height", settings.get("manualHeight", getattr(self.app, "client_manual_height", old_display_height)))
+        setattr(self.app, "client_preferred_resize_enabled", settings.get("resizeRemote", getattr(self.app, "client_preferred_resize_enabled", True)))
 
-        # Persist client preferences from settings
-        setattr(
-            self.app,
-            "client_is_manual_resolution_mode",
-            is_manual_res_mode_from_settings,
-        )
-        if (
-            is_manual_res_mode_from_settings
-        ):  # Persist manual dimensions if they came from settings
-            setattr(
-                self.app,
-                "client_manual_width",
-                settings.get(
-                    "manualWidth",
-                    getattr(self.app, "client_manual_width", old_display_width),
-                ),
-            )
-            setattr(
-                self.app,
-                "client_manual_height",
-                settings.get(
-                    "manualHeight",
-                    getattr(self.app, "client_manual_height", old_display_height),
-                ),
-            )
-        setattr(
-            self.app,
-            "client_preferred_resize_enabled",
-            settings.get(
-                "resizeRemote",
-                getattr(self.app, "client_preferred_resize_enabled", True),
-            ),
-        )
-
+        encoder_actually_changed = False
         requested_new_encoder = settings.get("encoder")
-        encoder_actually_changed = (
-            False  # Flag to track if encoder was changed by this function call
-        )
-        new_encoder_from_payload = settings.get("encoder")
-        if new_encoder_from_payload:
-            if (
-                new_encoder_from_payload not in ["jpeg", "x264enc-striped"]
-                and X11_CAPTURE_AVAILABLE
-            ):
-                self.app.encoder = new_encoder_from_payload
-        elif (
-            encoder_actually_changed
-        ):  # If reset due to requested_new_encoder but then no valid new_encoder_from_payload
-            self.app.encoder = (
-                old_encoder  # Revert to old encoder if the new one was invalid
-            )
-            encoder_actually_changed = (
-                False  # No longer considered an encoder change for restart logic
-            )
+        if requested_new_encoder and requested_new_encoder != old_encoder:
+            valid_choice = False
+            if requested_new_encoder in PIXELFLUX_VIDEO_ENCODERS and X11_CAPTURE_AVAILABLE:
+                valid_choice = True
+            elif requested_new_encoder in GSTREAMER_VIDEO_ENCODERS and GSTREAMER_AVAILABLE:
+                if Gst.ElementFactory.find(requested_new_encoder):
+                    valid_choice = True
+                else:
+                    data_logger.warning(f"Requested GStreamer encoder '{requested_new_encoder}' factory not found.")
+            
+            if valid_choice:
+                self.app.encoder = requested_new_encoder
+                encoder_actually_changed = True
+                data_logger.info(f"Encoder changed from '{old_encoder}' to '{self.app.encoder}'.")
+            else:
+                data_logger.warning(f"Requested encoder '{requested_new_encoder}' is not available or not supported. Keeping '{old_encoder}'.")
 
         if "videoBitRate" in settings:
-            self.app.video_bitrate = settings["videoBitRate"] // 1000
-            global TARGET_VIDEO_BITRATE_KBPS
-            TARGET_VIDEO_BITRATE_KBPS = self.app.video_bitrate
-            self._initial_target_bitrate_kbps = self.app.video_bitrate
-            # For non-striped/jpeg, current target is directly set. For others, it's managed by backpressure.
-            if is_initial_settings or self.app.encoder not in [
-                "jpeg",
-                "x264enc-striped",
-            ]:
-                self._current_target_bitrate_kbps = self.app.video_bitrate
+            new_bitrate_kbps = settings["videoBitRate"] // 1000
+            if self.app.video_bitrate != new_bitrate_kbps:
+                self.app.video_bitrate = new_bitrate_kbps
+            if is_initial_settings or self.app.encoder in GSTREAMER_VIDEO_ENCODERS:
+                 self._current_target_bitrate_kbps = self.app.video_bitrate
+
 
         if "videoFramerate" in settings:
-            self.app.framerate = settings["videoFramerate"]
-            global TARGET_FRAMERATE
-            TARGET_FRAMERATE = self.app.framerate
+            if self.app.framerate != settings["videoFramerate"]:
+                self.app.framerate = settings["videoFramerate"]
 
-        if "videoCRF" in settings and self.app.encoder == "x264enc-striped":
-            self.h264_crf = settings["videoCRF"]
-            self._initial_x264_crf = self.h264_crf
+        is_pixelflux_h264 = self.app.encoder in PIXELFLUX_VIDEO_ENCODERS and self.app.encoder != "jpeg"
+        if "videoCRF" in settings and is_pixelflux_h264:
+            if self.h264_crf != settings["videoCRF"]:
+                self.h264_crf = settings["videoCRF"]
 
-        if "h264_fullcolor" in settings and self.app.encoder == "x264enc-striped": # Apply if present
-            self.h264_fullcolor = settings["h264_fullcolor"]
-
+        if "h264_fullcolor" in settings and is_pixelflux_h264:
+            if self.h264_fullcolor != settings["h264_fullcolor"]:
+                self.h264_fullcolor = settings["h264_fullcolor"]
+        
         if "audioBitRate" in settings:
-            self.app.audio_bitrate = settings["audioBitRate"]
+            if self.app.audio_bitrate != settings["audioBitRate"]:
+                 self.app.audio_bitrate = settings["audioBitRate"]
 
         if "videoBufferSize" in settings:
             setattr(self.app, "video_buffer_size", settings["videoBufferSize"])
@@ -2081,65 +1895,69 @@ class DataStreamingServer:
                 self.app.display_width != old_display_width
                 or self.app.display_height != old_display_height
             )
-
             bitrate_param_changed = self.app.video_bitrate != old_video_bitrate_kbps
             framerate_param_changed = self.app.framerate != old_framerate
-            crf_param_changed = (
-                self.app.encoder == "x264enc-striped" and self.h264_crf != old_h264_crf
-            )
-            h264_fullcolor_param_changed = (
-                self.app.encoder == "x264enc-striped" and self.h264_fullcolor != old_h264_fullcolor
-            )
-            audio_bitrate_param_changed = (
-                self.app.audio_bitrate != old_audio_bitrate_bps
-            )
+            crf_param_changed = is_pixelflux_h264 and self.h264_crf != old_h264_crf
+            h264_fullcolor_param_changed = is_pixelflux_h264 and self.h264_fullcolor != old_h264_fullcolor
+            audio_bitrate_param_changed = self.app.audio_bitrate != old_audio_bitrate_bps
 
-            restart_video_pipeline = (
-                encoder_actually_changed
-                or resolution_actually_changed_on_server
-                or bitrate_param_changed
-                or framerate_param_changed
-                or crf_param_changed
-                or h264_fullcolor_param_changed
-            )
+            restart_video_pipeline = False
+            if encoder_actually_changed or resolution_actually_changed_on_server:
+                restart_video_pipeline = True
+            else:
+                if self.app.encoder in PIXELFLUX_VIDEO_ENCODERS:
+                    if framerate_param_changed: restart_video_pipeline = True
+                    if is_pixelflux_h264 and (crf_param_changed or h264_fullcolor_param_changed):
+                        restart_video_pipeline = True
+                elif self.app.encoder in GSTREAMER_VIDEO_ENCODERS:
+                    pass 
+
             restart_audio_pipeline = audio_bitrate_param_changed
 
-            video_pipeline_was_active = (
-                self.is_jpeg_capturing
-                or self.is_x264_striped_capturing
-                or (hasattr(self.app, "pipeline_running") and self.app.pipeline_running)
-            )
-            audio_pipeline_was_active = getattr(
-                self.app, "audio_pipeline_running_ws_flag", False
-            )
+            video_pipeline_was_active = False
+            if old_encoder == "jpeg" and self.is_jpeg_capturing: video_pipeline_was_active = True
+            elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg" and self.is_x264_striped_capturing: video_pipeline_was_active = True
+            elif old_encoder in GSTREAMER_VIDEO_ENCODERS and hasattr(self.app, "pipeline_running") and self.app.pipeline_running: video_pipeline_was_active = True
+            
+            audio_pipeline_was_active = getattr(self.app, "audio_pipeline_running_ws_flag", False)
 
-            if restart_video_pipeline and video_pipeline_was_active:
-                data_logger.info(
-                    "Restarting video pipeline due to client settings update."
-                )
-                # Stop the pipeline based on the *old* encoder config
-                if old_encoder == "jpeg":
-                    await self._stop_jpeg_pipeline()
-                elif old_encoder == "x264enc-striped":
-                    await self._stop_x264_striped_pipeline()
-                elif hasattr(self.app, "stop_websocket_video_pipeline"):
-                    await self.app.stop_websocket_video_pipeline()
+            if restart_video_pipeline:
+                if video_pipeline_was_active:
+                    data_logger.info(
+                        f"Restarting video pipeline (was {old_encoder}, now {self.app.encoder}) due to settings change."
+                    )
+                    # Stop old pipeline
+                    if old_encoder == "jpeg": await self._stop_jpeg_pipeline()
+                    elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg": await self._stop_x264_striped_pipeline()
+                    elif old_encoder in GSTREAMER_VIDEO_ENCODERS and hasattr(self.app, "stop_websocket_video_pipeline"):
+                        await self.app.stop_websocket_video_pipeline()
+                else:
+                    data_logger.info(f"Video pipeline for {self.app.encoder} needs to start due to settings change (was not active).")
 
-                if self.app.encoder == "jpeg":
-                    await self._start_jpeg_pipeline()
-                elif self.app.encoder == "x264enc-striped":
-                    await self._start_x264_striped_pipeline()
-                elif hasattr(self.app, "start_websocket_video_pipeline"):
+                # Update GSTStreamingApp parameters before potential GStreamer start
+                if self.app.encoder in GSTREAMER_VIDEO_ENCODERS:
+                    self.app.set_framerate(self.app.framerate)
+                    self.app.set_video_bitrate(self.app.video_bitrate) # Already in kbps
+
+                # Start new pipeline
+                if self.app.encoder == "jpeg": await self._start_jpeg_pipeline()
+                elif self.app.encoder in PIXELFLUX_VIDEO_ENCODERS and self.app.encoder != "jpeg": await self._start_x264_striped_pipeline()
+                elif self.app.encoder in GSTREAMER_VIDEO_ENCODERS and hasattr(self.app, "start_websocket_video_pipeline"):
                     await self.app.start_websocket_video_pipeline()
+            
+            if restart_audio_pipeline:
+                if audio_pipeline_was_active:
+                    data_logger.info("Restarting audio pipeline due to settings update.")
+                    if hasattr(self.app, "stop_websocket_audio_pipeline"): await self.app.stop_websocket_audio_pipeline()
+                else:
+                    data_logger.info("Audio pipeline needs to start due to settings (was not active).")
+                
+                self.app.set_audio_bitrate(self.app.audio_bitrate) # Update app instance
+                if hasattr(self.app, "start_websocket_audio_pipeline"): await self.app.start_websocket_audio_pipeline()
 
-            if restart_audio_pipeline and audio_pipeline_was_active:
-                data_logger.info(
-                    "Restarting audio pipeline due to client settings update."
-                )
-                if hasattr(self.app, "stop_websocket_audio_pipeline"):
-                    await self.app.stop_websocket_audio_pipeline()
-                if hasattr(self.app, "start_websocket_audio_pipeline"):
-                    await self.app.start_websocket_audio_pipeline()
+        if is_initial_settings and not self.client_settings_received.is_set():
+            self.client_settings_received.set()
+            data_logger.info("Initial client settings processed and event set by _apply_client_settings.")
 
     async def ws_handler(self, websocket):
         global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
@@ -2167,10 +1985,11 @@ class DataStreamingServer:
 
         available_encoders = []
         if X11_CAPTURE_AVAILABLE:
+            available_encoders.append("x264enc")
             available_encoders.append("x264enc-striped")
             available_encoders.append("jpeg")
         if GSTREAMER_AVAILABLE:
-            gst_encoders_to_try = ["x264enc", "nvh264enc", "vah264enc", "openh264enc"]
+            gst_encoders_to_try = ["nvh264enc"]
             for enc_name in gst_encoders_to_try:
                 if Gst.ElementFactory.find(enc_name):
                     available_encoders.append(enc_name)
@@ -2189,7 +2008,6 @@ class DataStreamingServer:
 
         self._initial_target_bitrate_kbps = self.app.video_bitrate
         self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
-        self._latest_client_render_fps = 0.0
         self._last_adjustment_time = self._last_time_client_ok = time.monotonic()
         self._frame_backpressure_task = None
         self._active_pipeline_last_sent_frame_id = 0
@@ -2550,7 +2368,7 @@ class DataStreamingServer:
                             try:
                                 os.remove(active_upload_target_path_conn)
                             except OSError:
-                                pass # Ignore if removal fails, already logged error
+                                pass
                             del active_uploads_by_path_conn[
                                 active_upload_target_path_conn
                             ]
@@ -2561,43 +2379,35 @@ class DataStreamingServer:
                             _, payload_str = message.split(",", 1)
                             parsed_settings = self._parse_settings_payload(payload_str)
                             await self._apply_client_settings(
-                                websocket,  # Pass the current connection's websocket
+                                websocket,
                                 parsed_settings,
                                 not initial_settings_processed,
                             )
-                            if not initial_settings_processed:
-                                self.client_settings_received.set()
+                            if not initial_settings_processed: # ws_handler's local flag
                                 initial_settings_processed = True
-                                data_logger.info("Initial client settings processed.")
+                                data_logger.info("Initial client settings message processed by ws_handler.")
                                 current_encoder = getattr(self.app, "encoder", None)
-                                if current_encoder == "jpeg":
-                                    await self._start_jpeg_pipeline()
-                                elif current_encoder == "x264enc-striped":
-                                    await self._start_x264_striped_pipeline()
-                                elif GSTREAMER_AVAILABLE and hasattr(
-                                    self.app, "start_websocket_video_pipeline"
-                                ):
-                                    await self.app.start_websocket_video_pipeline()
-                                if GSTREAMER_AVAILABLE and hasattr(
-                                    self.app, "start_websocket_audio_pipeline"
-                                ):
-                                    if not getattr(
-                                        self.app,
-                                        "audio_pipeline_running_ws_flag",
-                                        False,
-                                    ):
-                                        await self.app.start_websocket_audio_pipeline()
-                                else:
-                                    data_logger.warning(
-                                        "Initial setup: GStreamer audio pipeline (server-to-client) cannot be started (not available or no start method)."
-                                    )
-
+                                video_is_active = (
+                                    self.is_jpeg_capturing or
+                                    self.is_x264_striped_capturing or
+                                    (current_encoder in GSTREAMER_VIDEO_ENCODERS and hasattr(self.app, "pipeline_running") and self.app.pipeline_running)
+                                )
+                                if not video_is_active and current_encoder:
+                                    data_logger.warning(f"Initial setup: Video pipeline for '{current_encoder}' was expected to be started by _apply_client_settings but is not. This might indicate an issue or a no-op change.")
+                                audio_is_active = getattr(self.app, "audio_pipeline_running_ws_flag", False)
+                                if not audio_is_active and GSTREAMER_AVAILABLE and hasattr(self.app, "start_websocket_audio_pipeline"):
+                                    data_logger.info("Initial setup: Audio pipeline not yet active, attempting start.")
+                                    self.app.set_audio_bitrate(self.app.audio_bitrate) # Ensure app state is fresh
+                                    await self.app.start_websocket_audio_pipeline()
+                                elif not GSTREAMER_AVAILABLE and not audio_is_active :
+                                    data_logger.warning("Initial setup: GStreamer audio pipeline (server-to-client) cannot be started (GStreamer not available).")
                         except json.JSONDecodeError:
                             data_logger.error(f"SETTINGS JSON decode error: {message}")
                         except Exception as e_set:
                             data_logger.error(
                                 f"Error processing SETTINGS: {e_set}", exc_info=True
                             )
+
 
                     elif message.startswith("CLIENT_FRAME_ACK"):
                         try:
@@ -2660,42 +2470,42 @@ class DataStreamingServer:
 
                     elif message == "START_VIDEO":
                         current_encoder = getattr(self.app, "encoder", None)
-                        data_logger.info(
-                            f"Received START_VIDEO for encoder: {current_encoder}"
-                        )
+                        data_logger.info(f"Received START_VIDEO for encoder: {current_encoder}")
+                        started_successfully = False
+
                         if current_encoder == "jpeg":
-                            await self._start_jpeg_pipeline()
-                        elif current_encoder == "x264enc-striped":
-                            await self._start_x264_striped_pipeline()
-                        elif GSTREAMER_AVAILABLE and hasattr(
-                            self.app, "start_websocket_video_pipeline"
-                        ):
-                            await self.app.start_websocket_video_pipeline()
-                        websockets.broadcast(self.clients, "VIDEO_STARTED")
+                            started_successfully = await self._start_jpeg_pipeline()
+                        elif current_encoder in PIXELFLUX_VIDEO_ENCODERS and current_encoder != "jpeg":
+                            started_successfully = await self._start_x264_striped_pipeline()
+                        elif current_encoder in GSTREAMER_VIDEO_ENCODERS and GSTREAMER_AVAILABLE:
+                            if hasattr(self.app, "start_websocket_video_pipeline"):
+                                self.app.set_framerate(self.app.framerate) 
+                                self.app.set_video_bitrate(self.app.video_bitrate)
+                                await self.app.start_websocket_video_pipeline()
+                                started_successfully = getattr(self.app, "pipeline_running", False)
+                        
+                        if started_successfully:
+                            websockets.broadcast(self.clients, "VIDEO_STARTED")
+                        elif not started_successfully:
+                            data_logger.warning(f"START_VIDEO: Failed to start pipeline for encoder '{current_encoder}'.")
 
                     elif message == "STOP_VIDEO":
                         data_logger.info("Received STOP_VIDEO")
-                        pipeline_was_active_and_stopped = False
-                        if self.is_jpeg_capturing:
+                        current_encoder = getattr(self.app, "encoder", None) 
+
+                        if self.is_jpeg_capturing and current_encoder == "jpeg":
                             await self._stop_jpeg_pipeline()
-                            pipeline_was_active_and_stopped = True
-                        elif self.is_x264_striped_capturing:
+                        elif self.is_x264_striped_capturing and (current_encoder in PIXELFLUX_VIDEO_ENCODERS and current_encoder != "jpeg"):
                             await self._stop_x264_striped_pipeline()
-                            pipeline_was_active_and_stopped = True
-                        elif (
-                            GSTREAMER_AVAILABLE
-                            and hasattr(self.app, "pipeline_running")
-                            and self.app.pipeline_running
-                        ):
+                        elif current_encoder in GSTREAMER_VIDEO_ENCODERS and \
+                            GSTREAMER_AVAILABLE and hasattr(self.app, "pipeline_running") and self.app.pipeline_running:
                             if hasattr(self.app, "stop_websocket_video_pipeline"):
                                 await self.app.stop_websocket_video_pipeline()
-                                pipeline_was_active_and_stopped = True
+                        
                         if self.clients:
                             websockets.broadcast(self.clients, "VIDEO_STOPPED")
 
-                    elif (
-                        message == "START_AUDIO"
-                    ):  # Client requests server-to-client audio start
+                    elif message == "START_AUDIO": 
                         await self.client_settings_received.wait()
                         data_logger.info(
                             "Received START_AUDIO command from client for server-to-client audio."
@@ -2733,196 +2543,181 @@ class DataStreamingServer:
                             websockets.broadcast(self.clients, "AUDIO_STOPPED")
 
                     elif message.startswith("r,"):
-                        raddr = (
-                            websocket.remote_address
-                        )  # Get raddr for logging if not already available in this scope
-                        data_logger.info(
-                            f"SERVER: Raw resize message '{message}' received from {raddr}"
-                        )
-
+                        await self.client_settings_received.wait() 
+                        raddr = websocket.remote_address
                         target_res_str = message[2:]
-                        data_logger.info(
-                            f"Received resize request: {target_res_str} from {raddr}"
-                        )
+                        data_logger.info(f"Received resize request: {target_res_str} from {raddr}")
 
                         video_was_running = False
-                        current_encoder_on_resize = getattr(self.app, "encoder", None)
-                        data_logger.info(
-                            f"Resize handler: Current encoder is {current_encoder_on_resize}. Video running states: JPEG={self.is_jpeg_capturing}, X264Striped={self.is_x264_striped_capturing}, GSTreamer={getattr(self.app, 'pipeline_running', False)}"
-                        )
-
-                        if self.is_jpeg_capturing:
+                        encoder_at_resize_start = str(self.app.encoder)
+                        if self.is_jpeg_capturing and encoder_at_resize_start == "jpeg":
                             data_logger.info("Resize handler: Stopping JPEG pipeline.")
                             await self._stop_jpeg_pipeline()
                             video_was_running = True
-                        elif self.is_x264_striped_capturing:
-                            data_logger.info(
-                                "Resize handler: Stopping X264-striped pipeline."
-                            )
+                        elif self.is_x264_striped_capturing and (encoder_at_resize_start in PIXELFLUX_VIDEO_ENCODERS and encoder_at_resize_start != "jpeg"):
+                            data_logger.info(f"Resize handler: Stopping {encoder_at_resize_start} (Pixelflux H264) pipeline.")
                             await self._stop_x264_striped_pipeline()
                             video_was_running = True
-                        elif GSTREAMER_AVAILABLE and getattr(
-                            self.app, "pipeline_running", False
-                        ):
-                            data_logger.info(
-                                "Resize handler: Stopping GStreamer video pipeline."
-                            )
+                        elif encoder_at_resize_start in GSTREAMER_VIDEO_ENCODERS and \
+                            GSTREAMER_AVAILABLE and getattr(self.app, "pipeline_running", False):
+                            data_logger.info("Resize handler: Stopping GStreamer video pipeline.")
                             await self.app.stop_websocket_video_pipeline()
                             video_was_running = True
+                        
+                        await on_resize_handler(target_res_str, self.app, self)
 
-                        data_logger.info(
-                            f"Resize handler: Calling on_resize_handler with '{target_res_str}' for {raddr}"
-                        )
-                        on_resize_handler(target_res_str, self.app, self)
-                        data_logger.info(
-                            f"Resize handler: on_resize_handler call completed for {raddr}. Last resize success: {getattr(self.app, 'last_resize_success', 'Unknown')}"
-                        )
-
-                        if (
-                            getattr(self.app, "last_resize_success", False)
-                            and video_was_running
-                        ):
-                            data_logger.info(
-                                f"Resize handler: Restarting video ({current_encoder_on_resize}) after successful resize to {self.app.display_width}x{self.app.display_height} for {raddr}"
-                            )
-                            if current_encoder_on_resize == "jpeg":
+                        if getattr(self.app, "last_resize_success", False) and video_was_running:
+                            data_logger.info(f"Resize handler: Restarting video ({encoder_at_resize_start}) after successful resize to {self.app.display_width}x{self.app.display_height}")
+                            if encoder_at_resize_start == "jpeg":
                                 await self._start_jpeg_pipeline()
-                            elif current_encoder_on_resize == "x264enc-striped":
+                            elif encoder_at_resize_start in PIXELFLUX_VIDEO_ENCODERS and encoder_at_resize_start != "jpeg":
                                 await self._start_x264_striped_pipeline()
-                            elif GSTREAMER_AVAILABLE and hasattr(
-                                self.app, "start_websocket_video_pipeline"
-                            ):
-                                await self.app.start_websocket_video_pipeline()
-                        elif not getattr(self.app, "last_resize_success", False):
-                            data_logger.error(
-                                f"Resize handler: Resize failed for {target_res_str}, {raddr}. Video not restarted if it was running."
-                            )
-                        elif not video_was_running:
-                            data_logger.info(
-                                f"Resize handler: Video was not running for {raddr}, no restart needed after resize."
-                            )
+                            elif encoder_at_resize_start in GSTREAMER_VIDEO_ENCODERS and GSTREAMER_AVAILABLE:
+                                if hasattr(self.app, "start_websocket_video_pipeline"):
+                                    self.app.set_framerate(self.app.framerate)
+                                    self.app.set_video_bitrate(self.app.video_bitrate)
+                                    await self.app.start_websocket_video_pipeline()
 
                     elif message.startswith("SET_ENCODER,"):
                         await self.client_settings_received.wait()
                         new_encoder_cmd = message.split(",")[1].strip().lower()
                         data_logger.info(f"Received SET_ENCODER: {new_encoder_cmd}")
+                        
+                        is_valid_new_encoder = False
+                        if new_encoder_cmd in PIXELFLUX_VIDEO_ENCODERS and X11_CAPTURE_AVAILABLE:
+                            is_valid_new_encoder = True
+                        elif new_encoder_cmd in GSTREAMER_VIDEO_ENCODERS and GSTREAMER_AVAILABLE:
+                            if Gst.ElementFactory.find(new_encoder_cmd):
+                                is_valid_new_encoder = True
+                            else:
+                                data_logger.warning(f"SET_ENCODER: GStreamer encoder factory for '{new_encoder_cmd}' not found.")
+                        
+                        if not is_valid_new_encoder:
+                            data_logger.warning(f"SET_ENCODER: '{new_encoder_cmd}' is not valid or available. No change.")
+                            continue
+
                         if new_encoder_cmd != self.app.encoder:
-                            if self.is_jpeg_capturing:
+                            old_encoder_for_stop = str(self.app.encoder)
+                            
+                            if self.is_jpeg_capturing and old_encoder_for_stop == "jpeg":
                                 await self._stop_jpeg_pipeline()
-                            elif self.is_x264_striped_capturing:
+                            elif self.is_x264_striped_capturing and (old_encoder_for_stop in PIXELFLUX_VIDEO_ENCODERS and old_encoder_for_stop != "jpeg"):
                                 await self._stop_x264_striped_pipeline()
-                            elif GSTREAMER_AVAILABLE and getattr(
-                                self.app, "pipeline_running", False
-                            ):
+                            elif old_encoder_for_stop in GSTREAMER_VIDEO_ENCODERS and \
+                                GSTREAMER_AVAILABLE and getattr(self.app, "pipeline_running", False):
                                 await self.app.stop_websocket_video_pipeline()
 
                             self.app.encoder = new_encoder_cmd
+
+                            # Start new pipeline
                             if new_encoder_cmd == "jpeg":
                                 await self._start_jpeg_pipeline()
-                            elif new_encoder_cmd == "x264enc-striped":
+                            elif new_encoder_cmd in PIXELFLUX_VIDEO_ENCODERS and new_encoder_cmd != "jpeg":
                                 await self._start_x264_striped_pipeline()
-                            elif GSTREAMER_AVAILABLE and hasattr(
-                                self.app, "start_websocket_video_pipeline"
-                            ):
-                                await self.app.start_websocket_video_pipeline()
-                            else:
-                                data_logger.warning(
-                                    f"No start method for new encoder {new_encoder_cmd}"
-                                )
+                            elif new_encoder_cmd in GSTREAMER_VIDEO_ENCODERS and GSTREAMER_AVAILABLE:
+                                if hasattr(self.app, "start_websocket_video_pipeline"):
+                                    self.app.set_framerate(self.app.framerate)
+                                    self.app.set_video_bitrate(self.app.video_bitrate)
+                                    await self.app.start_websocket_video_pipeline()
+                            else: 
+                                data_logger.warning(f"SET_ENCODER: No start method or support for validated new encoder {new_encoder_cmd}")
+                        else:
+                            data_logger.info(f"SET_ENCODER: Encoder '{new_encoder_cmd}' is already active.")
 
                     elif message.startswith("SET_FRAMERATE,"):
                         await self.client_settings_received.wait()
                         new_fps_cmd = int(message.split(",")[1])
                         data_logger.info(f"Received SET_FRAMERATE: {new_fps_cmd}")
-                        self.app.set_framerate(
-                            new_fps_cmd
-                        )  # This updates app.framerate
-                        current_enc = getattr(self.app, "encoder", None)
+                        
+                        if self.app.framerate == new_fps_cmd:
+                            data_logger.info(f"SET_FRAMERATE: Framerate {new_fps_cmd} is already set.")
+                            continue
 
-                        if current_enc == "jpeg" and self.is_jpeg_capturing:
-                            await self._stop_jpeg_pipeline()
-                            await self._start_jpeg_pipeline()
-                        elif (
-                            current_enc == "x264enc-striped"
-                            and self.is_x264_striped_capturing
-                        ):
-                            await self._stop_x264_striped_pipeline()
-                            await self._start_x264_striped_pipeline()
-                        elif (
-                            GSTREAMER_AVAILABLE
-                            and current_enc not in ["jpeg", "x264enc-striped"]
-                            and getattr(self.app, "pipeline_running", False)
-                        ):
-                            data_logger.info(
-                                f"Restarting GStreamer pipeline for new framerate {new_fps_cmd}"
-                            )
+                        self.app.set_framerate(new_fps_cmd) # Updates app.framerate, GSTApp attempts dynamic for GStreamer
+
+                        current_enc = getattr(self.app, "encoder", None)
+                        is_pixelflux_h264_active = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg" and self.is_x264_striped_capturing)
+                        is_jpeg_active = (current_enc == "jpeg" and self.is_jpeg_capturing)
+                        is_gstreamer_active = (current_enc in GSTREAMER_VIDEO_ENCODERS and GSTREAMER_AVAILABLE and getattr(self.app, "pipeline_running", False))
+
+                        if is_jpeg_active or is_pixelflux_h264_active:
+                            data_logger.info(f"Restarting {current_enc} pipeline for new framerate {new_fps_cmd}")
+                            if is_jpeg_active: await self._stop_jpeg_pipeline()
+                            if is_pixelflux_h264_active: await self._stop_x264_striped_pipeline()
+                            
+                            if is_jpeg_active: await self._start_jpeg_pipeline()
+                            if is_pixelflux_h264_active: await self._start_x264_striped_pipeline()
+                        elif is_gstreamer_active:
+                            # GSTApp.set_framerate already tried dynamic. If full restart is preferred:
+                            data_logger.info(f"Restarting GStreamer pipeline for new framerate {new_fps_cmd}.")
                             await self.app.stop_websocket_video_pipeline()
-                            await self.app.start_websocket_video_pipeline()
+                            await self.app.start_websocket_video_pipeline() # GSTApp uses its updated self.app.framerate
 
                     elif message.startswith("SET_VIDEO_BITRATE,"):
                         await self.client_settings_received.wait()
-                        new_bitrate_cmd = int(message.split(",")[1])
-                        data_logger.info(
-                            f"Received SET_VIDEO_BITRATE: {new_bitrate_cmd} kbps"
-                        )
-                        self.app.set_video_bitrate(
-                            new_bitrate_cmd
-                        )  # This updates app.video_bitrate
+                        new_bitrate_cmd = int(message.split(",")[1]) # kbps
+                        data_logger.info(f"Received SET_VIDEO_BITRATE: {new_bitrate_cmd} kbps")
+
+                        if self.app.video_bitrate == new_bitrate_cmd:
+                            data_logger.info(f"SET_VIDEO_BITRATE: Bitrate {new_bitrate_cmd} kbps is already set.")
+                            continue
+                        
+                        self.app.set_video_bitrate(new_bitrate_cmd) # Updates app.video_bitrate, GSTApp attempts dynamic
+
                         current_enc = getattr(self.app, "encoder", None)
-                        if (
-                            GSTREAMER_AVAILABLE
-                            and current_enc not in ["jpeg", "x264enc-striped"]
-                            and getattr(self.app, "pipeline_running", False)
-                        ):
-                            data_logger.info(
-                                f"Restarting GStreamer pipeline for new bitrate {new_bitrate_cmd} kbps"
-                            )
+                        is_gstreamer_active = (current_enc in GSTREAMER_VIDEO_ENCODERS and GSTREAMER_AVAILABLE and getattr(self.app, "pipeline_running", False))
+                        
+                        # Pixelflux H264 uses CRF primarily; bitrate changes don't typically force restart.
+                        # JPEG quality is separate. For now, no pixelflux restart on this command.
+                        if is_gstreamer_active:
+                            data_logger.info(f"Restarting GStreamer pipeline for new bitrate {new_bitrate_cmd} kbps.")
                             await self.app.stop_websocket_video_pipeline()
-                            await self.app.start_websocket_video_pipeline()
+                            await self.app.start_websocket_video_pipeline() # GSTApp uses its updated self.app.video_bitrate
 
                     elif message.startswith("SET_CRF,"):
                         await self.client_settings_received.wait()
                         new_crf_cmd = int(message.split(",")[1])
                         data_logger.info(f"Received SET_CRF: {new_crf_cmd}")
-                        if self.app.encoder == "x264enc-striped":
-                            self.h264_crf = new_crf_cmd
-                            if self.is_x264_striped_capturing:
-                                await self._stop_x264_striped_pipeline()
-                                await self._start_x264_striped_pipeline()
-                        else:
-                            data_logger.warning(
-                                f"SET_CRF received but current encoder '{self.app.encoder}' does not use CRF directly via this command."
-                            )
 
-                    elif message.startswith("SET_H264_FULLCOLOR,"): # New message handler
+                        current_enc = getattr(self.app, "encoder", None)
+                        is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+
+                        if is_pixelflux_h264:
+                            if self.h264_crf != new_crf_cmd:
+                                self.h264_crf = new_crf_cmd 
+                                if self.is_x264_striped_capturing:
+                                    data_logger.info(f"Restarting {current_enc} pipeline for CRF change to {self.h264_crf}")
+                                    await self._stop_x264_striped_pipeline()
+                                    await self._start_x264_striped_pipeline()
+                            else:
+                                data_logger.info(f"SET_CRF: Value {new_crf_cmd} is already set.")
+                        else:
+                            data_logger.warning(f"SET_CRF received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+
+                    elif message.startswith("SET_H264_FULLCOLOR,"):
                         await self.client_settings_received.wait()
                         try:
                             new_fullcolor_cmd_str = message.split(",")[1].strip().lower()
                             new_fullcolor_cmd = new_fullcolor_cmd_str == "true"
                             data_logger.info(f"Received SET_H264_FULLCOLOR: {new_fullcolor_cmd}")
-                            if self.app.encoder == "x264enc-striped":
+
+                            current_enc = getattr(self.app, "encoder", None)
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+
+                            if is_pixelflux_h264:
                                 if self.h264_fullcolor != new_fullcolor_cmd:
                                     self.h264_fullcolor = new_fullcolor_cmd
                                     if self.is_x264_striped_capturing:
-                                        data_logger.info(f"Restarting x264-striped pipeline for H264_FULLCOLOR change to {self.h264_fullcolor}")
+                                        data_logger.info(f"Restarting {current_enc} pipeline for H264_FULLCOLOR change to {self.h264_fullcolor}")
                                         await self._stop_x264_striped_pipeline()
                                         await self._start_x264_striped_pipeline()
                                 else:
-                                    data_logger.info(f"SET_H264_FULLCOLOR: Value {new_fullcolor_cmd} is already set. No change.")
+                                    data_logger.info(f"SET_H264_FULLCOLOR: Value {new_fullcolor_cmd} is already set.")
                             else:
-                                data_logger.warning(
-                                    f"SET_H264_FULLCOLOR received but current encoder '{self.app.encoder}' is not x264enc-striped."
-                                )
+                                data_logger.warning(f"SET_H264_FULLCOLOR received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
                         except IndexError:
                             data_logger.warning(f"Malformed SET_H264_FULLCOLOR message: {message}")
 
-                    elif message.startswith("cfps,"):
-                        try:
-                            self._latest_client_render_fps = float(
-                                message.split(",", 1)[1]
-                            )
-                        except (IndexError, ValueError):
-                            data_logger.warning(f"Malformed cfps message: {message}")
                     else:
                         if self.input_handler and hasattr(
                             self.input_handler, "on_message"
@@ -3135,26 +2930,23 @@ class DataStreamingServer:
 
             # 5. Stop global pipelines if the flag is set
             if stop_pipelines_flag:
-                data_logger.info(
-                    f"Stopping global pipelines due to disconnect logic for {raddr}."
-                )
-                if self.is_jpeg_capturing:
+                data_logger.info(f"Stopping global pipelines due to last client disconnect ({raddr}).")
+                current_encoder_on_cleanup = str(self.app.encoder if self.app else "Unknown")
+
+                if self.is_jpeg_capturing and current_encoder_on_cleanup == "jpeg":
                     await self._stop_jpeg_pipeline()
-                if self.is_x264_striped_capturing:
+                if self.is_x264_striped_capturing and (current_encoder_on_cleanup in PIXELFLUX_VIDEO_ENCODERS and current_encoder_on_cleanup != "jpeg"):
                     await self._stop_x264_striped_pipeline()
-                if GSTREAMER_AVAILABLE:  # GSTREAMER_AVAILABLE is a global constant
-                    if (
-                        hasattr(self.app, "pipeline_running")
-                        and self.app.pipeline_running
-                    ):
+                
+                if self.app and current_encoder_on_cleanup in GSTREAMER_VIDEO_ENCODERS and GSTREAMER_AVAILABLE:
+                    if hasattr(self.app, "pipeline_running") and self.app.pipeline_running:
                         if hasattr(self.app, "stop_websocket_video_pipeline"):
                             await self.app.stop_websocket_video_pipeline()
-                    if (
-                        hasattr(self.app, "audio_pipeline_running_ws_flag")
-                        and self.app.audio_pipeline_running_ws_flag
-                    ):
-                        if hasattr(self.app, "stop_websocket_audio_pipeline"):
-                            await self.app.stop_websocket_audio_pipeline()
+                
+                if self.app and GSTREAMER_AVAILABLE and \
+                hasattr(self.app, "audio_pipeline_running_ws_flag") and self.app.audio_pipeline_running_ws_flag:
+                    if hasattr(self.app, "stop_websocket_audio_pipeline"):
+                        await self.app.stop_websocket_audio_pipeline()
 
             data_logger.info(f"Data WS handler for {raddr} finished all cleanup.")
 
@@ -3177,14 +2969,7 @@ class DataStreamingServer:
                 current_server_frame_id = self._active_pipeline_last_sent_frame_id
                 last_client_acked_frame_id = self._client_acknowledged_frame_id
 
-                client_fps = self._latest_client_render_fps
-                if (
-                    client_fps <= 0 and self.app
-                ):  # Use app's configured framerate if client FPS unknown
-                    client_fps = self.app.framerate
-                if client_fps <= 0:  # Ultimate fallback
-                    client_fps = TARGET_FRAMERATE
-
+                client_fps = self.app.framerate
                 if last_client_acked_frame_id == -1 or client_fps <= 0:
                     # If we don't have client ACK or a valid FPS, don't engage backpressure
                     if not self._backpressure_send_frames_enabled:
@@ -3250,6 +3035,8 @@ class DataStreamingServer:
                             f"Last ACK ID: {last_client_acked_frame_id}. Forcing backpressure."
                         )
                     self._backpressure_send_frames_enabled = False
+                elif frame_desync > 10000:
+                    pass
                 elif effective_desync_frames > allowed_desync_frames:
                     if self._backpressure_send_frames_enabled:  # Log only on transition
                         data_logger.warning(
@@ -3360,6 +3147,11 @@ class DataStreamingServer:
             await self._stop_jpeg_pipeline()
         if self.is_x264_striped_capturing:
             await self._stop_x264_striped_pipeline()
+        if self.app and self.app.encoder in GSTREAMER_VIDEO_ENCODERS and GSTREAMER_AVAILABLE:
+            if hasattr(self.app, "pipeline_running") and self.app.pipeline_running:
+                if hasattr(self.app, "stop_websocket_video_pipeline"):
+                    data_logger.info("DataStreamingServer.stop(): Ensuring GStreamer video pipeline is stopped.")
+                    await self.app.stop_websocket_video_pipeline()
         data_logger.info(f"Data WS on port {self.port} stop procedure complete.")
 
 
@@ -3450,7 +3242,7 @@ async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5
         data_logger.error(f"Stats sender (WS) error: {e}", exc_info=True)
 
 
-def on_resize_handler(res_str, current_app_instance, data_server_instance=None):
+async def on_resize_handler(res_str, current_app_instance, data_server_instance=None):
     """
     Handles client resize request. Updates app state and calls xrandr.
     """
@@ -3521,7 +3313,6 @@ def on_resize_handler(res_str, current_app_instance, data_server_instance=None):
         )
         if current_app_instance:
             current_app_instance.last_resize_success = False
-
 
 def on_scaling_ratio_handler(scale_factor, current_app_instance):
     if not (0.75 <= scale_factor <= 2.5):

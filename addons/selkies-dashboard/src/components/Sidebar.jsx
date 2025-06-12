@@ -6,12 +6,10 @@ import yaml from "js-yaml";
 
 // --- Constants ---
 const encoderOptions = [
-  "x264enc-striped",
-  "nvh264enc",
   "x264enc",
+  "nvh264enc",
+  "x264enc-striped",
   "jpeg",
-  "vah264enc",
-  "openh264enc",
 ];
 
 const framerateOptions = [
@@ -1520,23 +1518,15 @@ function Sidebar({ isOpen }) {
     "x264enc-striped",
     "x264enc",
     "nvh264enc",
-    "vah264enc",
-    "openh264enc",
   ].includes(encoder);
   const showBitrate = [
-    "x264enc",
     "nvh264enc",
-    "vah264enc",
-    "openh264enc",
   ].includes(encoder);
   const showBufferSize = [
-    "x264enc",
     "nvh264enc",
-    "vah264enc",
-    "openh264enc",
   ].includes(encoder);
-  const showCRF = ["x264enc-striped"].includes(encoder);
-  const showH264FullColor = ["x264enc-striped"].includes(encoder);
+  const showCRF = ["x264enc-striped", "x264enc"].includes(encoder);
+  const showH264FullColor = ["x264enc-striped", "x264enc"].includes(encoder);
 
   return (
     <>
@@ -1761,7 +1751,7 @@ function Sidebar({ isOpen }) {
               {showH264FullColor && (
                 <div className="dev-setting-item toggle-item">
                   <label htmlFor="h264FullColorToggle">
-                    FullColor 4:4:4
+                    {t("sections.video.fullColorLabel")}
                   </label>
                   <button
                     id="h264FullColorToggle"
