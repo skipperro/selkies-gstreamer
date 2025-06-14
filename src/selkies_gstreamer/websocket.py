@@ -1568,9 +1568,9 @@ class DataStreamingServer:
             cs.h264_crf = crf
 
             cs.use_paint_over_quality = True
-            cs.paint_over_trigger_frames = 2
-            cs.damage_block_threshold = 15
-            cs.damage_block_duration = 30
+            cs.paint_over_trigger_frames = 5
+            cs.damage_block_threshold = 10
+            cs.damage_block_duration = 20
             cs.h264_fullcolor = self.h264_fullcolor
             cs.h264_fullframe = enable_fullframe
             
@@ -1693,9 +1693,9 @@ class DataStreamingServer:
             cs.jpeg_quality = quality
             cs.paint_over_jpeg_quality = 95
             cs.use_paint_over_quality = self._current_jpeg_use_paint_over_quality
-            cs.paint_over_trigger_frames = 2
-            cs.damage_block_threshold = 15
-            cs.damage_block_duration = 30
+            cs.paint_over_trigger_frames = 5
+            cs.damage_block_threshold = 10
+            cs.damage_block_duration = 20
 
             cb = StripeCallback(self._jpeg_stripe_callback)
 
