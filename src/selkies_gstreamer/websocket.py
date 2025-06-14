@@ -1679,7 +1679,7 @@ class DataStreamingServer:
         width = getattr(self.app, "display_width", 1024)
         height = getattr(self.app, "display_height", 768)
         fps = float(getattr(self.app, "framerate", TARGET_FRAMERATE))
-        quality = 75
+        quality = 60
 
         data_logger.info(f"Starting JPEG: {width}x{height} @ {fps}fps, Q: {quality}")
         try:
