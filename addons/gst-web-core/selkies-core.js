@@ -2798,12 +2798,20 @@ function handleDecodedFrame(frame) {
           }
         } else if (event.data.startsWith('clipboard,')) {
           try {
-            const clipboardData = atob(event.data.substring(10));
-            navigator.clipboard.writeText(clipboardData).catch(err => console.error('Could not copy server clipboard to local: ' + err));
+            const base64Payload = event.data.substring(10);
+            const binaryString = atob(base64Payload);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            const decodedText = new TextDecoder().decode(bytes);
+            navigator.clipboard.writeText(decodedText).catch(err => console.error('Could not copy server clipboard to local: ' + err));
             window.postMessage({
               type: 'clipboardContentUpdate',
-              text: clipboardData
+              text: decodedText
             }, window.location.origin);
+
           } catch (e) {
             console.error('Error processing clipboard data:', e);
           }
