@@ -8,12 +8,12 @@
 #include <sys/types.h>     // For dev_t
 #include <sys/sysmacros.h> // For major() and minor()
 #include <unistd.h>        // For STDIN_FILENO
-
-#define FAKE_UDEV_LOG_DEBUG(fmt, ...) fprintf(stderr, "[fake_udev_dbg:%s:%d] " fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
-#define FAKE_UDEV_LOG_INFO(fmt, ...)  fprintf(stderr, "[fake_udev_info:%s:%d] " fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
-#define FAKE_UDEV_LOG_WARN(fmt, ...)  fprintf(stderr, "[fake_udev_warn:%s:%d] " fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
-#define FAKE_UDEV_LOG_ERROR(fmt, ...) fprintf(stderr, "[fake_udev_err:%s:%d] " fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
-
+static bool g_fake_udev_log_enabled = false;
+static bool g_fake_udev_logging_initialized = false;
+#define FAKE_UDEV_LOG_DEBUG(fmt, ...) do { if (g_fake_udev_log_enabled) fprintf(stderr, "[fake_udev_dbg:%s:%d] " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } while (0)
+#define FAKE_UDEV_LOG_INFO(fmt, ...)  do { if (g_fake_udev_log_enabled) fprintf(stderr, "[fake_udev_info:%s:%d] " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } while (0)
+#define FAKE_UDEV_LOG_WARN(fmt, ...)  do { if (g_fake_udev_log_enabled) fprintf(stderr, "[fake_udev_warn:%s:%d] " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } while (0)
+#define FAKE_UDEV_LOG_ERROR(fmt, ...) do { if (g_fake_udev_log_enabled) fprintf(stderr, "[fake_udev_err:%s:%d] " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); } while (0)
 
 // --- Virtual Device Definitions ---
 #define NUM_VIRTUAL_GAMEPADS 4
@@ -75,6 +75,16 @@ static char input_uniq[NUM_VIRTUAL_GAMEPADS][64];
 static char input_devpaths[NUM_VIRTUAL_GAMEPADS][256];
 // static char usb_prod_names[NUM_VIRTUAL_GAMEPADS][128]; // No longer used as product is static
 static char usb_serials[NUM_VIRTUAL_GAMEPADS][64];
+
+static void fake_udev_logging_init_if_needed() {
+    if (g_fake_udev_logging_initialized) {
+        return;
+    }
+    if (getenv("JS_LOG") != NULL) {
+        g_fake_udev_log_enabled = true;
+    }
+    g_fake_udev_logging_initialized = true;
+}
 
 void initialize_virtual_gamepads_data_if_needed() {
     FAKE_UDEV_LOG_DEBUG("Enter");
@@ -236,7 +246,7 @@ struct udev_monitor {
 };
 
 struct udev *udev_new(void) {
-    FAKE_UDEV_LOG_INFO("called");
+    fake_udev_logging_init_if_needed();
     initialize_virtual_gamepads_data_if_needed();
     struct udev *udev = (struct udev *)calloc(1, sizeof(struct udev));
     if (!udev) {
@@ -244,7 +254,6 @@ struct udev *udev_new(void) {
         return NULL;
     }
     udev->n_ref = 1;
-    FAKE_UDEV_LOG_DEBUG("Created udev context %p, ref_count %d", (void*)udev, udev->n_ref);
     return udev;
 }
 
