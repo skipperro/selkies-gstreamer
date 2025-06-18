@@ -21,6 +21,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h> // For getenv
+#include <stddef.h> // For ptrdiff_t
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <sys/un.h>
@@ -766,6 +767,7 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
     unsigned int ioctl_size = _IOC_SIZE(request);
 
     if (ioctl_type == 'E') { // Standard EVDEV ioctls
+
         // Handle EVIOCGABS(abs_code): Get abs value info (e.g., min, max, fuzz for an axis)
         if (ioctl_nr >= _IOC_NR(EVIOCGABS(0)) && ioctl_nr < (_IOC_NR(EVIOCGABS(0)) + ABS_CNT)) {
             uint8_t abs_code = ioctl_nr - _IOC_NR(EVIOCGABS(0)); // Extract axis code from ioctl number.
@@ -773,47 +775,104 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
             absinfo_ptr = (struct input_absinfo *)arg;
             memset(absinfo_ptr, 0, sizeof(struct input_absinfo));
 
-            // Populate with generic defaults, then specialize.
+            // Populate with generic defaults first.
+            // These are suitable for standard analog sticks like X, Y, RX, RY.
             absinfo_ptr->value = 0; // Current value (typically 0 at start).
-            absinfo_ptr->minimum = ABS_AXIS_MIN_DEFAULT;
-            absinfo_ptr->maximum = ABS_AXIS_MAX_DEFAULT;
-            absinfo_ptr->fuzz = 16;
-            absinfo_ptr->flat = 128;
-            absinfo_ptr->resolution = 0;
+            absinfo_ptr->minimum = ABS_AXIS_MIN_DEFAULT; // e.g., -32767
+            absinfo_ptr->maximum = ABS_AXIS_MAX_DEFAULT; // e.g., +32767
+            absinfo_ptr->fuzz = 16;     // Standard fuzz for analog sticks
+            absinfo_ptr->flat = 128;    // Standard deadzone for analog sticks
+            absinfo_ptr->resolution = 0; // Default resolution, will be overridden for main sticks
 
-            // Specific defaults for triggers (LT/RT)
-            if (abs_code == ABS_Z || abs_code == ABS_RZ) {
-                absinfo_ptr->minimum = ABS_TRIGGER_MIN_DEFAULT;
-                absinfo_ptr->maximum = ABS_TRIGGER_MAX_DEFAULT;
+            // Now, specialize for different types of absolute axes.
+            if (abs_code == ABS_X || abs_code == ABS_Y || abs_code == ABS_RX || abs_code == ABS_RY) {
+                absinfo_ptr->resolution = 1;
+                sji_log_debug("IOCTL_EV(%s): EVIOCGABS(0x%02x) - Main analog stick. min=%d, max=%d, res=%d",
+                             interposer->open_dev_name, abs_code, absinfo_ptr->minimum, absinfo_ptr->maximum, absinfo_ptr->resolution);
+            } else if (abs_code == ABS_Z || abs_code == ABS_RZ) {
+                // Triggers (Left Trigger, Right Trigger)
+                absinfo_ptr->minimum = ABS_TRIGGER_MIN_DEFAULT; // e.g., 0
+                absinfo_ptr->maximum = ABS_TRIGGER_MAX_DEFAULT; // e.g., 1023 or 255
+                absinfo_ptr->fuzz = 0;     // Triggers usually don't need fuzz
+                absinfo_ptr->flat = 0;     // Triggers usually don't need a flat deadzone (or a very small one)
+                absinfo_ptr->resolution = 0; // Or 1 if you want to signify precision. 0 is often fine.
+                sji_log_debug("IOCTL_EV(%s): EVIOCGABS(0x%02x) - Trigger. min=%d, max=%d, res=%d",
+                             interposer->open_dev_name, abs_code, absinfo_ptr->minimum, absinfo_ptr->maximum, absinfo_ptr->resolution);
+            } else if (abs_code == ABS_HAT0X || abs_code == ABS_HAT0Y) {
+                // D-pad axes (often represented as HAT switches)
+                absinfo_ptr->minimum = ABS_HAT_MIN_DEFAULT; // e.g., -1
+                absinfo_ptr->maximum = ABS_HAT_MAX_DEFAULT; // e.g., +1
                 absinfo_ptr->fuzz = 0;
                 absinfo_ptr->flat = 0;
-            } else if (abs_code == ABS_HAT0X || abs_code == ABS_HAT0Y) { // D-pad axes
-                absinfo_ptr->minimum = ABS_HAT_MIN_DEFAULT;
-                absinfo_ptr->maximum = ABS_HAT_MAX_DEFAULT;
-                absinfo_ptr->fuzz = 0;
-                absinfo_ptr->flat = 0;
-            } else if (abs_code != ABS_X && abs_code != ABS_Y && abs_code != ABS_RX && abs_code != ABS_RY) {
-                 sji_log_debug("IOCTL_EV(%s): EVIOCGABS(0x%02x) - axis not a standard X360 analog stick, using general defaults.",
-                             interposer->open_dev_name, abs_code);
+                absinfo_ptr->resolution = 0; // HATs are not typically "high-resolution" continuous axes.
+                sji_log_debug("IOCTL_EV(%s): EVIOCGABS(0x%02x) - HAT/D-pad axis. min=%d, max=%d, res=%d",
+                             interposer->open_dev_name, abs_code, absinfo_ptr->minimum, absinfo_ptr->maximum, absinfo_ptr->resolution);
+            } else {
+                // Other, less common absolute axes. Use generic defaults.
+                // Resolution remains 0 from the initial generic setup unless a specific need arises.
+                 sji_log_debug("IOCTL_EV(%s): EVIOCGABS(0x%02x) - Other axis. Using general defaults. min=%d, max=%d, res=%d",
+                             interposer->open_dev_name, abs_code, absinfo_ptr->minimum, absinfo_ptr->maximum, absinfo_ptr->resolution);
             }
-            sji_log_info("IOCTL_EV(%s): EVIOCGABS(0x%02x)", interposer->open_dev_name, abs_code);
+            
+            // This top-level log is still useful to confirm the ioctl was handled.
+            sji_log_info("IOCTL_EV(%s): EVIOCGABS(0x%02x) handled.", interposer->open_dev_name, abs_code);
             goto exit_ev_ioctl; // ret_val is 0 (success) by default
         }
 
         // Handle EVIOCGNAME(len): Get device name.
-        if (ioctl_nr == _IOC_NR(EVIOCGNAME(0))) {
+        if (ioctl_nr == _IOC_NR(EVIOCGNAME(0))) { // NR is 0x06
             len = ioctl_size;
             if (!arg || len <= 0) { errno = EFAULT; ret_val = -1; goto exit_ev_ioctl; }
             strncpy((char *)arg, FAKE_UDEV_DEVICE_NAME, len - 1); // Use hardcoded name.
             ((char *)arg)[len - 1] = '\0';
             sji_log_info("IOCTL_EV(%s): EVIOCGNAME(%d) -> '%s' (Hardcoded for fake_udev sync)",
-                         interposer->open_dev_name, len, FAKE_UDEV_DEVICE_NAME);
+                         interposer->open_dev_name, len, (char *)arg);
             ret_val = strlen((char *)arg); // Return length of string copied.
             goto exit_ev_ioctl;
         }
 
+        // Handle EVIOCGPHYS(len): Get physical device path.
+        if (ioctl_nr == _IOC_NR(EVIOCGPHYS(0))) { // NR is 0x07
+            len = ioctl_size; 
+            if (!arg || len <= 0) { errno = EFAULT; ret_val = -1; goto exit_ev_ioctl; }
+
+            ptrdiff_t interposer_array_idx = interposer - interposers;
+            int gamepad_idx = -1;
+
+            if (interposer_array_idx >= 0 && (size_t)interposer_array_idx < NUM_INTERPOSERS() && interposer->type == DEV_TYPE_EV) {
+                gamepad_idx = interposer_array_idx - NUM_JS_INTERPOSERS;
+            }
+            
+            if (gamepad_idx < 0) { 
+                sji_log_error("IOCTL_EV(%s): EVIOCGPHYS - Could not determine valid gamepad index (%td, type %d). Setting EINVAL.", 
+                              interposer->open_dev_name, interposer_array_idx, interposer->type);
+                errno = EINVAL; ret_val = -1; goto exit_ev_ioctl;
+            }
+            
+            snprintf((char *)arg, len, "virtual/input/selkies_ev%d/phys", gamepad_idx);
+            ret_val = strlen((char *)arg); 
+            
+            sji_log_info("IOCTL_EV(%s): EVIOCGPHYS(%d) -> '%s'",
+                         interposer->open_dev_name, len, (char *)arg);
+            goto exit_ev_ioctl;
+        }
+
+        // Handle EVIOCGUNIQ(len): Get unique device identifier.
+        if (ioctl_nr == _IOC_NR(EVIOCGUNIQ(0))) { // NR is 0x08
+            len = ioctl_size;
+            if (!arg || len <= 0) { errno = EFAULT; ret_val = -1; goto exit_ev_ioctl; }
+
+            // Return an empty string (device has no specific unique ID)
+            ((char *)arg)[0] = '\0';
+            ret_val = 0; // Length of empty string is 0
+            
+            sji_log_info("IOCTL_EV(%s): EVIOCGUNIQ(%d) -> '' (empty string)",
+                         interposer->open_dev_name, len);
+            goto exit_ev_ioctl;
+        }
+
         // Handle EVIOCGPROP(len): Get device properties.
-        if (ioctl_nr == _IOC_NR(EVIOCGPROP(0))) {
+        if (ioctl_nr == _IOC_NR(EVIOCGPROP(0))) { // NR is 0x08
             len = ioctl_size;
             if (!arg || len <=0 ) { errno = EFAULT; ret_val = -1; goto exit_ev_ioctl; }
             memset(arg, 0, len); // Report no specific input properties (e.g., INPUT_PROP_BUTTONPAD).
@@ -823,7 +882,7 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
         }
 
         // Handle EVIOCGKEY(len): Get current key/button state (report all up).
-        if (ioctl_nr == _IOC_NR(EVIOCGKEY(0))) {
+        if (ioctl_nr == _IOC_NR(EVIOCGKEY(0))) { // NR is 0x18
             len = ioctl_size;
             if (!arg || len <=0) { errno = EFAULT; ret_val = -1; goto exit_ev_ioctl; }
             memset(arg, 0, len); // All bits 0 means all keys are up.
@@ -832,7 +891,36 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
             goto exit_ev_ioctl;
         }
 
+        // Handle EVIOCGLED(len): Get current LED state (report all off).
+        if (ioctl_nr == _IOC_NR(EVIOCGLED(0))) { // NR is 0x19
+            len = ioctl_size;
+            if (!arg || len <= 0) { errno = EFAULT; ret_val = -1; goto exit_ev_ioctl; }
+            
+            // Report all LEDs as off. The buffer 'len' is the size of the bitmask.
+            memset(arg, 0, len); 
+            
+            sji_log_info("IOCTL_EV(%s): EVIOCGLED(%d) (all LEDs reported off)",
+                         interposer->open_dev_name, len);
+            ret_val = len; // Return number of bytes copied.
+            goto exit_ev_ioctl;
+        }
+
+        // Handle EVIOCGSW(len): Get current switch state (report all off).
+        if (ioctl_nr == _IOC_NR(EVIOCGSW(0))) { // NR is 0x1b
+            len = ioctl_size;
+            if (!arg || len <= 0) { errno = EFAULT; ret_val = -1; goto exit_ev_ioctl; }
+
+            // Report all switches as off. The buffer 'len' is the size of the bitmask.
+            memset(arg, 0, len);
+
+            sji_log_info("IOCTL_EV(%s): EVIOCGSW(%d) (all switches reported off)",
+                         interposer->open_dev_name, len);
+            ret_val = len; // Return number of bytes copied.
+            goto exit_ev_ioctl;
+        }
+
         // Handle EVIOCGBIT(ev_type, len): Get event type or specific type bits.
+        // NR starts from 0x20 for EV_SYN bits, up to 0x20 + EV_MAX -1 for other types.
         if (ioctl_nr >= _IOC_NR(EVIOCGBIT(0,0)) && ioctl_nr < _IOC_NR(EVIOCGBIT(EV_MAX,0))) {
             unsigned char ev_type_query = ioctl_nr - _IOC_NR(EVIOCGBIT(0,0)); // Extract event type being queried.
             len = ioctl_size;
