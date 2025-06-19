@@ -137,17 +137,15 @@ def perform_initial_gstreamer_check(cli_selected_encoder=None):
     global GSTREAMER_AVAILABLE
     if not GSTREAMER_AVAILABLE:
         logger.critical(
-            "GStreamer Python bindings (gi module) are not available. Application cannot continue."
+            "GStreamer Python bindings (gi module) are not available."
         )
-        sys.exit(1)
     try:
         Gst.init(None)  # Initialize GStreamer
     except Exception as e:
         logger.critical(
-            f"Failed to initialize GStreamer (Gst.init(None) failed): {e}. Application cannot continue."
+            f"Failed to initialize GStreamer (Gst.init(None) failed): {e}."
         )
-        GSTREAMER_AVAILABLE = False
-        sys.exit(1)
+        GSTREAMER_AVAILABLE = True
 
     base_elements = [
         "appsink",
@@ -182,13 +180,9 @@ def perform_initial_gstreamer_check(cli_selected_encoder=None):
     if missing_elements:
         logger.critical(
             f"Essential GStreamer element(s) are missing: {', '.join(missing_elements)}. "
-            f"Application cannot continue. Please ensure GStreamer and the required plugins "
             f"are correctly installed and accessible in your environment. "
             f"(Checked for elements relevant to encoder: '{cli_selected_encoder or 'N/A'}')"
         )
-        sys.exit(1)
-
-    logger.info("Initial GStreamer element check passed successfully.")
 
 
 class GSTStreamingApp:
