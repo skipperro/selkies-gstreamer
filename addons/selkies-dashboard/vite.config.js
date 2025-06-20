@@ -4,6 +4,7 @@ import ViteRestart from 'vite-plugin-restart'
 import { ViteMinifyPlugin } from 'vite-plugin-minify';
 
 export default defineConfig({
+  base: '',
   server: {
     host: '0.0.0.0'
   },
