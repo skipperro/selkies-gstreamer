@@ -416,7 +416,7 @@ function sendResolutionToServer(width, height) {
   console.log(`Sending resolution to server: ${resString}, Pixel Ratio: ${pixelRatio}`);
   if (websocket && websocket.readyState === WebSocket.OPEN) {
     websocket.send(`r,${resString}`);
-    websocket.send(`s,${pixelRatio}`);
+    //websocket.send(`s,${pixelRatio}`);
   } else {
     console.warn("Cannot send resolution via WebSocket: Connection not open.");
   }
@@ -2318,7 +2318,7 @@ function handleDecodedFrame(frame) {
       }
 
       const pixelRatio = window.devicePixelRatio;
-      websocket.send(`s,${pixelRatio}`);
+      //websocket.send(`s,${pixelRatio}`);
       console.log(`[websockets] Sent initial pixel ratio: ${pixelRatio}.`);
     } else {
         console.log("Shared mode: WebSocket opened. Waiting for 'MODE websockets' from server to start identification sequence.");
