@@ -905,6 +905,7 @@ export class Input {
     }
 
     _mouseButtonMovement(event) {
+        const dpr = window.devicePixelRatio || 1;
         const down = (event.type === 'mousedown' ? 1 : 0);
         var mtype = "m";
         let canvas = document.getElementById('videoCanvas');
@@ -928,29 +929,26 @@ export class Input {
         // Check if pointer is locked to either element
         if (document.pointerLockElement === this.element || document.pointerLockElement === canvas) {
             mtype = "m2";
-            let movementX = event.movementX || 0; // Raw movement X
-            let movementY = event.movementY || 0; // Raw movement Y
+            let movementX_logical = event.movementX || 0; // Raw movement X (logical)
+            let movementY_logical = event.movementY || 0; // Raw movement Y (logical)
 
-            // Calculate this.x, this.y (scaled deltas for the server)
             if (window.isManualResolutionMode && canvas) {
                 const canvasRect = canvas.getBoundingClientRect();
                 if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
-                    const scaleX = canvas.width / canvasRect.width;
-                    const scaleY = canvas.height / canvasRect.height;
-                    this.x = Math.round(movementX * scaleX); // Assign scaled delta to this.x
-                    this.y = Math.round(movementY * scaleY); // Assign scaled delta to this.y
+                    const scaleX = canvas.width / canvasRect.width; // canvas.width is physical, canvasRect.width is logical => scaleX is dpr
+                    const scaleY = canvas.height / canvasRect.height; // scaleY is dpr
+                    this.x = Math.round(movementX_logical * scaleX); // physical delta
+                    this.y = Math.round(movementY_logical * scaleY); // physical delta
                 } else {
-                    this.x = movementX; // Fallback: Assign raw delta to this.x
-                    this.y = movementY; // Fallback: Assign raw delta to this.y
+                    // Fallback if canvas dimensions are invalid, use dpr directly
+                    this.x = Math.round(movementX_logical * dpr);
+                    this.y = Math.round(movementY_logical * dpr);
                 }
             } else {
-                if (this.cursorScaleFactor != null) {
-                    this.x = Math.trunc(movementX * this.cursorScaleFactor); // Assign scaled delta to this.x
-                    this.y = Math.trunc(movementY * this.cursorScaleFactor); // Assign scaled delta to this.y
-                } else {
-                    this.x = movementX; // Fallback: Assign raw delta to this.x
-                    this.y = movementY; // Fallback: Assign raw delta to this.y
-                }
+                // Not manual mode with canvas, or no canvas element found.
+                // For pointer lock, deltas are logical, scale by DPR.
+                this.x = Math.round(movementX_logical * dpr); // physical delta
+                this.y = Math.round(movementY_logical * dpr); // physical delta
             }
 
             const FAKE_CURSOR_ID = 'poc-dynamic-cursor-final';
@@ -960,58 +958,51 @@ export class Input {
                 const fakeCursor = fullscreenParent.querySelector(`#${FAKE_CURSOR_ID}`); // Find the cursor element
 
                 if (fakeCursor) { // Only proceed if the cursor element exists
-                    // Get current visual position
                     const currentX = parseFloat(fakeCursor.style.left || '0') || 0;
                     const currentY = parseFloat(fakeCursor.style.top || '0') || 0;
-
-                    // Calculate new visual position using RAW movement deltas
-                    let newX = currentX + movementX; // Use raw movementX here
-                    let newY = currentY + movementY; // Use raw movementY here
-
-                    // Get parent bounds for clamping
+                    let newX = currentX + movementX_logical; // Visual cursor uses logical movement
+                    let newY = currentY + movementY_logical; // Visual cursor uses logical movement
                     const containerWidth = fullscreenParent.clientWidth;
                     const containerHeight = fullscreenParent.clientHeight;
                     const cursorWidth = parseFloat(fakeCursor.style.width || '0') || 0;
                     const cursorHeight = parseFloat(fakeCursor.style.height || '0') || 0;
-
-                    // Clamp visual position to parent bounds
                     newX = Math.max(0, Math.min(containerWidth - cursorWidth, newX));
                     newY = Math.max(0, Math.min(containerHeight - cursorHeight, newY));
-
-                    // Update visual cursor style
                     fakeCursor.style.left = `${newX}px`;
                     fakeCursor.style.top = `${newY}px`;
                 }
             }
-        } else if (event.type === 'mousemove') {
+        } else if (event.type === 'mousemove') { // Absolute mouse mode
              if (window.isManualResolutionMode && canvas) {
                 const canvasRect = canvas.getBoundingClientRect();
                 if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
-                    const mouseX_on_canvas = event.clientX - canvasRect.left;
-                    const mouseY_on_canvas = event.clientY - canvasRect.top;
-                    const scaleX = canvas.width / canvasRect.width;
-                    const scaleY = canvas.height / canvasRect.height;
-                    let serverX = mouseX_on_canvas * scaleX;
-                    let serverY = mouseY_on_canvas * scaleY;
-                    this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX))); // Assign scaled absolute to this.x
-                    this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY))); // Assign scaled absolute to this.y
+                    const mouseX_on_canvas_logical = event.clientX - canvasRect.left;
+                    const mouseY_on_canvas_logical = event.clientY - canvasRect.top;
+                    const scaleX = canvas.width / canvasRect.width; // dpr
+                    const scaleY = canvas.height / canvasRect.height; // dpr
+                    let serverX_physical = mouseX_on_canvas_logical * scaleX;
+                    let serverY_physical = mouseY_on_canvas_logical * scaleY;
+                    this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX_physical))); // canvas.width is physical
+                    this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY_physical))); // canvas.height is physical
                 } else {
                     this.x = 0; this.y = 0; // Fallback
                 }
             } else {
+                // Not manual mode with canvas, use _clientToServerX/Y (which return logical) and then scale by DPR
                 if (!this.m /*&& event.type === 'mousemove' - redundant check */ ) {
                     this._windowMath();
                 }
                 if (this.m) {
-                    this.x = this._clientToServerX(event.clientX); // Assign mapped absolute to this.x
-                    this.y = this._clientToServerY(event.clientY); // Assign mapped absolute to this.y
+                    let logicalX = this._clientToServerX(event.clientX);
+                    let logicalY = this._clientToServerY(event.clientY);
+                    this.x = Math.round(logicalX * dpr); // Convert logical to physical
+                    this.y = Math.round(logicalY * dpr); // Convert logical to physical
                 } else {
                     this.x = 0; this.y = 0; // Fallback
                 }
             }
         }
 
-        // --- Original Button Mask Update ---
         if (event.type === 'mousedown' || event.type === 'mouseup') {
             var mask = 1 << event.button;
             if (down) {
@@ -1021,38 +1012,51 @@ export class Input {
             }
         }
 
-        // --- Original Send Call ---
-        // Sends the mtype ('m' or 'm2') and the calculated this.x/this.y
         var toks = [ mtype, this.x, this.y, this.buttonMask, 0 ];
         this.send(toks.join(","));
     }
 
     _calculateTouchCoordinates(touchPoint) {
+        const dpr = window.devicePixelRatio || 1;
         let canvas = document.getElementById('videoCanvas');
+
         if (window.isManualResolutionMode && canvas) {
             const canvasRect = canvas.getBoundingClientRect();
             if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
-                const touchX_on_canvas = touchPoint.clientX - canvasRect.left;
-                const touchY_on_canvas = touchPoint.clientY - canvasRect.top;
+                const touchX_on_canvas_logical = touchPoint.clientX - canvasRect.left;
+                const touchY_on_canvas_logical = touchPoint.clientY - canvasRect.top;
+                // In manual mode, canvas.width/height are physical, canvasRect.width/height are logical.
+                // So, scaleX and scaleY effectively become the devicePixelRatio for the canvas.
                 const scaleX = canvas.width / canvasRect.width;
                 const scaleY = canvas.height / canvasRect.height;
-                let serverX = touchX_on_canvas * scaleX;
-                let serverY = touchY_on_canvas * scaleY;
-                this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX)));
-                this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY)));
+                let serverX_physical = touchX_on_canvas_logical * scaleX;
+                let serverY_physical = touchY_on_canvas_logical * scaleY;
+                this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX_physical)));
+                this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY_physical)));
             } else {
-                this.x = 0; this.y = 0;
+                this.x = 0; this.y = 0; // Fallback
             }
         } else {
-            if (!this.m) this._windowMath();
+            // Not in manual resolution mode or no canvas element
+            if (!this.m) this._windowMath(); // Ensure this.m (mapping parameters) is calculated
+
             if (this.m) {
-                this.x = this._clientToServerX(touchPoint.clientX);
-                this.y = this._clientToServerY(touchPoint.clientY);
+                // _clientToServerX/Y convert client logical coordinates (e.g., from touch.clientX)
+                // to logical coordinates relative to the video element's content area (frameW, frameH).
+                let logicalX_on_element = this._clientToServerX(touchPoint.clientX);
+                let logicalY_on_element = this._clientToServerY(touchPoint.clientY);
+
+                // Now, scale these logical element coordinates by DPR to get physical coordinates.
+                this.x = Math.round(logicalX_on_element * dpr);
+                this.y = Math.round(logicalY_on_element * dpr);
             } else {
-                this.x = 0; this.y = 0;
+                // Fallback if this.m is not available
+                this.x = Math.round(touchPoint.clientX * dpr);
+                this.y = Math.round(touchPoint.clientY * dpr);
             }
         }
     }
+
     _sendMouseState() {
         const mtype = (document.pointerLockElement === this.element || this.mouseRelative) ? "m2" : "m";
         const toks = [ mtype, this.x, this.y, this.buttonMask, 0 ];
@@ -1067,126 +1071,152 @@ export class Input {
      * @private
      */
     _handleTouchEvent(event) {
-        // Do not captre whitelisted classes
-        if (this._targetHasClass(event.target, WHITELIST_CLASS)) {
-            return;
-        }
-        // Prevent double handling
+        if (this._targetHasClass(event.target, WHITELIST_CLASS)) return;
         if (!this._guac_markEvent(event)) return;
 
         const type = event.type;
         const now = Date.now();
-        let preventDefault = false; // Track if we should prevent default action
+        let preventDefault = false;
 
-        // --- Touch Start ---
+        const LONG_PRESS_DURATION = 750;
+        const LONG_PRESS_MAX_MOVEMENT_SQ = 15 * 15;
+        const TAP_THRESHOLD_DISTANCE_SQ_LOGICAL = this._TAP_THRESHOLD_DISTANCE_SQ;
+
+
         if (type === 'touchstart') {
             for (let i = 0; i < event.changedTouches.length; i++) {
                 const touch = event.changedTouches[i];
                 if (!this._activeTouches.has(touch.identifier)) {
-                    // Calculate initial server coords here
-                    const serverX = this._clientToServerX(touch.clientX);
-                    const serverY = this._clientToServerY(touch.clientY);
                     this._activeTouches.set(touch.identifier, {
-                        startX: touch.clientX,
-                        startY: touch.clientY,
-                        currentX: touch.clientX, // Initialize current position
-                        currentY: touch.clientY,
-                        startTime: now,
-                        identifier: touch.identifier,
-                        serverX: serverX, // Store initial server coords
-                        serverY: serverY
+                        startX: touch.clientX, startY: touch.clientY,
+                        currentX: touch.clientX, currentY: touch.clientY,
+                        startTime: now, identifier: touch.identifier,
+                        longPressCompleted: false
                     });
-                    // Update this.x/y to the latest touch point for reference, but don't send yet
-                    this.x = serverX;
-                    this.y = serverY;
+                    if (i === 0) {
+                        this._calculateTouchCoordinates(touch);
+                    }
                 }
             }
 
             const touchCount = this._activeTouches.size;
 
-            if (touchCount === 1) {
-                // Potential single touch (tap or drag start). DO NOTHING yet regarding mouse button.
-                this._isTwoFingerGesture = false;
-                // Don't set _activeTouchIdentifier yet.
-                preventDefault = true; // Prevent default for initial touch
+            if (touchCount === 1 && !this._isTwoFingerGesture) {
+                preventDefault = true;
+                const [singleTouchID] = this._activeTouches.keys();
+                const touchData = this._activeTouches.get(singleTouchID);
+                const currentTouchPoint = { clientX: touchData.currentX, clientY: touchData.currentY };
 
-            } else if (touchCount === 2) {
-                // Definitively a two-finger gesture start.
-                this._isTwoFingerGesture = true;
-                // Cancel any potential single-touch drag state that might have been inferred briefly
-                this._activeTouchIdentifier = null;
-                this.buttonMask &= ~1; // Ensure button is up
-                preventDefault = true; // Prevent default for two-finger start (zoom/pan)
+                this._calculateTouchCoordinates(currentTouchPoint);
+                const physicalXAtPressStart = this.x;
+                const physicalYAtPressStart = this.y;
 
+                if (touchData && !touchData.longPressCompleted) {
+                    this._longPressTouchIdentifier = singleTouchID;
+                    if (this._longPressTimer) clearTimeout(this._longPressTimer);
+
+                    this._longPressTimer = setTimeout(() => {
+                        const currentActiveTouchData = this._activeTouches.get(this._longPressTouchIdentifier);
+                        if (currentActiveTouchData &&
+                            this._activeTouches.size === 1 &&
+                            this._longPressTouchIdentifier === currentActiveTouchData.identifier &&
+                            !this._isTwoFingerGesture &&
+                            this._activeTouchIdentifier === null &&
+                            !currentActiveTouchData.longPressCompleted) {
+
+                            const dx = currentActiveTouchData.currentX - currentActiveTouchData.startX;
+                            const dy = currentActiveTouchData.currentY - currentActiveTouchData.startY;
+                            const distSq = dx * dx + dy * dy;
+
+                            if (distSq < LONG_PRESS_MAX_MOVEMENT_SQ) {
+                                currentActiveTouchData.longPressCompleted = true;
+
+                                this.x = physicalXAtPressStart;
+                                this.y = physicalYAtPressStart;
+
+                                this.buttonMask |= (1 << 2);
+                                this._sendMouseState();
+
+                                setTimeout(() => {
+                                    if ((this.buttonMask & (1 << 2)) !== 0) {
+                                        this.buttonMask &= ~(1 << 2);
+                                        this._sendMouseState();
+                                    }
+                                }, 50);
+                            }
+                        }
+                        this._longPressTimer = null;
+                    }, LONG_PRESS_DURATION);
+                }
             } else {
-                // More than two fingers - cancel ongoing gestures.
-                 if (this._isTwoFingerGesture) {
-                     this._isTwoFingerGesture = false;
-                 }
-                 if (this._activeTouchIdentifier !== null) {
-                    // Release button if a drag was active
-                    this.buttonMask &= ~1;
-                    this._sendMouseState(); // Send mouse up for the cancelled drag
+                if (this._longPressTimer) {
+                    clearTimeout(this._longPressTimer);
+                    this._longPressTimer = null;
+                }
+                if (touchCount === 2) {
+                    this._isTwoFingerGesture = true;
                     this._activeTouchIdentifier = null;
-                 }
-                 // Don't necessarily prevent default for >2 touches
+                    if ((this.buttonMask & 1) === 1) this.buttonMask &= ~1;
+                    preventDefault = true;
+                } else if (touchCount > 2) {
+                    if (this._isTwoFingerGesture) this._isTwoFingerGesture = false;
+                    if (this._activeTouchIdentifier !== null) {
+                        this.buttonMask &= ~1; this._sendMouseState(); this._activeTouchIdentifier = null;
+                    }
+                }
+                 if (touchCount !== 1) { // If not a single touch, clear long press tracking
+                    this._longPressTouchIdentifier = null;
+                }
             }
-        }
-
-        // --- Touch Move ---
-        else if (type === 'touchmove') {
+        } else if (type === 'touchmove') {
             let activeTouchMoved = false;
             for (let i = 0; i < event.changedTouches.length; i++) {
                 const touch = event.changedTouches[i];
                 const touchData = this._activeTouches.get(touch.identifier);
                 if (touchData) {
-                    // Update current position for all moving touches
                     touchData.currentX = touch.clientX;
                     touchData.currentY = touch.clientY;
 
+                    if (this._longPressTimer && touch.identifier === this._longPressTouchIdentifier) {
+                        const dx = touchData.currentX - touchData.startX;
+                        const dy = touchData.currentY - touchData.startY;
+                        const distSq = dx * dx + dy * dy;
+                        if (distSq >= LONG_PRESS_MAX_MOVEMENT_SQ) {
+                            clearTimeout(this._longPressTimer);
+                            this._longPressTimer = null;
+                        }
+                    }
+
                     if (this._isTwoFingerGesture) {
-                        // If two fingers are down, just prevent default scroll/zoom
                         preventDefault = true;
                     } else if (this._activeTouches.size === 1) {
-                        // Only one finger is down total
                         if (this._activeTouchIdentifier === touch.identifier) {
-                             // This is the already active dragging finger
-                            this._calculateTouchCoordinates(touch); // Updates this.x, this.y
-                            this._sendMouseState(); // Send mouse move (button is already down)
-                            activeTouchMoved = true;
-                            preventDefault = true;
-                        } else if (this._activeTouchIdentifier === null) {
-                            // Single finger moving, but not yet designated as a drag
-                            // Check if it moved enough to start a drag
+                            this._calculateTouchCoordinates(touch); this._sendMouseState();
+                            activeTouchMoved = true; preventDefault = true;
+                        } else if (this._activeTouchIdentifier === null && !touchData.longPressCompleted) {
                             const dx = touchData.currentX - touchData.startX;
                             const dy = touchData.currentY - touchData.startY;
-                            const distSq = dx*dx + dy*dy;
-
-                            if (distSq >= this._TAP_THRESHOLD_DISTANCE_SQ) {
-                                // Moved enough: Start drag
+                            const distSq = dx * dx + dy * dy;
+                            if (distSq >= TAP_THRESHOLD_DISTANCE_SQ_LOGICAL) {
+                                if (this._longPressTimer && touch.identifier === this._longPressTouchIdentifier) {
+                                    clearTimeout(this._longPressTimer);
+                                    this._longPressTimer = null;
+                                }
                                 this._activeTouchIdentifier = touch.identifier;
-                                this._calculateTouchCoordinates(touch); // Set initial drag coords
-                                this.buttonMask |= 1; // <<<<<<<<<<<< MOUSE DOWN HERE
-                                this._sendMouseState(); // Send initial mouse down + position
-                                activeTouchMoved = true;
-                                preventDefault = true;
+                                this._calculateTouchCoordinates(touch);
+                                this.buttonMask |= 1; this._sendMouseState();
+                                activeTouchMoved = true; preventDefault = true;
                             } else {
-                                // Moved slightly, but not enough to be a drag yet. Prevent default.
                                 preventDefault = true;
                             }
                         }
                     }
                 }
             }
-            // If the active dragging touch didn't move in *this* event, but others did,
-            // still prevent default to avoid interference.
-             if (this._activeTouchIdentifier !== null && !activeTouchMoved) {
-                  preventDefault = true;
-             }
-        }
-
-        // --- Touch End / Cancel ---
-        else if (type === 'touchend' || type === 'touchcancel') {
+            if (this._activeTouchIdentifier !== null && !activeTouchMoved && this._activeTouches.size > 0) {
+                 preventDefault = true;
+            }
+        } else if (type === 'touchend' || type === 'touchcancel') {
             const endedTouches = event.changedTouches;
             let swipeDetected = false;
 
@@ -1195,111 +1225,114 @@ export class Input {
                 const identifier = endedTouch.identifier;
                 const startData = this._activeTouches.get(identifier);
 
-                if (!startData) continue; // Touch wasn't tracked? Ignore.
+                if (!startData) continue;
 
-                 // Update final position for calculations
-                startData.currentX = endedTouch.clientX;
-                startData.currentY = endedTouch.clientY;
+                if (this._longPressTimer && identifier === this._longPressTouchIdentifier) {
+                    clearTimeout(this._longPressTimer);
+                    this._longPressTimer = null;
+                }
 
-                const endTime = now;
-                const duration = endTime - startData.startTime;
+                if (startData.longPressCompleted) {
+                    this._activeTouches.delete(identifier);
+                    if (identifier === this._longPressTouchIdentifier) {
+                        this._longPressTouchIdentifier = null;
+                    }
+                    preventDefault = true;
+                    continue;
+                }
+
+                startData.currentX = endedTouch.clientX; startData.currentY = endedTouch.clientY;
+                const duration = now - startData.startTime;
                 const deltaX = startData.currentX - startData.startX;
                 const deltaY = startData.currentY - startData.startY;
-                const deltaDistSq = deltaX*deltaX + deltaY*deltaY;
+                const deltaDistSq = deltaX * deltaX + deltaY * deltaY;
 
-                // --- Check for Swipe ---
-                // Swipe check happens if _isTwoFingerGesture was true when this finger lifted
-                // OR if it was the *second* finger lifting very quickly after the first one.
                 if (this._isTwoFingerGesture) {
-                    // Check swipe criteria
-                    if (duration < this._MAX_SWIPE_DURATION &&
-                        Math.abs(deltaY) > this._MIN_SWIPE_DISTANCE &&
-                        Math.abs(deltaY) > Math.abs(deltaX) * this._VERTICAL_SWIPE_RATIO)
-                    {
-                        // Vertical Swipe Detected!
+                    if (duration < this._MAX_SWIPE_DURATION && Math.abs(deltaY) > this._MIN_SWIPE_DISTANCE && Math.abs(deltaY) > Math.abs(deltaX) * this._VERTICAL_SWIPE_RATIO) {
                         const direction = (deltaY < 0) ? 'up' : 'down';
-                        // Calculate magnitude based on distance
-                        const magnitude = Math.max(1, Math.min(this._MAX_SCROLL_MAGNITUDE,
-                                               Math.ceil(Math.abs(deltaY) / this._SCROLL_PIXELS_PER_TICK)));
-
+                        const magnitude = Math.max(1, Math.min(this._MAX_SCROLL_MAGNITUDE, Math.ceil(Math.abs(deltaY) / this._SCROLL_PIXELS_PER_TICK)));
+                        this._calculateTouchCoordinates(endedTouch);
                         this._triggerMouseWheel(direction, magnitude);
-                        swipeDetected = true;
-                        preventDefault = true;
-
-                        // Reset state immediately after successful swipe
-                        this._activeTouches.clear(); // Remove all touches
-                        this._isTwoFingerGesture = false;
-                        this._activeTouchIdentifier = null;
-                        this.buttonMask &= ~1; // Ensure button is up
-                        // No need to send state here, _triggerMouseWheel handles it
-
-                        break; // Gesture finished, stop processing ended touches for this event
-
-                    } else {
-                        // Two-finger gesture ended but wasn't a vertical swipe.
-                        // Just let it fall through to remove the touch.
+                        swipeDetected = true; preventDefault = true;
+                        this._activeTouches.clear(); this._isTwoFingerGesture = false; this._activeTouchIdentifier = null; this.buttonMask &= ~1;
+                        if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; this._longPressTouchIdentifier = null; }
+                        break;
                     }
+                } else if (!swipeDetected && this._activeTouchIdentifier === null && this._activeTouches.size === 1 && this._activeTouches.has(identifier)) {
+                    if (duration < this._TAP_MAX_DURATION && deltaDistSq < TAP_THRESHOLD_DISTANCE_SQ_LOGICAL) {
+                        this._calculateTouchCoordinates(endedTouch); this.buttonMask |= 1; this._sendMouseState(); preventDefault = true;
+                        setTimeout(() => { this.buttonMask &= ~1; this._sendMouseState(); }, 10);
+                    }
+                } else if (!swipeDetected && identifier === this._activeTouchIdentifier) {
+                    this._calculateTouchCoordinates(endedTouch); this.buttonMask &= ~1; this._sendMouseState();
+                    this._activeTouchIdentifier = null; preventDefault = true;
                 }
-
-                // --- Check for Tap ---
-                // Only consider tap if it wasn't part of a swipe and was a single touch action
-                else if (!swipeDetected && this._activeTouchIdentifier === null && this._activeTouches.size === 1) {
-                     if (duration < this._TAP_MAX_DURATION && deltaDistSq < this._TAP_THRESHOLD_DISTANCE_SQ) {
-                         // Tap detected! Simulate a quick click.
-                         this._calculateTouchCoordinates(endedTouch); // Set final coords
-                         this.buttonMask |= 1; // Press
-                         this._sendMouseState();
-                         preventDefault = true;
-                         // Use setTimeout to ensure release happens after press is processed
-                         setTimeout(() => {
-                             this.buttonMask &= ~1; // Release
-                             this._sendMouseState();
-                         }, 10); // Short delay for release
-                         // Note: We don't clear _activeTouches here yet, it happens below
-                     }
-                }
-
-                // --- Check for Drag End ---
-                else if (!swipeDetected && identifier === this._activeTouchIdentifier) {
-                    // End of a single-touch drag
-                    this._calculateTouchCoordinates(endedTouch); // Update final position
-                    this.buttonMask &= ~1; // Release button
-                    this._sendMouseState();
-                    this._activeTouchIdentifier = null; // Stop drag state
-                    preventDefault = true; // Prevent default for drag end
-                }
-
-                // --- Remove Ended Touch ---
                 this._activeTouches.delete(identifier);
+                if (identifier === this._longPressTouchIdentifier) {
+                    this._longPressTouchIdentifier = null;
+                }
+            }
 
-            } // End loop through changedTouches
-
-            // --- Post-End State Update ---
-            // Don't run this if a swipe cleared everything already
             if (!swipeDetected) {
                 const remainingTouchCount = this._activeTouches.size;
-
-                // Reset two-finger flag if count drops below 2
-                if (this._isTwoFingerGesture && remainingTouchCount < 2) {
-                    this._isTwoFingerGesture = false;
-                }
-
-                // If all touches are gone, ensure state is clean
+                if (this._isTwoFingerGesture && remainingTouchCount < 2) this._isTwoFingerGesture = false;
                 if (remainingTouchCount === 0) {
-                    this._activeTouchIdentifier = null;
-                    this._isTwoFingerGesture = false;
-                    // Ensure button is up if it wasn't handled by drag end/tap
-                    if ((this.buttonMask & 1) === 1) {
-                       this.buttonMask &= ~1;
-                       // Don't necessarily need to send state if nothing happened
-                    }
+                    this._activeTouchIdentifier = null; this._isTwoFingerGesture = false;
+                    if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
+                    this._longPressTouchIdentifier = null;
                 }
-                // Note: We don't automatically start a drag if one finger remains after
-                // a two-finger gesture ends without a swipe. User needs to move it.
-            }
-        } // End Touch End / Cancel
+                 // If the last touch lifted was the one being tracked for long press, ensure it's cleared
+                if (remainingTouchCount > 0 && this._longPressTouchIdentifier && !this._activeTouches.has(this._longPressTouchIdentifier)) {
+                    if (this._longPressTimer) clearTimeout(this._longPressTimer);
+                    this._longPressTimer = null;
+                    this._longPressTouchIdentifier = null;
+                }
+                 // If after processing ended touches, we are left with a single touch,
+                 // and it's not the one currently being tracked for long press,
+                 // restart long press detection for the new single touch.
+                if (remainingTouchCount === 1) {
+                    const [newSingleTouchID] = this._activeTouches.keys();
+                    if (this._longPressTouchIdentifier !== newSingleTouchID) {
+                        if (this._longPressTimer) clearTimeout(this._longPressTimer);
+                        this._longPressTimer = null;
+                        this._longPressTouchIdentifier = null;
 
-        // Apply preventDefault if needed and touch is on our element
+                        // Simulate a "touchstart" for this remaining single touch to initiate long press
+                        const newTouchData = this._activeTouches.get(newSingleTouchID);
+                        if (newTouchData && !newTouchData.longPressCompleted) {
+                            const pseudoTouch = { clientX: newTouchData.currentX, clientY: newTouchData.currentY, identifier: newSingleTouchID };
+                             // Re-calculate physical coords for this touch
+                            this._calculateTouchCoordinates(pseudoTouch);
+                            const physicalXAtPressStart = this.x;
+                            const physicalYAtPressStart = this.y;
+
+                            this._longPressTouchIdentifier = newSingleTouchID;
+                            this._longPressTimer = setTimeout(() => {
+                                const currentActiveTouchData = this._activeTouches.get(this._longPressTouchIdentifier);
+                                if (currentActiveTouchData && this._activeTouches.size === 1 && this._longPressTouchIdentifier === currentActiveTouchData.identifier && !this._isTwoFingerGesture && this._activeTouchIdentifier === null && !currentActiveTouchData.longPressCompleted) {
+                                    const dx = currentActiveTouchData.currentX - currentActiveTouchData.startX;
+                                    const dy = currentActiveTouchData.currentY - currentActiveTouchData.startY;
+                                    const distSq = dx * dx + dy * dy;
+                                    if (distSq < LONG_PRESS_MAX_MOVEMENT_SQ) {
+                                        currentActiveTouchData.longPressCompleted = true;
+                                        this.x = physicalXAtPressStart;
+                                        this.y = physicalYAtPressStart;
+                                        this.buttonMask |= (1 << 2); this._sendMouseState();
+                                        setTimeout(() => { if ((this.buttonMask & (1 << 2)) !== 0) { this.buttonMask &= ~(1 << 2); this._sendMouseState(); } }, 50);
+                                    }
+                                }
+                                this._longPressTimer = null;
+                            }, LONG_PRESS_DURATION);
+                        }
+                    }
+                } else if (remainingTouchCount !== 1) { // If not a single touch remaining, clear any long press
+                     if (this._longPressTimer) clearTimeout(this._longPressTimer);
+                     this._longPressTimer = null;
+                     this._longPressTouchIdentifier = null;
+                }
+            }
+        }
+
         if (preventDefault && this.element.contains(event.target)) {
             event.preventDefault();
         }
