@@ -1161,7 +1161,6 @@ export class Input {
     }
 
     _isIMEInteraction(e) {
-        if (this.isComposing) return true;
         if (e.keyCode === 229) return true; // Standard IME indicator
 
         // Check if the event target is the helper input field for IME
@@ -1281,15 +1280,6 @@ export class Input {
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) return;
         if (!this._guac_markEvent(event)) return;
         if (this._isIMEInteraction(event)) return;
-
-        // Guacamole's original purpose for keypress was to get the character code
-        // for printable keys. event.key now provides this more reliably.
-        // If we preventDefault on keydown, keypress might not fire or might be different.
-        // For now, let's assume keydown handles it. If specific issues arise with
-        // printable characters not working, this might need revisiting in conjunction
-        // with how _isIMEInteraction and preventDefault in _handleKeyDown behave.
-        // For robust international input, it's best to avoid complex keydown/keypress reconciliation.
-        // _stopEvent(event); // Potentially prevent default if not handled by IME
     }
 
     _handleKeyUp(event) {
@@ -1342,18 +1332,41 @@ export class Input {
         }
         this.send("co,update," + this.compositionString);
     }
+
     _compositionEnd(event) {
         if (!this._guac_markEvent(event)) return;
         this.isComposing = false;
-        if (event.data) {
-            this.compositionString = event.data;
-        }
+        let originalCompositionString = event.data || this.compositionString; // Prefer event.data if available
+
+        // Store it for the "co,end" message
+        this.compositionString = originalCompositionString;
         this.send("co,end," + this.compositionString);
-        if (this.compositionString) {
-            this._typeString(this.compositionString);
+
+        let doTypeString = true;
+
+        if (this.compositionString && this.compositionString.length === 1) {
+            const composedChar = this.compositionString;
+            const composedKeysym = Keysyms.lookup(composedChar.charCodeAt(0));
+            for (const keyCodeInList in this._keyDownList) {
+                if (this._keyDownList[keyCodeInList] === composedKeysym) {
+                    console.log(`_compositionEnd: Suppressing _typeString for '${composedChar}' (keysym ${composedKeysym}) because a key producing it is already in _keyDownList.`);
+                    doTypeString = false;
+                    break;
+                }
+            }
         }
-        this.compositionString = "";
+
+
+        if (originalCompositionString && doTypeString) {
+            console.log(`_compositionEnd: Proceeding with _typeString for '${originalCompositionString}'`);
+            this._typeString(originalCompositionString);
+        } else if (originalCompositionString && !doTypeString) {
+            console.log(`_compositionEnd: Skipped _typeString for '${originalCompositionString}' due to heuristic.`);
+        }
+
+        this.compositionString = ""; // Clear after use
     }
+
     _typeString(str) { // This is your originalGuacamole-style method for typing out composed strings
         for (let i = 0; i < str.length; i++) {
             const codepoint = str.codePointAt ? str.codePointAt(i) : str.charCodeAt(i);
