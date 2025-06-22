@@ -67,6 +67,7 @@ const en = {
             scaleLocallyOff: "OFF",
             scaleLocallyTitleEnable: "Enable Local Scaling (Maintain Aspect Ratio)",
             scaleLocallyTitleDisable: "Disable Local Scaling (Use Exact Resolution)",
+            uiScalingLabel: "UI Scaling",
         },
         stats: {
             title: "Stats",
@@ -152,6 +153,8 @@ const en = {
         copiedMessage: "Link copied to clipboard: {textToCopy}",
         copyFailedTitle: "Copy Failed: {label}",
         copyFailedError: "Could not copy link to clipboard.",
+        scalingTitle: "Scaling Updated: Action Required",
+        scalingMessage: "New scaling applied. To see changes, restart: the container, your desktop session by logging out, or the running application.",
     },
     alerts: {
         invalidResolution: "Please enter valid positive integers for Width and Height.",
@@ -222,6 +225,7 @@ const es = {
              scaleLocallyOff: "NO",
              scaleLocallyTitleEnable: "Activar Escalado Local (Mantener Relación de Aspecto)",
              scaleLocallyTitleDisable: "Desactivar Escalado Local (Usar Resolución Exacta)",
+             uiScalingLabel: "Escalado de Interfaz:",
         },
         stats: {
              title: "Estadísticas",
@@ -307,6 +311,8 @@ const es = {
         copiedMessage: "Enlace copiado al portapapeles: {textToCopy}",
         copyFailedTitle: "Error al Copiar: {label}",
         copyFailedError: "No se pudo copiar el enlace al portapapeles.",
+        scalingTitle: "Escalado Actualizado: Acción Requerida",
+        scalingMessage: "Nuevo escalado aplicado. Para ver los cambios, reinicie: el contenedor, su sesión de escritorio cerrando sesión, o la aplicación en ejecución.",
     },
     alerts: {
         invalidResolution: "Por favor, introduzca números enteros positivos válidos para Ancho y Alto.",
@@ -377,6 +383,7 @@ const zh = {
             scaleLocallyOff: "关",
             scaleLocallyTitleEnable: "启用本地缩放 (保持宽高比)",
             scaleLocallyTitleDisable: "禁用本地缩放 (使用精确分辨率)",
+            uiScalingLabel: "界面缩放:",
         },
         stats: {
             title: "统计信息",
@@ -462,6 +469,8 @@ const zh = {
         copiedMessage: "链接已复制到剪贴板: {textToCopy}",
         copyFailedTitle: "复制失败: {label}",
         copyFailedError: "无法将链接复制到剪贴板。",
+        scalingTitle: "缩放已更新：需要操作",
+        scalingMessage: "新的缩放已应用。要查看更改，请重启：容器、通过注销重启您的桌面会话，或重启正在运行的应用程序。",
     },
     alerts: {
         invalidResolution: "请输入有效的正整数作为宽度和高度。",
@@ -532,6 +541,7 @@ const hi = {
             scaleLocallyOff: "बंद",
             scaleLocallyTitleEnable: "स्थानीय स्केलिंग सक्षम करें (पहलू अनुपात बनाए रखें)",
             scaleLocallyTitleDisable: "स्थानीय स्केलिंग अक्षम करें (सटीक रिज़ॉल्यूशन का उपयोग करें)",
+            uiScalingLabel: "यूआई स्केलिंग:",
         },
         stats: {
             title: "आँकड़े",
@@ -617,6 +627,8 @@ const hi = {
         copiedMessage: "लिंक क्लिपबोर्ड पर कॉपी किया गया: {textToCopy}",
         copyFailedTitle: "कॉपी करने में विफल: {label}",
         copyFailedError: "लिंक क्लिपबोर्ड पर कॉपी नहीं किया जा सका।",
+        scalingTitle: "स्केलिंग अपडेट किया गया: कार्रवाई आवश्यक है",
+        scalingMessage: "नई स्केलिंग लागू की गई है। परिवर्तन देखने के लिए, पुनरारंभ करें: कंटेनर, लॉग आउट करके अपना डेस्कटॉप सत्र, या चल रहा एप्लिकेशन।",
     },
     alerts: {
         invalidResolution: "कृपया चौड़ाई और ऊंचाई के लिए मान्य धनात्मक पूर्णांक दर्ज करें।",
@@ -687,6 +699,7 @@ const pt = {
             scaleLocallyOff: "DESLIGADO",
             scaleLocallyTitleEnable: "Ativar Escala Local (Manter Proporção)",
             scaleLocallyTitleDisable: "Desativar Escala Local (Usar Resolução Exata)",
+            uiScalingLabel: "Escala da Interface:",
         },
         stats: {
             title: "Estatísticas",
@@ -772,6 +785,8 @@ const pt = {
         copiedMessage: "Link copiado para a área de transferência: {textToCopy}",
         copyFailedTitle: "Falha ao Copiar: {label}",
         copyFailedError: "Não foi possível copiar o link para a área de transferência.",
+        scalingTitle: "Escala Atualizada: Ação Necessária",
+        scalingMessage: "Nova escala aplicada. Para ver as alterações, reinicie: o contêiner, sua sessão de desktop fazendo logout, ou o aplicativo em execução.",
     },
     alerts: {
         invalidResolution: "Por favor, insira inteiros positivos válidos para Largura e Altura.",
@@ -842,6 +857,7 @@ const fr = {
             scaleLocallyOff: "NON",
             scaleLocallyTitleEnable: "Activer la mise à l'échelle locale (Conserver les proportions)",
             scaleLocallyTitleDisable: "Désactiver la mise à l'échelle locale (Utiliser la résolution exacte)",
+            uiScalingLabel: "Mise à l'échelle de l'interface :",
         },
         stats: {
             title: "Statistiques",
@@ -927,6 +943,8 @@ const fr = {
         copiedMessage: "Lien copié dans le presse-papiers : {textToCopy}",
         copyFailedTitle: "Échec de la copie : {label}",
         copyFailedError: "Impossible de copier le lien dans le presse-papiers.",
+        scalingTitle: "Mise à l'échelle mise à jour : Action requise",
+        scalingMessage: "Nouvelle mise à l'échelle appliquée. Pour voir les changements, redémarrez : le conteneur, votre session de bureau en vous déconnectant, ou l'application en cours d'exécution.",
     },
     alerts: {
         invalidResolution: "Veuillez entrer des entiers positifs valides pour la Largeur et la Hauteur.",
@@ -997,6 +1015,7 @@ const ru = {
             scaleLocallyOff: "ВЫКЛ",
             scaleLocallyTitleEnable: "Включить локальное масштабирование (Сохранять пропорции)",
             scaleLocallyTitleDisable: "Отключить локальное масштабирование (Использовать точное разрешение)",
+            uiScalingLabel: "Масштаб интерфейса:",
         },
         stats: {
             title: "Статистика",
@@ -1082,6 +1101,8 @@ const ru = {
         copiedMessage: "Ссылка скопирована в буфер обмена: {textToCopy}",
         copyFailedTitle: "Ошибка копирования: {label}",
         copyFailedError: "Не удалось скопировать ссылку в буфер обмена.",
+        scalingTitle: "Масштабирование обновлено: Требуется действие",
+        scalingMessage: "Новое масштабирование применено. Чтобы увидеть изменения, перезапустите: контейнер, ваш сеанс рабочего стола путем выхода из системы, или запущенное приложение.",
     },
     alerts: {
         invalidResolution: "Пожалуйста, введите действительные положительные целые числа для Ширины и Высоты.",
@@ -1152,6 +1173,7 @@ const de = {
             scaleLocallyOff: "AUS",
             scaleLocallyTitleEnable: "Lokale Skalierung aktivieren (Seitenverhältnis beibehalten)",
             scaleLocallyTitleDisable: "Lokale Skalierung deaktivieren (Genaue Auflösung verwenden)",
+            uiScalingLabel: "UI-Skalierung:",
         },
         stats: {
             title: "Statistiken",
@@ -1237,6 +1259,8 @@ const de = {
         copiedMessage: "Link in die Zwischenablage kopiert: {textToCopy}",
         copyFailedTitle: "Kopieren fehlgeschlagen: {label}",
         copyFailedError: "Link konnte nicht in die Zwischenablage kopiert werden.",
+        scalingTitle: "Skalierung aktualisiert: Aktion erforderlich",
+        scalingMessage: "Neue Skalierung angewendet. Um Änderungen zu sehen, starten Sie neu: den Container, Ihre Desktop-Sitzung durch Abmelden oder die laufende Anwendung.",
     },
     alerts: {
         invalidResolution: "Bitte geben Sie gültige positive ganze Zahlen für Breite und Höhe ein.",
@@ -1307,6 +1331,7 @@ const tr = {
             scaleLocallyOff: "KAPALI",
             scaleLocallyTitleEnable: "Yerel Ölçeklendirmeyi Etkinleştir (En Boy Oranını Koru)",
             scaleLocallyTitleDisable: "Yerel Ölçeklendirmeyi Devre Dışı Bırak (Tam Çözünürlüğü Kullan)",
+            uiScalingLabel: "Arayüz Ölçekleme:",
         },
         stats: {
             title: "İstatistikler",
@@ -1392,6 +1417,8 @@ const tr = {
         copiedMessage: "Bağlantı panoya kopyalandı: {textToCopy}",
         copyFailedTitle: "Kopyalama Başarısız: {label}",
         copyFailedError: "Bağlantı panoya kopyalanamadı.",
+        scalingTitle: "Ölçekleme Güncellendi: Eylem Gerekli",
+        scalingMessage: "Yeni ölçekleme uygulandı. Değişiklikleri görmek için yeniden başlatın: kapsayıcıyı, oturumu kapatarak masaüstü oturumunuzu veya çalışan uygulamayı.",
     },
     alerts: {
         invalidResolution: "Lütfen Genişlik ve Yükseklik için geçerli pozitif tam sayılar girin.",
@@ -1462,6 +1489,7 @@ const it = {
             scaleLocallyOff: "OFF",
             scaleLocallyTitleEnable: "Abilita Scala Locale (Mantieni Proporzioni)",
             scaleLocallyTitleDisable: "Disabilita Scala Locale (Usa Risoluzione Esatta)",
+            uiScalingLabel: "Scala Interfaccia:",
         },
         stats: {
             title: "Statistiche",
@@ -1547,6 +1575,8 @@ const it = {
         copiedMessage: "Link copiato negli appunti: {textToCopy}",
         copyFailedTitle: "Copia Fallita: {label}",
         copyFailedError: "Impossibile copiare il link negli appunti.",
+        scalingTitle: "Scalabilità Aggiornata: Azione Richiesta",
+        scalingMessage: "Nuova scalabilità applicata. Per visualizzare le modifiche, riavviare: il contenitore, la sessione del desktop disconnettendosi, o l'applicazione in esecuzione.",
     },
     alerts: {
         invalidResolution: "Inserisci numeri interi positivi validi per Larghezza e Altezza.",
@@ -1617,6 +1647,7 @@ const nl = {
             scaleLocallyOff: "UIT",
             scaleLocallyTitleEnable: "Lokaal Schalen Inschakelen (Beeldverhouding Behouden)",
             scaleLocallyTitleDisable: "Lokaal Schalen Uitschakelen (Exacte Resolutie Gebruiken)",
+            uiScalingLabel: "UI Schalen:",
         },
         stats: {
             title: "Statistieken",
@@ -1702,6 +1733,8 @@ const nl = {
         copiedMessage: "Link gekopieerd naar klembord: {textToCopy}",
         copyFailedTitle: "Kopiëren Mislukt: {label}",
         copyFailedError: "Kon link niet naar klembord kopiëren.",
+        scalingTitle: "Schalen bijgewerkt: Actie vereist",
+        scalingMessage: "Nieuwe schaling toegepast. Om wijzigingen te zien, herstart: de container, uw bureaubladsessie door uit te loggen, of de actieve applicatie.",
     },
     alerts: {
         invalidResolution: "Voer geldige positieve gehele getallen in voor Breedte en Hoogte.",
@@ -1772,6 +1805,7 @@ const ar = {
             scaleLocallyOff: "إيقاف",
             scaleLocallyTitleEnable: "تمكين تغيير الحجم المحلي (الحفاظ على نسبة العرض إلى الارتفاع)",
             scaleLocallyTitleDisable: "تعطيل تغيير الحجم المحلي (استخدام الدقة الدقيقة)",
+            uiScalingLabel: "مقياس واجهة المستخدم:",
         },
         stats: {
             title: "الإحصائيات",
@@ -1857,6 +1891,8 @@ const ar = {
         copiedMessage: "تم نسخ الرابط إلى الحافظة: {textToCopy}",
         copyFailedTitle: "فشل النسخ: {label}",
         copyFailedError: "تعذر نسخ الرابط إلى الحافظة.",
+        scalingTitle: "تم تحديث القياس: الإجراء مطلوب",
+        scalingMessage: "تم تطبيق القياس الجديد. لرؤية التغييرات، أعد تشغيل: الحاوية، أو جلسة سطح المكتب الخاصة بك عن طريق تسجيل الخروج، أو التطبيق قيد التشغيل.",
     },
     alerts: {
         invalidResolution: "الرجاء إدخال أعداد صحيحة موجبة صالحة للعرض والارتفاع.",
@@ -1927,6 +1963,7 @@ const ko = {
             scaleLocallyOff: "꺼짐",
             scaleLocallyTitleEnable: "로컬 스케일링 활성화 (종횡비 유지)",
             scaleLocallyTitleDisable: "로컬 스케일링 비활성화 (정확한 해상도 사용)",
+            uiScalingLabel: "UI 스케일링:",
         },
         stats: {
             title: "통계",
@@ -2012,6 +2049,8 @@ const ko = {
         copiedMessage: "링크가 클립보드에 복사되었습니다: {textToCopy}",
         copyFailedTitle: "복사 실패: {label}",
         copyFailedError: "링크를 클립보드에 복사할 수 없습니다.",
+        scalingTitle: "확장/축소 업데이트됨: 작업 필요",
+        scalingMessage: "새로운 확장이 적용되었습니다. 변경 사항을 보려면 다음을 다시 시작하십시오: 컨테이너, 로그아웃하여 데스크톱 세션, 또는 실행 중인 애플리케이션.",
     },
     alerts: {
         invalidResolution: "너비와 높이에 유효한 양의 정수를 입력하십시오.",
@@ -2082,6 +2121,7 @@ const ja = {
             scaleLocallyOff: "オフ",
             scaleLocallyTitleEnable: "ローカルスケーリングを有効にする (アスペクト比を維持)",
             scaleLocallyTitleDisable: "ローカルスケーリングを無効にする (正確な解像度を使用)",
+            uiScalingLabel: "UI スケーリング:",
         },
         stats: {
             title: "統計",
@@ -2167,6 +2207,8 @@ const ja = {
         copiedMessage: "リンクをクリップボードにコピーしました: {textToCopy}",
         copyFailedTitle: "コピーに失敗しました: {label}",
         copyFailedError: "リンクをクリップボードにコピーできませんでした。",
+        scalingTitle: "スケーリング更新：アクションが必要です",
+        scalingMessage: "新しいスケーリングが適用されました。変更を確認するには、コンテナ、ログアウトによるデスクトップセッション、または実行中のアプリケーションを再起動してください。",
     },
     alerts: {
         invalidResolution: "幅と高さに有効な正の整数を入力してください。",
@@ -2237,6 +2279,7 @@ const vi = {
             scaleLocallyOff: "TẮT",
             scaleLocallyTitleEnable: "Bật Co giãn Cục bộ (Giữ Tỷ lệ khung hình)",
             scaleLocallyTitleDisable: "Tắt Co giãn Cục bộ (Sử dụng Độ phân giải Chính xác)",
+            uiScalingLabel: "Tỷ lệ Giao diện:",
         },
         stats: {
             title: "Thống kê",
@@ -2322,6 +2365,8 @@ const vi = {
         copiedMessage: "Đã sao chép liên kết vào bộ nhớ tạm: {textToCopy}",
         copyFailedTitle: "Sao chép Thất bại: {label}",
         copyFailedError: "Không thể sao chép liên kết vào bộ nhớ tạm.",
+        scalingTitle: "Đã cập nhật tỷ lệ: Cần hành động",
+        scalingMessage: "Đã áp dụng tỷ lệ mới. Để xem các thay đổi, vui lòng khởi động lại: container, phiên làm việc máy tính của bạn bằng cách đăng xuất, hoặc ứng dụng đang chạy.",
     },
     alerts: {
         invalidResolution: "Vui lòng nhập số nguyên dương hợp lệ cho Chiều rộng và Chiều cao.",
@@ -2392,6 +2437,7 @@ const th = {
             scaleLocallyOff: "ปิด",
             scaleLocallyTitleEnable: "เปิดใช้งานการปรับขนาดในเครื่อง (รักษาสัดส่วนภาพ)",
             scaleLocallyTitleDisable: "ปิดใช้งานการปรับขนาดในเครื่อง (ใช้ความละเอียดที่แน่นอน)",
+            uiScalingLabel: "การปรับขนาด UI:",
         },
         stats: {
             title: "สถิติ",
@@ -2477,6 +2523,8 @@ const th = {
         copiedMessage: "คัดลอกลิงก์ไปยังคลิปบอร์ดแล้ว: {textToCopy}",
         copyFailedTitle: "การคัดลอกล้มเหลว: {label}",
         copyFailedError: "ไม่สามารถคัดลอกลิงก์ไปยังคลิปบอร์ดได้",
+        scalingTitle: "ปรับขนาดแล้ว: ต้องการการดำเนินการ",
+        scalingMessage: "ใช้การปรับขนาดใหม่แล้ว หากต้องการดูการเปลี่ยนแปลง โปรดรีสตาร์ท: คอนเทนเนอร์, เซสชันเดสก์ท็อปของคุณโดยการออกจากระบบ, หรือแอปพลิเคชันที่กำลังทำงานอยู่",
     },
     alerts: {
         invalidResolution: "โปรดป้อนจำนวนเต็มบวกที่ถูกต้องสำหรับความกว้างและความสูง",
@@ -2547,6 +2595,7 @@ const fil = {
             scaleLocallyOff: "OFF",
             scaleLocallyTitleEnable: "Paganahin ang Lokal na Pag-scale (Panatilihin ang Aspect Ratio)",
             scaleLocallyTitleDisable: "Huwag paganahin ang Lokal na Pag-scale (Gamitin ang Eksaktong Resolusyon)",
+            uiScalingLabel: "Pag-scale ng UI:",
         },
         stats: {
             title: "Stats",
@@ -2632,6 +2681,8 @@ const fil = {
         copiedMessage: "Nakopya ang link sa clipboard: {textToCopy}",
         copyFailedTitle: "Nabigo ang Pagkopya: {label}",
         copyFailedError: "Hindi makopya ang link sa clipboard.",
+        scalingTitle: "Na-update ang Pag-scale: Kinakailangan ang Aksyon",
+        scalingMessage: "Inilapat ang bagong pag-scale. Upang makita ang mga pagbabago, i-restart ang: container, iyong desktop session sa pamamagitan ng pag-log out, o ang tumatakbong application.",
     },
     alerts: {
         invalidResolution: "Mangyaring maglagay ng mga wastong positibong integer para sa Lapad at Taas.",
@@ -2702,6 +2753,7 @@ const da = {
             scaleLocallyOff: "FRA",
             scaleLocallyTitleEnable: "Aktiver lokal skalering (Bevar aspektforhold)",
             scaleLocallyTitleDisable: "Deaktiver lokal skalering (Brug præcis opløsning)",
+            uiScalingLabel: "UI-skalering:",
         },
         stats: {
             title: "Statistik",
@@ -2787,6 +2839,8 @@ const da = {
         copiedMessage: "Link kopieret til udklipsholder: {textToCopy}",
         copyFailedTitle: "Kopiering Mislykkedes: {label}",
         copyFailedError: "Kunne ikke kopiere link til udklipsholder.",
+        scalingTitle: "Skalering Opdateret: Handling Påkrævet",
+        scalingMessage: "Ny skalering anvendt. For at se ændringer, genstart: containeren, din skrivebordssession ved at logge ud, eller den kørende applikation.",
     },
     alerts: {
         invalidResolution: "Indtast venligst gyldige positive heltal for Bredde og Højde.",

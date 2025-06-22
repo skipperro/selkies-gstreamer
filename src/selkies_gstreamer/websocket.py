@@ -1099,49 +1099,93 @@ def generate_xrandr_gtf_modeline(res_wh_str):
     return match.group(1).strip(), match.group(2)
 
 
-def set_dpi(dpi):
-    if not isinstance(dpi, int) or dpi <= 0:
-        logger_gst_app_resize.error(f"Invalid DPI value: {dpi}")
+def set_dpi(dpi_setting):
+    """
+    Sets the display DPI using various available methods based on a specific command sequence.
+    The dpi_setting is expected to be an integer or a string representing an integer.
+    """
+    try:
+        # Ensure input is treated as a string first, then convert to int for validation
+        dpi_value = int(str(dpi_setting))
+        if dpi_value <= 0:
+            logger_gst_app_resize.error(f"Invalid DPI value: {dpi_value}. Must be a positive integer.")
+            return False
+    except ValueError:
+        logger_gst_app_resize.error(f"Invalid DPI format: '{dpi_setting}'. Must be convertible to a positive integer.")
         return False
+
+    any_method_succeeded = False
+
+    # 1. xfconf-query for XFCE
     if which("xfconf-query"):
-        cmd = [
+        cmd_xfconf = [
             "xfconf-query",
-            "-c",
-            "xsettings",
-            "-p",
-            "/Xft/DPI",
-            "-s",
-            str(dpi),
+            "-c", "xsettings",
+            "-p", "/Xft/DPI",
+            "-s", str(dpi_value),
             "--create",
-            "-t",
-            "int",
+            "-t", "int",
         ]
-        if subprocess.run(cmd, capture_output=True).returncode == 0:
-            return True
-        logger_gst_app_resize.warning("Failed to set XFCE DPI.")
+        try:
+            result = subprocess.run(cmd_xfconf, capture_output=True, text=True, check=False)
+            if result.returncode == 0:
+                logger_gst_app_resize.info(f"Successfully set XFCE DPI to {dpi_value} using xfconf-query.")
+                any_method_succeeded = True
+            else:
+                logger_gst_app_resize.warning(f"Failed to set XFCE DPI using xfconf-query. RC: {result.returncode}, Error: {result.stderr.strip()}")
+        except Exception as e:
+            logger_gst_app_resize.error(f"Error running xfconf-query: {e}")
+    else:
+        logger_gst_app_resize.debug("xfconf-query not found. Skipping XFCE DPI setting via xfconf-query.")
+
+    # 2. & 3. Xresources and xrdb
+    if which("xrdb"):
+        xresources_path_str = os.path.expanduser("~/.Xresources")
+        try:
+            with open(xresources_path_str, "w") as f:
+                f.write(f"Xft.dpi:   {dpi_value}\n")
+            logger_gst_app_resize.info(f"Wrote 'Xft.dpi:   {dpi_value}' to {xresources_path_str}.")
+
+            cmd_xrdb = ["xrdb", xresources_path_str]
+            result_xrdb = subprocess.run(cmd_xrdb, capture_output=True, text=True, check=False)
+            if result_xrdb.returncode == 0:
+                logger_gst_app_resize.info(f"Successfully loaded {xresources_path_str} using xrdb.")
+                any_method_succeeded = True
+            else:
+                logger_gst_app_resize.warning(f"Failed to load {xresources_path_str} using xrdb. RC: {result_xrdb.returncode}, Error: {result_xrdb.stderr.strip()}")
+        except Exception as e:
+            logger_gst_app_resize.error(f"Error updating or loading Xresources: {e}")
+    else:
+        logger_gst_app_resize.debug("xrdb not found. Skipping Xresources DPI setting.")
+
+    # 4. gsettings for GNOME and similar environments
     if which("gsettings"):
         try:
-            scaling_factor = float(dpi) / 96.0
-            cmd_set = [
-                "gsettings",
-                "set",
-                "org.gnome.desktop.interface",
-                "text-scaling-factor",
-                f"{scaling_factor:.2f}",
-            ]
-            if subprocess.run(cmd_set, capture_output=True).returncode == 0:
-                logger_gst_app_resize.info(
-                    f"Set GNOME text-scaling-factor for DPI {dpi}"
-                )
-                return True
-            logger_gst_app_resize.warning("Failed to set GNOME text-scaling-factor.")
-        except Exception as e:
-            logger_gst_app_resize.warning(
-                f"Error trying to set GNOME DPI via gsettings: {e}"
-            )
-    logger_gst_app_resize.warning("No supported tool found/worked to set DPI.")
-    return False
+            scaling_factor = float(dpi_value) / 96.0
+            scaling_factor_str = f"{scaling_factor:.2f}".replace(",", ".")
 
+            cmd_gsettings_text_scale = [
+                "gsettings", "set",
+                "org.gnome.desktop.interface", "text-scaling-factor",
+                scaling_factor_str
+            ]
+            result_gsettings_text_scale = subprocess.run(cmd_gsettings_text_scale, capture_output=True, text=True, check=False)
+            if result_gsettings_text_scale.returncode == 0:
+                logger_gst_app_resize.info(f"Successfully set GNOME text-scaling-factor to {scaling_factor_str} (for DPI {dpi_value}) using gsettings.")
+                any_method_succeeded = True
+            else:
+                if "No such schema" in result_gsettings_text_scale.stderr or "No such key" in result_gsettings_text_scale.stderr:
+                    logger_gst_app_resize.debug(f"gsettings: Schema/key 'org.gnome.desktop.interface text-scaling-factor' not found. Error: {result_gsettings_text_scale.stderr.strip()}")
+                else:
+                    logger_gst_app_resize.warning(f"Failed to set GNOME text-scaling-factor using gsettings. RC: {result_gsettings_text_scale.returncode}, Error: {result_gsettings_text_scale.stderr.strip()}")
+        except Exception as e:
+            logger_gst_app_resize.error(f"Error running gsettings for text-scaling-factor: {e}")
+    else:
+        logger_gst_app_resize.debug("gsettings not found. Skipping GNOME DPI setting via gsettings.")
+
+    if not any_method_succeeded:
+        logger_gst_app_resize.warning(f"No DPI setting method succeeded for DPI {dpi_value}.")
+    return any_method_succeeded
 
 def set_cursor_size(size):
     if not isinstance(size, int) or size <= 0:
@@ -2712,6 +2756,37 @@ class DataStreamingServer:
                         except IndexError:
                             data_logger.warning(f"Malformed SET_H264_FULLCOLOR message: {message}")
 
+                    elif message.startswith("s,"):
+                        await self.client_settings_received.wait() # Ensure initial settings are processed if needed
+                        try:
+                            dpi_value_str = message.split(",")[1]
+                            dpi_value = int(dpi_value_str)
+                            data_logger.info(f"Received DPI setting from client: {dpi_value}")
+
+                            if set_dpi(dpi_value): # set_dpi defined globally
+                                data_logger.info(f"Successfully set DPI to {dpi_value}")
+                            else:
+                                data_logger.error(f"Failed to set DPI to {dpi_value}")
+
+                            if CURSOR_SIZE > 0: # Ensure CURSOR_SIZE is positive
+                                calculated_cursor_size = int(round(dpi_value / 96.0 * CURSOR_SIZE))
+                                new_cursor_size = max(1, calculated_cursor_size) # Ensure at least 1px
+
+                                data_logger.info(f"Attempting to set cursor size to: {new_cursor_size} (based on DPI {dpi_value})")
+                                if set_cursor_size(new_cursor_size): # set_cursor_size defined globally
+                                    data_logger.info(f"Successfully set cursor size to {new_cursor_size}")
+                                else:
+                                    data_logger.error(f"Failed to set cursor size to {new_cursor_size}")
+                            else:
+                                data_logger.warning("CURSOR_SIZE is not positive. Skipping cursor size adjustment based on DPI.")
+
+                        except ValueError:
+                            data_logger.error(f"Invalid DPI value in message: {message}")
+                        except IndexError:
+                            data_logger.error(f"Malformed DPI message: {message}")
+                        except Exception as e_dpi:
+                            data_logger.error(f"Error processing DPI message '{message}': {e_dpi}", exc_info=True)
+
                     else:
                         if self.input_handler and hasattr(
                             self.input_handler, "on_message"
@@ -3308,20 +3383,6 @@ async def on_resize_handler(res_str, current_app_instance, data_server_instance=
         if current_app_instance:
             current_app_instance.last_resize_success = False
 
-def on_scaling_ratio_handler(scale_factor, current_app_instance):
-    if not (0.75 <= scale_factor <= 2.5):
-        logger.error(f"Scale ratio out of bounds: {scale_factor}")
-        return
-    dpi = int(96 * scale_factor)
-    logger.info(f"Setting DPI to: {dpi}")
-    if not set_dpi(dpi):
-        logger.error(f"Failed to set DPI to {dpi}")
-    cursor_s = int(CURSOR_SIZE * scale_factor)  # Use global CURSOR_SIZE
-    logger.info(f"Setting cursor size to: {cursor_s}")
-    if not set_cursor_size(cursor_s):
-        logger.error(f"Failed to set cursor size to {cursor_s}")
-
-
 async def main():
     if "DEV_MODE" in os.environ:
         try:
@@ -3446,9 +3507,6 @@ async def main():
     if ENABLE_RESIZE:
         input_handler.on_resize = lambda res_str: on_resize_handler(
             res_str, app, data_server
-        )
-        input_handler.on_scaling_ratio = lambda scale_val: on_scaling_ratio_handler(
-            scale_val, app
         )
     else:
         input_handler.on_resize = lambda res_str: logger.warning("Resize disabled.")

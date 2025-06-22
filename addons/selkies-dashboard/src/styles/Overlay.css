@@ -382,6 +382,7 @@
    Custom arrow SVG for dark theme. */
 .dev-setting-item #encoderSelect,
 .dev-setting-item #resolutionPresetSelect,
+.dev-setting-item #uiScalingSelect,
 .dev-setting-item .audio-device-select {
     width: 100%;
     padding: 8px;
@@ -404,6 +405,7 @@
 /* Custom arrow SVG for light theme select elements. */
 .theme-light .dev-setting-item #encoderSelect,
 .theme-light .dev-setting-item #resolutionPresetSelect,
+.theme-light .dev-setting-item #uiScalingSelect,
 .theme-light .dev-setting-item .audio-device-select {
      background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%22292.4%22%3E%3Cpath%20fill%3D%22%23333%22%20d%3D%22M287%2C114.7L159.1%2C282.6c-3.2%2C3.2-8.3%2C3.2-11.6%2C0L5.5%2C114.7c-3.2-3.2-3.2-8.3%2C0-11.6l10.3-10.3c3.2-3.2%2C8.3-3.2%2C11.6%2C0l124.9%2C124.9l124.9-124.9c3.2-3.2%2C8.3-3.2%2C11.6%2C0l10.3%2C10.3C290.3%2C106.5%2C290.3%2C111.5%2C287%2C114.7z%22%2F%3E%3C%2Fsvg%3E');
      background-color: var(--input-bg);
@@ -413,6 +415,7 @@
 /* Hover state for select elements. */
 .dev-setting-item #encoderSelect:hover,
 .dev-setting-item #resolutionPresetSelect:hover,
+.theme-light .dev-setting-item #uiScalingSelect,
 .dev-setting-item .audio-device-select:hover {
     border-color: var(--sidebar-header-color);
 }
@@ -420,6 +423,7 @@
 /* Focus state for select elements. */
 .dev-setting-item #encoderSelect:focus,
 .dev-setting-item #resolutionPresetSelect:focus,
+.dev-setting-item #uiScalingSelect:focus,
 .dev-setting-item .audio-device-select:focus {
    outline: none;
    border-color: var(--sidebar-header-color);
@@ -1570,17 +1574,9 @@ a:active {
 /* Hover state for select elements. */
 .dev-setting-item #encoderSelect:hover,
 .dev-setting-item #resolutionPresetSelect:hover,
+.dev-setting-item #uiScalingSelect:hover,
 .dev-setting-item .audio-device-select:hover {
     border-color: var(--sidebar-header-color);
-}
-
-/* Focus state for select elements. */
-.dev-setting-item #encoderSelect:focus,
-.dev-setting-item #resolutionPresetSelect:focus,
-.dev-setting-item .audio-device-select:focus {
-   outline: none;
-   border-color: var(--sidebar-header-color);
-   box-shadow: none;
 }
 
 /* Disabled state for audio device select elements. */

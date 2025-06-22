@@ -417,7 +417,6 @@ function sendResolutionToServer(width, height) {
   console.log(`Sending resolution to server: ${resString}, Pixel Ratio: ${dpr}`);
   if (websocket && websocket.readyState === WebSocket.OPEN) {
     websocket.send(`r,${resString}`);
-    //websocket.send(`s,${dpr}`);
   } else {
     console.warn("Cannot send resolution via WebSocket: Connection not open.");
   }
@@ -1625,6 +1624,23 @@ function handleSettingsMessage(settings) {
       console.log(`H.264 Full Color setting received (${newFullColorValue}), but it's the same as current. No change.`);
     }
   }
+  if (settings.SCALING_DPI !== undefined) {
+    const dpi = parseInt(settings.SCALING_DPI, 10);
+    if (!isNaN(dpi)) {
+      console.log(`Applied SCALING_DPI setting: ${dpi}.`);
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
+        const message = `s,${dpi}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else if (isSharedMode) {
+        console.log("SCALING_DPI setting ignored in shared mode.");
+      } else {
+        console.warn("Websocket connection not open, cannot send SCALING_DPI setting.");
+      }
+    } else {
+      console.warn(`Invalid SCALING_DPI value received: ${settings.SCALING_DPI}`);
+    }
+  }
   if (settings.turnSwitch !== undefined) {
     console.log(`turnSwitch setting received (WebRTC specific): ${settings.turnSwitch}. No action in WebSocket mode.`);
   }
@@ -2381,12 +2397,6 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
           console.log(`[websockets] Sent initial SET_VIDEO_BITRATE,${videoBitRate} for GStreamer encoder.`);
         }
       }
-
-      // The 'r,' message is sent by handleResizeUI (if auto) or setManualResolution, which are called after UI/Input init.
-      // If initial resolution needs to be sent explicitly here via 'r,', it would be redundant with SETTINGS if server uses those.
-      // The prompt stated "we always want to tell the server the real resolution". The SETTINGS now does this.
-      // The `s,${dpr}` message for pixel ratio is commented out and should remain so per instructions.
-      // console.log(`[websockets] Initial pixel ratio: ${dpr}.`);
 
     } else {
         console.log("Shared mode: WebSocket opened. Waiting for 'MODE websockets' from server to start identification sequence.");

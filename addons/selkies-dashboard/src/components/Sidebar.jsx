@@ -39,6 +39,19 @@ const commonResolutionValues = [
   "320x240",
 ];
 
+const dpiScalingOptions = [
+  { label: "100%", value: 96 },
+  { label: "125%", value: 120 },
+  { label: "150%", value: 144 },
+  { label: "175%", value: 168 },
+  { label: "200%", value: 192 },
+  { label: "225%", value: 216 },
+  { label: "250%", value: 240 },
+  { label: "275%", value: 264 },
+  { label: "300%", value: 288 },
+];
+const DEFAULT_SCALING_DPI = 96;
+
 const STATS_READ_INTERVAL_MS = 100;
 const MAX_AUDIO_BUFFER = 10;
 const DEFAULT_FRAMERATE = 60;
@@ -556,6 +569,9 @@ function Sidebar({ isOpen }) {
   const [h264FullColor, setH264FullColor] = useState(
     localStorage.getItem("h264_fullcolor") === "true"
   );
+  const [selectedDpi, setSelectedDpi] = useState(
+    parseInt(localStorage.getItem("scalingDPI"), 10) || DEFAULT_SCALING_DPI
+  );
   const [manualWidth, setManualWidth] = useState("");
   const [manualHeight, setManualHeight] = useState("");
   const [scaleLocally, setScaleLocally] = useState(() => {
@@ -665,6 +681,37 @@ function Sidebar({ isOpen }) {
     }, DEBOUNCE_DELAY),
     []
   );
+
+  const handleDpiScalingChange = (event) => {
+    const newDpi = parseInt(event.target.value, 10);
+    setSelectedDpi(newDpi);
+    localStorage.setItem("scalingDPI", newDpi.toString());
+    window.postMessage(
+      { type: "settings", settings: { SCALING_DPI: newDpi } },
+      window.location.origin
+    );
+
+    const notificationId = `scaling-action-required-${Date.now()}`;
+    const title = t("notifications.scalingTitle", "Scaling Updated: Action Required");
+    const message = t(
+      "notifications.scalingMessage", 
+      "New scaling applied. To see changes, restart: the container, your desktop session by logging out, or the running application."
+    );
+
+    setNotifications(prev => {
+      const newNotifs = [...prev, {
+        id: notificationId,
+        fileName: title,
+        status: 'end',
+        message: message,
+        timestamp: Date.now(),
+        fadingOut: false,
+      }];
+      return newNotifs.slice(-MAX_NOTIFICATIONS);
+    });
+
+    scheduleNotificationRemoval(notificationId, NOTIFICATION_TIMEOUT_ERROR); 
+  };
 
   const toggleAppsModal = () => setIsAppsModalOpen(!isAppsModalOpen);
   const toggleFilesModal = () => setIsFilesModalOpen(!isFilesModalOpen);
@@ -1187,6 +1234,13 @@ function Sidebar({ isOpen }) {
       setH264FullColor(false);
       localStorage.setItem("h264_fullcolor", "false");
     }
+    const savedScalingDPI = parseInt(localStorage.getItem("scalingDPI"), 10);
+    if (!isNaN(savedScalingDPI) && dpiScalingOptions.some(opt => opt.value === savedScalingDPI)) {
+      setSelectedDpi(savedScalingDPI);
+    } else {
+      setSelectedDpi(DEFAULT_SCALING_DPI);
+      localStorage.setItem("scalingDPI", DEFAULT_SCALING_DPI.toString());
+    }
   }, []);
 
   useEffect(() => {
@@ -1435,6 +1489,12 @@ function Sidebar({ isOpen }) {
                   const val = valueStr === true || valueStr === "true";
                   setH264FullColor(val);
                   localStorage.setItem("h264_fullcolor", val.toString());
+                } else if (prefixedKey.endsWith("SCALING_DPI")) { // Or whatever key core might send
+                  const val = parseInt(valueStr, 10);
+                  if (!isNaN(val) && dpiScalingOptions.some(opt => opt.value === val)) {
+                    setSelectedDpi(val);
+                    localStorage.setItem("scalingDPI", val.toString());
+                  }
                 }
               }
             }
@@ -1881,6 +1941,22 @@ function Sidebar({ isOpen }) {
               className="sidebar-section-content"
               id="screen-settings-content"
             >
+              <div className="dev-setting-item">
+                <label htmlFor="uiScalingSelect">
+                  {t("sections.screen.uiScalingLabel", "UI Scaling")}
+                </label>
+                <select
+                  id="uiScalingSelect"
+                  value={selectedDpi}
+                  onChange={handleDpiScalingChange}
+                >
+                  {dpiScalingOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="dev-setting-item">
                 {" "}
                 <label htmlFor="resolutionPresetSelect">
