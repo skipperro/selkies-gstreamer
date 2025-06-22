@@ -1099,13 +1099,122 @@ def generate_xrandr_gtf_modeline(res_wh_str):
     return match.group(1).strip(), match.group(2)
 
 
+def _run_xrdb(dpi_value, logger):
+    """Helper function to apply DPI via xrdb."""
+    if not which("xrdb"):
+        logger.debug("xrdb not found. Skipping Xresources DPI setting.")
+        return False
+    
+    xresources_path_str = os.path.expanduser("~/.Xresources")
+    try:
+        with open(xresources_path_str, "w") as f:
+            f.write(f"Xft.dpi:   {dpi_value}\n")
+        logger.info(f"Wrote 'Xft.dpi:   {dpi_value}' to {xresources_path_str}.")
+
+        cmd_xrdb = ["xrdb", xresources_path_str]
+        result_xrdb = subprocess.run(cmd_xrdb, capture_output=True, text=True, check=False)
+        if result_xrdb.returncode == 0:
+            logger.info(f"Successfully loaded {xresources_path_str} using xrdb.")
+            return True
+        else:
+            logger.warning(f"Failed to load {xresources_path_str} using xrdb. RC: {result_xrdb.returncode}, Error: {result_xrdb.stderr.strip()}")
+            return False
+    except Exception as e:
+        logger.error(f"Error updating or loading Xresources: {e}")
+        return False
+
+def _run_xfconf(dpi_value, logger):
+    """Helper function to apply DPI via xfconf-query for XFCE."""
+    if not which("xfconf-query"):
+        logger.debug("xfconf-query not found. Skipping XFCE DPI setting via xfconf-query.")
+        return False
+
+    cmd_xfconf = [
+        "xfconf-query",
+        "-c", "xsettings",
+        "-p", "/Xft/DPI",
+        "-s", str(dpi_value),
+        "--create",
+        "-t", "int",
+    ]
+    try:
+        result = subprocess.run(cmd_xfconf, capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            logger.info(f"Successfully set XFCE DPI to {dpi_value} using xfconf-query.")
+            return True
+        else:
+            logger.warning(f"Failed to set XFCE DPI using xfconf-query. RC: {result.returncode}, Error: {result.stderr.strip()}")
+            return False
+    except Exception as e:
+        logger.error(f"Error running xfconf-query: {e}")
+        return False
+
+def _run_mate_gsettings(dpi_value, logger):
+    """Helper function to apply DPI via gsettings for MATE."""
+    if not which("gsettings"):
+        logger.debug("gsettings not found. Skipping MATE gsettings.")
+        return False
+
+    mate_settings_succeeded_at_least_once = False
+
+    # MATE: org.mate.interface window-scaling-factor
+    try:
+        target_mate_scale_float = float(dpi_value) / 96.0
+        # For fractional scales (e.g., 1.5), MATE's integer window-scaling-factor
+        # should be 1. We rely on font DPI / text scaling for the fractional part.
+        # If it's an integer scale (e.g., 2.0 for 192 DPI), then use that integer.
+        if target_mate_scale_float == int(target_mate_scale_float):
+            mate_window_scaling_factor = int(target_mate_scale_float)
+        else:
+            mate_window_scaling_factor = 1 
+        
+        mate_window_scaling_factor = max(1, mate_window_scaling_factor) # Ensure it's at least 1
+
+        cmd_gsettings_mate_window_scale = [
+            "gsettings", "set",
+            "org.mate.interface", "window-scaling-factor",
+            str(mate_window_scaling_factor)
+        ]
+        result_mate_window_scale = subprocess.run(cmd_gsettings_mate_window_scale, capture_output=True, text=True, check=False)
+        if result_mate_window_scale.returncode == 0:
+            logger.info(f"Successfully set MATE window-scaling-factor to {mate_window_scaling_factor} (for DPI {dpi_value}) using gsettings.")
+            mate_settings_succeeded_at_least_once = True
+        else:
+            if "No such schema" in result_mate_window_scale.stderr or "No such key" in result_mate_window_scale.stderr:
+                logger.debug(f"gsettings: Schema/key 'org.mate.interface window-scaling-factor' not found. Error: {result_mate_window_scale.stderr.strip()}")
+            else:
+                logger.warning(f"Failed to set MATE window-scaling-factor using gsettings. RC: {result_mate_window_scale.returncode}, Error: {result_mate_window_scale.stderr.strip()}")
+    except Exception as e:
+        logger.error(f"Error running gsettings for MATE window-scaling-factor: {e}")
+
+    # MATE: org.mate.font-rendering dpi
+    try:
+        cmd_gsettings_mate_font_dpi = [
+            "gsettings", "set",
+            "org.mate.font-rendering", "dpi",
+            str(dpi_value) # MATE font rendering takes the direct DPI value
+        ]
+        result_mate_font_dpi = subprocess.run(cmd_gsettings_mate_font_dpi, capture_output=True, text=True, check=False)
+        if result_mate_font_dpi.returncode == 0:
+            logger.info(f"Successfully set MATE font-rendering DPI to {dpi_value} using gsettings.")
+            mate_settings_succeeded_at_least_once = True
+        else:
+            if "No such schema" in result_mate_font_dpi.stderr or "No such key" in result_mate_font_dpi.stderr:
+                logger.debug(f"gsettings: Schema/key 'org.mate.font-rendering dpi' not found. Error: {result_mate_font_dpi.stderr.strip()}")
+            else:
+                logger.warning(f"Failed to set MATE font-rendering DPI using gsettings. RC: {result_mate_font_dpi.returncode}, Error: {result_mate_font_dpi.stderr.strip()}")
+    except Exception as e:
+        logger.error(f"Error running gsettings for MATE font-rendering DPI: {e}")
+    
+    return mate_settings_succeeded_at_least_once
+
+
 def set_dpi(dpi_setting):
     """
-    Sets the display DPI using various available methods based on a specific command sequence.
+    Sets the display DPI using DE-specific methods based on a defined detection order.
     The dpi_setting is expected to be an integer or a string representing an integer.
     """
     try:
-        # Ensure input is treated as a string first, then convert to int for validation
         dpi_value = int(str(dpi_setting))
         if dpi_value <= 0:
             logger_gst_app_resize.error(f"Invalid DPI value: {dpi_value}. Must be a positive integer.")
@@ -1115,76 +1224,52 @@ def set_dpi(dpi_setting):
         return False
 
     any_method_succeeded = False
+    de_name_for_log = "Unknown" # For logging which DE path was taken
 
-    # 1. xfconf-query for XFCE
-    if which("xfconf-query"):
-        cmd_xfconf = [
-            "xfconf-query",
-            "-c", "xsettings",
-            "-p", "/Xft/DPI",
-            "-s", str(dpi_value),
-            "--create",
-            "-t", "int",
-        ]
-        try:
-            result = subprocess.run(cmd_xfconf, capture_output=True, text=True, check=False)
-            if result.returncode == 0:
-                logger_gst_app_resize.info(f"Successfully set XFCE DPI to {dpi_value} using xfconf-query.")
-                any_method_succeeded = True
-            else:
-                logger_gst_app_resize.warning(f"Failed to set XFCE DPI using xfconf-query. RC: {result.returncode}, Error: {result.stderr.strip()}")
-        except Exception as e:
-            logger_gst_app_resize.error(f"Error running xfconf-query: {e}")
+    # DE Detection and Action Order: KDE -> XFCE -> MATE -> i3 -> Openbox
+    if which("startplasma-x11"):
+        de_name_for_log = "KDE"
+        logger_gst_app_resize.info(f"{de_name_for_log} detected. Applying xrdb for DPI {dpi_value}.")
+        if _run_xrdb(dpi_value, logger_gst_app_resize):
+            any_method_succeeded = True
+    
+    elif which("xfce4-session"):
+        de_name_for_log = "XFCE"
+        logger_gst_app_resize.info(f"{de_name_for_log} detected. Applying xfconf-query for DPI {dpi_value}.")
+        if _run_xfconf(dpi_value, logger_gst_app_resize):
+            any_method_succeeded = True
+        # For XFCE, only xfconf-query is used to avoid potential double scaling.
+
+    elif which("mate-session"):
+        de_name_for_log = "MATE"
+        logger_gst_app_resize.info(f"{de_name_for_log} detected. Applying MATE gsettings and xrdb for DPI {dpi_value}.")
+        mate_gsettings_success = _run_mate_gsettings(dpi_value, logger_gst_app_resize)
+        # Also apply xrdb for MATE for wider application compatibility / fallback
+        xrdb_for_mate_success = _run_xrdb(dpi_value, logger_gst_app_resize)
+        if mate_gsettings_success or xrdb_for_mate_success:
+            any_method_succeeded = True
+
+    elif which("i3"):
+        de_name_for_log = "i3"
+        logger_gst_app_resize.info(f"{de_name_for_log} detected. Applying xrdb for DPI {dpi_value}.")
+        if _run_xrdb(dpi_value, logger_gst_app_resize):
+            any_method_succeeded = True
+            
+    elif which("openbox-session") or which("openbox"): # Check for openbox binary as well
+        de_name_for_log = "Openbox"
+        logger_gst_app_resize.info(f"{de_name_for_log} detected. Applying xrdb for DPI {dpi_value}.")
+        if _run_xrdb(dpi_value, logger_gst_app_resize):
+            any_method_succeeded = True
+            
     else:
-        logger_gst_app_resize.debug("xfconf-query not found. Skipping XFCE DPI setting via xfconf-query.")
-
-    # 2. & 3. Xresources and xrdb
-    if which("xrdb"):
-        xresources_path_str = os.path.expanduser("~/.Xresources")
-        try:
-            with open(xresources_path_str, "w") as f:
-                f.write(f"Xft.dpi:   {dpi_value}\n")
-            logger_gst_app_resize.info(f"Wrote 'Xft.dpi:   {dpi_value}' to {xresources_path_str}.")
-
-            cmd_xrdb = ["xrdb", xresources_path_str]
-            result_xrdb = subprocess.run(cmd_xrdb, capture_output=True, text=True, check=False)
-            if result_xrdb.returncode == 0:
-                logger_gst_app_resize.info(f"Successfully loaded {xresources_path_str} using xrdb.")
-                any_method_succeeded = True
-            else:
-                logger_gst_app_resize.warning(f"Failed to load {xresources_path_str} using xrdb. RC: {result_xrdb.returncode}, Error: {result_xrdb.stderr.strip()}")
-        except Exception as e:
-            logger_gst_app_resize.error(f"Error updating or loading Xresources: {e}")
-    else:
-        logger_gst_app_resize.debug("xrdb not found. Skipping Xresources DPI setting.")
-
-    # 4. gsettings for GNOME and similar environments
-    if which("gsettings"):
-        try:
-            scaling_factor = float(dpi_value) / 96.0
-            scaling_factor_str = f"{scaling_factor:.2f}".replace(",", ".")
-
-            cmd_gsettings_text_scale = [
-                "gsettings", "set",
-                "org.gnome.desktop.interface", "text-scaling-factor",
-                scaling_factor_str
-            ]
-            result_gsettings_text_scale = subprocess.run(cmd_gsettings_text_scale, capture_output=True, text=True, check=False)
-            if result_gsettings_text_scale.returncode == 0:
-                logger_gst_app_resize.info(f"Successfully set GNOME text-scaling-factor to {scaling_factor_str} (for DPI {dpi_value}) using gsettings.")
-                any_method_succeeded = True
-            else:
-                if "No such schema" in result_gsettings_text_scale.stderr or "No such key" in result_gsettings_text_scale.stderr:
-                    logger_gst_app_resize.debug(f"gsettings: Schema/key 'org.gnome.desktop.interface text-scaling-factor' not found. Error: {result_gsettings_text_scale.stderr.strip()}")
-                else:
-                    logger_gst_app_resize.warning(f"Failed to set GNOME text-scaling-factor using gsettings. RC: {result_gsettings_text_scale.returncode}, Error: {result_gsettings_text_scale.stderr.strip()}")
-        except Exception as e:
-            logger_gst_app_resize.error(f"Error running gsettings for text-scaling-factor: {e}")
-    else:
-        logger_gst_app_resize.debug("gsettings not found. Skipping GNOME DPI setting via gsettings.")
+        de_name_for_log = "Generic/Unknown DE"
+        logger_gst_app_resize.info(f"No specific DE session binary found (KDE, XFCE, MATE, i3, Openbox). Attempting generic xrdb as a fallback for DPI {dpi_value}.")
+        if _run_xrdb(dpi_value, logger_gst_app_resize):
+            any_method_succeeded = True
 
     if not any_method_succeeded:
-        logger_gst_app_resize.warning(f"No DPI setting method succeeded for DPI {dpi_value}.")
+        logger_gst_app_resize.warning(f"No DPI setting method succeeded for DPI {dpi_value} (Attempted for: {de_name_for_log}).")
+
     return any_method_succeeded
 
 def set_cursor_size(size):
