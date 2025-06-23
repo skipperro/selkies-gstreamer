@@ -953,6 +953,45 @@ const browser = {
     isSafari: function() { return /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent); },
 };
 
+const NumpadTranslations_NumLockOn = {
+    [KeyTable.XK_KP_Space]: KeyTable.XK_space,
+    [KeyTable.XK_KP_Enter]: KeyTable.XK_Return,
+    [KeyTable.XK_KP_Equal]: KeyTable.XK_equal,
+    [KeyTable.XK_KP_Multiply]: KeyTable.XK_asterisk,
+    [KeyTable.XK_KP_Add]: KeyTable.XK_plus,
+    [KeyTable.XK_KP_Separator]: KeyTable.XK_comma,
+    [KeyTable.XK_KP_Subtract]: KeyTable.XK_minus,
+    [KeyTable.XK_KP_Decimal]: KeyTable.XK_period,
+    [KeyTable.XK_KP_Divide]: KeyTable.XK_slash,
+    [KeyTable.XK_KP_0]: KeyTable.XK_0,
+    [KeyTable.XK_KP_1]: KeyTable.XK_1,
+    [KeyTable.XK_KP_2]: KeyTable.XK_2,
+    [KeyTable.XK_KP_3]: KeyTable.XK_3,
+    [KeyTable.XK_KP_4]: KeyTable.XK_4,
+    [KeyTable.XK_KP_5]: KeyTable.XK_5,
+    [KeyTable.XK_KP_6]: KeyTable.XK_6,
+    [KeyTable.XK_KP_7]: KeyTable.XK_7,
+    [KeyTable.XK_KP_8]: KeyTable.XK_8,
+    [KeyTable.XK_KP_9]: KeyTable.XK_9,
+};
+
+const NumpadTranslations_NumLockOff = {
+    [KeyTable.XK_KP_Home]: KeyTable.XK_Home,
+    [KeyTable.XK_KP_Up]: KeyTable.XK_Up,
+    [KeyTable.XK_KP_Page_Up]: KeyTable.XK_Page_Up,
+    [KeyTable.XK_KP_Prior]: KeyTable.XK_Prior,
+    [KeyTable.XK_KP_Left]: KeyTable.XK_Left,
+    [KeyTable.XK_KP_Begin]: KeyTable.XK_Clear,
+    [KeyTable.XK_KP_Right]: KeyTable.XK_Right,
+    [KeyTable.XK_KP_End]: KeyTable.XK_End,
+    [KeyTable.XK_KP_Down]: KeyTable.XK_Down,
+    [KeyTable.XK_KP_Page_Down]: KeyTable.XK_Page_Down,
+    [KeyTable.XK_KP_Next]: KeyTable.XK_Next,
+    [KeyTable.XK_KP_Insert]: KeyTable.XK_Insert,
+    [KeyTable.XK_KP_Delete]: KeyTable.XK_Delete,
+    [KeyTable.XK_KP_Enter]: KeyTable.XK_Return,
+};
+
 const KeyboardUtil = {
     getKeyCode: function(evt) {
         if (evt.code) {
@@ -1133,16 +1172,23 @@ export class Input {
 
     _sendKeyEvent(keysym, code, down) {
         if (keysym === null) return;
-
+        let finalKeysymToSend = keysym;
+        if (NumpadTranslations_NumLockOn.hasOwnProperty(keysym)) {
+            finalKeysymToSend = NumpadTranslations_NumLockOn[keysym];
+        } else if (NumpadTranslations_NumLockOff.hasOwnProperty(keysym)) {
+            finalKeysymToSend = NumpadTranslations_NumLockOff[keysym];
+        }
         if (down) {
-            this._keyDownList[code] = keysym;
+            this._keyDownList[code] = finalKeysymToSend;
         } else {
             if (!(code in this._keyDownList)) {
                 return;
             }
+            finalKeysymToSend = this._keyDownList[code];
             delete this._keyDownList[code];
         }
-        this.send((down ? "kd," : "ku,") + keysym);
+        
+        this.send((down ? "kd," : "ku,") + finalKeysymToSend);
     }
 
     resetKeyboard() {
