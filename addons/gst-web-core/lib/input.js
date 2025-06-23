@@ -1422,26 +1422,6 @@ export class Input {
                 this.x = Math.round(movementX_logical * dpr);
                 this.y = Math.round(movementY_logical * dpr);
             }
-
-            const FAKE_CURSOR_ID = 'poc-dynamic-cursor-final';
-            const fullscreenParent = this.element.parentElement;
-            if (fullscreenParent) {
-                const fakeCursor = fullscreenParent.querySelector(`#${FAKE_CURSOR_ID}`);
-                if (fakeCursor) {
-                    const currentX = parseFloat(fakeCursor.style.left || '0') || 0;
-                    const currentY = parseFloat(fakeCursor.style.top || '0') || 0;
-                    let newX = currentX + movementX_logical;
-                    let newY = currentY + movementY_logical;
-                    const containerWidth = fullscreenParent.clientWidth;
-                    const containerHeight = fullscreenParent.clientHeight;
-                    const cursorWidth = parseFloat(fakeCursor.style.width || '0') || 0;
-                    const cursorHeight = parseFloat(fakeCursor.style.height || '0') || 0;
-                    newX = Math.max(0, Math.min(containerWidth - cursorWidth, newX));
-                    newY = Math.max(0, Math.min(containerHeight - cursorHeight, newY));
-                    fakeCursor.style.left = `${newX}px`;
-                    fakeCursor.style.top = `${newY}px`;
-                }
-            }
         } else if (event.type === 'mousemove') {
              if (window.isManualResolutionMode && canvas) {
                 const canvasRect = canvas.getBoundingClientRect();
@@ -1812,30 +1792,6 @@ export class Input {
         } else {
             this.send("p,0");
             this.resetKeyboard(); // Release keys when pointer lock is lost
-        }
-        const FAKE_CURSOR_ID = 'poc-dynamic-cursor-final';
-        const fullscreenParent = this.element.parentElement;
-        let fakeCursor = fullscreenParent ? fullscreenParent.querySelector(`#${FAKE_CURSOR_ID}`) : null;
-        if (!fakeCursor) { fakeCursor = document.getElementById(FAKE_CURSOR_ID); }
-        const isLockedNow = (document.pointerLockElement === this.element);
-        if (isLockedNow) {
-            if (!fakeCursor) {
-                 if (!fullscreenParent) { return; }
-                fakeCursor = document.createElement('div');
-                fakeCursor.id = FAKE_CURSOR_ID;
-                Object.assign(fakeCursor.style, {
-                    position: 'absolute', width: '10px', height: '10px',
-                    backgroundColor: 'lime', borderWidth: '1px', borderColor: 'black',
-                    borderStyle: 'solid', borderRadius: '50%', pointerEvents: 'none',
-                    zIndex: '10000', left: '0px', top: '0px', display: 'block'
-                });
-                fullscreenParent.appendChild(fakeCursor);
-            } else {
-                 fakeCursor.style.display = 'block';
-                 if (fakeCursor.parentNode !== fullscreenParent) { fullscreenParent.appendChild(fakeCursor); }
-            }
-        } else {
-            if (fakeCursor) { fakeCursor.remove(); }
         }
     }
 
