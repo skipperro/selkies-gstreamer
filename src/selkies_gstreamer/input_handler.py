@@ -59,17 +59,20 @@ BTN_SIDE = 0x113
 BTN_EXTRA = 0x114
 
 # Gamepad Button Codes
-BTN_A = 0x130  # Or BTN_SOUTH
-BTN_B = 0x131  # Or BTN_EAST
-BTN_X = 0x133  # Or BTN_NORTH
-BTN_Y = 0x134  # Or BTN_WEST
-BTN_TL = 0x136 # Left Bumper
-BTN_TR = 0x137 # Right Bumper
-BTN_SELECT = 0x13a
-BTN_START = 0x13b
-BTN_MODE = 0x13c # Xbox/Guide button
-BTN_THUMBL = 0x13d # Left Thumbstick click
-BTN_THUMBR = 0x13e # Right Thumbstick click
+BTN_A = 0x130       # Or BTN_SOUTH
+BTN_B = 0x131       # Or BTN_EAST
+BTN_C = 0x132       # Typically BTN_C in evdev, for matching XBox360 bitmask
+BTN_X = 0x133       # Or BTN_NORTH
+BTN_Y = 0x134       # Or BTN_WEST
+BTN_Z = 0x135       # Typically BTN_Z in evdev, for matching XBox360 bitmask
+BTN_TL = 0x136      # Left Bumper
+BTN_TR = 0x137      # Right Bumper
+BTN_SELECT = 0x13a  # Back button
+BTN_START = 0x13b   # Start button
+BTN_MODE = 0x13c    # Xbox/Guide button
+BTN_THUMBL = 0x13d  # Left Thumbstick click
+BTN_THUMBR = 0x13e  # Right Thumbstick click
+
 
 # Absolute Axis Codes
 ABS_X = 0x00
@@ -91,6 +94,7 @@ JS_EVENT_INIT = 0x80
 INTERPOSER_MAX_BTNS = 512
 INTERPOSER_MAX_AXES = 64
 CONTROLLER_NAME_MAX_LEN = 255 
+C_INTERPOSER_STRUCT_SIZE = 1360
 
 # For mouse input to send fake back and forward events
 KEYSYM_ALT_L = 0xFFE9     # Left Alt keysym
@@ -117,8 +121,7 @@ class JsConfigCtypes(ctypes.Structure):
         ("num_btns", ctypes.c_uint16),
         ("num_axes", ctypes.c_uint16),
         ("btn_map", ctypes.c_uint16 * INTERPOSER_MAX_BTNS),
-        ("axes_map", ctypes.c_uint8 * INTERPOSER_MAX_AXES),
-        ("final_alignment_padding", ctypes.c_uint8 * 6) # NEW FIELD
+        ("axes_map", ctypes.c_uint8 * INTERPOSER_MAX_AXES)
     ]
 
     def pack_to_bytes(self):
@@ -132,7 +135,7 @@ class JsConfigCtypes(ctypes.Structure):
 
         # Construct the format string dynamically based on constants
         # This is robust if INTERPOSER_MAX_BTNS or AXES changes.
-        pack_format = f"={CONTROLLER_NAME_MAX_LEN}sHHHHH{INTERPOSER_MAX_BTNS}H{INTERPOSER_MAX_AXES}B"
+        f"={CONTROLLER_NAME_MAX_LEN}sHHHHH{INTERPOSER_MAX_BTNS}H{INTERPOSER_MAX_AXES}B"
         
         # Ensure name is bytes and correctly truncated/padded for fixed-size char array
         name_bytes = self.name.encode('utf-8')[:CONTROLLER_NAME_MAX_LEN]
@@ -167,15 +170,17 @@ STANDARD_XPAD_CONFIG = {
     "name": "Microsoft X-Box 360 pad", # To match fake_udev.c (interposer will hardcode this for ioctls)
     "vendor_id": 0x045e,               # To match fake_udev.c (interposer will hardcode this)
     "product_id": 0x028e,              # To match fake_udev.c (interposer will hardcode this)
-    "version_id": 0x0114,              # To match fake_udev.c (interposer will hardcode this)
+    "version": 0x0114,              # To match fake_udev.c (interposer will hardcode this)
 
     # EVDEV codes. The order here defines your internal abstract button indices (0 to N-1).
     # This list should reflect the buttons supported by fake_udev's "capabilities/key".
     "btn_map": [
         BTN_A,      # Internal abstract button 0
         BTN_B,      # Internal abstract button 1
+        BTN_C,      # 0x132 (Byte 38, Bit 2)
         BTN_X,      # Internal abstract button 2
         BTN_Y,      # Internal abstract button 3
+        BTN_Z,      # 0x135 (Byte 38, Bit 5)
         BTN_TL,     # Internal abstract button 4 (Left Bumper)
         BTN_TR,     # Internal abstract button 5 (Right Bumper)
         # BTN_TL2,  # Consider if Left Trigger is also a button (fake_udev caps/key implies it)
@@ -209,17 +214,15 @@ STANDARD_XPAD_CONFIG = {
         "btns": { # client_btn_idx -> internal_abstract_btn_idx (index into "btn_map" list)
             0: 0,  # Client A -> internal_btn_idx 0 (BTN_A)
             1: 1,  # Client B -> internal_btn_idx 1 (BTN_B)
-            2: 2,  # Client X -> internal_btn_idx 2 (BTN_X)
-            3: 3,  # Client Y -> internal_btn_idx 3 (BTN_Y)
-            4: 4,  # Client LB -> internal_btn_idx 4 (BTN_TL)
-            5: 5,  # Client RB -> internal_btn_idx 5 (BTN_TR)
-            # Client LT (button 6) is mapped to an axis below
-            # Client RT (button 7) is mapped to an axis below
-            8: 6,  # Client Select/Back -> internal_btn_idx 6 (BTN_SELECT)
-            9: 7,  # Client Start -> internal_btn_idx 7 (BTN_START)
-            10: 9, # Client Left Stick Press -> internal_btn_idx 9 (BTN_THUMBL)
-            11: 10,# Client Right Stick Press -> internal_btn_idx 10 (BTN_THUMBR)
-            16: 8, # Client Xbox/Home -> internal_btn_idx 8 (BTN_MODE)
+            2: 3,  # Client X -> internal_btn_idx 3 (BTN_X) 
+            3: 4,  # Client Y -> internal_btn_idx 4 (BTN_Y)
+            4: 6,  # Client LB -> internal_btn_idx 6 (BTN_TL)
+            5: 7,  # Client RB -> internal_btn_idx 7 (BTN_TR)
+            8: 8,  # Client Select/Back -> internal_btn_idx 8 (BTN_SELECT)
+            9: 9,  # Client Start -> internal_btn_idx 9 (BTN_START)
+            10: 11, # Client Left Stick Press -> internal_btn_idx 11 (BTN_THUMBL)
+            11: 12,# Client Right Stick Press -> internal_btn_idx 12 (BTN_THUMBR)
+            16: 10, # Client Xbox/Home -> internal_btn_idx 10 (BTN_MODE)
         },
         "axes": { # client_axis_idx -> internal_abstract_axis_idx (index into "axes_map" list)
             0: 0, # Client Left Stick X  -> internal_axis_idx 0 (ABS_X)
@@ -414,29 +417,41 @@ class SelkiesGamepad:
     def _make_interposer_config_payload(self, js_index: int, controller_config: dict) -> bytes:
         """
         Creates the configuration payload (js_config_t) to be sent to the C interposer.
+        Ensures the payload is exactly C_INTERPOSER_STRUCT_SIZE (1360 bytes).
         """
         try:
             name_str = controller_config.get("name", f"Selkies Virtual JS{js_index}")
-            # Ensure name is bytes and correctly truncated/padded for fixed-size char array
-            # The C side expects a null-terminated string within the CONTROLLER_NAME_MAX_LEN buffer.
             name_bytes_utf8 = name_str.encode('utf-8')
-            if len(name_bytes_utf8) >= CONTROLLER_NAME_MAX_LEN: # If too long (or exactly fits without null)
+            if len(name_bytes_utf8) >= CONTROLLER_NAME_MAX_LEN:
                 name_bytes_for_pack = name_bytes_utf8[:CONTROLLER_NAME_MAX_LEN - 1] + b'\0'
-            else: # Shorter, so pad with nulls
-                # Use ljust to ensure it's exactly CONTROLLER_NAME_MAX_LEN
+            else:
                 name_bytes_for_pack = name_bytes_utf8.ljust(CONTROLLER_NAME_MAX_LEN, b'\0')
 
-
-            # Defensive check, should be exactly CONTROLLER_NAME_MAX_LEN
             if len(name_bytes_for_pack) != CONTROLLER_NAME_MAX_LEN:
                  logging.error(f"CRITICAL: name_bytes_for_pack is not {CONTROLLER_NAME_MAX_LEN} bytes long! Got {len(name_bytes_for_pack)}")
-                 # This indicates a logic error above, should not happen if logic is correct.
-                 return b'\0' * EXPECTED_C_STRUCT_SIZE
+                 return b'\0' * C_INTERPOSER_STRUCT_SIZE
 
-
-            vendor_id = int(str(controller_config.get("vendor_id", "0x0000")), 16)
-            product_id = int(str(controller_config.get("product_id", "0x0000")), 16)
-            version_id = int(str(controller_config.get("version", "0x0100")), 16)
+            raw_vendor = controller_config.get("vendor_id")
+            if isinstance(raw_vendor, str):
+                vendor_id = int(raw_vendor, 16)
+            elif isinstance(raw_vendor, int):
+                vendor_id = raw_vendor
+            else: # Default if key missing or type is wrong
+                vendor_id = 0x045e # Default Xbox vendor
+            raw_product = controller_config.get("product_id")
+            if isinstance(raw_product, str):
+                product_id = int(raw_product, 16)
+            elif isinstance(raw_product, int):
+                product_id = raw_product
+            else: # Default
+                product_id = 0x028e # Default Xbox product
+            raw_version = controller_config.get("version") # Using "version" as the key
+            if isinstance(raw_version, str):
+                version_id = int(raw_version, 16)
+            elif isinstance(raw_version, int):
+                version_id = raw_version
+            else: # Default
+                version_id = 0x0114 # Default Xbox version
 
             buttons_evdev_codes = controller_config.get("buttons", [])
             axes_evdev_codes = controller_config.get("axes", [])
@@ -448,7 +463,7 @@ class SelkiesGamepad:
             if len(padded_btn_map_for_pack) > INTERPOSER_MAX_BTNS:
                 logging.warning(f"Controller '{name_str}' has {len(padded_btn_map_for_pack)} buttons, truncating to {INTERPOSER_MAX_BTNS} for config.")
                 padded_btn_map_for_pack = padded_btn_map_for_pack[:INTERPOSER_MAX_BTNS]
-                num_actual_btns = INTERPOSER_MAX_BTNS
+                # num_actual_btns is already set correctly to the original length before potential truncation for the array
             else:
                 padded_btn_map_for_pack.extend([0] * (INTERPOSER_MAX_BTNS - len(padded_btn_map_for_pack)))
 
@@ -456,35 +471,58 @@ class SelkiesGamepad:
             if len(padded_axes_map_for_pack) > INTERPOSER_MAX_AXES:
                 logging.warning(f"Controller '{name_str}' has {len(padded_axes_map_for_pack)} axes, truncating to {INTERPOSER_MAX_AXES} for config.")
                 padded_axes_map_for_pack = padded_axes_map_for_pack[:INTERPOSER_MAX_AXES]
-                num_actual_axes = INTERPOSER_MAX_AXES
+                # num_actual_axes is already set
             else:
                 padded_axes_map_for_pack.extend([0] * (INTERPOSER_MAX_AXES - len(padded_axes_map_for_pack)))
-            struct_fmt = f"={CONTROLLER_NAME_MAX_LEN}sxHHHHH{INTERPOSER_MAX_BTNS}H{INTERPOSER_MAX_AXES}B6x"
-            python_packed_size = struct.calcsize(struct_fmt) # This should now be 1360
-            if python_packed_size != EXPECTED_C_STRUCT_SIZE:
-                logging.error(
-                    f"CRITICAL STRUCT SIZE MISMATCH for js_config_t! "
-                    f"ctypes C size: {EXPECTED_C_STRUCT_SIZE}, "
-                    f"Python struct.pack calculated size: {python_packed_size} using format '{struct_fmt}'. "
-                    f"The C interposer will likely misinterpret the data or crash. "
-                    f"Check C struct definition and Python struct_fmt string for consistency, "
-                    f"especially regarding padding and field order/types."
-                )
-                return b'\0' * EXPECTED_C_STRUCT_SIZE
 
-            logging.debug(f"Using struct_fmt: '{struct_fmt}' for js_config, expecting size {python_packed_size}")
+            # Base format string for the actual data fields
+            base_struct_fmt = f"={CONTROLLER_NAME_MAX_LEN}sxHHHHH{INTERPOSER_MAX_BTNS}H{INTERPOSER_MAX_AXES}B"
+            
+            # Calculate size of the base structure without any explicit end padding
+            size_without_explicit_end_padding = struct.calcsize(base_struct_fmt) # Should be 1353
+
+            # Calculate how much padding is needed to reach the C struct's total size
+            padding_needed = C_INTERPOSER_STRUCT_SIZE - size_without_explicit_end_padding
+
+            if padding_needed < 0:
+                logging.error(
+                    f"CRITICAL STRUCT SIZE ERROR: Python base packed size ({size_without_explicit_end_padding}) "
+                    f"is larger than C interposer expected size ({C_INTERPOSER_STRUCT_SIZE}). "
+                    f"This means constants (MAX_BTNS, MAX_AXES, NAME_LEN) or field types/order "
+                    f"differ between Python 'base_struct_fmt' and C 'js_config_t'."
+                )
+                return b'\0' * C_INTERPOSER_STRUCT_SIZE
+
+            # Final format string including the calculated padding at the end
+            struct_fmt = f"{base_struct_fmt}{padding_needed}x"
+            
+            # Verify the final Python packed size matches the C expectation
+            python_final_packed_size = struct.calcsize(struct_fmt)
+            if python_final_packed_size != C_INTERPOSER_STRUCT_SIZE:
+                # This should ideally not be hit if padding_needed was calculated correctly
+                logging.error(
+                    f"CRITICAL FINAL PYTHON PACKED SIZE MISMATCH for js_config_t! "
+                    f"C interposer expects: {C_INTERPOSER_STRUCT_SIZE}, "
+                    f"Python struct.pack calculated final size: {python_final_packed_size} using format '{struct_fmt}'. "
+                    f"This indicates an issue with padding calculation logic or the base_struct_fmt."
+                )
+                return b'\0' * C_INTERPOSER_STRUCT_SIZE
+
+            logging.debug(f"Using final struct_fmt: '{struct_fmt}' for js_config, packing to size {python_final_packed_size}")
 
             payload_args = [
-                name_bytes_for_pack,
-                vendor_id,
-                product_id,
-                version_id,
-                num_actual_btns,
-                num_actual_axes,
+                name_bytes_for_pack,    # char name[CONTROLLER_NAME_MAX_LEN]
+                vendor_id,              # uint16_t vendor
+                product_id,             # uint16_t product
+                version_id,             # uint16_t version
+                num_actual_btns,        # uint16_t num_btns (actual count)
+                num_actual_axes,        # uint16_t num_axes (actual count)
             ]
-            payload_args.extend(padded_btn_map_for_pack)
-            payload_args.extend(padded_axes_map_for_pack)
-            # No arguments needed for '6x' padding; struct.pack handles it.
+            # Add elements of the padded button map array
+            payload_args.extend(padded_btn_map_for_pack) # uint16_t btn_map[INTERPOSER_MAX_BTNS]
+            # Add elements of the padded axes map array
+            payload_args.extend(padded_axes_map_for_pack)  # uint8_t axes_map[INTERPOSER_MAX_AXES]
+            # The 'x' padding specifier in struct_fmt does not take arguments in payload_args
 
             payload = struct.pack(struct_fmt, *payload_args)
 
@@ -493,22 +531,25 @@ class SelkiesGamepad:
                          f"len={len(payload)} bytes. "
                          f"Name='{log_display_name}', "
                          f"Vendor=0x{vendor_id:04x}, Product=0x{product_id:04x}, Version=0x{version_id:04x}, "
-                         f"Buttons={num_actual_btns}, Axes={num_actual_axes}")
-            if len(payload) != EXPECTED_C_STRUCT_SIZE:
-                # This check should ideally be redundant if the one above passes.
-                logging.error(f"FINAL PAYLOAD SIZE MISMATCH! Expected {EXPECTED_C_STRUCT_SIZE}, got {len(payload)}. This is very bad.")
-                return b'\0' * EXPECTED_C_STRUCT_SIZE
+                         f"Reported Buttons={num_actual_btns} (Array capacity: {INTERPOSER_MAX_BTNS}), "
+                         f"Reported Axes={num_actual_axes} (Array capacity: {INTERPOSER_MAX_AXES})")
+            
+            if len(payload) != C_INTERPOSER_STRUCT_SIZE:
+                logging.error(f"FINAL PAYLOAD SIZE MISMATCH AFTER PACKING! Expected {C_INTERPOSER_STRUCT_SIZE}, got {len(payload)}. This is very bad.")
+                return b'\0' * C_INTERPOSER_STRUCT_SIZE
             return payload
 
         except struct.error as e:
-            logging.error(f"Error packing joystick config for js{js_index} with format '{struct_fmt if 'struct_fmt' in locals() else 'undefined'}': {e}")
+            # Ensure struct_fmt is defined for the error message if an error occurs before its assignment
+            current_struct_fmt = struct_fmt if 'struct_fmt' in locals() else (base_struct_fmt if 'base_struct_fmt' in locals() else "undefined")
+            logging.error(f"Error packing joystick config for js{js_index} with format '{current_struct_fmt}': {e}")
             config_to_log = controller_config if 'controller_config' in locals() else {}
             logging.error(f"Controller config was: {config_to_log}")
-            return b'\0' * EXPECTED_C_STRUCT_SIZE
+            return b'\0' * C_INTERPOSER_STRUCT_SIZE
         except Exception as e:
             config_to_log = controller_config if 'controller_config' in locals() else {}
             logging.exception(f"Unexpected error creating interposer config payload for js{js_index} with config {config_to_log}: {e}")
-            return b'\0' * EXPECTED_C_STRUCT_SIZE
+            return b'\0' * C_INTERPOSER_STRUCT_SIZE
 
     async def _handle_interposer_client(self, reader, writer, is_evdev_socket):
         peername = writer.get_extra_info('peername') 
