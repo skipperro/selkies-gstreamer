@@ -1329,41 +1329,8 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
                 ret_val = len;
                 goto exit_ev_ioctl;
             } else if (ev_type_query == EV_FF) {
-                sji_log_info("IOCTL_EV(%s): EVIOCGBIT(type 0x%02x - EV_FF, len %d)", 
-                             interposer->open_dev_name, ev_type_query, len);
-                if (len > (FF_RUMBLE / 8)) {
-                    ((unsigned char *)arg)[FF_RUMBLE / 8] |= (1 << (FF_RUMBLE % 8));
-                    sji_log_debug("IOCTL_EV(%s): EVIOCGBIT(EV_FF) - Setting bit for FF_RUMBLE (0x%02x)", interposer->open_dev_name, FF_RUMBLE);
-                }
-                if (len > (FF_PERIODIC / 8)) {
-                    ((unsigned char *)arg)[FF_PERIODIC / 8] |= (1 << (FF_PERIODIC % 8));
-                    sji_log_debug("IOCTL_EV(%s): EVIOCGBIT(EV_FF) - Setting bit for FF_PERIODIC (0x%02x)", interposer->open_dev_name, FF_PERIODIC);
-                }
-                if (len > (FF_SQUARE / 8)) {
-                    ((unsigned char *)arg)[FF_SQUARE / 8] |= (1 << (FF_SQUARE % 8));
-                    sji_log_debug("IOCTL_EV(%s): EVIOCGBIT(EV_FF) - Setting bit for FF_SQUARE (0x%02x)", interposer->open_dev_name, FF_SQUARE);
-                }
-                if (len > (FF_TRIANGLE / 8)) {
-                    ((unsigned char *)arg)[FF_TRIANGLE / 8] |= (1 << (FF_TRIANGLE % 8));
-                    sji_log_debug("IOCTL_EV(%s): EVIOCGBIT(EV_FF) - Setting bit for FF_TRIANGLE (0x%02x)", interposer->open_dev_name, FF_TRIANGLE);
-                }
-                if (len > (FF_SINE / 8)) {
-                    ((unsigned char *)arg)[FF_SINE / 8] |= (1 << (FF_SINE % 8));
-                    sji_log_debug("IOCTL_EV(%s): EVIOCGBIT(EV_FF) - Setting bit for FF_SINE (0x%02x)", interposer->open_dev_name, FF_SINE);
-                }
-                if (len > (FF_GAIN / 8)) {
-                    ((unsigned char *)arg)[FF_GAIN / 8] |= (1 << (FF_GAIN % 8));
-                    sji_log_debug("IOCTL_EV(%s): EVIOCGBIT(EV_FF) - Setting bit for FF_GAIN (0x%02x)", interposer->open_dev_name, FF_GAIN);
-                }
-                if (len > 0 && arg) {
-                    char bitmask_preview[128] = {0};
-                    int preview_len = (len < 16) ? len : 16;
-                    for (int k=0; k < preview_len; ++k) {
-                        snprintf(bitmask_preview + strlen(bitmask_preview), sizeof(bitmask_preview) - strlen(bitmask_preview), "%02x ", ((unsigned char*)arg)[k]);
-                    }
-                    sji_log_debug("IOCTL_EV(%s): EVIOCGBIT(EV_FF) - Returning bitmask (first %d bytes): %s", 
-                                 interposer->open_dev_name, preview_len, bitmask_preview);
-                }
+                sji_log_info("IOCTL_EV(%s): EVIOCGBIT(type 0x%02x - EV_FF, len %d) -> Reporting NO FF capabilities",
+                interposer->open_dev_name, ev_type_query, len);
                 ret_val = len;
                 goto exit_ev_ioctl;
             } else {
@@ -1408,8 +1375,8 @@ int intercept_ev_ioctl(js_interposer_t *interposer, int fd, ioctl_request_t requ
                 break;
             case EVIOCGEFFECTS:
                 if (!arg || ioctl_size < sizeof(int)) { errno = EFAULT; ret_val = -1; break; }
-                *(int *)arg = 1;
-                sji_log_info("IOCTL_EV(%s): EVIOCGEFFECTS -> %d", interposer->open_dev_name, *(int *)arg);
+                *(int *)arg = 0;
+                sji_log_info("IOCTL_EV(%s): EVIOCGEFFECTS -> %d (Reporting NO FF)", interposer->open_dev_name, *(int *)arg);
                 break;
             default:
                 sji_log_warn("IOCTL_EV(%s): Unhandled EVDEV ioctl request 0x%lx (Type 'E', NR 0x%02x, Size %u). Setting ENOTTY.",
