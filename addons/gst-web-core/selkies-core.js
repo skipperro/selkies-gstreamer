@@ -70,6 +70,7 @@ let originalWindowResizeHandler = null;
 let handleResizeUI_globalRef = null;
 let vncStripeDecoders = {};
 let currentEncoderMode = 'x264enc-stiped';
+let useCssScaling = false;
 
 let detectedSharedModeType = null;
 let playerInputTargetIndex = 0; // Default for primary player
@@ -235,13 +236,12 @@ currentEncoderMode = getStringParam('encoder', 'x264enc');
 scaleLocallyManual = getBoolParam('scaleLocallyManual', true);
 isManualResolutionMode = getBoolParam('isManualResolutionMode', false);
 isGamepadEnabled = getBoolParam('isGamepadEnabled', true);
+useCssScaling = getBoolParam('useCssScaling', false);
 
 if (isSharedMode) {
     manualWidth = 1280; // Default stream dimensions for shared mode before first frame
     manualHeight = 720;
     console.log(`Shared mode: Initialized manualWidth/Height to ${manualWidth}x${manualHeight}`);
-    // Behavior of isManualResolutionMode = true and scaleLocallyManual = true is emulated
-    // by directly controlling canvas and scaling in shared mode logic.
 } else {
     manualWidth = getIntParam('manualWidth', null);
     manualHeight = getIntParam('manualHeight', null);
@@ -410,11 +410,12 @@ function sendResolutionToServer(width, height) {
     console.log("Shared mode: Resolution sending to server is blocked.");
     return;
   }
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
+  console.log(dpr, useCssScaling);
   const realWidth = roundDownToEven(width * dpr);
   const realHeight = roundDownToEven(height * dpr);
   const resString = `${realWidth}x${realHeight}`;
-  console.log(`Sending resolution to server: ${resString}, Pixel Ratio: ${dpr}`);
+  console.log(`Sending resolution to server: ${resString}, Pixel Ratio Used: ${dpr}, useCssScaling: ${useCssScaling}`);
   if (websocket && websocket.readyState === WebSocket.OPEN) {
     websocket.send(`r,${resString}`);
   } else {
@@ -432,7 +433,7 @@ function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
     return;
   }
 
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
   const internalBufferWidth = roundDownToEven(targetWidth * dpr);
   const internalBufferHeight = roundDownToEven(targetHeight * dpr);
 
@@ -483,7 +484,7 @@ function resetCanvasStyle(streamWidth, streamHeight) {
     return;
   }
 
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1); 
   const internalBufferWidth = roundDownToEven(streamWidth * dpr);
   const internalBufferHeight = roundDownToEven(streamHeight * dpr);
 
@@ -914,31 +915,6 @@ const initializeInput = () => {
   let inputInstance;
   const websocketSendInput = (message) => {
     if (websocket && websocket.readyState === WebSocket.OPEN) {
-      const dpr = window.devicePixelRatio || 1;
-      const dprSquared = dpr * dpr; // Or Math.pow(dpr, 2)
-      if (message.startsWith('mouse,')) {
-        const parts = message.split(',');
-        // Assuming parts[1] (x) and parts[2] (y) are (logical_css_pos / dpr)
-        const x_from_input = parseInt(parts[1], 10);
-        const y_from_input = parseInt(parts[2], 10);
-        // To get physical_pos = logical_css_pos * dpr:
-        // physical_pos = (x_from_input * dpr) * dpr = x_from_input * dprSquared
-        const physicalX = Math.round(x_from_input * dprSquared);
-        const physicalY = Math.round(y_from_input * dprSquared);
-        parts[1] = physicalX.toString();
-        parts[2] = physicalY.toString();
-        message = parts.join(',');
-      } else if (message.startsWith('touch,')) {
-        const parts = message.split(',');
-        // Assuming parts[2] (x) and parts[3] (y) are (logical_css_pos / dpr)
-        const x_from_input = parseInt(parts[2], 10);
-        const y_from_input = parseInt(parts[3], 10);
-        const physicalX = Math.round(x_from_input * dprSquared);
-        const physicalY = Math.round(y_from_input * dprSquared);
-        parts[2] = physicalX.toString();
-        parts[3] = physicalY.toString();
-        message = parts.join(',');
-      }
       websocket.send(message);
     } else {
       console.warn("initializeInput: WebSocket not open, cannot send input message:", message);
@@ -953,7 +929,7 @@ const initializeInput = () => {
     return;
   }
 
-  inputInstance = new Input(overlayInput, sendInputFunction, isSharedMode, playerInputTargetIndex);
+  inputInstance = new Input(overlayInput, sendInputFunction, isSharedMode, playerInputTargetIndex, useCssScaling);
 
   inputInstance.getWindowResolution = () => {
     const videoContainer = document.querySelector('.video-container');
@@ -1205,6 +1181,39 @@ function receiveMessage(event) {
         );
       } else {
         console.error("Could not find #keyboard-input-assist element to focus.");
+      }
+      break;
+    case 'setUseCssScaling':
+      if (typeof message.value === 'boolean') {
+        const changed = useCssScaling !== message.value;
+        useCssScaling = message.value;
+        setBoolParam('useCssScaling', useCssScaling);
+        console.log(`Set useCssScaling to ${useCssScaling} and persisted.`);
+
+        if (window.webrtcInput && typeof window.webrtcInput.updateCssScaling === 'function') {
+          window.webrtcInput.updateCssScaling(useCssScaling);
+        }
+        if (changed) {
+          if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
+            sendResolutionToServer(manualWidth, manualHeight);
+            applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
+          } else if (!isSharedMode) { // Auto mode
+            const currentWindowRes = window.webrtcInput ? window.webrtcInput.getWindowResolution() : [window.innerWidth, window.innerHeight];
+            const autoWidth = roundDownToEven(currentWindowRes[0]);
+            const autoHeight = roundDownToEven(currentWindowRes[1]);
+            sendResolutionToServer(autoWidth, autoHeight);
+            resetCanvasStyle(autoWidth, autoHeight);
+          } else {
+             if (manualWidth && manualHeight) {
+                applyManualCanvasStyle(manualWidth, manualHeight, true);
+             }
+          }
+          if (currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped') {
+            triggerInitializeDecoder();
+          }
+        }
+      } else {
+        console.warn("Invalid value received for setUseCssScaling:", message.value);
       }
       break;
     case 'setManualResolution':
@@ -1744,7 +1753,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
     const actualCodedWidth = roundDownToEven(targetWidth * dpr);
     const actualCodedHeight = roundDownToEven(targetHeight * dpr);
 
@@ -1908,7 +1917,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
     }
 
     if (isSharedMode && identifiedEncoderModeForShared === 'h264_full_frame' && sharedClientState === 'ready') {
-        const dpr = window.devicePixelRatio || 1;
+        const dpr_for_conversion = useCssScaling ? 1 : (window.devicePixelRatio || 1);
         const physicalFrameWidth = frame.codedWidth; // Physical
         const physicalFrameHeight = frame.codedHeight; // Physical
 
@@ -1941,7 +1950,8 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
       return;
     }
 
-    const dpr = window.devicePixelRatio || 1; // Used for converting physical stream dimensions to logical
+    const dpr = window.devicePixelRatio || 1;
+    const dpr_for_conversion = useCssScaling ? 1 : dpr;
 
     if (isSharedMode) {
       // manualWidth/Height are logical. applyManualCanvasStyle calculates physical buffer size.
@@ -1962,11 +1972,11 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
       if (isSharedMode && sharedClientState === 'ready' && decodedStripesQueue.length > 0) {
           const firstStripeFrame = decodedStripesQueue[0].frame;
           if (firstStripeFrame && firstStripeFrame.codedWidth > 0) {
-              const physicalStripeCodedWidth = firstStripeFrame.codedWidth; // Physical pixels
-              const logicalStripeCodedWidth = physicalStripeCodedWidth / dpr;
+              const physicalStripeCodedWidth = firstStripeFrame.codedWidth; // This is the stripe's own coded width
+              const logicalStripeCodedWidth = physicalStripeCodedWidth / dpr_for_conversion; // Convert to logical
               if (manualWidth !== logicalStripeCodedWidth && logicalStripeCodedWidth > 0) {
                   manualWidth = logicalStripeCodedWidth; // Store as logical
-                  console.log(`Shared mode (VNC stripe paint): Updated manual (logical) Width from VNC stripe to ${manualWidth.toFixed(2)} (Physical: ${physicalStripeCodedWidth})`);
+                  console.log(`Shared mode (VNC stripe paint): Updated manual (logical) Width from VNC stripe to ${manualWidth.toFixed(2)} (Stripe Coded: ${physicalStripeCodedWidth}, DPR for conversion: ${dpr_for_conversion})`);
                   if (manualHeight && manualWidth > 0 && manualHeight > 0) {
                       applyManualCanvasStyle(manualWidth, manualHeight, true); // Takes logical
                   }
@@ -1990,11 +2000,11 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
         if (isSharedMode && sharedClientState === 'ready' && jpegStripeRenderQueue.length > 0) {
             const firstStripeImage = jpegStripeRenderQueue[0].image;
             if (firstStripeImage && firstStripeImage.codedWidth > 0) {
-                const physicalImageCodedWidth = firstStripeImage.codedWidth; // Physical pixels
-                const logicalImageCodedWidth = physicalImageCodedWidth / dpr;
+                const physicalImageCodedWidth = firstStripeImage.codedWidth; // Image's own coded width
+                const logicalImageCodedWidth = physicalImageCodedWidth / dpr_for_conversion; // Convert to logical
                 if (manualWidth !== logicalImageCodedWidth && logicalImageCodedWidth > 0) {
                     manualWidth = logicalImageCodedWidth; // Store as logical
-                    console.log(`Shared mode (JPEG stripe paint): Updated manual (logical) Width from JPEG stripe to ${manualWidth.toFixed(2)} (Physical: ${physicalImageCodedWidth})`);
+                    console.log(`Shared mode (JPEG stripe paint): Updated manual (logical) Width from JPEG stripe to ${manualWidth.toFixed(2)} (Image Coded: ${physicalImageCodedWidth}, DPR for conversion: ${dpr_for_conversion})`);
                     if (manualHeight && manualWidth > 0 && manualHeight > 0) {
                         applyManualCanvasStyle(manualWidth, manualHeight, true); // Takes logical
                     }
@@ -2371,7 +2381,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
               settingsToSend['webrtc_manualHeight'] = roundDownToEven(storedManualHeight * dpr);
           }
       }
-
+      settingsToSend['webrtc_useCssScaling'] = useCssScaling;
 
       try {
         const settingsJson = JSON.stringify(settingsToSend);
@@ -2821,7 +2831,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
               audio: isAudioPipelineActive
             }, window.location.origin);
          } else if (obj.type === 'stream_resolution') { // Server sends physical dimensions
-           const dpr = window.devicePixelRatio || 1;
+           const dpr_for_conversion = useCssScaling ? 1 : (window.devicePixelRatio || 1);
            if (isSharedMode) {
              if (sharedClientState === 'error' || sharedClientState === 'idle') {
                  console.log(`Shared mode: Received stream_resolution while in state '${sharedClientState}'. Ignoring.`);
@@ -2834,8 +2844,8 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
                      const evenPhysicalNewHeight = roundDownToEven(physicalNewHeight);
 
                      // Convert to logical for storage and comparison with logical manualWidth/Height
-                     const logicalNewWidth = evenPhysicalNewWidth / dpr;
-                     const logicalNewHeight = evenPhysicalNewHeight / dpr;
+                     const logicalNewWidth = evenPhysicalNewWidth / dpr_for_conversion;
+                     const logicalNewHeight = evenPhysicalNewHeight / dpr_for_conversion;
 
                      let dimensionsChanged = (manualWidth !== logicalNewWidth || manualHeight !== logicalNewHeight);
 

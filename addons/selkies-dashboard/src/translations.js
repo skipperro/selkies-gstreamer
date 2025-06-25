@@ -68,6 +68,9 @@ const en = {
             scaleLocallyTitleEnable: "Enable Local Scaling (Maintain Aspect Ratio)",
             scaleLocallyTitleDisable: "Disable Local Scaling (Use Exact Resolution)",
             uiScalingLabel: "UI Scaling",
+            hidpiLabel: "HiDPI (Pixel Perfect)",
+            hidpiEnableTitle: "Enable HiDPI (Pixel Perfect)",
+            hidpiDisableTitle: "Disable HiDPI (Use CSS Scaling)",
         },
         stats: {
             title: "Stats",
@@ -226,6 +229,9 @@ const es = {
              scaleLocallyTitleEnable: "Activar Escalado Local (Mantener Relación de Aspecto)",
              scaleLocallyTitleDisable: "Desactivar Escalado Local (Usar Resolución Exacta)",
              uiScalingLabel: "Escalado de Interfaz:",
+             hidpiLabel: "HiDPI (Píxel Perfecto)",
+             hidpiEnableTitle: "Activar HiDPI (Píxel Perfecto)",
+             hidpiDisableTitle: "Desactivar HiDPI (Usar escalado CSS)",
         },
         stats: {
              title: "Estadísticas",
@@ -384,6 +390,9 @@ const zh = {
             scaleLocallyTitleEnable: "启用本地缩放 (保持宽高比)",
             scaleLocallyTitleDisable: "禁用本地缩放 (使用精确分辨率)",
             uiScalingLabel: "界面缩放:",
+            hidpiLabel: "HiDPI (像素完美)",
+            hidpiEnableTitle: "启用 HiDPI (像素完美)",
+            hidpiDisableTitle: "禁用 HiDPI (使用 CSS 缩放)",
         },
         stats: {
             title: "统计信息",
@@ -542,6 +551,9 @@ const hi = {
             scaleLocallyTitleEnable: "स्थानीय स्केलिंग सक्षम करें (पहलू अनुपात बनाए रखें)",
             scaleLocallyTitleDisable: "स्थानीय स्केलिंग अक्षम करें (सटीक रिज़ॉल्यूशन का उपयोग करें)",
             uiScalingLabel: "यूआई स्केलिंग:",
+            hidpiLabel: "HiDPI (पिक्सेल परफेक्ट)",
+            hidpiEnableTitle: "HiDPI सक्षम करें (पिक्सेल परफेक्ट)",
+            hidpiDisableTitle: "HiDPI अक्षम करें (CSS स्केलिंग का उपयोग करें)",
         },
         stats: {
             title: "आँकड़े",
@@ -700,6 +712,9 @@ const pt = {
             scaleLocallyTitleEnable: "Ativar Escala Local (Manter Proporção)",
             scaleLocallyTitleDisable: "Desativar Escala Local (Usar Resolução Exata)",
             uiScalingLabel: "Escala da Interface:",
+            hidpiLabel: "HiDPI (Pixel Perfeito)",
+            hidpiEnableTitle: "Ativar HiDPI (Pixel Perfeito)",
+            hidpiDisableTitle: "Desativar HiDPI (Usar dimensionamento CSS)",
         },
         stats: {
             title: "Estatísticas",
@@ -858,6 +873,9 @@ const fr = {
             scaleLocallyTitleEnable: "Activer la mise à l'échelle locale (Conserver les proportions)",
             scaleLocallyTitleDisable: "Désactiver la mise à l'échelle locale (Utiliser la résolution exacte)",
             uiScalingLabel: "Mise à l'échelle de l'interface :",
+            hidpiLabel: "HiDPI (Pixel Perfect)",
+            hidpiEnableTitle: "Activer HiDPI (Pixel Perfect)",
+            hidpiDisableTitle: "Désactiver HiDPI (Utiliser la mise à l'échelle CSS)",
         },
         stats: {
             title: "Statistiques",
@@ -1016,6 +1034,9 @@ const ru = {
             scaleLocallyTitleEnable: "Включить локальное масштабирование (Сохранять пропорции)",
             scaleLocallyTitleDisable: "Отключить локальное масштабирование (Использовать точное разрешение)",
             uiScalingLabel: "Масштаб интерфейса:",
+            hidpiLabel: "HiDPI (Пиксельная точность)",
+            hidpiEnableTitle: "Включить HiDPI (Пиксельная точность)",
+            hidpiDisableTitle: "Отключить HiDPI (Использовать масштабирование CSS)",
         },
         stats: {
             title: "Статистика",
@@ -1174,6 +1195,9 @@ const de = {
             scaleLocallyTitleEnable: "Lokale Skalierung aktivieren (Seitenverhältnis beibehalten)",
             scaleLocallyTitleDisable: "Lokale Skalierung deaktivieren (Genaue Auflösung verwenden)",
             uiScalingLabel: "UI-Skalierung:",
+            hidpiLabel: "HiDPI (Pixelgenau)",
+            hidpiEnableTitle: "HiDPI aktivieren (Pixelgenau)",
+            hidpiDisableTitle: "HiDPI deaktivieren (CSS-Skalierung verwenden)",
         },
         stats: {
             title: "Statistiken",
@@ -1332,6 +1356,9 @@ const tr = {
             scaleLocallyTitleEnable: "Yerel Ölçeklendirmeyi Etkinleştir (En Boy Oranını Koru)",
             scaleLocallyTitleDisable: "Yerel Ölçeklendirmeyi Devre Dışı Bırak (Tam Çözünürlüğü Kullan)",
             uiScalingLabel: "Arayüz Ölçekleme:",
+            hidpiLabel: "HiDPI (Piksel Mükemmelliği)",
+            hidpiEnableTitle: "HiDPI'yi Etkinleştir (Piksel Mükemmelliği)",
+            hidpiDisableTitle: "HiDPI'yi Devre Dışı Bırak (CSS Ölçeklendirme Kullan)",
         },
         stats: {
             title: "İstatistikler",
@@ -1490,6 +1517,9 @@ const it = {
             scaleLocallyTitleEnable: "Abilita Scala Locale (Mantieni Proporzioni)",
             scaleLocallyTitleDisable: "Disabilita Scala Locale (Usa Risoluzione Esatta)",
             uiScalingLabel: "Scala Interfaccia:",
+            hidpiLabel: "HiDPI (Pixel Perfect)",
+            hidpiEnableTitle: "Abilita HiDPI (Pixel Perfect)",
+            hidpiDisableTitle: "Disabilita HiDPI (Usa ridimensionamento CSS)",
         },
         stats: {
             title: "Statistiche",
@@ -1648,6 +1678,9 @@ const nl = {
             scaleLocallyTitleEnable: "Lokaal Schalen Inschakelen (Beeldverhouding Behouden)",
             scaleLocallyTitleDisable: "Lokaal Schalen Uitschakelen (Exacte Resolutie Gebruiken)",
             uiScalingLabel: "UI Schalen:",
+            hidpiLabel: "HiDPI (Pixel Perfect)",
+            hidpiEnableTitle: "HiDPI inschakelen (Pixel Perfect)",
+            hidpiDisableTitle: "HiDPI uitschakelen (CSS-schaling gebruiken)",
         },
         stats: {
             title: "Statistieken",
@@ -1806,6 +1839,9 @@ const ar = {
             scaleLocallyTitleEnable: "تمكين تغيير الحجم المحلي (الحفاظ على نسبة العرض إلى الارتفاع)",
             scaleLocallyTitleDisable: "تعطيل تغيير الحجم المحلي (استخدام الدقة الدقيقة)",
             uiScalingLabel: "مقياس واجهة المستخدم:",
+            hidpiLabel: "HiDPI (دقة بكسل مثالية)",
+            hidpiEnableTitle: "تمكين HiDPI (دقة بكسل مثالية)",
+            hidpiDisableTitle: "تعطيل HiDPI (استخدام تحجيم CSS)",
         },
         stats: {
             title: "الإحصائيات",
@@ -1964,6 +2000,9 @@ const ko = {
             scaleLocallyTitleEnable: "로컬 스케일링 활성화 (종횡비 유지)",
             scaleLocallyTitleDisable: "로컬 스케일링 비활성화 (정확한 해상도 사용)",
             uiScalingLabel: "UI 스케일링:",
+            hidpiLabel: "HiDPI (픽셀 퍼펙트)",
+            hidpiEnableTitle: "HiDPI 활성화 (픽셀 퍼펙트)",
+            hidpiDisableTitle: "HiDPI 비활성화 (CSS 스케일링 사용)",
         },
         stats: {
             title: "통계",
@@ -2122,6 +2161,9 @@ const ja = {
             scaleLocallyTitleEnable: "ローカルスケーリングを有効にする (アスペクト比を維持)",
             scaleLocallyTitleDisable: "ローカルスケーリングを無効にする (正確な解像度を使用)",
             uiScalingLabel: "UI スケーリング:",
+            hidpiLabel: "HiDPI (ピクセルパーフェクト)",
+            hidpiEnableTitle: "HiDPI を有効にする (ピクセルパーフェクト)",
+            hidpiDisableTitle: "HiDPI を無効にする (CSS スケーリングを使用)",
         },
         stats: {
             title: "統計",
@@ -2280,6 +2322,9 @@ const vi = {
             scaleLocallyTitleEnable: "Bật Co giãn Cục bộ (Giữ Tỷ lệ khung hình)",
             scaleLocallyTitleDisable: "Tắt Co giãn Cục bộ (Sử dụng Độ phân giải Chính xác)",
             uiScalingLabel: "Tỷ lệ Giao diện:",
+            hidpiLabel: "HiDPI (Hoàn hảo đến từng Pixel)",
+            hidpiEnableTitle: "Bật HiDPI (Hoàn hảo đến từng Pixel)",
+            hidpiDisableTitle: "Tắt HiDPI (Sử dụng CSS Scaling)",
         },
         stats: {
             title: "Thống kê",
@@ -2438,6 +2483,9 @@ const th = {
             scaleLocallyTitleEnable: "เปิดใช้งานการปรับขนาดในเครื่อง (รักษาสัดส่วนภาพ)",
             scaleLocallyTitleDisable: "ปิดใช้งานการปรับขนาดในเครื่อง (ใช้ความละเอียดที่แน่นอน)",
             uiScalingLabel: "การปรับขนาด UI:",
+            hidpiLabel: "HiDPI (ความคมชัดระดับพิกเซล)",
+            hidpiEnableTitle: "เปิดใช้งาน HiDPI (ความคมชัดระดับพิกเซล)",
+            hidpiDisableTitle: "ปิดใช้งาน HiDPI (ใช้การปรับขนาด CSS)",
         },
         stats: {
             title: "สถิติ",
@@ -2596,6 +2644,9 @@ const fil = {
             scaleLocallyTitleEnable: "Paganahin ang Lokal na Pag-scale (Panatilihin ang Aspect Ratio)",
             scaleLocallyTitleDisable: "Huwag paganahin ang Lokal na Pag-scale (Gamitin ang Eksaktong Resolusyon)",
             uiScalingLabel: "Pag-scale ng UI:",
+            hidpiLabel: "HiDPI (Pixel Perfect)",
+            hidpiEnableTitle: "Paganahin ang HiDPI (Pixel Perfect)",
+            hidpiDisableTitle: "Huwag paganahin ang HiDPI (Gamitin ang CSS Scaling)",
         },
         stats: {
             title: "Stats",
@@ -2754,6 +2805,9 @@ const da = {
             scaleLocallyTitleEnable: "Aktiver lokal skalering (Bevar aspektforhold)",
             scaleLocallyTitleDisable: "Deaktiver lokal skalering (Brug præcis opløsning)",
             uiScalingLabel: "UI-skalering:",
+            hidpiLabel: "HiDPI (Pixel Perfekt)",
+            hidpiEnableTitle: "Aktivér HiDPI (Pixel Perfekt)",
+            hidpiDisableTitle: "Deaktivér HiDPI (Brug CSS-skalering)",
         },
         stats: {
             title: "Statistik",

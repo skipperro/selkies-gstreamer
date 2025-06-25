@@ -1118,11 +1118,12 @@ const _stopEvent = function (e) {
 
 
 export class Input {
-    constructor(element, send, isSharedMode = false, playerIndex = 0) {
+    constructor(element, send, isSharedMode = false, playerIndex = 0,  useCssScaling = false) {
         this.element = element;
         this.send = send;
         this.isSharedMode = isSharedMode;
         this.playerIndex = playerIndex;
+        this.useCssScaling = useCssScaling;
         this.mouseRelative = false;
         this.m = null;
         this.buttonMask = 0;
@@ -1169,6 +1170,14 @@ export class Input {
     }
 
     static _nextGuacID = 0;
+
+    updateCssScaling(newUseCssScalingValue) {
+        if (this.useCssScaling !== newUseCssScalingValue) {
+            console.log(`Input: Updating useCssScaling from ${this.useCssScaling} to ${newUseCssScalingValue}`);
+            this.useCssScaling = newUseCssScalingValue;
+            this._windowMath(); // Recalculate mouse coordinate scaling factors
+        }
+    }
 
     _sendKeyEvent(keysym, code, down) {
         if (keysym === null) return;
@@ -1430,7 +1439,10 @@ export class Input {
     }
 
     _mouseButtonMovement(event) {
-        const dpr = window.devicePixelRatio || 1;
+        const client_dpr = window.devicePixelRatio || 1; // Actual client DPR
+        // dpr_for_input_coords: 1 if useCssScaling (logical coords), client_dpr otherwise (physical coords)
+        const dpr_for_input_coords = this.useCssScaling ? 1 : client_dpr;
+
         const down = (event.type === 'mousedown' ? 1 : 0);
         var mtype = "m";
         let canvas = document.getElementById('videoCanvas');
@@ -1453,51 +1465,42 @@ export class Input {
             let movementX_logical = event.movementX || 0;
             let movementY_logical = event.movementY || 0;
 
-            if (window.isManualResolutionMode && canvas) {
-                const canvasRect = canvas.getBoundingClientRect();
-                if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
-                    const scaleX = canvas.width / canvasRect.width;
-                    const scaleY = canvas.height / canvasRect.height;
-                    this.x = Math.round(movementX_logical * scaleX);
-                    this.y = Math.round(movementY_logical * scaleY);
-                } else {
-                    this.x = Math.round(movementX_logical * dpr);
-                    this.y = Math.round(movementY_logical * dpr);
-                }
-            } else {
-                this.x = Math.round(movementX_logical * dpr);
-                this.y = Math.round(movementY_logical * dpr);
-            }
+            // For pointer lock, movementX/Y are logical. Scale to physical if not useCssScaling.
+            this.x = Math.round(movementX_logical * dpr_for_input_coords);
+            this.y = Math.round(movementY_logical * dpr_for_input_coords);
+
         } else if (event.type === 'mousemove') {
              if (window.isManualResolutionMode && canvas) {
-                const canvasRect = canvas.getBoundingClientRect();
+                const canvasRect = canvas.getBoundingClientRect(); // CSS logical size
                 if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
-                    const mouseX_on_canvas_logical = event.clientX - canvasRect.left;
-                    const mouseY_on_canvas_logical = event.clientY - canvasRect.top;
+                    const mouseX_on_canvas_logical_css = event.clientX - canvasRect.left;
+                    const mouseY_on_canvas_logical_css = event.clientY - canvasRect.top;
                     const scaleX = canvas.width / canvasRect.width;
                     const scaleY = canvas.height / canvasRect.height;
-                    let serverX_physical = mouseX_on_canvas_logical * scaleX;
-                    let serverY_physical = mouseY_on_canvas_logical * scaleY;
-                    this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX_physical)));
-                    this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY_physical)));
+
+                    let coordX = mouseX_on_canvas_logical_css * scaleX;
+                    let coordY = mouseY_on_canvas_logical_css * scaleY;
+
+                    this.x = Math.max(0, Math.min(canvas.width, Math.round(coordX)));
+                    this.y = Math.max(0, Math.min(canvas.height, Math.round(coordY)));
                 } else {
                     this.x = 0; this.y = 0;
                 }
-            } else {
+            } else { // Auto resolution mode (non-manual)
                 if (!this.m) {
                     this._windowMath();
                 }
                 if (this.m) {
-                    let logicalX = this._clientToServerX(event.clientX);
-                    let logicalY = this._clientToServerY(event.clientY);
-                    this.x = Math.round(logicalX * dpr);
-                    this.y = Math.round(logicalY * dpr);
+                    let logicalX_on_element = this._clientToServerX(event.clientX);
+                    let logicalY_on_element = this._clientToServerY(event.clientY);
+                    // logicalX_on_element is logical. Scale to physical if not useCssScaling.
+                    this.x = Math.round(logicalX_on_element * dpr_for_input_coords);
+                    this.y = Math.round(logicalY_on_element * dpr_for_input_coords);
                 } else {
                     this.x = 0; this.y = 0;
                 }
             }
         }
-
         if (event.type === 'mousedown' || event.type === 'mouseup') {
             var mask = 1 << event.button;
             if (down) {
@@ -1511,32 +1514,37 @@ export class Input {
     }
 
     _calculateTouchCoordinates(touchPoint) {
-        const dpr = window.devicePixelRatio || 1;
+        const client_dpr = window.devicePixelRatio || 1; // Actual client DPR
+        const dpr_for_input_coords = this.useCssScaling ? 1 : client_dpr;
         let canvas = document.getElementById('videoCanvas');
+
         if (window.isManualResolutionMode && canvas) {
-            const canvasRect = canvas.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect(); // CSS logical size
             if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
-                const touchX_on_canvas_logical = touchPoint.clientX - canvasRect.left;
-                const touchY_on_canvas_logical = touchPoint.clientY - canvasRect.top;
-                const scaleX = canvas.width / canvasRect.width;
-                const scaleY = canvas.height / canvasRect.height;
-                let serverX_physical = touchX_on_canvas_logical * scaleX;
-                let serverY_physical = touchY_on_canvas_logical * scaleY;
-                this.x = Math.max(0, Math.min(canvas.width, Math.round(serverX_physical)));
-                this.y = Math.max(0, Math.min(canvas.height, Math.round(serverY_physical)));
+                const touchX_on_canvas_logical_css = touchPoint.clientX - canvasRect.left;
+                const touchY_on_canvas_logical_css = touchPoint.clientY - canvasRect.top;
+
+                const scaleX = canvas.width / canvasRect.width; // buffer / CSS
+                const scaleY = canvas.height / canvasRect.height; // buffer / CSS
+
+                let coordX = touchX_on_canvas_logical_css * scaleX;
+                let coordY = touchY_on_canvas_logical_css * scaleY;
+
+                this.x = Math.max(0, Math.min(canvas.width, Math.round(coordX)));
+                this.y = Math.max(0, Math.min(canvas.height, Math.round(coordY)));
             } else {
                 this.x = 0; this.y = 0;
             }
-        } else {
+        } else { // Auto resolution mode (non-manual)
             if (!this.m) this._windowMath();
             if (this.m) {
                 let logicalX_on_element = this._clientToServerX(touchPoint.clientX);
                 let logicalY_on_element = this._clientToServerY(touchPoint.clientY);
-                this.x = Math.round(logicalX_on_element * dpr);
-                this.y = Math.round(logicalY_on_element * dpr);
+                this.x = Math.round(logicalX_on_element * dpr_for_input_coords);
+                this.y = Math.round(logicalY_on_element * dpr_for_input_coords);
             } else {
-                this.x = Math.round(touchPoint.clientX * dpr);
-                this.y = Math.round(touchPoint.clientY * dpr);
+                this.x = Math.round(touchPoint.clientX * dpr_for_input_coords);
+                this.y = Math.round(touchPoint.clientY * dpr_for_input_coords);
             }
         }
     }

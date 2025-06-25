@@ -578,6 +578,10 @@ function Sidebar({ isOpen }) {
     const saved = localStorage.getItem("scaleLocallyManual");
     return saved !== null ? saved === "true" : DEFAULT_SCALE_LOCALLY;
   });
+  const [hidpiEnabled, setHidpiEnabled] = useState(() => {
+    const saved = localStorage.getItem("hidpiEnabled");
+    return saved !== null ? saved === "true" : true;
+  });
   const [presetValue, setPresetValue] = useState("");
   const [clientFps, setClientFps] = useState(0);
   const [audioBuffer, setAudioBuffer] = useState(0);
@@ -974,6 +978,15 @@ function Sidebar({ isOpen }) {
       window.location.origin
     );
   };
+  const handleHidpiToggle = () => {
+    const newHidpiState = !hidpiEnabled;
+    setHidpiEnabled(newHidpiState);
+    localStorage.setItem("hidpiEnabled", newHidpiState.toString());
+    window.postMessage(
+      { type: "setUseCssScaling", value: !newHidpiState },
+      window.location.origin
+    );
+  };
   const handleSetManualResolution = () => {
     const width = parseInt(manualWidth.trim(), 10),
       height = parseInt(manualHeight.trim(), 10);
@@ -1260,6 +1273,12 @@ function Sidebar({ isOpen }) {
       setSelectedDpi(DEFAULT_SCALING_DPI);
       localStorage.setItem("scalingDPI", DEFAULT_SCALING_DPI.toString());
     }
+    const initialHidpi = localStorage.getItem("hidpiEnabled");
+    const hidpiIsCurrentlyEnabled = initialHidpi !== null ? initialHidpi === "true" : true;
+    window.postMessage(
+      { type: "setUseCssScaling", value: !hidpiIsCurrentlyEnabled },
+      window.location.origin
+    );
   }, []);
 
   useEffect(() => {
@@ -1508,11 +1527,18 @@ function Sidebar({ isOpen }) {
                   const val = valueStr === true || valueStr === "true";
                   setH264FullColor(val);
                   localStorage.setItem("h264_fullcolor", val.toString());
-                } else if (prefixedKey.endsWith("SCALING_DPI")) { // Or whatever key core might send
+                } else if (prefixedKey.endsWith("SCALING_DPI")) {
                   const val = parseInt(valueStr, 10);
                   if (!isNaN(val) && dpiScalingOptions.some(opt => opt.value === val)) {
                     setSelectedDpi(val);
                     localStorage.setItem("scalingDPI", val.toString());
+                  }
+                } else if (prefixedKey.endsWith("useCssScaling")) {
+                  const clientIsUsingCssScaling = valueStr === true || valueStr === "true";
+                  const correspondingHidpiState = !clientIsUsingCssScaling;
+                  if (hidpiEnabled !== correspondingHidpiState) {
+                    setHidpiEnabled(correspondingHidpiState);
+                    localStorage.setItem("hidpiEnabled", correspondingHidpiState.toString());
                   }
                 }
               }
@@ -1960,6 +1986,21 @@ function Sidebar({ isOpen }) {
               className="sidebar-section-content"
               id="screen-settings-content"
             >
+              <div className="dev-setting-item toggle-item">
+                <label htmlFor="hidpiToggle">
+                  {t("sections.screen.hidpiLabel", "HiDPI (Pixel Perfect)")}
+                </label>
+                <button
+                  id="hidpiToggle"
+                  className={`toggle-button-sidebar ${hidpiEnabled ? "active" : ""}`}
+                  onClick={handleHidpiToggle}
+                  aria-pressed={hidpiEnabled}
+                  title={t(hidpiEnabled ? "sections.screen.hidpiDisableTitle" : "sections.screen.hidpiEnableTitle",
+                             hidpiEnabled ? "Disable HiDPI (Use CSS Scaling)" : "Enable HiDPI (Pixel Perfect)")}
+                >
+                  <span className="toggle-button-sidebar-knob"></span>
+                </button>
+              </div>
               <div className="dev-setting-item">
                 <label htmlFor="uiScalingSelect">
                   {t("sections.screen.uiScalingLabel", "UI Scaling")}
