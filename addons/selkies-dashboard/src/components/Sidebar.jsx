@@ -2821,7 +2821,7 @@ function Sidebar({ isOpen }) {
           >
             &times;
           </button>{" "}
-          <iframe src="/files" title="Downloadable Files" />{" "}
+          <iframe src="./files" title="Downloadable Files" />{" "}
         </div>
       )}
       {isAppsModalOpen && (
