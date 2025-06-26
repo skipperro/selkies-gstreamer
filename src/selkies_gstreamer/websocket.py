@@ -1700,6 +1700,18 @@ class DataStreamingServer:
             cs.capture_x = 0
             cs.capture_y = 0
 
+            watermark_path_str = self.cli_args.watermark_path
+            if watermark_path_str and os.path.exists(watermark_path_str):
+                cs.watermark_path = watermark_path_str.encode('utf-8')
+                watermark_location = self.cli_args.watermark_location
+                if watermark_location < 0 or watermark_location > 6:
+                    cs.watermark_location_enum = 4
+                else:
+                    cs.watermark_location_enum = watermark_location
+                data_logger.info(f"Applying watermark to {self.app.encoder}: {watermark_path_str} at location {cs.watermark_location_enum}")
+            elif watermark_path_str:
+                data_logger.warning(f"Watermark path specified for {self.app.encoder} but file not found: {watermark_path_str}")
+
             data_logger.debug(f"{self.app.encoder} CaptureSettings: w={cs.capture_width}, h={cs.capture_height}, fps={cs.target_fps}, "
                               f"crf={cs.h264_crf}, use_paint_over={cs.use_paint_over_quality}, "
                               f"trigger_frames={cs.paint_over_trigger_frames}, "
@@ -1819,6 +1831,18 @@ class DataStreamingServer:
             cs.paint_over_trigger_frames = 5
             cs.damage_block_threshold = 10
             cs.damage_block_duration = 20
+
+            watermark_path_str = self.cli_args.watermark_path
+            if watermark_path_str and os.path.exists(watermark_path_str):
+                cs.watermark_path = watermark_path_str.encode('utf-8')
+                watermark_location = self.cli_args.watermark_location
+                if watermark_location < 0 or watermark_location > 6:
+                    cs.watermark_location_enum = 4
+                else:
+                    cs.watermark_location_enum = watermark_location
+                data_logger.info(f"Applying watermark to JPEG: {watermark_path_str} at location {cs.watermark_location_enum}")
+            elif watermark_path_str:
+                data_logger.warning(f"Watermark path specified for JPEG but file not found: {watermark_path_str}")
 
             cb = StripeCallback(self._jpeg_stripe_callback)
 
@@ -3509,9 +3533,22 @@ async def main():
         type=lambda x: (str(x).lower() == 'true'),
         help="Enable H.264 full color range for x264enc-striped (default: False)",
     )
+    parser.add_argument(
+        "--watermark_path",
+        default=os.environ.get("WATERMARK_PNG", ""),
+        type=str,
+        help="Absolute path to the watermark PNG file for pixelflux.",
+    )
+    parser.add_argument(
+        "--watermark_location",
+        default=os.environ.get("WATERMARK_LOCATION", "-1"),
+        type=int,
+        help="Watermark location enum (0-6). Defaults to 4 (Bottom Right) if path is set and this is not specified or invalid.",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args, unknown = parser.parse_known_args()
-
+    args.watermark_path = '/config/src/addons/gst-web/src/icon-192x192.png'
+    args.watermark_location = 6
     global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
     TARGET_FRAMERATE = args.framerate
     TARGET_VIDEO_BITRATE_KBPS = args.video_bitrate
