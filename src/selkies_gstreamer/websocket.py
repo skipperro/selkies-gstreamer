@@ -3547,8 +3547,6 @@ async def main():
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args, unknown = parser.parse_known_args()
-    args.watermark_path = '/config/src/addons/gst-web/src/icon-192x192.png'
-    args.watermark_location = 6
     global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
     TARGET_FRAMERATE = args.framerate
     TARGET_VIDEO_BITRATE_KBPS = args.video_bitrate
