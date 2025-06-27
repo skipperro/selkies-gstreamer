@@ -1809,10 +1809,7 @@ document.addEventListener('DOMContentLoaded', () => {
   );
 
   window.addEventListener('focus', () => {
-    if (isSharedMode) return; // No key reset or clipboard sending in shared mode on focus
-    if (websocket && websocket.readyState === WebSocket.OPEN) {
-      websocket.send('kr'); // Key reset
-    }
+    if (isSharedMode) return;
     navigator.clipboard
       .readText()
       .then((text) => {
@@ -1830,13 +1827,6 @@ document.addEventListener('DOMContentLoaded', () => {
       .catch((err) => {
         console.error(`Failed to read clipboard contents on focus: ${err}`);
       });
-  });
-
-  window.addEventListener('blur', () => {
-    if (isSharedMode) return; // No key reset in shared mode on blur
-    if (websocket && websocket.readyState === WebSocket.OPEN) {
-      websocket.send('kr'); // Key reset
-    }
   });
 
   document.addEventListener('visibilitychange', () => {
