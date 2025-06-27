@@ -1462,6 +1462,24 @@ class DataStreamingServer:
         else:
             data_logger.warning("Frame backpressure task was already running or not properly cleaned up when trying to start. Not starting a new one.")
 
+
+    def is_video_pipeline_active(self):
+        """Checks if any of the possible video pipelines are currently running."""
+        if not self.app:
+            return False
+
+        gstreamer_running = (
+            self.app.encoder not in PIXELFLUX_VIDEO_ENCODERS and
+            hasattr(self.app, "pipeline_running") and
+            self.app.pipeline_running
+        )
+
+        jpeg_running = self.is_jpeg_capturing
+        x264_running = self.is_x264_striped_capturing
+
+        return gstreamer_running or jpeg_running or x264_running
+
+
     async def _run_frame_backpressure_logic(self):
         data_logger.info("Frame-based backpressure logic task started.")
         try:
@@ -1470,7 +1488,11 @@ class DataStreamingServer:
 
             while True:
                 await asyncio.sleep(self.backpressure_check_interval_s)
-
+                if not self.is_video_pipeline_active:
+                    if not self._backpressure_send_frames_enabled:
+                        data_logger.info("Backpressure LIFTED (video pipeline is not active).")
+                    self._backpressure_send_frames_enabled = True
+                    continue 
                 if not self.clients: # No clients connected
                     self._backpressure_send_frames_enabled = True # Default to sending if no clients
                     continue
