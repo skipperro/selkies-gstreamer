@@ -57,7 +57,7 @@ All messages sent to the client should be JavaScript objects with a `type` prope
     *   `videoBitRate`: (Number) Target video bitrate in KBs (e.g., `8000`). Sends `vb,VALUE` (WebRTC) or `SET_VIDEO_BITRATE,VALUE` (WebSocket).
     *   `videoFramerate`: (Number) Target video framerate (e.g., `60`). Sends `_arg_fps,VALUE` (WebRTC) or `SET_FRAMERATE,VALUE` (WebSocket).
     *   `audioBitRate`: (Number) Target audio bitrate in kbit/s (e.g., `320000`). Sends `ab,VALUE` (WebRTC) or `SET_AUDIO_BITRATE,VALUE` (WebSocket).
-    *   `encoder`: (String) Preferred video encoder name (e.g., `'nvh264enc'`). Sends `enc,VALUE` (WebRTC) or `SET_ENCODER,VALUE` (WebSocket).
+    *   `encoder`: (String) Preferred video encoder name (e.g., `'x264enc'`). Sends `enc,VALUE` (WebRTC) or `SET_ENCODER,VALUE` (WebSocket).
     *   `videoBufferSize`: (Number) Target number of video frames to buffer on the client before rendering (0 = immediate). Affects client-side rendering latency.
     *   `resizeRemote`: (Boolean) *WebRTC Only*. If `true`, sends resolution updates to the server when the window resizes. Sends `_arg_resize,VALUE,WIDTHxHEIGHT`.
     *   `scaleLocal`: (Boolean) *WebRTC Only (Legacy?)*. Toggles a 'scale' CSS class on the video element.

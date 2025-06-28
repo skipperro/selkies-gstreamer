@@ -7,7 +7,6 @@ import yaml from "js-yaml";
 // --- Constants ---
 const encoderOptions = [
   "x264enc",
-  "nvh264enc",
   "x264enc-striped",
   "jpeg",
 ];
@@ -1622,13 +1621,10 @@ function Sidebar({ isOpen }) {
     "jpeg",
     "x264enc-striped",
     "x264enc",
-    "nvh264enc",
   ].includes(encoder);
   const showBitrate = [
-    "nvh264enc",
   ].includes(encoder);
   const showBufferSize = [
-    "nvh264enc",
   ].includes(encoder);
   const showCRF = ["x264enc-striped", "x264enc"].includes(encoder);
   const showH264FullColor = ["x264enc-striped", "x264enc"].includes(encoder);
