@@ -2089,7 +2089,7 @@ class DataStreamingServer:
                                 if not audio_is_active and GSTREAMER_AVAILABLE and hasattr(self.app, "start_websocket_audio_pipeline"):
                                     data_logger.info("Initial setup: Audio pipeline not yet active, attempting start.")
                                     await self.app.start_websocket_audio_pipeline()
-                                elif not GSTREAMER_AVAILABLE and not audio_is_active :
+                                elif not GSTREAMER_AVAILABLE and not audio_is_active:
                                     data_logger.warning("Initial setup: GStreamer audio pipeline (server-to-client) cannot be started (GStreamer not available).")
                         except json.JSONDecodeError:
                             data_logger.error(f"SETTINGS JSON decode error: {message}")
