@@ -754,6 +754,8 @@ class DataStreamingServer:
             settings.channels = self.app.audio_channels
             settings.opus_bitrate = self.app.audio_bitrate
             settings.frame_duration_ms = 20
+            settings.use_vbr = True
+            settings.use_silence_gate = False
             self.pcmflux_settings = settings
 
             data_logger.info(f"pcmflux settings: device='{self.audio_device_name}', "
