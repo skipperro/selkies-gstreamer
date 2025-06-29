@@ -1,23 +1,6 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-#
-# This file incorporates work covered by the following copyright and
-# permission notice:
-#
-#   Copyright 2019 Google LLC
-#
-#   Licensed under the Apache License, Version 2.0 (the "License");
-#   you may not use this file except in compliance with the License.
-#   You may obtain a copy of the License at
-#
-#        http://www.apache.org/licenses/LICENSE-2.0
-#
-#   Unless required by applicable law or agreed to in writing, software
-#   distributed under the License is distributed on an "AS IS" BASIS,
-#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#   See the License for the specific language governing permissions and
-#   limitations under the License.
 
 # Constants
 BACKPRESSURE_ALLOWED_DESYNC_MS = 2000
@@ -43,7 +26,7 @@ CURSOR_SIZE = 32
 DEBUG_CURSORS = False
 ENABLE_RESIZE = True
 AUDIO_CHANNELS_DEFAULT = 2
-AUDIO_BITRATE_DEFAULT = 128000
+AUDIO_BITRATE_DEFAULT = 320000
 GPU_ID_DEFAULT = 0
 KEYFRAME_DISTANCE_DEFAULT = -1.0
 PIXELFLUX_VIDEO_ENCODERS = ["jpeg", "x264enc", "x264enc-striped"]
@@ -59,7 +42,7 @@ logger = logging.getLogger("main")
 data_logger = logging.getLogger("data_websocket")
 
 X11_CAPTURE_AVAILABLE = False
-GSTREAMER_AVAILABLE = True
+PCMFLUX_AVAILABLE = False
 
 import asyncio
 import argparse
@@ -81,13 +64,12 @@ from shutil import which
 from signal import SIGINT, signal
 
 try:
-    import gi
-    gi.require_version("GLib", "2.0")
-    gi.require_version("Gst", "1.0")
-    from gi.repository import GLib, Gst
-except Exception as e:
-    GSTREAMER_AVAILABLE = False
-    logger.error(f"Failed to import GStreamer Python bindings (gi): {e}")
+    from pcmflux import AudioCapture, AudioCaptureSettings, AudioChunkCallback
+    PCMFLUX_AVAILABLE = True
+    data_logger.info("pcmflux library found. Audio capture is available.")
+except ImportError:
+    PCMFLUX_AVAILABLE = False
+    data_logger.warning("pcmflux library not found. Audio capture is unavailable.")
 
 try:
     import pulsectl
@@ -128,46 +110,6 @@ class SelkiesAppError(Exception):
     pass
 
 
-def perform_initial_gstreamer_check(cli_selected_encoder=None):
-    """
-    Performs an initial check for essential GStreamer elements.
-    Exits the application if critical elements are missing.
-    """
-    global GSTREAMER_AVAILABLE
-    if not GSTREAMER_AVAILABLE:
-        logger.critical(
-            "GStreamer Python bindings (gi module) are not available."
-        )
-    try:
-        Gst.init(None)  # Initialize GStreamer
-    except Exception as e:
-        logger.critical(
-            f"Failed to initialize GStreamer (Gst.init(None) failed): {e}."
-        )
-        GSTREAMER_AVAILABLE = True
-
-    base_elements = [
-        "appsink",
-        "queue",
-        "audioconvert",
-        "audioresample",
-        "pulsesrc",
-        "opusenc",
-    ]
-
-    missing_elements = []
-    for el_name in set(base_elements):
-        if Gst.ElementFactory.find(el_name) is None:
-            missing_elements.append(el_name)
-
-    if missing_elements:
-        logger.critical(
-            f"Essential GStreamer element(s) are missing: {', '.join(missing_elements)}. "
-            f"Please ensure the required GStreamer plugins (e.g., good, bad, ugly, pulse, opus) "
-            f"are correctly installed and accessible in your environment."
-        )
-
-
 class SelkiesStreamingApp:
     def __init__(
         self,
@@ -183,14 +125,11 @@ class SelkiesStreamingApp:
         self.display_width = 1024
         self.display_height = 768
         self.pipeline_running = False
-        self.audio_pipeline_running_ws_flag = False
         self.async_event_loop = async_event_loop
         self.audio_channels = AUDIO_CHANNELS_DEFAULT
         self.gpu_id = GPU_ID_DEFAULT
         self.audio_bitrate = AUDIO_BITRATE_DEFAULT
         self.keyframe_distance = KEYFRAME_DISTANCE_DEFAULT
-        self.pipeline = None
-        self.audio_ws_pipeline = None
         self.encoder = encoder
         self.framerate = framerate
         self.video_bitrate = video_bitrate
@@ -209,106 +148,6 @@ class SelkiesStreamingApp:
         self._ws_frame_count = 0
         self._ws_fps_last_calc_time = time.monotonic()
         self._fps_interval_sec = 2.0
-
-    def build_audio_ws_pipeline(self):
-        if not GSTREAMER_AVAILABLE:
-            logger_gst_app.error(
-                "Cannot build audio pipeline: GStreamer not available."
-            )
-            return None
-        logger_gst_app.info("Building WebSocket audio pipeline...")
-        audio_pipeline_string = f"""
-            pulsesrc name=source device=output.monitor ! queue name=queue1 ! audioconvert name=convert ! audioresample !
-            capsfilter name=audioconvert_capsfilter caps=audio/x-raw,channels={self.audio_channels},rate=48000 !
-            opusenc name=encoder
-                audio-type=restricted-lowdelay bandwidth=fullband
-                bitrate-type=vbr
-                frame-size=20
-                perfect-timestamp=true max-payload-size=4000
-                bitrate={self.audio_bitrate}
-                dtx=true !
-            queue name=queue2 ! appsink name=sink emit-signals=true sync=false
-        """
-        try:
-            self.audio_ws_pipeline = Gst.parse_launch(audio_pipeline_string)
-        except Gst.ParseError as e:
-            error_message = f"Error parsing audio pipeline string: {e}"
-            logger_gst_app.error(error_message)
-            raise SelkiesAppError(error_message) from e
-
-        if not self.audio_ws_pipeline:
-            raise SelkiesAppError("Error: Could not create audio pipeline from string")
-
-        audio_sink = self.audio_ws_pipeline.get_by_name("sink")
-        if not audio_sink:
-            raise SelkiesAppError("Error: Could not get audio sink element")
-
-        def on_new_audio_sample(sink):
-            sample = sink.emit("pull-sample")
-            if sample:
-                buffer = sample.get_buffer()
-                if buffer:
-                    success, map_info = buffer.map(Gst.MapFlags.READ)
-                    if success:
-                        data_copy = bytes(map_info.data)
-                        frame_type_byte = b"\x00"
-                        data_type_byte = b"\x01"
-                        prefixed_data = data_type_byte + frame_type_byte + data_copy
-                        # Check backpressure for audio
-                        if (
-                            self.data_streaming_server
-                            and not self.data_streaming_server._backpressure_send_frames_enabled
-                        ):
-                            buffer.unmap(map_info)
-                            return Gst.FlowReturn.OK
-                        clients_available = (
-                            self.data_streaming_server
-                            and hasattr(self.data_streaming_server, "clients")
-                            and self.data_streaming_server.clients
-                        )
-                        loop_ok = (
-                            self.async_event_loop and self.async_event_loop.is_running()
-                        )
-
-                        if clients_available and loop_ok:
-                            clients_ref = self.data_streaming_server.clients
-                            data_to_broadcast_ref = prefixed_data
-
-                            async def _broadcast_audio_data_helper():
-                                websockets.broadcast(clients_ref, data_to_broadcast_ref)
-
-                            asyncio.run_coroutine_threadsafe(
-                                _broadcast_audio_data_helper(), self.async_event_loop
-                            )
-                        else:
-                            if not clients_available:
-                                if self.audio_pipeline_running_ws_flag:
-                                    data_logger.warning(
-                                        "Cannot broadcast GStreamer audio: data_streaming_server.clients not available or empty. "
-                                        "Scheduling audio pipeline shutdown."
-                                    )
-                                    if loop_ok:
-                                        asyncio.run_coroutine_threadsafe(
-                                            self.stop_websocket_audio_pipeline(),
-                                            self.async_event_loop,
-                                        )
-                                    else:
-                                        data_logger.error(
-                                            "Cannot schedule audio pipeline shutdown (no clients): Async event loop not running."
-                                            " Audio pipeline may continue running without consumers."
-                                        )
-                            elif not loop_ok:
-                                data_logger.warning(
-                                    "Cannot broadcast GStreamer audio: async event loop not available or not running. Pipeline not shut down for this specific reason."
-                                )
-                        buffer.unmap(map_info)
-                    else:
-                        logger_gst_app.error("Error mapping audio buffer")
-                return Gst.FlowReturn.OK
-            return Gst.FlowReturn.OK
-
-        audio_sink.connect("new-sample", on_new_audio_sample)
-        return self.audio_ws_pipeline
 
     def send_ws_clipboard_data(
         self, data
@@ -358,65 +197,15 @@ class SelkiesStreamingApp:
             data_logger.warning("Cannot broadcast cursor data: prerequisites not met.")
 
     async def stop_pipeline(self):
-        logger_gst_app.info("Stopping GStreamer audio pipeline")
-        if self.audio_ws_pipeline:
-            logger_gst_app.info("Setting audio pipeline to NULL")
-            await asyncio.to_thread(self.audio_ws_pipeline.set_state, Gst.State.NULL)
-            self.audio_ws_pipeline = None
-            self.audio_pipeline_running_ws_flag = False
+        logger_gst_app.info("Stopping pipelines (generic call)...")
+        # Actual stop logic is now in DataStreamingServer for each pipeline type.
         self.pipeline_running = False
-        logger_gst_app.info("Audio pipeline stopped.")
+        logger_gst_app.info("Pipelines stop signal processed.")
 
     stop_ws_pipeline = stop_pipeline
 
     def get_current_server_fps(self):
         return self._current_server_fps
-
-    async def start_websocket_audio_pipeline(self):
-        if not GSTREAMER_AVAILABLE:
-            logger_gst_app.error(
-                "Cannot start audio pipeline: GStreamer not available."
-            )
-            return
-        logger_gst_app.info("Starting WebSocket audio pipeline...")
-        try:
-            if self.audio_ws_pipeline:
-                await self.stop_websocket_audio_pipeline()
-            pipeline = self.build_audio_ws_pipeline()
-            if pipeline:
-                res = pipeline.set_state(Gst.State.PLAYING)
-                if res == Gst.StateChangeReturn.FAILURE:
-                    raise SelkiesAppError("Failed to set audio pipeline to PLAYING")
-                elif res == Gst.StateChangeReturn.ASYNC:
-                    logger_gst_app.info(
-                        "Audio pipeline state change to PLAYING is ASYNC."
-                    )
-                self.audio_pipeline_running_ws_flag = True
-                logger_gst_app.info("WebSocket audio pipeline started.")
-        except Exception as e:
-            logger_gst_app.error(
-                f"Error starting WebSocket audio pipeline: {e}", exc_info=True
-            )
-            if self.audio_ws_pipeline:
-                await self.stop_websocket_audio_pipeline()
-            raise
-
-    async def stop_websocket_audio_pipeline(self):
-        logger_gst_app.info("Stopping WebSocket audio pipeline...")
-        if self.audio_ws_pipeline:
-            try:
-                await asyncio.to_thread(
-                    self.audio_ws_pipeline.set_state, Gst.State.NULL
-                )
-                self.audio_ws_pipeline = None
-                self.audio_pipeline_running_ws_flag = False
-                logger_gst_app.info("WebSocket audio pipeline stopped.")
-            except Exception as e:
-                logger_gst_app.error(
-                    f"Error stopping WebSocket audio pipeline: {e}", exc_info=True
-                )
-        else:
-            self.audio_pipeline_running_ws_flag = False
 
     def set_framerate(self, framerate):
         self.framerate = int(framerate)
@@ -431,74 +220,6 @@ class SelkiesStreamingApp:
         logger_gst_app.info(
             f"Framerate for {self.encoder} set to {self.framerate}. Restart pipeline if active."
         )
-
-    def bus_call(self, message):
-        t = message.type
-        src_name = (
-            message.src.get_name() if message and message.src else "UnknownSource"
-        )
-
-        if t == Gst.MessageType.ERROR:
-            err, debug = message.parse_error()
-            logger_gst_app.error(f"Error from pipeline {src_name}: {err} - {debug}")
-            if message.src == self.audio_ws_pipeline:
-                self.audio_pipeline_running_ws_flag = False
-            return False
-        elif t == Gst.MessageType.STATE_CHANGED:
-            if isinstance(message.src, Gst.Pipeline):
-                old, new, pending = message.parse_state_changed()
-                logger_gst_app.debug(
-                    f"Pipeline '{src_name}' state: {old.value_nick} -> {new.value_nick}"
-                )
-                if new == Gst.State.NULL or new == Gst.State.READY:
-                    if old == Gst.State.PLAYING or old == Gst.State.PAUSED:
-                        if message.src == self.audio_ws_pipeline:
-                            self.audio_pipeline_running_ws_flag = False
-        return True
-
-    async def handle_bus_calls(self):
-        if not GSTREAMER_AVAILABLE:
-            return
-
-        active_buses_map = {}
-
-        def update_buses():
-            nonlocal active_buses_map
-            current_buses = {}
-            if self.audio_ws_pipeline and self.audio_ws_pipeline.get_bus():
-                current_buses[self.audio_ws_pipeline.get_bus()] = self.audio_ws_pipeline
-            active_buses_map = current_buses
-
-        update_buses()
-
-        while True:
-            update_buses()
-            if not active_buses_map:
-                if (
-                    not self.pipeline_running
-                    and not self.audio_pipeline_running_ws_flag
-                ):
-                    logger_gst_app.debug(
-                        "No active GStreamer buses and no pipelines running. Exiting bus handler."
-                    )
-                    break
-                await asyncio.sleep(0.2)
-                continue
-
-            processed_message_on_any_bus = False
-            for bus, pipeline_obj in list(active_buses_map.items()):
-                message = bus.timed_pop_filtered(10 * Gst.MSECOND, Gst.MessageType.ANY)
-                if message:
-                    processed_message_on_any_bus = True
-                    if not self.bus_call(message):
-                        logger_gst_app.info(
-                            f"Bus call for {pipeline_obj.get_name()} indicated stop. GStreamer pipeline likely ended or errored."
-                        )
-                        break
-
-            if not processed_message_on_any_bus:
-                await asyncio.sleep(0.05)
-        logger_gst_app.info("GStreamer bus handling loop finished.")
 
 
 def fit_res(w, h, max_w, max_h):
@@ -893,6 +614,7 @@ class DataStreamingServer:
         cursor_size,
         cursor_scale,
         cursor_debug,
+        audio_device_name,
         cli_args,
     ):
         self.port = port
@@ -951,6 +673,141 @@ class DataStreamingServer:
         self.backpressure_check_interval_s = BACKPRESSURE_CHECK_INTERVAL_S
         self._backpressure_send_frames_enabled = True
         self._last_client_frame_id_report_time = 0.0
+
+        # pcmflux audio capture state
+        self.audio_device_name = audio_device_name
+        self.pcmflux_module = None
+        self.is_pcmflux_capturing = False
+        self.pcmflux_settings = None
+        self.pcmflux_callback = None
+        self.pcmflux_audio_queue = None
+        self.pcmflux_send_task = None
+        self.pcmflux_capture_loop = None
+
+    def _pcmflux_audio_callback(self, result_ptr, user_data):
+        """
+        C-style callback passed to pcmflux, called from its capture thread.
+        """
+        if self.is_pcmflux_capturing and result_ptr and self.pcmflux_audio_queue is not None:
+            result = result_ptr.contents
+            if result.data and result.size > 0:
+                data_bytes = bytes(ctypes.cast(
+                    result.data, ctypes.POINTER(ctypes.c_ubyte * result.size)
+                ).contents)
+
+                if self.pcmflux_capture_loop and not self.pcmflux_capture_loop.is_closed():
+                    asyncio.run_coroutine_threadsafe(
+                        self.pcmflux_audio_queue.put(data_bytes), self.pcmflux_capture_loop)
+    
+    async def _pcmflux_send_audio_chunks(self):
+        """
+        Async task to broadcast Opus audio chunks from the queue to WebSocket clients.
+        """
+        data_logger.info("pcmflux audio chunk broadcasting task started.")
+        try:
+            while True:
+                opus_bytes = await self.pcmflux_audio_queue.get()
+
+                if not self.clients:
+                    self.pcmflux_audio_queue.task_done()
+                    continue
+                
+                # Protocol: 1-byte data type (0x01=audio) + 1-byte frame type (0x00=opus) + payload
+                message_to_send = b'\x01\x00' + opus_bytes
+
+                active_clients = list(self.clients)
+                tasks = [client.send(message_to_send) for client in active_clients]
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+                self.pcmflux_audio_queue.task_done()
+        except asyncio.CancelledError:
+            data_logger.info("pcmflux audio chunk broadcasting task cancelled.")
+        finally:
+            data_logger.info("pcmflux audio chunk broadcasting task finished.")
+
+    async def _start_pcmflux_pipeline(self):
+        if not PCMFLUX_AVAILABLE:
+            data_logger.error("Cannot start audio pipeline: pcmflux library not available.")
+            return False
+        if self.is_pcmflux_capturing:
+            data_logger.info("pcmflux audio pipeline is already capturing.")
+            return True
+        if not self.app:
+            data_logger.error("Cannot start pcmflux: self.app (SelkiesStreamingApp instance) is not available.")
+            return False
+        
+        self.pcmflux_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
+        if not self.pcmflux_capture_loop:
+            data_logger.error("Cannot start pcmflux: asyncio event loop not found.")
+            return False
+
+        data_logger.info("Starting pcmflux audio pipeline...")
+        try:
+            settings = AudioCaptureSettings()
+            # To capture desktop audio on Linux with PulseAudio, find the ".monitor" source name.
+            # Use `pactl list sources` in a terminal.
+            # Set to None or empty string to use the system's default microphone.
+            device_name_bytes = self.audio_device_name.encode('utf-8') if self.audio_device_name else None
+            settings.device_name = device_name_bytes
+            settings.sample_rate = 48000
+            settings.channels = self.app.audio_channels
+            settings.opus_bitrate = self.app.audio_bitrate
+            settings.frame_duration_ms = 20
+            self.pcmflux_settings = settings
+
+            data_logger.info(f"pcmflux settings: device='{self.audio_device_name}', "
+                             f"bitrate={settings.opus_bitrate}, channels={settings.channels}")
+
+            self.pcmflux_callback = AudioChunkCallback(self._pcmflux_audio_callback)
+            self.pcmflux_module = AudioCapture()
+            self.pcmflux_audio_queue = asyncio.Queue()
+
+            await self.pcmflux_capture_loop.run_in_executor(
+                None, self.pcmflux_module.start_capture, self.pcmflux_settings, self.pcmflux_callback
+            )
+
+            self.is_pcmflux_capturing = True
+            if self.pcmflux_send_task is None or self.pcmflux_send_task.done():
+                self.pcmflux_send_task = asyncio.create_task(self._pcmflux_send_audio_chunks())
+            
+            data_logger.info("pcmflux audio capture started successfully.")
+            return True
+        except Exception as e:
+            data_logger.error(f"Failed to start pcmflux audio pipeline: {e}", exc_info=True)
+            await self._stop_pcmflux_pipeline() # Attempt cleanup on failure
+            return False
+
+    async def _stop_pcmflux_pipeline(self):
+        if not self.is_pcmflux_capturing and not self.pcmflux_module:
+            return True
+        
+        data_logger.info("Stopping pcmflux audio pipeline...")
+        self.is_pcmflux_capturing = False # Prevent new items from being queued
+
+        if self.pcmflux_send_task:
+            self.pcmflux_send_task.cancel()
+            try:
+                await self.pcmflux_send_task
+            except asyncio.CancelledError:
+                pass
+            self.pcmflux_send_task = None
+        
+        if self.pcmflux_module:
+            try:
+                if self.pcmflux_capture_loop:
+                    await self.pcmflux_capture_loop.run_in_executor(
+                        None, self.pcmflux_module.stop_capture
+                    )
+            except Exception as e:
+                data_logger.error(f"Error during pcmflux stop_capture: {e}")
+            finally:
+                del self.pcmflux_module
+                self.pcmflux_module = None
+        
+        self.pcmflux_audio_queue = None
+        data_logger.info("pcmflux audio pipeline stopped.")
+        return True
 
     async def _ensure_backpressure_task_is_stopped(self):
         """
@@ -1629,7 +1486,7 @@ class DataStreamingServer:
             if old_encoder == "jpeg" and self.is_jpeg_capturing: video_pipeline_was_active = True
             elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg" and self.is_x264_striped_capturing: video_pipeline_was_active = True
             
-            audio_pipeline_was_active = getattr(self.app, "audio_pipeline_running_ws_flag", False)
+            audio_pipeline_was_active = self.is_pcmflux_capturing
 
             if restart_video_pipeline:
                 if video_pipeline_was_active:
@@ -1649,11 +1506,11 @@ class DataStreamingServer:
             if restart_audio_pipeline:
                 if audio_pipeline_was_active:
                     data_logger.info("Restarting audio pipeline due to settings update.")
-                    if hasattr(self.app, "stop_websocket_audio_pipeline"): await self.app.stop_websocket_audio_pipeline()
+                    await self._stop_pcmflux_pipeline()
+                    await self._start_pcmflux_pipeline()
                 else:
                     data_logger.info("Audio pipeline needs to start due to settings (was not active).")
-                
-                if hasattr(self.app, "start_websocket_audio_pipeline"): await self.app.start_websocket_audio_pipeline()
+                    await self._start_pcmflux_pipeline()
 
         if is_initial_settings and not self.client_settings_received.is_set():
             self.client_settings_received.set()
@@ -2084,12 +1941,14 @@ class DataStreamingServer:
                                 video_is_active = (self.is_jpeg_capturing or self.is_x264_striped_capturing)
                                 if not video_is_active and current_encoder:
                                     data_logger.warning(f"Initial setup: Video pipeline for '{current_encoder}' was expected to be started by _apply_client_settings but is not. This might indicate an issue or a no-op change.")
-                                audio_is_active = getattr(self.app, "audio_pipeline_running_ws_flag", False)
-                                if not audio_is_active and GSTREAMER_AVAILABLE and hasattr(self.app, "start_websocket_audio_pipeline"):
+                                
+                                audio_is_active = self.is_pcmflux_capturing
+                                if not audio_is_active and PCMFLUX_AVAILABLE:
                                     data_logger.info("Initial setup: Audio pipeline not yet active, attempting start.")
-                                    await self.app.start_websocket_audio_pipeline()
-                                elif not GSTREAMER_AVAILABLE and not audio_is_active:
-                                    data_logger.warning("Initial setup: GStreamer audio pipeline (server-to-client) cannot be started (GStreamer not available).")
+                                    await self._start_pcmflux_pipeline()
+                                elif not PCMFLUX_AVAILABLE and not audio_is_active:
+                                     data_logger.warning("Initial setup: Audio pipeline (server-to-client) cannot be started (pcmflux not available).")
+
                         except json.JSONDecodeError:
                             data_logger.error(f"SETTINGS JSON decode error: {message}")
                         except Exception as e_set:
@@ -2189,35 +2048,20 @@ class DataStreamingServer:
                         data_logger.info(
                             "Received START_AUDIO command from client for server-to-client audio."
                         )
-                        if GSTREAMER_AVAILABLE and hasattr(
-                            self.app, "start_websocket_audio_pipeline"
-                        ):
-                            if not getattr(
-                                self.app, "audio_pipeline_running_ws_flag", False
-                            ):
-                                data_logger.info(
-                                    "START_AUDIO: Ensuring GStreamer server-to-client audio pipeline is active."
-                                )
-                                await self.app.start_websocket_audio_pipeline()
+                        if PCMFLUX_AVAILABLE:
+                            if not self.is_pcmflux_capturing:
+                                data_logger.info("START_AUDIO: Starting pcmflux audio pipeline.")
+                                await self._start_pcmflux_pipeline()
                             else:
-                                data_logger.info(
-                                    "START_AUDIO: Server-to-client audio pipeline already reported as active."
-                                )
+                                data_logger.info("START_AUDIO: pcmflux audio pipeline already active.")
                         else:
-                            data_logger.warning(
-                                "START_AUDIO: Cannot start server-to-client audio (GStreamer not available or no start method)."
-                            )
+                            data_logger.warning("START_AUDIO: Cannot start server-to-client audio (pcmflux not available).")
                         websockets.broadcast(self.clients, "AUDIO_STARTED")
 
                     elif message == "STOP_AUDIO":
                         data_logger.info("Received STOP_AUDIO")
-                        if GSTREAMER_AVAILABLE and hasattr(
-                            self.app, "stop_websocket_audio_pipeline"
-                        ):
-                            if getattr(
-                                self.app, "audio_pipeline_running_ws_flag", False
-                            ):
-                                await self.app.stop_websocket_audio_pipeline()
+                        if self.is_pcmflux_capturing:
+                            await self._stop_pcmflux_pipeline()
                         if self.clients:
                             websockets.broadcast(self.clients, "AUDIO_STOPPED")
 
@@ -2598,10 +2442,8 @@ class DataStreamingServer:
                 if self.is_x264_striped_capturing and (current_encoder_on_cleanup in PIXELFLUX_VIDEO_ENCODERS and current_encoder_on_cleanup != "jpeg"):
                     await self._stop_x264_striped_pipeline()
                 
-                if self.app and GSTREAMER_AVAILABLE and \
-                hasattr(self.app, "audio_pipeline_running_ws_flag") and self.app.audio_pipeline_running_ws_flag:
-                    if hasattr(self.app, "stop_websocket_audio_pipeline"):
-                        await self.app.stop_websocket_audio_pipeline()
+                if self.is_pcmflux_capturing:
+                    await self._stop_pcmflux_pipeline()
 
             data_logger.info(f"Data WS handler for {raddr} finished all cleanup.")
 
@@ -2683,6 +2525,8 @@ class DataStreamingServer:
             await self._stop_jpeg_pipeline()
         if self.is_x264_striped_capturing:
             await self._stop_x264_striped_pipeline()
+        if self.is_pcmflux_capturing:
+            await self._stop_pcmflux_pipeline()
         data_logger.info(f"Data WS on port {self.port} stop procedure complete.")
 
 
@@ -2856,7 +2700,7 @@ async def main():
         except OSError:
             pass
 
-    parser = argparse.ArgumentParser(description="Selkies GStreamer WebSocket Server")
+    parser = argparse.ArgumentParser(description="Selkies WebSocket Streaming Server")
     parser.add_argument(
         "--encoder",
         default=os.environ.get("SELKIES_ENCODER", "x264enc"),
@@ -2873,6 +2717,11 @@ async def main():
         default=os.environ.get("SELKIES_VIDEO_BITRATE", "16000"),
         type=int,
         help="Target video bitrate in kbps",
+    )
+    parser.add_argument(
+        "--audio_device_name",
+        default=os.environ.get("SELKIES_AUDIO_DEVICE", ""),
+        help="Audio device name for pcmflux (e.g., a PulseAudio .monitor source). Defaults to system default input.",
     )
     parser.add_argument(
         "--h264_crf",
@@ -2913,12 +2762,10 @@ async def main():
     if not args.debug and PULSEAUDIO_AVAILABLE:
         logging.getLogger("pulsectl").setLevel(logging.WARNING)
 
-    logger.info(f"Starting Selkies GStreamer (WebSocket Mode) with args: {args}")
+    logger.info(f"Starting Selkies (WebSocket Mode) with args: {args}")
     logger.info(
         f"Initial Encoder: {initial_encoder}, Framerate: {TARGET_FRAMERATE}, Bitrate: {TARGET_VIDEO_BITRATE_KBPS}kbps"
     )
-
-    perform_initial_gstreamer_check(initial_encoder)
 
     event_loop = asyncio.get_running_loop()
 
@@ -2945,6 +2792,7 @@ async def main():
         cursor_size=CURSOR_SIZE,
         cursor_scale=1.0,
         cursor_debug=DEBUG_CURSORS,
+        audio_device_name=args.audio_device_name,
         cli_args=args,
     )
     app.data_streaming_server = data_server
@@ -2993,11 +2841,6 @@ async def main():
             asyncio.create_task(input_handler.start_cursor_monitor(), name="CursorMon")
         )
 
-    gst_bus_task = None
-    if GSTREAMER_AVAILABLE and hasattr(app, "handle_bus_calls"):
-        gst_bus_task = asyncio.create_task(app.handle_bus_calls(), name="GSTBusHandler")
-        tasks_to_run.append(gst_bus_task)
-
     try:
         logger.info("All main components initialized. Running server...")
         if data_server_task:
@@ -3022,13 +2865,6 @@ async def main():
         all_tasks_for_cleanup = [
             t for t in tasks_to_run if t and t is not data_server_task and not t.done()
         ]
-        if (
-            gst_bus_task
-            and gst_bus_task is not data_server_task
-            and not gst_bus_task.done()
-        ):
-            if gst_bus_task not in all_tasks_for_cleanup:
-                all_tasks_for_cleanup.append(gst_bus_task)
 
         for task in all_tasks_for_cleanup:
             logger.debug(f"Cancelling task: {task.get_name()}")
