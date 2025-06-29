@@ -168,7 +168,7 @@ def perform_initial_gstreamer_check(cli_selected_encoder=None):
         )
 
 
-class GSTStreamingApp:
+class SelkiesStreamingApp:
     def __init__(
         self,
         async_event_loop,
@@ -1182,7 +1182,7 @@ class DataStreamingServer:
                 )
         else:
             data_logger.warning(
-                "Cannot broadcast stream resolution: GSTStreamingApp instance or its display dimensions not available."
+                "Cannot broadcast stream resolution: SelkiesStreamingApp instance or its display dimensions not available."
             )
 
     def _x264_striped_stripe_callback(self, result_ptr, user_data):
@@ -1237,7 +1237,7 @@ class DataStreamingServer:
             data_logger.info(f"{self.app.encoder} pipeline is already capturing.")
             return True
         if not self.app:
-            data_logger.error(f"Cannot start {self.app.encoder}: self.app (GSTStreamingApp instance) is not available.")
+            data_logger.error(f"Cannot start {self.app.encoder}: self.app (SelkiesStreamingApp instance) is not available.")
             return False
         
         self.jpeg_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
@@ -3042,7 +3042,7 @@ async def main():
 
     event_loop = asyncio.get_running_loop()
 
-    app = GSTStreamingApp(
+    app = SelkiesStreamingApp(
         event_loop,
         framerate=TARGET_FRAMERATE,
         encoder=initial_encoder,
@@ -3052,7 +3052,7 @@ async def main():
     app.server_enable_resize = ENABLE_RESIZE
     app.last_resize_success = True
     logger.info(
-        f"GSTStreamingApp initialized: encoder={app.encoder}, display={app.display_width}x{app.display_height}"
+        f"SelkiesStreamingApp initialized: encoder={app.encoder}, display={app.display_width}x{app.display_height}"
     )
 
     data_server = DataStreamingServer(
@@ -3159,7 +3159,7 @@ async def main():
             logger.info("Auxiliary tasks cancellation complete.")
 
         if app and hasattr(app, "stop_pipeline"):
-            logger.info("Stopping GSTStreamingApp pipelines...")
+            logger.info("Stopping SelkiesStreamingApp pipelines...")
             await app.stop_pipeline()
 
         if input_handler:  # This is the global input_handler instance
