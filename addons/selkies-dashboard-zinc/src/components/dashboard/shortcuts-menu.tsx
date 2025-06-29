@@ -24,7 +24,7 @@ const ShortcutsMenu = () => {
 								className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
 								target="_blank"
 								rel="noopener noreferrer"
-								href="https://github.com/selkies-project/selkies-gstreamer/blob/main/README.md#citations-in-academic-publications"
+								href="https://github.com/selkies-project/selkies/blob/main/docs/README.md#citations-in-academic-publications"
 							>
 								<b>Please cite within your publication for academic usage</b>
 							</a>

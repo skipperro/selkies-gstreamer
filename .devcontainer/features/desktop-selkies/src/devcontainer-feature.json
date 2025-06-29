@@ -1,13 +1,13 @@
 {
-    "name": "Selkies GStreamer",
-    "id": "selkies-gstreamer",
+    "name": "Selkies",
+    "id": "selkies",
     "version": "1.0.0",
     "description": "WebRTC Remote Desktop for Linux",
     "options": {
         "release": {
             "type": "string",
             "default": "latest",
-            "description": "The selkies-gstreamer release tag."
+            "description": "The selkies release tag."
         },
         "xserver": {
             "type": "string",

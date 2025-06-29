@@ -10,7 +10,7 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "selkies-gstreamer"
+name = "selkies"
 version = "0.0.0"
 authors = [
     {name = "Dan Isla", email = "danisla@users.noreply.github.com"},
@@ -38,13 +38,13 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/selkies-project/selkies-gstreamer"
-"Bug Tracker" = "https://github.com/selkies-project/selkies-gstreamer/issues"
+Homepage = "https://github.com/selkies-project/selkies"
+"Bug Tracker" = "https://github.com/selkies-project/selkies/issues"
 
 [project.scripts]
-selkies-gstreamer = "selkies_gstreamer.__main__:main"
+selkies = "selkies_gstreamer.__main__:main"
 # FIXME
-selkies-gstreamer-resize = "selkies_gstreamer.resize:entrypoint"
+selkies-resize = "selkies_gstreamer.resize:entrypoint"
 
 [tool.setuptools.packages.find]
 where = ["src"]

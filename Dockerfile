@@ -17,7 +17,7 @@ WORKDIR /opt/pypi
 COPY src ./src
 COPY README.md pyproject.toml ./
 
-ARG PYPI_PACKAGE=selkies-gstreamer
+ARG PYPI_PACKAGE=selkies
 ARG PACKAGE_VERSION=0.0.0.dev0
 
 # Patch the package name and version

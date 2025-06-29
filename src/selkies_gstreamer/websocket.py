@@ -124,7 +124,7 @@ except OSError as e:
     upload_dir_path = None
 
 
-class GSTAppError(Exception):
+class SelkiesAppError(Exception):
     pass
 
 
@@ -234,14 +234,14 @@ class GSTStreamingApp:
         except Gst.ParseError as e:
             error_message = f"Error parsing audio pipeline string: {e}"
             logger_gst_app.error(error_message)
-            raise GSTAppError(error_message) from e
+            raise SelkiesAppError(error_message) from e
 
         if not self.audio_ws_pipeline:
-            raise GSTAppError("Error: Could not create audio pipeline from string")
+            raise SelkiesAppError("Error: Could not create audio pipeline from string")
 
         audio_sink = self.audio_ws_pipeline.get_by_name("sink")
         if not audio_sink:
-            raise GSTAppError("Error: Could not get audio sink element")
+            raise SelkiesAppError("Error: Could not get audio sink element")
 
         def on_new_audio_sample(sink):
             sample = sink.emit("pull-sample")
@@ -386,7 +386,7 @@ class GSTStreamingApp:
             if pipeline:
                 res = pipeline.set_state(Gst.State.PLAYING)
                 if res == Gst.StateChangeReturn.FAILURE:
-                    raise GSTAppError("Failed to set audio pipeline to PLAYING")
+                    raise SelkiesAppError("Failed to set audio pipeline to PLAYING")
                 elif res == Gst.StateChangeReturn.ASYNC:
                     logger_gst_app.info(
                         "Audio pipeline state change to PLAYING is ASYNC."

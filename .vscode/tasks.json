@@ -28,7 +28,7 @@
             "problemMatcher": []
         },
         {
-            "label": "[run] Start selkies-gstreamer",
+            "label": "[run] Start Selkies",
             "type": "shell",
             "command": "${workspaceFolder}/.devcontainer/features/desktop-selkies/src/start-selkies.sh",
             "problemMatcher": [],
@@ -39,14 +39,14 @@
             }
         },
         {
-            "label": "[run] re-build, re-install and run selkies-gstreamer",
+            "label": "[run] re-build, re-install and run Selkies",
             "problemMatcher": [],
             "dependsOrder": "sequence",
             "dependsOn": [
                 "[build] build joystick interposer library",
                 "[build] build python package",
                 "[install] re-install python package",
-                "[run] Start selkies-gstreamer"
+                "[run] Start Selkies"
             ]
         },
         {

@@ -5,7 +5,7 @@ hide:
 ---
 ![Selkies WebRTC](assets/logo/horizontal-480.png)
 
-[![Build](https://github.com/selkies-project/selkies-gstreamer/actions/workflows/build_and_publish_all_images.yaml/badge.svg)](https://github.com/selkies-project/selkies-gstreamer/actions/workflows/build_and_publish_all_images.yaml)
+[![Build](https://github.com/selkies-project/selkies/actions/workflows/build_and_publish_all_images.yaml/badge.svg)](https://github.com/selkies-project/selkies/actions/workflows/build_and_publish_all_images.yaml)
 
 [![Discord](https://img.shields.io/badge/dynamic/json?logo=discord&label=Discord%20Members&query=approximate_member_count&url=https%3A%2F%2Fdiscordapp.com%2Fapi%2Finvites%2FwDNGDeSW5F%3Fwith_counts%3Dtrue)](https://discord.gg/wDNGDeSW5F)
 
@@ -19,7 +19,7 @@ Selkies-GStreamer is designed for researchers, including people in the graphical
 
 While designed for clustered or unprivileged containerized environments, Selkies-GStreamer can also be deployed in desktop computers, and any performance issue that would be problematic in cloud gaming platforms is also considered a bug.
 
-**Please read [Troubleshooting and FAQs](faq.md) first, then use [Discord](https://discord.gg/wDNGDeSW5F) or [GitHub Discussions](https://github.com/selkies-project/selkies-gstreamer/discussions) for support questions. Please only use [Issues](https://github.com/selkies-project/selkies-gstreamer/issues) for technical inquiries or bug reports.**
+**Please read [Troubleshooting and FAQs](faq.md) first, then use [Discord](https://discord.gg/wDNGDeSW5F) or [GitHub Discussions](https://github.com/selkies-project/selkies/discussions) for support questions. Please only use [Issues](https://github.com/selkies-project/selkies/issues) for technical inquiries or bug reports.**
 
 **NOTE: this project is licensed under the [Mozilla Public License, version 2.0](https://www.mozilla.org/en-US/MPL/2.0/FAQ/), which obliges to share modified code files licensed by MPL-2.0 when distributed externally, but does not apply for any larger work outside this project, which might be open-source or proprietary under any license of choice. Externally originated components outside this project may contain works licensed over more restrictive copyleft/proprietary licenses, as well as other terms of intellectual property, including but not limited to patents, which users or developers are obliged to adhere to.**
 
@@ -53,7 +53,7 @@ Therefore, we kindly, but strongly ask all software projects which are applying 
 
 (Please note that this is currently a placeholder, an upcoming publication will be available after article review.)
 
-`Kim, S., Isla, D., Hejtmánek, L., et al., Selkies-GStreamer, (2024), GitHub repository, https://github.com/selkies-project/selkies-gstreamer`
+`Kim, S., Isla, D., Hejtmánek, L., et al., Selkies-GStreamer, (2024), GitHub repository, https://github.com/selkies-project/selkies`
 
 **Maintainers of derivative open-source projects should also place this text in a clearly visible location of your project.**
 
