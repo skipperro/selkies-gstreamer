@@ -1704,7 +1704,6 @@ class DataStreamingServer:
         self._initial_target_bitrate_kbps = self.app.video_bitrate
         self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
         self._last_adjustment_time = self._last_time_client_ok = time.monotonic()
-        self._frame_backpressure_task = None
         self._active_pipeline_last_sent_frame_id = 0
         self._client_acknowledged_frame_id = -1
         self._last_client_acknowledged_frame_id_update_time = time.monotonic()
@@ -2605,125 +2604,6 @@ class DataStreamingServer:
                         await self.app.stop_websocket_audio_pipeline()
 
             data_logger.info(f"Data WS handler for {raddr} finished all cleanup.")
-
-        data_logger.info("Frame-based backpressure logic task started.")
-        try:
-            await self.client_settings_received.wait()  # Ensure initial settings are processed
-            data_logger.info(
-                "Client settings received, proceeding with backpressure loop."
-            )
-
-            while True:
-                await asyncio.sleep(self.backpressure_check_interval_s)
-
-                if not self.clients:  # No clients connected
-                    self._backpressure_send_frames_enabled = (
-                        True  # Default to sending if no clients
-                    )
-                    continue
-
-                current_server_frame_id = self._active_pipeline_last_sent_frame_id
-                last_client_acked_frame_id = self._client_acknowledged_frame_id
-
-                client_fps = self.app.framerate
-                if last_client_acked_frame_id == -1 or client_fps <= 0:
-                    # If we don't have client ACK or a valid FPS, don't engage backpressure
-                    if not self._backpressure_send_frames_enabled:
-                        data_logger.info(
-                            "Backpressure LIFTED (no client ACK yet or invalid FPS). Enabling frame sending."
-                        )
-                    self._backpressure_send_frames_enabled = True
-                    continue
-
-                server_id = current_server_frame_id
-                client_id = last_client_acked_frame_id
-
-                # Handle frame ID wrap-around with a heuristic:
-                if abs(server_id - client_id) > FRAME_ID_SUSPICIOUS_GAP_THRESHOLD:
-                    data_logger.debug(
-                        f"Frame ID wrap-around suspected or large gap (S:{server_id}, C:{client_id}). "
-                        f"Skipping backpressure decision, ensuring frames flow."
-                    )
-                    if not self._backpressure_send_frames_enabled:
-                        data_logger.info(
-                            "Backpressure LIFTED due to suspected frame ID wrap/large gap."
-                        )
-                    self._backpressure_send_frames_enabled = True
-                    self._last_client_acknowledged_frame_id_update_time = (
-                        time.monotonic()
-                    )  # Reset stall detection
-                    continue
-
-                # Calculate desync, positive if server is ahead
-                if server_id >= client_id:
-                    frame_desync = server_id - client_id
-                else:  # server_id < client_id (and not a huge gap, so server has wrapped)
-                    frame_desync = (MAX_UINT16_FRAME_ID - client_id) + server_id + 1
-
-                if (
-                    frame_desync < 0
-                ):  # Should ideally not happen with correct wrap logic
-                    frame_desync = 0
-
-                # Determine allowed desync in frames
-                allowed_desync_frames = (self.allowed_desync_ms / 1000.0) * client_fps
-
-                # Latency adjustment
-                current_rtt_ms = self._smoothed_rtt_ms
-                latency_adjustment_frames = 0
-                if current_rtt_ms > self.latency_threshold_for_adjustment_ms:
-                    # Only adjust if latency is significant enough
-                    latency_adjustment_frames = (current_rtt_ms / 1000.0) * client_fps
-
-                effective_desync_frames = frame_desync - latency_adjustment_frames
-
-                # Stall detection: if client hasn't ACKed for STALLED_CLIENT_TIMEOUT_SECONDS
-                time_since_last_ack = (
-                    time.monotonic()
-                    - self._last_client_acknowledged_frame_id_update_time
-                )
-                client_stalled = time_since_last_ack > STALLED_CLIENT_TIMEOUT_SECONDS
-
-                if client_stalled:
-                    if self._backpressure_send_frames_enabled:
-                        data_logger.warning(
-                            f"Client stall detected: No ACK update in {time_since_last_ack:.1f}s. "
-                            f"Last ACK ID: {last_client_acked_frame_id}. Forcing backpressure."
-                        )
-                    self._backpressure_send_frames_enabled = False
-                elif frame_desync > 10000:
-                    pass
-                elif effective_desync_frames > allowed_desync_frames:
-                    if self._backpressure_send_frames_enabled:  # Log only on transition
-                        data_logger.warning(
-                            f"Backpressure TRIGGERED. S:{server_id}, C:{client_id} (Desync:{frame_desync:.0f}f, "
-                            f"EffDesync:{effective_desync_frames:.1f}f > Allowed:{allowed_desync_frames:.1f}f). "
-                            f"FPS:{client_fps:.1f}, RTT:{current_rtt_ms:.1f}ms. Disabling frame sending."
-                        )
-                    self._backpressure_send_frames_enabled = False
-                else:  # Client is caught up or within tolerance
-                    if (
-                        not self._backpressure_send_frames_enabled
-                    ):  # Log only on transition
-                        data_logger.info(
-                            f"Backpressure LIFTED. S:{server_id}, C:{client_id} (Desync:{frame_desync:.0f}f, "
-                            f"EffDesync:{effective_desync_frames:.1f}f <= Allowed:{allowed_desync_frames:.1f}f). "
-                            f"Enabling frame sending."
-                        )
-                    self._backpressure_send_frames_enabled = True
-
-        except asyncio.CancelledError:
-            data_logger.info("Frame-based backpressure logic task cancelled.")
-        except Exception as e:
-            data_logger.error(
-                f"Error in frame-based backpressure logic: {e}", exc_info=True
-            )
-            self._backpressure_send_frames_enabled = True  # Fail safe: enable sending
-        finally:
-            data_logger.info("Frame-based backpressure logic task finished.")
-            self._backpressure_send_frames_enabled = (
-                True  # Ensure frames flow if task stops
-            )
 
     async def run_server(self):
         self.stop_server = asyncio.Future()
