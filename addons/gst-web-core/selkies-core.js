@@ -69,6 +69,7 @@ let manualHeight = null;
 let originalWindowResizeHandler = null;
 let handleResizeUI_globalRef = null;
 let vncStripeDecoders = {};
+let wakeLockSentinel = null;
 let currentEncoderMode = 'x264enc-stiped';
 let useCssScaling = false;
 
@@ -180,6 +181,7 @@ let videoElement;
 let audioElement;
 let playButtonElement;
 let overlayInput;
+let currentServerCursor = 'auto';
 
 const getIntParam = (key, default_value) => {
   const prefixedKey = `${appName}_${key}`;
@@ -260,6 +262,7 @@ const playStream = () => {
   showStart = false;
   if (playButtonElement) playButtonElement.classList.add('hidden');
   if (statusDisplayElement) statusDisplayElement.classList.add('hidden');
+  requestWakeLock();
   console.log("playStream called in WebSocket mode - UI elements hidden.");
 };
 
@@ -881,12 +884,35 @@ async function handleFileInputChange(event) {
   }
 }
 
-const startStream = () => {
-  if (streamStarted) return;
-  streamStarted = true;
-  if (statusDisplayElement) statusDisplayElement.classList.add('hidden');
-  if (playButtonElement) playButtonElement.classList.add('hidden');
-  console.log("Stream started (UI elements hidden).");
+/**
+ * Requests a screen wake lock to prevent the device from sleeping.
+ */
+const requestWakeLock = async () => {
+  if (wakeLockSentinel !== null) return;
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      wakeLockSentinel.addEventListener('release', () => {
+        console.log('Screen Wake Lock was released automatically.');
+        wakeLockSentinel = null;
+      });
+      console.log('Screen Wake Lock is active.');
+    } catch (err) {
+      console.error(`Could not acquire Wake Lock: ${err.name}, ${err.message}`);
+    }
+  } else {
+    console.warn('Wake Lock API is not supported by this browser.');
+  }
+};
+
+/**
+ * Releases the screen wake lock if it is currently active.
+ */
+const releaseWakeLock = async () => {
+  if (wakeLockSentinel !== null) {
+    await wakeLockSentinel.release();
+    wakeLockSentinel = null;
+  }
 };
 
 function debounce(func, delay) {
@@ -898,6 +924,14 @@ function debounce(func, delay) {
     }, delay);
   };
 }
+
+const startStream = () => {
+  if (streamStarted) return;
+  streamStarted = true;
+  if (statusDisplayElement) statusDisplayElement.classList.add('hidden');
+  if (playButtonElement) playButtonElement.classList.add('hidden');
+  console.log("Stream started (UI elements hidden).");
+};
 
 const initializeInput = () => {
   if (inputInitialized) {
@@ -971,6 +1005,50 @@ const initializeInput = () => {
 
   inputInstance.attach();
 
+  if (overlayInput) {
+    const isTouchDevice = navigator.maxTouchPoints > 0;
+    const handlePointerDown = (e) => {
+      requestWakeLock();
+      if (e.pointerType === 'touch') {
+        overlayInput.style.cursor = 'none';
+        return;
+      }
+      overlayInput.style.cursor = currentServerCursor;
+      if (isTouchDevice) {
+        e.preventDefault();
+      }
+      if (isTouchDevice && window.webrtcInput && typeof window.webrtcInput._onMouseDown === 'function') {
+        window.webrtcInput._onMouseDown(e);
+      }
+    };
+    const handlePointerUp = (e) => {
+      if (e.pointerType === 'touch') {
+        return;
+      }
+      if (isTouchDevice) {
+        e.preventDefault();
+        if (window.webrtcInput && typeof window.webrtcInput._onMouseUp === 'function') {
+          window.webrtcInput._onMouseUp(e);
+        }
+      }
+    };
+    const handlePointerMove = (e) => {
+      if (e.pointerType === 'mouse') {
+        if (overlayInput.style.cursor !== currentServerCursor) {
+          overlayInput.style.cursor = currentServerCursor;
+        }
+      }
+    };
+    overlayInput.removeEventListener('pointerdown', handlePointerDown);
+    overlayInput.removeEventListener('pointerup', handlePointerUp);
+    overlayInput.removeEventListener('pointermove', handlePointerMove);
+    overlayInput.addEventListener('pointerdown', handlePointerDown);
+    overlayInput.addEventListener('pointerup', handlePointerUp);
+    overlayInput.addEventListener('pointermove', handlePointerMove, { passive: true });
+    overlayInput.addEventListener('contextmenu', e => {
+      e.preventDefault();
+    });
+  }
 
   const handleResizeUI = () => {
     if (isSharedMode) {
@@ -1829,7 +1907,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   });
 
-  document.addEventListener('visibilitychange', () => {
+  document.addEventListener('visibilitychange', async () => {
     if (isSharedMode) {
       console.log("Shared mode: Tab visibility changed, stream control bypassed. Current state:", document.hidden ? "hidden" : "visible");
       return;
@@ -1855,6 +1933,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (websocket && websocket.readyState === WebSocket.OPEN) {
         if (!isVideoPipelineActive) {
           websocket.send('START_VIDEO');
+          // Re-acquire the wake lock if it was released.
+          if (wakeLockSentinel === null) {
+            console.log('Tab is visible again, re-acquiring Wake Lock.');
+            await requestWakeLock();
+          }
           isVideoPipelineActive = true;
           window.postMessage({ type: 'pipelineStatusUpdate', video: true }, window.location.origin);
           console.log("Tab visible: Sent START_VIDEO. Clearing canvas visually. Server will send PIPELINE_RESETTING for full state reset.");
@@ -2870,13 +2953,19 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
           try {
             const cursorData = JSON.parse(event.data.substring(7));
             if (parseInt(cursorData.handle, 10) === 0) {
-              if(overlayInput) overlayInput.style.cursor = 'auto';
-              return;
+              currentServerCursor = 'auto';
+            } else {
+              let cursorStyle = `url('data:image/png;base64,${cursorData.curdata}')`;
+              if (cursorData.hotspot) {
+                cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
+              } else {
+                cursorStyle += ', auto';
+              }
+              currentServerCursor = cursorStyle;
             }
-            let cursorStyle = `url('data:image/png;base64,${cursorData.curdata}')`;
-            if (cursorData.hotspot) cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
-            else cursorStyle += ', auto';
-            if(overlayInput) overlayInput.style.cursor = cursorStyle;
+            if (overlayInput && overlayInput.style.cursor !== 'none') {
+              overlayInput.style.cursor = currentServerCursor;
+            }
           } catch (e) {
             console.error('Error parsing cursor data:', e);
           }
@@ -2959,6 +3048,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
       clearInterval(metricsIntervalId);
       metricsIntervalId = null;
     }
+    releaseWakeLock();
     if (isSharedMode) {
         console.error("Shared mode: WebSocket error. Resetting shared state to 'error'.");
         sharedClientState = 'error';
@@ -2976,6 +3066,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
       clearInterval(metricsIntervalId);
       metricsIntervalId = null;
     }
+    releaseWakeLock();
     cleanupVideoBuffer();
     cleanupJpegStripeQueue();
     if (decoder && decoder.state !== "closed") decoder.close();
@@ -3290,6 +3381,7 @@ function cleanup() {
     clearInterval(metricsIntervalId);
     metricsIntervalId = null;
   }
+  releaseWakeLock();
   if (window.isCleaningUp) return;
   window.isCleaningUp = true;
   console.log("Cleanup: Starting cleanup process...");

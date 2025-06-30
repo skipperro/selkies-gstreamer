@@ -718,12 +718,34 @@ function Sidebar({ isOpen }) {
 
   const toggleAppsModal = () => setIsAppsModalOpen(!isAppsModalOpen);
   const toggleFilesModal = () => setIsFilesModalOpen(!isFilesModalOpen);
-  const handleShowVirtualKeyboard = () => {
-    window.postMessage({ type: "showVirtualKeyboard" }, window.location.origin);
-    console.log(
-      "Dashboard: Sending postMessage: { type: 'showVirtualKeyboard' }"
-    );
-  };
+  const handleShowVirtualKeyboard = useCallback(() => {
+    console.log("Dashboard: Directly handling virtual keyboard pop.");
+    const kbdAssistInput = document.getElementById('keyboard-input-assist');
+    const mainInteractionOverlay = document.getElementById('overlayInput');
+    if (kbdAssistInput) {
+      kbdAssistInput.value = '';
+      kbdAssistInput.focus();
+      console.log("Focused #keyboard-input-assist element to pop keyboard.");
+      if (mainInteractionOverlay) {
+        mainInteractionOverlay.addEventListener(
+          "touchstart",
+          () => {
+            if (document.activeElement === kbdAssistInput) {
+              kbdAssistInput.blur();
+              console.log("Blurred #keyboard-input-assist on main overlay touch.");
+            }
+          }, {
+            once: true,
+            passive: true
+          }
+        );
+      } else {
+         console.warn("Could not find #overlayInput to attach blur listener.");
+      }
+    } else {
+      console.error("Could not find #keyboard-input-assist element to focus.");
+    }
+  }, []);
 
   const populateAudioDevices = useCallback(async () => {
     console.log("Dashboard: Attempting to populate audio devices...");
