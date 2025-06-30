@@ -1990,11 +1990,10 @@ export class Input {
             this.listeners_context.push(addListener(this.element, 'touchend', this._handleTouchEvent, this, false));
             this.listeners_context.push(addListener(this.element, 'touchmove', this._handleTouchEvent, this, false));
             this.listeners_context.push(addListener(this.element, 'touchcancel', this._handleTouchEvent, this, false));
-        } else {
-            this.listeners_context.push(addListener(this.element, 'mousemove', this._mouseButtonMovement, this));
-            this.listeners_context.push(addListener(this.element, 'mousedown', this._mouseButtonMovement, this));
-            this.listeners_context.push(addListener(window, 'mouseup', this._mouseButtonMovement, this));
         }
+        this.listeners_context.push(addListener(this.element, 'mousemove', this._mouseButtonMovement, this));
+        this.listeners_context.push(addListener(this.element, 'mousedown', this._mouseButtonMovement, this));
+        this.listeners_context.push(addListener(window, 'mouseup', this._mouseButtonMovement, this));
 
         if (document.fullscreenElement === this.element.parentElement) {
              if (document.pointerLockElement !== this.element) {

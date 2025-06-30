@@ -1006,45 +1006,23 @@ const initializeInput = () => {
   inputInstance.attach();
 
   if (overlayInput) {
-    const isTouchDevice = navigator.maxTouchPoints > 0;
     const handlePointerDown = (e) => {
       requestWakeLock();
-      if (e.pointerType === 'touch') {
+      if (e.pointerType === 'touch' && (e.width > 1 || e.height > 1)) {
         overlayInput.style.cursor = 'none';
-        return;
-      }
-      overlayInput.style.cursor = currentServerCursor;
-      if (isTouchDevice) {
-        e.preventDefault();
-      }
-      if (isTouchDevice && window.webrtcInput && typeof window.webrtcInput._onMouseDown === 'function') {
-        window.webrtcInput._onMouseDown(e);
-      }
-    };
-    const handlePointerUp = (e) => {
-      if (e.pointerType === 'touch') {
-        return;
-      }
-      if (isTouchDevice) {
-        e.preventDefault();
-        if (window.webrtcInput && typeof window.webrtcInput._onMouseUp === 'function') {
-          window.webrtcInput._onMouseUp(e);
-        }
+      } else {
+        overlayInput.style.cursor = currentServerCursor;
       }
     };
     const handlePointerMove = (e) => {
-      if (e.pointerType === 'mouse') {
-        if (overlayInput.style.cursor !== currentServerCursor) {
-          overlayInput.style.cursor = currentServerCursor;
-        }
+      if (overlayInput.style.cursor !== currentServerCursor) {
+        overlayInput.style.cursor = currentServerCursor;
       }
     };
     overlayInput.removeEventListener('pointerdown', handlePointerDown);
-    overlayInput.removeEventListener('pointerup', handlePointerUp);
     overlayInput.removeEventListener('pointermove', handlePointerMove);
     overlayInput.addEventListener('pointerdown', handlePointerDown);
-    overlayInput.addEventListener('pointerup', handlePointerUp);
-    overlayInput.addEventListener('pointermove', handlePointerMove, { passive: true });
+    overlayInput.addEventListener('pointermove', handlePointerMove);
     overlayInput.addEventListener('contextmenu', e => {
       e.preventDefault();
     });
