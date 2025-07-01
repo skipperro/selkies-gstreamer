@@ -2925,7 +2925,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
              console.log(`Non-shared mode: Received stream_resolution (ignored for control): ${obj.width}x${obj.height}`);
            }
           } else {
-            console.warn(`Unexpected JSON message type: ${obj.type}`, obj);
+            console.warn(`Unexpected JSON message type:`, obj.type, obj);
           }
         } else if (event.data.startsWith('cursor,')) {
           try {
