@@ -496,6 +496,7 @@ function Sidebar({ isOpen }) {
   const [langCode, setLangCode] = useState("en");
   const [translator, setTranslator] = useState(() => getTranslator("en"));
   const [isMobile, setIsMobile] = useState(false);
+  const [hasDetectedTouch, setHasDetectedTouch] = useState(false);
 
   const [isTouchGamepadActive, setIsTouchGamepadActive] = useState(false);
   const [isTouchGamepadSetup, setIsTouchGamepadSetup] = useState(false);
@@ -542,6 +543,17 @@ function Sidebar({ isOpen }) {
         !!mobileCheck
       );
     }
+  }, []);
+
+  useEffect(() => {
+    const detectTouch = () => {
+      console.log("Dashboard: First touch detected. Enabling touch-specific features.");
+      setHasDetectedTouch(true);
+    };
+    window.addEventListener('touchstart', detectTouch, { once: true, passive: true });
+    return () => {
+      window.removeEventListener('touchstart', detectTouch, { once: true, passive: true });
+    };
   }, []);
 
   const { t, raw } = translator;
@@ -723,6 +735,7 @@ function Sidebar({ isOpen }) {
     const kbdAssistInput = document.getElementById('keyboard-input-assist');
     const mainInteractionOverlay = document.getElementById('overlayInput');
     if (kbdAssistInput) {
+      kbdAssistInput.removeAttribute('aria-hidden');
       kbdAssistInput.value = '';
       kbdAssistInput.focus();
       console.log("Focused #keyboard-input-assist element to pop keyboard.");
@@ -733,6 +746,7 @@ function Sidebar({ isOpen }) {
             if (document.activeElement === kbdAssistInput) {
               kbdAssistInput.blur();
               console.log("Blurred #keyboard-input-assist on main overlay touch.");
+              kbdAssistInput.setAttribute('aria-hidden', 'true');
             }
           }, {
             once: true,
@@ -2846,7 +2860,7 @@ function Sidebar({ isOpen }) {
         <AppsModal isOpen={isAppsModalOpen} onClose={toggleAppsModal} t={t} />
       )}
 
-      {isMobile && (
+      {(isMobile || hasDetectedTouch) && (
         <button
           className={`virtual-keyboard-button theme-${theme} allow-native-input`}
           onClick={handleShowVirtualKeyboard}
