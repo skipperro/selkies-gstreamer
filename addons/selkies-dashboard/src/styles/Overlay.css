@@ -145,6 +145,11 @@
     background-color: rgba(128, 128, 128, 0.2);
 }
 
+.header-action-button.active {
+    background-color: var(--sidebar-header-color);
+    color: var(--button-text);
+}
+
 .header-action-button svg {
     fill: currentColor;
     display: block;

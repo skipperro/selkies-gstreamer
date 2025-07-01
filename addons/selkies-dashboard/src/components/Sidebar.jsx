@@ -167,6 +167,13 @@ const GamepadIcon = () => (
     <path d="M15 7.5V2H9v5.5l3 3 3-3zM7.5 9H2v6h5.5l3-3-3-3zM9 16.5V22h6v-5.5l-3-3-3 3zM16.5 9l-3 3 3 3H22V9h-5.5z" />
   </svg>
 );
+const TrackpadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+    <path d="M3 5C3 3.89543 3.89543 3 5 3H19C20.1046 3 21 3.89543 21 5V15H3V5Z"/>
+    <path d="M3 16H11V21H5C3.89543 21 3 20.1046 3 19V16Z"/>
+    <path d="M13 16H21V19C21 20.1046 20.1046 21 19 21H13V16Z"/>
+  </svg>
+);
 const FullscreenIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
     <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
@@ -496,6 +503,7 @@ function Sidebar({ isOpen }) {
   const [langCode, setLangCode] = useState("en");
   const [translator, setTranslator] = useState(() => getTranslator("en"));
   const [isMobile, setIsMobile] = useState(false);
+  const [isTrackpadModeActive, setIsTrackpadModeActive] = useState(false);
   const [hasDetectedTouch, setHasDetectedTouch] = useState(false);
 
   const [isTouchGamepadActive, setIsTouchGamepadActive] = useState(false);
@@ -1162,6 +1170,14 @@ function Sidebar({ isOpen }) {
     }
   }, [isTouchGamepadActive, isTouchGamepadSetup]);
 
+  const handleToggleTrackpadMode = useCallback(() => {
+    const newActiveState = !isTrackpadModeActive;
+    setIsTrackpadModeActive(newActiveState);
+    const message = newActiveState ? "touchinput:trackpad" : "touchinput:touch";
+    console.log(`Dashboard: Toggling trackpad mode. Sending: ${message}`);
+    window.postMessage({ type: message }, window.location.origin);
+  }, [isTrackpadModeActive]);
+
   const getTooltipContent = useCallback(
     (itemKey) => {
       const memNA = t("sections.stats.tooltipMemoryNA");
@@ -1711,13 +1727,23 @@ function Sidebar({ isOpen }) {
             >
               <FullscreenIcon />
             </button>
-            <button
-              className="header-action-button gaming-mode-button"
-              onClick={handleFullscreenRequest}
-              title={t("gamingModeTitle", "Gaming Mode")}
-            >
-              <GamingModeIcon />
-            </button>
+            {(isMobile || hasDetectedTouch) ? (
+              <button
+                className={`header-action-button trackpad-mode-button ${isTrackpadModeActive ? "active" : ""}`}
+                onClick={handleToggleTrackpadMode}
+                title={t("trackpadModeTitle", "Trackpad Mode")}
+              >
+                <TrackpadIcon />
+              </button>
+            ) : (
+              <button
+                className="header-action-button gaming-mode-button"
+                onClick={handleFullscreenRequest}
+                title={t("gamingModeTitle", "Gaming Mode")}
+              >
+                <GamingModeIcon />
+              </button>
+            )}
           </div>
         </div>
 

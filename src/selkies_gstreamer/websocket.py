@@ -642,6 +642,7 @@ class DataStreamingServer:
         self.h264_crf = self._initial_x264_crf
         self._initial_h264_fullcolor = self.cli_args.h264_fullcolor
         self.h264_fullcolor = self._initial_h264_fullcolor
+        self.capture_cursor = False
         self._initial_jpeg_use_paint_over_quality = True
         self._current_jpeg_use_paint_over_quality = True
         self._system_monitor_task_ws = None
@@ -1133,6 +1134,7 @@ class DataStreamingServer:
             cs.damage_block_duration = 20
             cs.h264_fullcolor = self.h264_fullcolor
             cs.h264_fullframe = enable_fullframe
+            cs.capture_cursor = self.capture_cursor
             
             cs.capture_x = 0
             cs.capture_y = 0
@@ -1262,6 +1264,7 @@ class DataStreamingServer:
             cs.capture_y = 0
             cs.target_fps = fps
             cs.output_mode = 0
+            cs.capture_cursor = self.capture_cursor
             cs.jpeg_quality = quality
             cs.paint_over_jpeg_quality = 95
             cs.use_paint_over_quality = self._current_jpeg_use_paint_over_quality
@@ -2192,6 +2195,33 @@ class DataStreamingServer:
                                 data_logger.warning(f"SET_H264_FULLCOLOR received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
                         except IndexError:
                             data_logger.warning(f"Malformed SET_H264_FULLCOLOR message: {message}")
+
+                    elif message.startswith("SET_NATIVE_CURSOR_RENDERING,"):
+                        await self.client_settings_received.wait()
+                        try:
+                            new_capture_cursor_str = message.split(",")[1].strip().lower()
+                            new_capture_cursor = new_capture_cursor_str in ("1", "true")
+                            data_logger.info(f"Received SET_NATIVE_CURSOR_RENDERING: {new_capture_cursor}")
+
+                            if self.capture_cursor != new_capture_cursor:
+                                self.capture_cursor = new_capture_cursor
+
+                                current_enc = getattr(self.app, "encoder", None)
+                                is_pixelflux_h264_active = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg" and self.is_x264_striped_capturing)
+                                is_jpeg_active = (current_enc == "jpeg" and self.is_jpeg_capturing)
+
+                                if is_jpeg_active or is_pixelflux_h264_active:
+                                    data_logger.info(f"Restarting {current_enc} pipeline for cursor rendering change to {self.capture_cursor}")
+                                    if is_jpeg_active:
+                                        await self._stop_jpeg_pipeline()
+                                        await self._start_jpeg_pipeline()
+                                    if is_pixelflux_h264_active:
+                                        await self._stop_x264_striped_pipeline()
+                                        await self._start_x264_striped_pipeline()
+                            else:
+                                data_logger.info(f"SET_NATIVE_CURSOR_RENDERING: Value {new_capture_cursor} is already set.")
+                        except (IndexError, ValueError) as e:
+                            data_logger.warning(f"Malformed SET_NATIVE_CURSOR_RENDERING message: {message}, error: {e}")
 
                     elif message.startswith("s,"):
                         await self.client_settings_received.wait() # Ensure initial settings are processed if needed

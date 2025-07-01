@@ -1534,6 +1534,22 @@ function receiveMessage(event) {
         console.warn("Received 'command' message without a string value:", message);
       }
       break;
+    case 'touchinput:trackpad':
+      if (window.webrtcInput && typeof window.webrtcInput.setTrackpadMode === 'function') {
+        window.webrtcInput.setTrackpadMode(true);
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+          websocket.send("SET_NATIVE_CURSOR_RENDERING,1");
+        }
+      }
+      break;
+    case 'touchinput:touch':
+      if (window.webrtcInput && typeof window.webrtcInput.setTrackpadMode === 'function') {
+        window.webrtcInput.setTrackpadMode(false);
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+          websocket.send("SET_NATIVE_CURSOR_RENDERING,0");
+        }
+      }
+      break;
     default:
       break;
   }

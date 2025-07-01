@@ -1167,6 +1167,14 @@ export class Input {
         this._MAX_SCROLL_MAGNITUDE = 8;
         this._TAP_THRESHOLD_DISTANCE_SQ = 10*10;
         this._TAP_MAX_DURATION = 250;
+        this._trackpadMode = false;
+        this._trackpadTouchIdentifier = null;
+        this._lastTrackpadX = 0;
+        this._lastTrackpadY = 0;
+        this._trackpadTapStartTime = 0;
+        this._trackpadTapStartX = 0;
+        this._trackpadTapStartY = 0;
+        this._trackpadLongPressFired = false;
     }
 
     static _nextGuacID = 0;
@@ -1513,6 +1521,99 @@ export class Input {
         this.send(toks.join(","));
     }
 
+    _handleTrackpadEvent(event) {
+        if (this._targetHasClass(event.target, WHITELIST_CLASS)) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const type = event.type;
+        const now = Date.now();
+        const LONG_PRESS_DURATION = 750;
+        const LONG_PRESS_MAX_MOVEMENT_SQ = 15 * 15;
+
+        if (type === 'touchstart') {
+            if (this._trackpadTouchIdentifier !== null) return;
+
+            const touch = event.changedTouches[0];
+            this._trackpadTouchIdentifier = touch.identifier;
+            this._trackpadLongPressFired = false;
+
+            this._lastTrackpadX = touch.clientX;
+            this._lastTrackpadY = touch.clientY;
+
+            this._trackpadTapStartTime = now;
+            this._trackpadTapStartX = touch.clientX;
+            this._trackpadTapStartY = touch.clientY;
+
+            if (this._longPressTimer) clearTimeout(this._longPressTimer);
+            this._longPressTimer = setTimeout(() => {
+                const dx = this._lastTrackpadX - this._trackpadTapStartX;
+                const dy = this._lastTrackpadY - this._trackpadTapStartY;
+                const distSq = dx * dx + dy * dy;
+
+                if (this._trackpadTouchIdentifier !== null && distSq < LONG_PRESS_MAX_MOVEMENT_SQ) {
+                    this._trackpadLongPressFired = true;
+                    this.buttonMask |= (1 << 2); // Right-click button mask
+                    this.send(`m2,0,0,${this.buttonMask},0`);
+                    setTimeout(() => {
+                        this.buttonMask &= ~(1 << 2);
+                        this.send(`m2,0,0,${this.buttonMask},0`);
+                    }, 50);
+                }
+                this._longPressTimer = null;
+            }, LONG_PRESS_DURATION);
+
+        } else if (type === 'touchmove') {
+            if (this._trackpadTouchIdentifier === null) return;
+
+            for (let i = 0; i < event.changedTouches.length; i++) {
+                const touch = event.changedTouches[i];
+                if (touch.identifier === this._trackpadTouchIdentifier) {
+                    const deltaX = touch.clientX - this._lastTrackpadX;
+                    const deltaY = touch.clientY - this._lastTrackpadY;
+
+                    const dpr_for_input_coords = this.useCssScaling ? 1 : (window.devicePixelRatio || 1);
+                    const remoteDeltaX = deltaX * dpr_for_input_coords;
+                    const remoteDeltaY = deltaY * dpr_for_input_coords;
+
+                    if (Math.abs(remoteDeltaX) >= 0.5 || Math.abs(remoteDeltaY) >= 0.5) {
+                        this.send(`m2,${Math.round(remoteDeltaX)},${Math.round(remoteDeltaY)},${this.buttonMask},0`);
+                    }
+
+                    this._lastTrackpadX = touch.clientX;
+                    this._lastTrackpadY = touch.clientY;
+
+                    const dx = this._lastTrackpadX - this._trackpadTapStartX;
+                    const dy = this._lastTrackpadY - this._trackpadTapStartY;
+                    if (dx * dx + dy * dy >= LONG_PRESS_MAX_MOVEMENT_SQ) {
+                        if (this._longPressTimer) clearTimeout(this._longPressTimer);
+                        this._longPressTimer = null;
+                    }
+                    break;
+                }
+            }
+        } else if (type === 'touchend' || type === 'touchcancel') {
+            const endedTouch = Array.from(event.changedTouches).find(t => t.identifier === this._trackpadTouchIdentifier);
+            if (endedTouch) {
+                if (this._longPressTimer) clearTimeout(this._longPressTimer);
+                this._longPressTimer = null;
+
+                const duration = now - this._trackpadTapStartTime;
+                const dx = endedTouch.clientX - this._trackpadTapStartX;
+                const dy = endedTouch.clientY - this._trackpadTapStartY;
+                const distSq = dx * dx + dy * dy;
+
+                if (!this._trackpadLongPressFired && duration < this._TAP_MAX_DURATION && distSq < this._TAP_THRESHOLD_DISTANCE_SQ) {
+                    this.buttonMask |= 1; this.send(`m2,0,0,${this.buttonMask},0`);
+                    setTimeout(() => { this.buttonMask &= ~1; this.send(`m2,0,0,${this.buttonMask},0`); }, 50);
+                }
+
+                this._trackpadTouchIdentifier = null;
+                this._trackpadLongPressFired = false;
+            }
+        }
+    }
+
     _calculateTouchCoordinates(touchPoint) {
         const client_dpr = window.devicePixelRatio || 1; // Actual client DPR
         const dpr_for_input_coords = this.useCssScaling ? 1 : client_dpr;
@@ -1555,7 +1656,20 @@ export class Input {
         this.send(toks.join(","));
     }
 
+    setTrackpadMode(enabled) {
+        this._trackpadMode = !!enabled;
+        console.log(`Input: Trackpad mode ${this._trackpadMode ? 'enabled' : 'disabled'}.`);
+        // Reset state on mode change
+        this._trackpadTouchIdentifier = null;
+        this._lastTrackpadX = 0;
+        this._lastTrackpadY = 0;
+    }
+
     _handleTouchEvent(event) {
+        if (this._trackpadMode) {
+            this._handleTrackpadEvent(event);
+            return;
+        }
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) return;
         if (!this._guac_markEvent(event)) return;
         const type = event.type;
