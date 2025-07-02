@@ -16,6 +16,7 @@ const en = {
     toggleThemeTitle: "Toggle Theme",
     fullscreenTitle: "Enter Fullscreen",
     gamingModeTitle: "Gaming Mode",
+    trackpadModeTitle: "Trackpad Mode",
     buttons: {
         videoStreamEnableTitle: "Enable Video Stream",
         videoStreamDisableTitle: "Disable Video Stream",
@@ -177,6 +178,7 @@ const es = {
     toggleThemeTitle: "Cambiar Tema",
     fullscreenTitle: "Entrar en Pantalla Completa",
     gamingModeTitle: "Modo Juego",
+    trackpadModeTitle: "Modo Trackpad",
     buttons: {
         videoStreamEnableTitle: "Activar Stream de Vídeo",
         videoStreamDisableTitle: "Desactivar Stream de Vídeo",
@@ -338,6 +340,7 @@ const zh = {
     toggleThemeTitle: "切换主题",
     fullscreenTitle: "进入全屏",
     gamingModeTitle: "游戏模式",
+    trackpadModeTitle: "触控板模式",
     buttons: {
         videoStreamEnableTitle: "启用视频流",
         videoStreamDisableTitle: "禁用视频流",
@@ -499,6 +502,7 @@ const hi = {
     toggleThemeTitle: "थीम बदलें",
     fullscreenTitle: "फुलस्क्रीन दर्ज करें",
     gamingModeTitle: "गेमिंग मोड",
+    trackpadModeTitle: "ट्रैकपैड मोड",
     buttons: {
         videoStreamEnableTitle: "वीडियो स्ट्रीम सक्षम करें",
         videoStreamDisableTitle: "वीडियो स्ट्रीम अक्षम करें",
@@ -660,6 +664,7 @@ const pt = {
     toggleThemeTitle: "Alternar Tema",
     fullscreenTitle: "Entrar em Tela Cheia",
     gamingModeTitle: "Modo de Jogo",
+    trackpadModeTitle: "Modo Trackpad",
     buttons: {
         videoStreamEnableTitle: "Ativar Stream de Vídeo",
         videoStreamDisableTitle: "Desativar Stream de Vídeo",
@@ -821,6 +826,7 @@ const fr = {
     toggleThemeTitle: "Changer de thème",
     fullscreenTitle: "Passer en plein écran",
     gamingModeTitle: "Mode Jeu",
+    trackpadModeTitle: "Mode Trackpad",
     buttons: {
         videoStreamEnableTitle: "Activer le flux vidéo",
         videoStreamDisableTitle: "Désactiver le flux vidéo",
@@ -982,6 +988,7 @@ const ru = {
     toggleThemeTitle: "Переключить тему",
     fullscreenTitle: "Войти в полноэкранный режим",
     gamingModeTitle: "Игровой режим",
+    trackpadModeTitle: "Режим трекпада",
     buttons: {
         videoStreamEnableTitle: "Включить видеопоток",
         videoStreamDisableTitle: "Отключить видеопоток",
@@ -1143,6 +1150,7 @@ const de = {
     toggleThemeTitle: "Theme wechseln",
     fullscreenTitle: "Vollbildmodus aktivieren",
     gamingModeTitle: "Gaming-Modus",
+    trackpadModeTitle: "Trackpad-Modus",
     buttons: {
         videoStreamEnableTitle: "Videostream aktivieren",
         videoStreamDisableTitle: "Videostream deaktivieren",
@@ -1304,6 +1312,7 @@ const tr = {
     toggleThemeTitle: "Temayı Değiştir",
     fullscreenTitle: "Tam Ekrana Gir",
     gamingModeTitle: "Oyun Modu",
+    trackpadModeTitle: "Dokunmatik Yüzey Modu",
     buttons: {
         videoStreamEnableTitle: "Video Akışını Etkinleştir",
         videoStreamDisableTitle: "Video Akışını Devre Dışı Bırak",
@@ -1465,6 +1474,7 @@ const it = {
     toggleThemeTitle: "Cambia Tema",
     fullscreenTitle: "Entra in Schermo Intero",
     gamingModeTitle: "Modalità Gioco",
+    trackpadModeTitle: "Modalità Trackpad",
     buttons: {
         videoStreamEnableTitle: "Abilita Stream Video",
         videoStreamDisableTitle: "Disabilita Stream Video",
@@ -1626,6 +1636,7 @@ const nl = {
     toggleThemeTitle: "Thema wisselen",
     fullscreenTitle: "Volledig scherm openen",
     gamingModeTitle: "Gaming Modus",
+    trackpadModeTitle: "Trackpad-modus",
     buttons: {
         videoStreamEnableTitle: "Videostream inschakelen",
         videoStreamDisableTitle: "Videostream uitschakelen",
@@ -1787,6 +1798,7 @@ const ar = {
     toggleThemeTitle: "تبديل السمة",
     fullscreenTitle: "الدخول في وضع ملء الشاشة",
     gamingModeTitle: "وضع الألعاب",
+    trackpadModeTitle: "وضع لوحة اللمس",
     buttons: {
         videoStreamEnableTitle: "تمكين بث الفيديو",
         videoStreamDisableTitle: "تعطيل بث الفيديو",
@@ -1948,6 +1960,7 @@ const ko = {
     toggleThemeTitle: "테마 전환",
     fullscreenTitle: "전체 화면 시작",
     gamingModeTitle: "게임 모드",
+    trackpadModeTitle: "트랙패드 모드",
     buttons: {
         videoStreamEnableTitle: "비디오 스트림 활성화",
         videoStreamDisableTitle: "비디오 스트림 비활성화",
@@ -2109,6 +2122,7 @@ const ja = {
     toggleThemeTitle: "テーマを切り替え",
     fullscreenTitle: "フルスクリーンに入る",
     gamingModeTitle: "ゲームモード",
+    trackpadModeTitle: "トラックパッドモード",
     buttons: {
         videoStreamEnableTitle: "ビデオストリームを有効にする",
         videoStreamDisableTitle: "ビデオストリームを無効にする",
@@ -2270,6 +2284,7 @@ const vi = {
     toggleThemeTitle: "Chuyển đổi Chủ đề",
     fullscreenTitle: "Vào Toàn màn hình",
     gamingModeTitle: "Chế độ Chơi game",
+    trackpadModeTitle: "Chế độ Bàn di chuột",
     buttons: {
         videoStreamEnableTitle: "Bật Luồng Video",
         videoStreamDisableTitle: "Tắt Luồng Video",
@@ -2431,6 +2446,7 @@ const th = {
     toggleThemeTitle: "สลับธีม",
     fullscreenTitle: "เข้าสู่โหมดเต็มหน้าจอ",
     gamingModeTitle: "โหมดเกมมิ่ง",
+    trackpadModeTitle: "โหมดแทร็คแพด",
     buttons: {
         videoStreamEnableTitle: "เปิดใช้งานสตรีมวิดีโอ",
         videoStreamDisableTitle: "ปิดใช้งานสตรีมวิดีโอ",
@@ -2592,6 +2608,7 @@ const fil = {
     toggleThemeTitle: "I-toggle ang Tema",
     fullscreenTitle: "Pumasok sa Fullscreen",
     gamingModeTitle: "Gaming Mode",
+    trackpadModeTitle: "Modo ng Trackpad",
     buttons: {
         videoStreamEnableTitle: "Paganahin ang Video Stream",
         videoStreamDisableTitle: "Huwag paganahin ang Video Stream",
@@ -2753,6 +2770,7 @@ const da = {
     toggleThemeTitle: "Skift tema",
     fullscreenTitle: "Start Fuldskærm",
     gamingModeTitle: "Spiltilstand",
+    trackpadModeTitle: "Trackpad-tilstand",
     buttons: {
         videoStreamEnableTitle: "Aktiver videostream",
         videoStreamDisableTitle: "Deaktiver videostream",
