@@ -72,6 +72,7 @@ let vncStripeDecoders = {};
 let wakeLockSentinel = null;
 let currentEncoderMode = 'x264enc-stiped';
 let useCssScaling = false;
+let trackpadMode = false;
 
 let detectedSharedModeType = null;
 let playerInputTargetIndex = 0; // Default for primary player
@@ -239,6 +240,7 @@ scaleLocallyManual = getBoolParam('scaleLocallyManual', true);
 isManualResolutionMode = getBoolParam('isManualResolutionMode', false);
 isGamepadEnabled = getBoolParam('isGamepadEnabled', true);
 useCssScaling = getBoolParam('useCssScaling', false);
+trackpadMode = getBoolParam('trackpadMode', false);
 
 if (isSharedMode) {
     manualWidth = 1280; // Default stream dimensions for shared mode before first frame
@@ -1536,6 +1538,8 @@ function receiveMessage(event) {
       break;
     case 'touchinput:trackpad':
       if (window.webrtcInput && typeof window.webrtcInput.setTrackpadMode === 'function') {
+        trackpadMode = true;
+        setBoolParam('trackpadMode', true);
         window.webrtcInput.setTrackpadMode(true);
         if (websocket && websocket.readyState === WebSocket.OPEN) {
           websocket.send("SET_NATIVE_CURSOR_RENDERING,1");
@@ -1544,6 +1548,8 @@ function receiveMessage(event) {
       break;
     case 'touchinput:touch':
       if (window.webrtcInput && typeof window.webrtcInput.setTrackpadMode === 'function') {
+        trackpadMode = false;
+        setBoolParam('trackpadMode', false);
         window.webrtcInput.setTrackpadMode(false);
         if (websocket && websocket.readyState === WebSocket.OPEN) {
           websocket.send("SET_NATIVE_CURSOR_RENDERING,0");
@@ -2379,7 +2385,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
     status = 'connected_waiting_mode';
     loadingText = 'Connection established. Waiting for server mode...';
     updateStatusDisplay();
-
+    window.postMessage({ type: 'trackpadModeUpdate', enabled: trackpadMode }, window.location.origin);
     if (!isSharedMode) {
       const settingsPrefix = `${appName}_`;
       const settingsToSend = {};
@@ -2820,6 +2826,16 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
         });
 
         initializeInput(); // Sets up canvas based on logical dimensions, handles DPR
+
+        if (window.webrtcInput && typeof window.webrtcInput.setTrackpadMode === 'function') {
+          window.webrtcInput.setTrackpadMode(trackpadMode);
+        }
+        if (trackpadMode) {
+          if (websocket && websocket.readyState === WebSocket.OPEN) {
+            websocket.send("SET_NATIVE_CURSOR_RENDERING,1");
+            console.log('[websockets] Applied trackpad mode on initialization.');
+          }
+        }
 
         if (playButtonElement) playButtonElement.classList.add('hidden');
         if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');

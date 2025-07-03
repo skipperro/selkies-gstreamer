@@ -1495,6 +1495,10 @@ function Sidebar({ isOpen }) {
                 : encoderOptions;
             setDynamicEncoderOptions(newEncoderOptions);
           }
+        } else if (message.type === "trackpadModeUpdate") {
+          if (typeof message.enabled === 'boolean') {
+            setIsTrackpadModeActive(message.enabled);
+          }
         } else if (message.type === "initialClientSettings") {
           console.log(
             "Dashboard: Received initialClientSettings",

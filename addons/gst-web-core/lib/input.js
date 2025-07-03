@@ -1168,13 +1168,12 @@ export class Input {
         this._TAP_THRESHOLD_DISTANCE_SQ = 10*10;
         this._TAP_MAX_DURATION = 250;
         this._trackpadMode = false;
-        this._trackpadTouchIdentifier = null;
-        this._lastTrackpadX = 0;
-        this._lastTrackpadY = 0;
-        this._trackpadTapStartTime = 0;
-        this._trackpadTapStartX = 0;
-        this._trackpadTapStartY = 0;
-        this._trackpadLongPressFired = false;
+        this._trackpadTouches = new Map();
+        this._trackpadLastTapTime = 0;
+        this._trackpadIsDragging = false;
+        this._trackpadTapTimeout = null;
+        this._trackpadLastScrollCentroid = null;
+        this._touchScrollLastCentroid = null;
     }
 
     static _nextGuacID = 0;
@@ -1501,7 +1500,6 @@ export class Input {
                 if (this.m) {
                     let logicalX_on_element = this._clientToServerX(event.clientX);
                     let logicalY_on_element = this._clientToServerY(event.clientY);
-                    // logicalX_on_element is logical. Scale to physical if not useCssScaling.
                     this.x = Math.round(logicalX_on_element * dpr_for_input_coords);
                     this.y = Math.round(logicalY_on_element * dpr_for_input_coords);
                 } else {
@@ -1526,90 +1524,135 @@ export class Input {
         event.preventDefault();
         event.stopPropagation();
 
-        const type = event.type;
         const now = Date.now();
-        const LONG_PRESS_DURATION = 750;
-        const LONG_PRESS_MAX_MOVEMENT_SQ = 15 * 15;
+        const dpr = this.useCssScaling ? 1 : (window.devicePixelRatio || 1);
+        const TAP_AND_HOLD_THRESHOLD = 300;
+
+        const type = event.type;
+        const changedTouches = event.changedTouches;
 
         if (type === 'touchstart') {
-            if (this._trackpadTouchIdentifier !== null) return;
+            if (this._trackpadTapTimeout) {
+                clearTimeout(this._trackpadTapTimeout);
+                this._trackpadTapTimeout = null;
+            }
 
-            const touch = event.changedTouches[0];
-            this._trackpadTouchIdentifier = touch.identifier;
-            this._trackpadLongPressFired = false;
+            for (const touch of changedTouches) {
+                this._trackpadTouches.set(touch.identifier, {
+                    id: touch.identifier,
+                    startX: touch.clientX, startY: touch.clientY,
+                    lastX: touch.clientX, lastY: touch.clientY,
+                    moved: false
+                });
+            }
 
-            this._lastTrackpadX = touch.clientX;
-            this._lastTrackpadY = touch.clientY;
+            const touchCount = this._trackpadTouches.size;
 
-            this._trackpadTapStartTime = now;
-            this._trackpadTapStartX = touch.clientX;
-            this._trackpadTapStartY = touch.clientY;
-
-            if (this._longPressTimer) clearTimeout(this._longPressTimer);
-            this._longPressTimer = setTimeout(() => {
-                const dx = this._lastTrackpadX - this._trackpadTapStartX;
-                const dy = this._lastTrackpadY - this._trackpadTapStartY;
-                const distSq = dx * dx + dy * dy;
-
-                if (this._trackpadTouchIdentifier !== null && distSq < LONG_PRESS_MAX_MOVEMENT_SQ) {
-                    this._trackpadLongPressFired = true;
-                    this.buttonMask |= (1 << 2); // Right-click button mask
+            if (touchCount === 1) {
+                if ((now - this._trackpadLastTapTime) < TAP_AND_HOLD_THRESHOLD) {
+                    this._trackpadGestureMode = 'dragging';
+                    this.buttonMask |= 1;
                     this.send(`m2,0,0,${this.buttonMask},0`);
-                    setTimeout(() => {
-                        this.buttonMask &= ~(1 << 2);
-                        this.send(`m2,0,0,${this.buttonMask},0`);
-                    }, 50);
-                }
-                this._longPressTimer = null;
-            }, LONG_PRESS_DURATION);
-
-        } else if (type === 'touchmove') {
-            if (this._trackpadTouchIdentifier === null) return;
-
-            for (let i = 0; i < event.changedTouches.length; i++) {
-                const touch = event.changedTouches[i];
-                if (touch.identifier === this._trackpadTouchIdentifier) {
-                    const deltaX = touch.clientX - this._lastTrackpadX;
-                    const deltaY = touch.clientY - this._lastTrackpadY;
-
-                    const dpr_for_input_coords = this.useCssScaling ? 1 : (window.devicePixelRatio || 1);
-                    const remoteDeltaX = deltaX * dpr_for_input_coords;
-                    const remoteDeltaY = deltaY * dpr_for_input_coords;
-
-                    if (Math.abs(remoteDeltaX) >= 0.5 || Math.abs(remoteDeltaY) >= 0.5) {
-                        this.send(`m2,${Math.round(remoteDeltaX)},${Math.round(remoteDeltaY)},${this.buttonMask},0`);
-                    }
-
-                    this._lastTrackpadX = touch.clientX;
-                    this._lastTrackpadY = touch.clientY;
-
-                    const dx = this._lastTrackpadX - this._trackpadTapStartX;
-                    const dy = this._lastTrackpadY - this._trackpadTapStartY;
-                    if (dx * dx + dy * dy >= LONG_PRESS_MAX_MOVEMENT_SQ) {
-                        if (this._longPressTimer) clearTimeout(this._longPressTimer);
-                        this._longPressTimer = null;
-                    }
-                    break;
+                    this._trackpadLastTapTime = 0;
+                } else {
+                    this._trackpadGestureMode = 'moving';
                 }
             }
-        } else if (type === 'touchend' || type === 'touchcancel') {
-            const endedTouch = Array.from(event.changedTouches).find(t => t.identifier === this._trackpadTouchIdentifier);
-            if (endedTouch) {
-                if (this._longPressTimer) clearTimeout(this._longPressTimer);
-                this._longPressTimer = null;
+            else if (touchCount === 2) {
+                this._trackpadGestureMode = 'scrolling';
+                this._trackpadLastTapTime = 0;
+                const touches = Array.from(this._trackpadTouches.values());
+                this._trackpadLastScrollCentroid = {
+                    x: (touches[0].lastX + touches[1].lastX) / 2,
+                    y: (touches[0].lastY + touches[1].lastY) / 2
+                };
+            }
+        }
+        else if (type === 'touchmove') {
+            let hasAnyFingerMovedBeyondThreshold = false;
+            for (const touch of this._trackpadTouches.values()) {
+                if (!touch.moved) {
+                    const currentTouch = Array.from(changedTouches).find(t => t.identifier === touch.id) || touch;
+                    if (currentTouch) {
+                        const dx = currentTouch.clientX - touch.startX;
+                        const dy = currentTouch.clientY - touch.startY;
+                        if (dx * dx + dy * dy > this._TAP_THRESHOLD_DISTANCE_SQ) {
+                            touch.moved = true;
+                        }
+                    }
+                }
+                if (touch.moved) {
+                    hasAnyFingerMovedBeyondThreshold = true;
+                }
+            }
 
-                const duration = now - this._trackpadTapStartTime;
-                const dx = endedTouch.clientX - this._trackpadTapStartX;
-                const dy = endedTouch.clientY - this._trackpadTapStartY;
-                const distSq = dx * dx + dy * dy;
+            if (hasAnyFingerMovedBeyondThreshold) {
+                this._trackpadLastTapTime = 0;
+            }
 
-                if (!this._trackpadLongPressFired && duration < this._TAP_MAX_DURATION && distSq < this._TAP_THRESHOLD_DISTANCE_SQ) {
+            if (this._trackpadGestureMode === 'moving' || this._trackpadGestureMode === 'dragging') {
+                const touchData = this._trackpadTouches.values().next().value;
+                if (touchData) {
+                    const changedTouch = Array.from(changedTouches).find(t => t.identifier === touchData.id);
+                    if (changedTouch) {
+                        const deltaX = (changedTouch.clientX - touchData.lastX) * dpr;
+                        const deltaY = (changedTouch.clientY - touchData.lastY) * dpr;
+                        if (Math.abs(deltaX) >= 0.5 || Math.abs(deltaY) >= 0.5) {
+                            this.send(`m2,${Math.round(deltaX)},${Math.round(deltaY)},${this.buttonMask},0`);
+                        }
+                        touchData.lastX = changedTouch.clientX;
+                        touchData.lastY = changedTouch.clientY;
+                    }
+                }
+            } else if (this._trackpadGestureMode === 'scrolling') {
+                const touches = Array.from(this._trackpadTouches.values());
+                if (touches.length === 2) {
+                    for (const changed of changedTouches) {
+                        const data = this._trackpadTouches.get(changed.identifier);
+                        if (data) { data.lastX = changed.clientX; data.lastY = changed.clientY; }
+                    }
+                    const curr_avg_x = (touches[0].lastX + touches[1].lastX) / 2;
+                    const curr_avg_y = (touches[0].lastY + touches[1].lastY) / 2;
+                    if (this._trackpadLastScrollCentroid) {
+                        const deltaX = curr_avg_x - this._trackpadLastScrollCentroid.x;
+                        const deltaY = curr_avg_y - this._trackpadLastScrollCentroid.y;
+                        const SCROLL_THRESHOLD = 2;
+                        if (Math.abs(deltaY) > SCROLL_THRESHOLD) this._triggerMouseWheel(deltaY < 0 ? 'up' : 'down', 1);
+                        if (Math.abs(deltaX) > SCROLL_THRESHOLD) this._triggerHorizontalMouseWheel(deltaX < 0 ? 'left' : 'right', 1);
+                    }
+                    this._trackpadLastScrollCentroid = { x: curr_avg_x, y: curr_avg_y };
+                }
+            }
+        }
+        else if (type === 'touchend' || type === 'touchcancel') {
+            const touchCountBeforeEnd = this._trackpadTouches.size;
+            const wasTap = !Array.from(this._trackpadTouches.values()).some(t => t.moved);
+
+            if (touchCountBeforeEnd === 2 && wasTap) {
+                this.buttonMask |= (1 << 2); this.send(`m2,0,0,${this.buttonMask},0`);
+                setTimeout(() => { this.buttonMask &= ~(1 << 2); this.send(`m2,0,0,${this.buttonMask},0`); }, 50);
+                this._trackpadGestureMode = 'completed';
+                this._trackpadLastTapTime = 0;
+            }
+            else if (touchCountBeforeEnd === 1 && wasTap && this._trackpadGestureMode !== 'completed' && this._trackpadGestureMode !== 'dragging') {
+                this._trackpadLastTapTime = now;
+                this._trackpadTapTimeout = setTimeout(() => {
                     this.buttonMask |= 1; this.send(`m2,0,0,${this.buttonMask},0`);
                     setTimeout(() => { this.buttonMask &= ~1; this.send(`m2,0,0,${this.buttonMask},0`); }, 50);
-                }
+                }, 200);
+            }
 
-                this._trackpadTouchIdentifier = null;
-                this._trackpadLongPressFired = false;
+            for (const touch of changedTouches) {
+                this._trackpadTouches.delete(touch.identifier);
+            }
+
+            if (this._trackpadTouches.size === 0) {
+                if (this._trackpadGestureMode === 'dragging') {
+                    this.buttonMask &= ~1;
+                    this.send(`m2,0,0,${this.buttonMask},0`);
+                }
+                this._trackpadGestureMode = null;
+                this._trackpadLastScrollCentroid = null;
             }
         }
     }
@@ -1676,6 +1719,7 @@ export class Input {
         const now = Date.now();
         let preventDefault = false;
         const LONG_PRESS_DURATION = 750;
+        let activeTouchMoved = false;
         const LONG_PRESS_MAX_MOVEMENT_SQ = 15 * 15;
         const TAP_THRESHOLD_DISTANCE_SQ_LOGICAL = this._TAP_THRESHOLD_DISTANCE_SQ;
 
@@ -1736,6 +1780,11 @@ export class Input {
                 if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
                 if (touchCount === 2) {
                     this._isTwoFingerGesture = true; this._activeTouchIdentifier = null;
+                    const touches = Array.from(this._activeTouches.values());
+                    this._touchScrollLastCentroid = {
+                        x: (touches[0].currentX + touches[1].currentX) / 2,
+                        y: (touches[0].currentY + touches[1].currentY) / 2
+                    };
                     if ((this.buttonMask & 1) === 1) this.buttonMask &= ~1;
                     preventDefault = true;
                 } else if (touchCount > 2) {
@@ -1747,7 +1796,6 @@ export class Input {
                 if (touchCount !== 1) { this._longPressTouchIdentifier = null; }
             }
         } else if (type === 'touchmove') {
-            let activeTouchMoved = false;
             for (let i = 0; i < event.changedTouches.length; i++) {
                 const touch = event.changedTouches[i];
                 const touchData = this._activeTouches.get(touch.identifier);
@@ -1761,32 +1809,43 @@ export class Input {
                             clearTimeout(this._longPressTimer); this._longPressTimer = null;
                         }
                     }
-                    if (this._isTwoFingerGesture) {
-                        preventDefault = true;
-                    } else if (this._activeTouches.size === 1) {
-                        if (this._activeTouchIdentifier === touch.identifier) {
-                            this._calculateTouchCoordinates(touch); this._sendMouseState();
-                            activeTouchMoved = true; preventDefault = true;
-                        } else if (this._activeTouchIdentifier === null && !touchData.longPressCompleted) {
-                            const dx = touchData.currentX - touchData.startX;
-                            const dy = touchData.currentY - touchData.startY;
-                            const distSq = dx * dx + dy * dy;
-                            if (distSq >= TAP_THRESHOLD_DISTANCE_SQ_LOGICAL) {
-                                if (this._longPressTimer && touch.identifier === this._longPressTouchIdentifier) {
-                                    clearTimeout(this._longPressTimer); this._longPressTimer = null;
-                                }
-                                this._activeTouchIdentifier = touch.identifier;
-                                this._calculateTouchCoordinates(touch);
-                                this.buttonMask |= 1; this._sendMouseState();
-                                activeTouchMoved = true; preventDefault = true;
-                            } else { preventDefault = true; }
-                        }
-                    }
                 }
             }
-            if (this._activeTouchIdentifier !== null && !activeTouchMoved && this._activeTouches.size > 0) {
-                 preventDefault = true;
+        }
+        if (this._isTwoFingerGesture && this._activeTouches.size === 2) {
+            preventDefault = true;
+            const touches = Array.from(this._activeTouches.values());
+            const curr_avg_x = (touches[0].currentX + touches[1].currentX) / 2;
+            const curr_avg_y = (touches[0].currentY + touches[1].currentY) / 2;
+            if (this._touchScrollLastCentroid) {
+                const deltaX = curr_avg_x - this._touchScrollLastCentroid.x;
+                const deltaY = curr_avg_y - this._touchScrollLastCentroid.y;
+                const SCROLL_THRESHOLD = 2;
+                if (Math.abs(deltaY) > SCROLL_THRESHOLD) this._triggerMouseWheel(deltaY < 0 ? 'up' : 'down', 1);
+                if (Math.abs(deltaX) > SCROLL_THRESHOLD) this._triggerHorizontalMouseWheel(deltaX < 0 ? 'left' : 'right', 1);
             }
+            this._touchScrollLastCentroid = { x: curr_avg_x, y: curr_avg_y };
+        } else if (this._activeTouches.size === 1) {
+            const [singleTouchID] = this._activeTouches.keys();
+            const touchData = this._activeTouches.get(singleTouchID);
+            if (this._activeTouchIdentifier === singleTouchID) {
+                this._calculateTouchCoordinates({ clientX: touchData.currentX, clientY: touchData.currentY }); this._sendMouseState();
+                activeTouchMoved = true; preventDefault = true;
+            } else if (this._activeTouchIdentifier === null && !touchData.longPressCompleted) {
+                const dx = touchData.currentX - touchData.startX;
+                const dy = touchData.currentY - touchData.startY;
+                const distSq = dx * dx + dy * dy;
+                if (distSq >= TAP_THRESHOLD_DISTANCE_SQ_LOGICAL) {
+                    if (this._longPressTimer && singleTouchID === this._longPressTouchIdentifier) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
+                    this._activeTouchIdentifier = singleTouchID;
+                    this._calculateTouchCoordinates({ clientX: touchData.currentX, clientY: touchData.currentY });
+                    this.buttonMask |= 1; this._sendMouseState();
+                    activeTouchMoved = true; preventDefault = true;
+                } else { preventDefault = true; }
+            }
+        }
+        if (this._activeTouchIdentifier !== null && !activeTouchMoved && this._activeTouches.size > 0) {
+             preventDefault = true;
         } else if (type === 'touchend' || type === 'touchcancel') {
             const endedTouches = event.changedTouches;
             let swipeDetected = false;
@@ -1809,16 +1868,7 @@ export class Input {
                 const deltaY = startData.currentY - startData.startY;
                 const deltaDistSq = deltaX * deltaX + deltaY * deltaY;
                 if (this._isTwoFingerGesture) {
-                    if (duration < this._MAX_SWIPE_DURATION && Math.abs(deltaY) > this._MIN_SWIPE_DISTANCE && Math.abs(deltaY) > Math.abs(deltaX) * this._VERTICAL_SWIPE_RATIO) {
-                        const direction = (deltaY < 0) ? 'up' : 'down';
-                        const magnitude = Math.max(1, Math.min(this._MAX_SCROLL_MAGNITUDE, Math.ceil(Math.abs(deltaY) / this._SCROLL_PIXELS_PER_TICK)));
-                        this._calculateTouchCoordinates(endedTouch);
-                        this._triggerMouseWheel(direction, magnitude);
-                        swipeDetected = true; preventDefault = true;
-                        this._activeTouches.clear(); this._isTwoFingerGesture = false; this._activeTouchIdentifier = null; this.buttonMask &= ~1;
-                        if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; this._longPressTouchIdentifier = null; }
-                        break;
-                    }
+                    // Scrolling is handled externally
                 } else if (!swipeDetected && this._activeTouchIdentifier === null && this._activeTouches.size === 1 && this._activeTouches.has(identifier)) {
                     if (duration < this._TAP_MAX_DURATION && deltaDistSq < TAP_THRESHOLD_DISTANCE_SQ_LOGICAL) {
                         this._calculateTouchCoordinates(endedTouch); this.buttonMask |= 1; this._sendMouseState(); preventDefault = true;
@@ -1833,9 +1883,13 @@ export class Input {
             }
             if (!swipeDetected) {
                 const remainingTouchCount = this._activeTouches.size;
-                if (this._isTwoFingerGesture && remainingTouchCount < 2) this._isTwoFingerGesture = false;
+                if (this._isTwoFingerGesture && remainingTouchCount < 2) {
+                    this._isTwoFingerGesture = false;
+                    this._touchScrollLastCentroid = null;
+                }
                 if (remainingTouchCount === 0) {
                     this._activeTouchIdentifier = null; this._isTwoFingerGesture = false;
+                    this._touchScrollLastCentroid = null;
                     if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
                     this._longPressTouchIdentifier = null;
                 }
@@ -1884,18 +1938,41 @@ export class Input {
 
     _triggerMouseWheel(direction, magnitude) {
         magnitude = Math.max(1, Math.round(magnitude));
-        const mtype = (document.pointerLockElement === this.element ? "m2" : "m");
         const button = (direction === 'up') ? 4 : 3;
         const mask = 1 << button;
-        let toks;
+
+        // In trackpad mode, scroll is a relative event with NO pointer motion.
+        // We must always use m2 with a 0,0 delta to prevent the cursor from moving.
+        const mtype = "m2";
+        const x = 0;
+        const y = 0;
+
         this.buttonMask |= mask;
-        toks = [ mtype, this.x, this.y, this.buttonMask, magnitude ];
-        this.send(toks.join(","));
+        this.send([ mtype, x, y, this.buttonMask, magnitude ].join(","));
         setTimeout(() => {
              if ((this.buttonMask & mask) !== 0) {
                 this.buttonMask &= ~mask;
-                toks = [ mtype, this.x, this.y, this.buttonMask, magnitude ];
-                this.send(toks.join(","));
+                this.send([ mtype, x, y, this.buttonMask, magnitude ].join(","));
+             }
+        }, 10);
+    }
+
+    _triggerHorizontalMouseWheel(direction, magnitude) {
+        magnitude = Math.max(1, Math.round(magnitude));
+        const button = (direction === 'left') ? 6 : 7;
+        const mask = 1 << button;
+
+        // In trackpad mode, scroll is a relative event with NO pointer motion.
+        const mtype = "m2";
+        const x = 0;
+        const y = 0;
+
+        this.buttonMask |= mask;
+        this.send([ mtype, x, y, this.buttonMask, magnitude ].join(","));
+        setTimeout(() => {
+             if ((this.buttonMask & mask) !== 0) {
+                this.buttonMask &= ~mask;
+                this.send([ mtype, x, y, this.buttonMask, magnitude ].join(","));
              }
         }, 10);
     }
