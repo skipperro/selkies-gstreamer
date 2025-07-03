@@ -2074,6 +2074,10 @@ class DataStreamingServer:
                         await self.client_settings_received.wait() 
                         raddr = websocket.remote_address
                         target_res_str = message[2:]
+                        current_res_str = f"{self.app.display_width}x{self.app.display_height}"
+                        if target_res_str == current_res_str:
+                            data_logger.info(f"Received redundant resize request for {target_res_str}. No action taken.")
+                            continue
                         data_logger.info(f"Received resize request: {target_res_str} from {raddr}")
 
                         video_was_running = False
