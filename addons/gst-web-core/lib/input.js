@@ -1617,7 +1617,7 @@ export class Input {
                         const deltaX = curr_avg_x - this._trackpadLastScrollCentroid.x;
                         const deltaY = curr_avg_y - this._trackpadLastScrollCentroid.y;
                         const SCROLL_THRESHOLD = 2;
-                        if (Math.abs(deltaY) > SCROLL_THRESHOLD) this._triggerMouseWheel(deltaY < 0 ? 'up' : 'down', 1);
+                        if (Math.abs(deltaY) > SCROLL_THRESHOLD) this._triggerMouseWheel(deltaY < 0 ? 'down' : 'up', 1);
                         if (Math.abs(deltaX) > SCROLL_THRESHOLD) this._triggerHorizontalMouseWheel(deltaX < 0 ? 'left' : 'right', 1);
                     }
                     this._trackpadLastScrollCentroid = { x: curr_avg_x, y: curr_avg_y };
@@ -1821,7 +1821,7 @@ export class Input {
                 const deltaX = curr_avg_x - this._touchScrollLastCentroid.x;
                 const deltaY = curr_avg_y - this._touchScrollLastCentroid.y;
                 const SCROLL_THRESHOLD = 2;
-                if (Math.abs(deltaY) > SCROLL_THRESHOLD) this._triggerMouseWheel(deltaY < 0 ? 'up' : 'down', 1);
+                if (Math.abs(deltaY) > SCROLL_THRESHOLD) this._triggerMouseWheel(deltaY < 0 ? 'down' : 'up', 1);
                 if (Math.abs(deltaX) > SCROLL_THRESHOLD) this._triggerHorizontalMouseWheel(deltaX < 0 ? 'left' : 'right', 1);
             }
             this._touchScrollLastCentroid = { x: curr_avg_x, y: curr_avg_y };
