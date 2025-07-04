@@ -996,46 +996,30 @@ class WebRTCInput:
     def send_x11_keypress(self, keysym, down=True):
         map_entry = X11_KEYSYM_MAP.get(keysym)
         action_taken_by_map = False
+        xdotool_arg = None
 
         if map_entry:
-            char_to_type = map_entry.get('char')
+            xdotool_arg = map_entry.get('xkey_name') or map_entry.get('char')
+            
             xkey_name = map_entry.get('xkey_name')
-
             if xkey_name and xkey_name in self.SHORTCUT_MODIFIER_XKEY_NAMES:
                 if down:
                     self.active_shortcut_modifiers.add(xkey_name)
                 else:
                     self.active_shortcut_modifiers.discard(xkey_name)
-            
-            if down:
-                if char_to_type is not None:
-                    if not self.active_shortcut_modifiers:
-                        command = ["xdotool", "type", "--clearmodifiers", char_to_type]
-                        try:
-                            subprocess.run(command, check=True, timeout=0.5, capture_output=True, text=True)
-                            action_taken_by_map = True
-                        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError, Exception):
-                            pass 
-                elif xkey_name is not None:
-                    command = ["xdotool", "keydown", xkey_name]
-                    try:
-                        subprocess.run(command, check=True, timeout=0.5, capture_output=True, text=True)
-                        action_taken_by_map = True
-                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError, Exception):
-                        pass
-            else: # Keyup event
-                if char_to_type is not None and not xkey_name: 
-                    pass
-                elif xkey_name is not None:
-                    command = ["xdotool", "keyup", xkey_name]
-                    try:
-                        subprocess.run(command, check=True, timeout=0.5, capture_output=True, text=True)
-                        action_taken_by_map = True
-                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError, Exception):
-                        pass
-            
-            if action_taken_by_map:
-                return
+
+        if xdotool_arg:
+            action = "keydown" if down else "keyup"
+            command = ["xdotool", action, xdotool_arg]
+            try:
+                subprocess.run(command, check=True, timeout=0.5, capture_output=True, text=True)
+                action_taken_by_map = True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+                logger_webrtc_input.warning(f"xdotool command '{' '.join(command)}' failed: {e}")
+                action_taken_by_map = False
+        
+        if action_taken_by_map:
+            return
 
         original_keysym_for_fallback = keysym
         pynput_keysym_to_try = keysym
@@ -1044,11 +1028,11 @@ class WebRTCInput:
             normalized_keysym = keysym & 0x00FFFFFF
             pynput_keysym_to_try = normalized_keysym
 
-        if pynput_keysym_to_try == 60: # XK_grave
+        if pynput_keysym_to_try == 60:
             try:
                 if self.keyboard and hasattr(self.keyboard, '_display') and self.keyboard._display:
                     if self.keyboard._display.keysym_to_keycode(pynput_keysym_to_try) == 94:
-                        pynput_keysym_to_try = 44 # XK_comma
+                        pynput_keysym_to_try = 44
             except Exception:
                 pass
         
@@ -1061,7 +1045,7 @@ class WebRTCInput:
                 self.keyboard.press(pynput_key)
             else:
                 self.keyboard.release(pynput_key)
-        except Exception: # Catches pynput errors (Xlib.error.XError, ValueError, etc.)
+        except Exception:
             self._xdotool_fallback(original_keysym_for_fallback, down)
 
     def _xdotool_fallback(self, keysym_number, down=True):
