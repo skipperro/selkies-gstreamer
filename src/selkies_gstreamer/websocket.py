@@ -2758,7 +2758,7 @@ async def main():
     )
     parser.add_argument(
         "--dri_node",
-        default=os.environ.get("DRINODE", ""),
+        default=os.environ.get("DRI_NODE", ""),
         type=str,
         help="Path to the DRI render node (e.g., /dev/dri/renderD128) for VA-API.",
     )
