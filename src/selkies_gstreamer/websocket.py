@@ -834,6 +834,58 @@ class DataStreamingServer:
         data_logger.info("pcmflux audio pipeline stopped.")
         return True
 
+    async def shutdown_pipelines(self):
+        """
+        A unified, deadlock-proof method to stop all capture pipelines.
+        This should be the ONLY way pipelines are programmatically stopped.
+        """
+        logger.info("Initiating unified pipeline shutdown...")
+        self.is_jpeg_capturing = False
+        self.is_x264_striped_capturing = False
+        self.is_pcmflux_capturing = False
+        await asyncio.sleep(0.01)
+        stop_tasks = []
+        loop = asyncio.get_running_loop()
+        if self.jpeg_capture_module:
+            logger.info("Queueing JPEG capture stop.")
+            stop_tasks.append(
+                loop.run_in_executor(None, self.jpeg_capture_module.stop_capture)
+            )
+        
+        if self.x264_striped_capture_module:
+            logger.info("Queueing x264-striped capture stop.")
+            stop_tasks.append(
+                loop.run_in_executor(None, self.x264_striped_capture_module.stop_capture)
+            )
+
+        if self.pcmflux_module:
+            logger.info("Queueing pcmflux audio capture stop.")
+            stop_tasks.append(
+                loop.run_in_executor(None, self.pcmflux_module.stop_capture)
+            )
+        if stop_tasks:
+            logger.info(f"Waiting for {len(stop_tasks)} capture module(s) to stop...")
+            await asyncio.gather(*stop_tasks, return_exceptions=True)
+            logger.info("All C++ capture modules have stopped.")
+        if self.jpeg_capture_module:
+            del self.jpeg_capture_module
+            self.jpeg_capture_module = None
+        if self.x264_striped_capture_module:
+            del self.x264_striped_capture_module
+            self.x264_striped_capture_module = None
+        if self.pcmflux_module:
+            del self.pcmflux_module
+            self.pcmflux_module = None
+        await self._ensure_backpressure_task_is_stopped()
+        if self.pcmflux_send_task and not self.pcmflux_send_task.done():
+            self.pcmflux_send_task.cancel()
+            try:
+                await self.pcmflux_send_task
+            except asyncio.CancelledError:
+                pass
+        
+        logger.info("Unified pipeline shutdown complete.")
+
     async def _ensure_backpressure_task_is_stopped(self):
         """
         Safely cancels and cleans up the _frame_backpressure_task.
@@ -2473,15 +2525,7 @@ class DataStreamingServer:
             # 5. Stop global pipelines if the flag is set
             if stop_pipelines_flag:
                 data_logger.info(f"Stopping global pipelines due to last client disconnect ({raddr}).")
-                current_encoder_on_cleanup = str(self.app.encoder if self.app else "Unknown")
-
-                if self.is_jpeg_capturing and current_encoder_on_cleanup == "jpeg":
-                    await self._stop_jpeg_pipeline()
-                if self.is_x264_striped_capturing and (current_encoder_on_cleanup in PIXELFLUX_VIDEO_ENCODERS and current_encoder_on_cleanup != "jpeg"):
-                    await self._stop_x264_striped_pipeline()
-                
-                if self.is_pcmflux_capturing:
-                    await self._stop_pcmflux_pipeline()
+                await self.shutdown_pipelines()
 
             data_logger.info(f"Data WS handler for {raddr} finished all cleanup.")
 
@@ -2559,12 +2603,7 @@ class DataStreamingServer:
             except Exception as e_close:
                 data_logger.error(f"Error on server.wait_closed(): {e_close}")
         self.server = None
-        if self.is_jpeg_capturing:
-            await self._stop_jpeg_pipeline()
-        if self.is_x264_striped_capturing:
-            await self._stop_x264_striped_pipeline()
-        if self.is_pcmflux_capturing:
-            await self._stop_pcmflux_pipeline()
+        await self.shutdown_pipelines()
         data_logger.info(f"Data WS on port {self.port} stop procedure complete.")
 
 
