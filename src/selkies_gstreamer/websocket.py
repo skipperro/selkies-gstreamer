@@ -385,6 +385,28 @@ def generate_xrandr_gtf_modeline(res_wh_str):
         )
     return match.group(1).strip(), match.group(2)
 
+def parse_dri_node_to_index(node_path: str) -> int:
+    """
+    Parses a DRI node path like '/dev/dri/renderD128' into an index (e.g., 0).
+    Returns -1 if the path is invalid, malformed, or empty, which
+    disables VA-API usage in the capture module.
+    """
+    if not node_path or not node_path.startswith('/dev/dri/renderD'):
+        if node_path:
+             logger.warning(f"Invalid DRI node format: '{node_path}'. Expected '/dev/dri/renderD...'. VA-API will be disabled.")
+        return -1
+    try:
+        num_str = node_path.split('renderD')[-1]
+        render_num = int(num_str)
+        index = render_num - 128
+        if index < 0:
+            logger.warning(f"Parsed DRI node number {render_num} from '{node_path}' is less than 128. Invalid.")
+            return -1
+        logger.info(f"Parsed DRI node '{node_path}' to index {index}.")
+        return index
+    except (ValueError, IndexError) as e:
+        logger.warning(f"Could not parse DRI node path '{node_path}': {e}. VA-API will be disabled.")
+        return -1
 
 def _run_xrdb(dpi_value, logger):
     """Helper function to apply DPI via xrdb."""
@@ -1045,7 +1067,7 @@ class DataStreamingServer:
                 "Cannot broadcast stream resolution: SelkiesStreamingApp instance or its display dimensions not available."
             )
 
-    def _x264_striped_stripe_callback(self, result_ptr, user_data):
+    def _x264_striped_stripe_callback(self, result_obj, user_data):
         current_async_loop = (
             self.jpeg_capture_loop
         )  # This is the loop for DataStreamingServer
@@ -1053,42 +1075,29 @@ class DataStreamingServer:
             not self.is_x264_striped_capturing
             or not current_async_loop
             or not self.clients  # Check self.clients instead of self.data_ws for broadcast
-            or not result_ptr
+            or not result_obj or not result_obj.data
         ):
             return
-        result = result_ptr.contents
-        if result.data and result.size > 0:
-            try:
-                payload_from_cpp = bytes(
-                    ctypes.cast(
-                        result.data, ctypes.POINTER(ctypes.c_ubyte * result.size)
-                    ).contents
+        try:
+            payload_from_cpp = result_obj.data
+            clients_ref = self.clients
+            data_to_send_ref = payload_from_cpp
+            frame_id_ref = result_obj.frame_id
+
+            async def _broadcast_x264_data_and_update_frame_id():
+                self.update_last_sent_frame_id(
+                    frame_id_ref
+                )  # Update server's knowledge of sent frame ID
+                if not self._backpressure_send_frames_enabled:
+                    return
+                if clients_ref:
+                    websockets.broadcast(clients_ref, data_to_send_ref)
+            if current_async_loop and current_async_loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    _broadcast_x264_data_and_update_frame_id(), current_async_loop
                 )
-
-                clients_ref = self.clients
-                data_to_send_ref = payload_from_cpp
-                frame_id_ref = result.frame_id
-
-                async def _broadcast_x264_data_and_update_frame_id():
-                    # self here refers to DataStreamingServer instance
-                    self.update_last_sent_frame_id(
-                        frame_id_ref
-                    )  # Update server's knowledge of sent frame ID
-
-                    if not self._backpressure_send_frames_enabled:
-                        # data_logger.debug("Backpressure active, discarding x264-striped frame.") # Can be too noisy
-                        return
-
-                    if clients_ref:
-                        websockets.broadcast(clients_ref, data_to_send_ref)
-
-                if current_async_loop and current_async_loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        _broadcast_x264_data_and_update_frame_id(), current_async_loop
-                    )
-            except Exception as e:
-                data_logger.error(f"X264-Striped callback error: {e}", exc_info=True)
-
+        except Exception as e:
+            data_logger.error(f"X264-Striped callback error: {e}", exc_info=True)
     async def _start_x264_striped_pipeline(self):
         if not X11_CAPTURE_AVAILABLE:
             data_logger.error("Cannot start x264-striped/x264enc: pixelflux library not available.")
@@ -1135,7 +1144,11 @@ class DataStreamingServer:
             cs.h264_fullcolor = self.h264_fullcolor
             cs.h264_fullframe = enable_fullframe
             cs.capture_cursor = self.capture_cursor
-            
+            if self.cli_args.dri_node:
+                cs.vaapi_render_node_index = parse_dri_node_to_index(self.cli_args.dri_node)
+            else:
+                cs.vaapi_render_node_index = -1
+ 
             cs.capture_x = 0
             cs.capture_y = 0
 
@@ -1196,7 +1209,7 @@ class DataStreamingServer:
             await self._ensure_backpressure_task_is_stopped()
         return True
 
-    def _jpeg_stripe_callback(self, result_ptr, user_data):
+    def _jpeg_stripe_callback(self, result_obj, user_data):
         current_async_loop = (
             self.jpeg_capture_loop
         )  # This is the loop for DataStreamingServer
@@ -1204,40 +1217,29 @@ class DataStreamingServer:
             not self.is_jpeg_capturing
             or not current_async_loop
             or not self.clients  # Check self.clients for broadcast
-            or not result_ptr
+            or not result_obj or not result_obj.data
         ):
             return
-        result = result_ptr.contents
-        if result.data and result.size > 0:
-            try:
-                jpeg_buffer = bytes(
-                    ctypes.cast(
-                        result.data, ctypes.POINTER(ctypes.c_ubyte * result.size)
-                    ).contents
+        try:
+            jpeg_buffer = result_obj.data
+            clients_ref = self.clients
+            prefixed_jpeg_data = b"\x03\x00" + jpeg_buffer
+            frame_id_ref = result_obj.frame_id
+            async def _broadcast_jpeg_data_and_update_frame_id():
+                # self here refers to DataStreamingServer instance
+                self.update_last_sent_frame_id(
+                    frame_id_ref
+                )  # Update server's knowledge of sent frame ID
+                if not self._backpressure_send_frames_enabled:
+                    return
+                if clients_ref:
+                    websockets.broadcast(clients_ref, prefixed_jpeg_data)
+            if current_async_loop and current_async_loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    _broadcast_jpeg_data_and_update_frame_id(), current_async_loop
                 )
-
-                clients_ref = self.clients
-                prefixed_jpeg_data = b"\x03\x00" + jpeg_buffer
-                frame_id_ref = result.frame_id
-
-                async def _broadcast_jpeg_data_and_update_frame_id():
-                    # self here refers to DataStreamingServer instance
-                    self.update_last_sent_frame_id(
-                        frame_id_ref
-                    )  # Update server's knowledge of sent frame ID
-
-                    if not self._backpressure_send_frames_enabled:
-                        return
-
-                    if clients_ref:
-                        websockets.broadcast(clients_ref, prefixed_jpeg_data)
-
-                if current_async_loop and current_async_loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        _broadcast_jpeg_data_and_update_frame_id(), current_async_loop
-                    )
-            except Exception as e:
-                data_logger.error(f"JPEG callback error: {e}", exc_info=True)
+        except Exception as e:
+            data_logger.error(f"JPEG callback error: {e}", exc_info=True)
 
     async def _start_jpeg_pipeline(self):
         if not X11_CAPTURE_AVAILABLE:
@@ -2753,6 +2755,12 @@ async def main():
         default=os.environ.get("SELKIES_VIDEO_BITRATE", "16000"),
         type=int,
         help="Target video bitrate in kbps",
+    )
+    parser.add_argument(
+        "--dri_node",
+        default=os.environ.get("DRINODE", ""),
+        type=str,
+        help="Path to the DRI render node (e.g., /dev/dri/renderD128) for VA-API.",
     )
     parser.add_argument(
         "--audio_device_name",
