@@ -1209,7 +1209,7 @@ class DataStreamingServer:
 
             watermark_path_str = self.cli_args.watermark_path
             if watermark_path_str and os.path.exists(watermark_path_str):
-                cs.watermark_path = watermark_path_str
+                cs.watermark_path = watermark_path_str.encode('utf-8')
                 watermark_location = self.cli_args.watermark_location
                 if watermark_location < 0 or watermark_location > 6:
                     cs.watermark_location_enum = 4
