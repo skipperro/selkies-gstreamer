@@ -167,86 +167,76 @@ ABS_HAT_MIN_VAL = -1
 ABS_HAT_MAX_VAL = 1
 
 STANDARD_XPAD_CONFIG = {
-    "name": "Microsoft X-Box 360 pad", # To match fake_udev.c (interposer will hardcode this for ioctls)
-    "vendor_id": 0x045e,               # To match fake_udev.c (interposer will hardcode this)
-    "product_id": 0x028e,              # To match fake_udev.c (interposer will hardcode this)
-    "version": 0x0114,              # To match fake_udev.c (interposer will hardcode this)
+    "name": "Microsoft X-Box 360 pad",
+    "vendor_id": 0x045e,
+    "product_id": 0x028e,
+    "version": 0x0114,
 
-    # EVDEV codes. The order here defines your internal abstract button indices (0 to N-1).
-    # This list should reflect the buttons supported by fake_udev's "capabilities/key".
+    # EVDEV codes. The order here defines our internal abstract button indices.
+    # This list is now cleaned up to match a standard controller layout.
     "btn_map": [
         BTN_A,      # Internal abstract button 0
         BTN_B,      # Internal abstract button 1
-        BTN_C,      # 0x132 (Byte 38, Bit 2)
         BTN_X,      # Internal abstract button 2
         BTN_Y,      # Internal abstract button 3
-        BTN_Z,      # 0x135 (Byte 38, Bit 5)
         BTN_TL,     # Internal abstract button 4 (Left Bumper)
         BTN_TR,     # Internal abstract button 5 (Right Bumper)
-        # BTN_TL2,  # Consider if Left Trigger is also a button (fake_udev caps/key implies it)
-        # BTN_TR2,  # Consider if Right Trigger is also a button (fake_udev caps/key implies it)
-        BTN_SELECT, # Internal abstract button 6
-        BTN_START,  # Internal abstract button 7
+        BTN_SELECT, # Internal abstract button 6 (Back)
+        BTN_START,  # Internal abstract button 7 (Start)
         BTN_MODE,   # Internal abstract button 8 (Xbox Guide)
         BTN_THUMBL, # Internal abstract button 9 (Left Stick Click)
         BTN_THUMBR, # Internal abstract button 10 (Right Stick Click)
-        # Add BTN_DPAD_UP, BTN_DPAD_DOWN, etc. IF your fake_udev intends DPad as buttons
-        # AND NOT primarily as ABS_HAT0X/Y.
-        # Given "dpad_to_hat" mapping below, DPad is HAT based.
     ],
 
-    # EVDEV codes. The order here defines your internal abstract axis indices (0 to M-1).
-    # This list should reflect the axes supported by fake_udev's "capabilities/abs = 3003f".
+    # EVDEV codes for axes. The order defines internal abstract axis indices.
     "axes_map": [
-        ABS_X,     # Internal abstract axis 0
-        ABS_Y,     # Internal abstract axis 1
-        ABS_Z,     # Internal abstract axis 2 (Often Left Trigger for XInput)
-        ABS_RX,    # Internal abstract axis 3
-        ABS_RY,    # Internal abstract axis 4
-        ABS_RZ,    # Internal abstract axis 5 (Often Right Trigger for XInput)
-        ABS_HAT0X, # Internal abstract axis 6
-        ABS_HAT0Y  # Internal abstract axis 7
+        ABS_X,     # Internal abstract axis 0 (Left Stick X)
+        ABS_Y,     # Internal abstract axis 1 (Left Stick Y)
+        ABS_Z,     # Internal abstract axis 2 (Left Trigger)
+        ABS_RX,    # Internal abstract axis 3 (Right Stick X)
+        ABS_RY,    # Internal abstract axis 4 (Right Stick Y)
+        ABS_RZ,    # Internal abstract axis 5 (Right Trigger)
+        ABS_HAT0X, # Internal abstract axis 6 (D-Pad X)
+        ABS_HAT0Y  # Internal abstract axis 7 (D-Pad Y)
     ],
 
     "mapping": {
-        # Maps client (e.g., HTML5 Gamepad API) button/axis numbers
-        # to our internal abstract button/axis *indices* created by the order in btn_map/axes_map above.
-        "btns": { # client_btn_idx -> internal_abstract_btn_idx (index into "btn_map" list)
-            0: 0,  # Client A -> internal_btn_idx 0 (BTN_A)
-            1: 1,  # Client B -> internal_btn_idx 1 (BTN_B)
-            2: 3,  # Client X -> internal_btn_idx 3 (BTN_X) 
-            3: 4,  # Client Y -> internal_btn_idx 4 (BTN_Y)
-            4: 6,  # Client LB -> internal_btn_idx 6 (BTN_TL)
-            5: 7,  # Client RB -> internal_btn_idx 7 (BTN_TR)
-            8: 8,  # Client Select/Back -> internal_btn_idx 8 (BTN_SELECT)
-            9: 9,  # Client Start -> internal_btn_idx 9 (BTN_START)
-            10: 11, # Client Left Stick Press -> internal_btn_idx 11 (BTN_THUMBL)
-            11: 12,# Client Right Stick Press -> internal_btn_idx 12 (BTN_THUMBR)
-            16: 10, # Client Xbox/Home -> internal_btn_idx 10 (BTN_MODE)
+        # Maps client button numbers to our internal abstract button *indices*.
+        # With the cleaned up btn_map, this is now much simpler.
+        "btns": { # client_btn_idx -> internal_abstract_btn_idx
+            0: 0,  # Client A -> internal index 0 (BTN_A)
+            1: 1,  # Client B -> internal index 1 (BTN_B)
+            2: 2,  # Client X -> internal index 2 (BTN_X)
+            3: 3,  # Client Y -> internal index 3 (BTN_Y)
+            4: 4,  # Client LB -> internal index 4 (BTN_TL)
+            5: 5,  # Client RB -> internal index 5 (BTN_TR)
+            8: 6,  # Client Select/Back -> internal index 6 (BTN_SELECT)
+            9: 7,  # Client Start -> internal index 7 (BTN_START)
+            10: 9, # Client Left Stick Press -> internal index 9 (BTN_THUMBL)
+            11: 10,# Client Right Stick Press -> internal index 10 (BTN_THUMBR)
+            16: 8, # Client Xbox/Home -> internal index 8 (BTN_MODE)
         },
-        "axes": { # client_axis_idx -> internal_abstract_axis_idx (index into "axes_map" list)
-            0: 0, # Client Left Stick X  -> internal_axis_idx 0 (ABS_X)
-            1: 1, # Client Left Stick Y  -> internal_axis_idx 1 (ABS_Y)
-            2: 3, # Client Right Stick X -> internal_axis_idx 3 (ABS_RX)
-            3: 4, # Client Right Stick Y -> internal_axis_idx 4 (ABS_RY)
+        "axes": { # client_axis_idx -> internal_abstract_axis_idx
+            0: 0, # Client Left Stick X  -> internal index 0 (ABS_X)
+            1: 1, # Client Left Stick Y  -> internal index 1 (ABS_Y)
+            2: 3, # Client Right Stick X -> internal index 3 (ABS_RX)
+            3: 4, # Client Right Stick Y -> internal index 4 (ABS_RY)
         },
-        # Client buttons that map to an internal abstract axis (index into "axes_map" list)
+        # Client buttons that map to an internal abstract axis
         "client_btns_to_internal_axes": {
-            6: 2, # Client Btn 6 (LT) -> internal_axis_idx 2 (ABS_Z)
-            7: 5, # Client Btn 7 (RT) -> internal_axis_idx 5 (ABS_RZ)
+            6: 2, # Client Btn 6 (LT) -> internal axis 2 (ABS_Z)
+            7: 5, # Client Btn 7 (RT) -> internal axis 5 (ABS_RZ)
         },
-        # Client DPad buttons map to internal abstract HAT axes (indices into "axes_map" list)
+        # Client DPad buttons map to internal abstract HAT axes
         "dpad_to_hat": {
             # client_btn_idx -> (internal_abstract_axis_idx_for_HAT, hat_direction_value)
-            12: (7, -1), # Up    -> internal_axis_idx 7 (ABS_HAT0Y), value -1
-            13: (7, 1),  # Down  -> internal_axis_idx 7 (ABS_HAT0Y), value 1
-            14: (6, -1), # Left  -> internal_axis_idx 6 (ABS_HAT0X), value -1
-            15: (6, 1),  # Right -> internal_axis_idx 6 (ABS_HAT0X), value 1
+            12: (7, -1), # Up    -> internal axis 7 (ABS_HAT0Y), value -1
+            13: (7, 1),  # Down  -> internal axis 7 (ABS_HAT0Y), value 1
+            14: (6, -1), # Left  -> internal axis 6 (ABS_HAT0X), value -1
+            15: (6, 1),  # Right -> internal axis 6 (ABS_HAT0X), value 1
         },
-        # Internal abstract axis indices (indices into "axes_map" list) that are triggers
-        "trigger_internal_abstract_axis_indices": [2, 5], # Corresponds to ABS_Z, ABS_RZ
-        # Internal abstract axis indices (indices into "axes_map" list) that are HATs
-        "hat_internal_abstract_axis_indices": [6, 7],   # Corresponds to ABS_HAT0X, ABS_HAT0Y
+        "trigger_internal_abstract_axis_indices": [2, 5],
+        "hat_internal_abstract_axis_indices": [6, 7],
     }
 }
 
@@ -279,93 +269,95 @@ def get_evdev_events_packed(ev_type, ev_code, ev_value, client_arch_bits):
     syn_event_data = struct.pack(event_fmt, ts_sec, ts_usec, EV_SYN, SYN_REPORT, 0)
     return event_data + syn_event_data
 
-def normalize_axis_value(client_value, is_trigger, is_hat):
-    """Normalizes client axis value (-1 to 1, or 0 to 1 for triggers) to EVDEV/JS range."""
-    if is_hat: # Client sends -1, 0, or 1 for HATs (via DPad buttons mapping)
-        return int(max(ABS_HAT_MIN_VAL, min(ABS_HAT_MAX_VAL, round(client_value))))
+def normalize_axis_value(client_value, is_trigger, is_hat, for_js_event=False):
+    """
+    Normalizes client axis value.
+    If for_js_event is True and is_hat is True, it scales to the full axis range.
+    """
+    if is_hat:
+        hat_val = int(max(ABS_HAT_MIN_VAL, min(ABS_HAT_MAX_VAL, round(client_value))))
+        if for_js_event:
+            # For JS, D-pad axes need to be full range, not -1/0/1
+            return hat_val * ABS_MAX_VAL
+        else:
+            # For EVDEV, HAT values are -1, 0, or 1
+            return hat_val
     if is_trigger: # Client sends 0.0 to 1.0
-        # Map 0..1 to EVDEV trigger range (e.g., 0..255 or 0..ABS_MAX_VAL)
-        # For JS, triggers are often also -32k to 32k, or 0 to 32k.
-        return int(ABS_MIN_VAL + client_value * (ABS_MAX_VAL - ABS_MIN_VAL)) # Map 0..1 to -32k..+32k
+        # For JS and EVDEV, triggers are often treated as regular axes.
+        # Map 0..1 to -32k..+32k for consistency, some drivers map to 0..255.
+        # This mapping ensures it works like an analog input.
+        return int(ABS_MIN_VAL + client_value * (ABS_MAX_VAL - ABS_MIN_VAL))
     # Regular axis: client sends -1.0 to 1.0
     return int(ABS_MIN_VAL + ((client_value + 1) / 2) * (ABS_MAX_VAL - ABS_MIN_VAL))
 
 
 class GamepadMapper:
     def __init__(self, config_template, client_input_name, client_num_btns, client_num_axes):
-        self.config = config_template # This is STANDARD_XPAD_CONFIG
+        self.config = config_template
         self.client_input_name = client_input_name
-        # client_num_btns, client_num_axes are for info, mapping is fixed by self.config
 
     def get_mapped_events(self, client_event_idx, client_value, is_button_event):
-        js_event_data = None
-        evdev_event_template = None # (type, code, value)
-
-        # 1. Determine internal abstract index and if it's a button, axis, trigger, or hat
         internal_abstract_idx = -1
         is_trigger_axis = False
         is_hat_axis = False
         target_evdev_type = None
+        final_value = 0 # This will be the raw value from the client or dpad direction
 
         if is_button_event:
-            # D-Pad buttons map to HAT axes
             if client_event_idx in self.config["mapping"]["dpad_to_hat"]:
                 internal_abstract_idx, hat_direction_value = self.config["mapping"]["dpad_to_hat"][client_event_idx]
                 is_hat_axis = True
                 target_evdev_type = EV_ABS
-                # Value for HAT axis is hat_direction_value if button pressed (client_value=1), else 0
                 final_value = hat_direction_value * int(client_value)
-            # Triggers (if they come as client buttons) map to internal axes
             elif client_event_idx in self.config["mapping"]["client_btns_to_internal_axes"]:
                 internal_abstract_idx = self.config["mapping"]["client_btns_to_internal_axes"][client_event_idx]
                 is_trigger_axis = internal_abstract_idx in self.config["mapping"]["trigger_internal_abstract_axis_indices"]
                 target_evdev_type = EV_ABS
-                final_value = client_value # 0.0 to 1.0
-            # Regular buttons
+                final_value = client_value
             else:
                 internal_abstract_idx = self.config["mapping"]["btns"].get(client_event_idx)
                 target_evdev_type = EV_KEY
-                final_value = int(client_value) # 0 or 1
-        else: # Axis event from client
+                final_value = int(client_value)
+        else: # Axis event
             internal_abstract_idx = self.config["mapping"]["axes"].get(client_event_idx)
             is_trigger_axis = internal_abstract_idx in self.config["mapping"]["trigger_internal_abstract_axis_indices"]
             is_hat_axis = internal_abstract_idx in self.config["mapping"]["hat_internal_abstract_axis_indices"]
             target_evdev_type = EV_ABS
-            final_value = client_value # -1.0 to 1.0 (or 0.0 to 1.0 if client sends triggers as axes)
+            final_value = client_value
 
         if internal_abstract_idx is None or internal_abstract_idx < 0:
-            # logger_selkies_gamepad.debug(f"Unmapped client event: idx={client_event_idx}, val={client_value}, is_btn={is_button_event}")
             return None
 
-        # 2. Get EVDEV code and normalized value
+        # 2. Get EVDEV code and normalized values for both JS and EVDEV
         evdev_code = -1
-        normalized_value_for_events = 0
+        js_event_value = 0
+        evdev_event_value = 0
 
-        if target_evdev_type == EV_KEY: # Button
+        if target_evdev_type == EV_KEY:
             if 0 <= internal_abstract_idx < len(self.config["btn_map"]):
                 evdev_code = self.config["btn_map"][internal_abstract_idx]
-                normalized_value_for_events = final_value # Already 0 or 1
-            else: return None # Invalid internal abstract button index
-        elif target_evdev_type == EV_ABS: # Axis, Trigger, or HAT
+                js_event_value = evdev_event_value = final_value # 0 or 1
+            else: return None
+        elif target_evdev_type == EV_ABS:
             if 0 <= internal_abstract_idx < len(self.config["axes_map"]):
                 evdev_code = self.config["axes_map"][internal_abstract_idx]
-                normalized_value_for_events = normalize_axis_value(final_value, is_trigger_axis, is_hat_axis)
-            else: return None # Invalid internal abstract axis index
+                # Calculate values separately for JS and EVDEV
+                js_event_value = normalize_axis_value(final_value, is_trigger_axis, is_hat_axis, for_js_event=True)
+                evdev_event_value = normalize_axis_value(final_value, is_trigger_axis, is_hat_axis, for_js_event=False)
+            else: return None
         else:
-            return None # Should not happen
+            return None
 
         # 3. Create event data/templates
         if evdev_code != -1:
-            # JS events use the internal abstract index as 'number'
             js_event_type = JS_EVENT_BUTTON if target_evdev_type == EV_KEY else JS_EVENT_AXIS
-            js_event_data = get_js_event_packed(js_event_type, internal_abstract_idx, normalized_value_for_events)
+            js_event_data = get_js_event_packed(js_event_type, internal_abstract_idx, js_event_value)
             
-            evdev_event_template = (target_evdev_type, evdev_code, normalized_value_for_events)
+            evdev_event_template = (target_evdev_type, evdev_code, evdev_event_value)
             
             return {'js_event_data': js_event_data, 'evdev_event_template': evdev_event_template}
         
         return None
-
 
 class SelkiesGamepad:
     def __init__(self, js_interposer_socket_path, evdev_interposer_socket_path, loop=None):
