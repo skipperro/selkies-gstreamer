@@ -395,7 +395,7 @@ function sendResolutionToServer(width, height) {
     console.log("Shared mode: Resolution sending to server is blocked.");
     return;
   }
-  const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
+  const dpr = (window.isManualResolutionMode || useCssScaling) ? 1 : (window.devicePixelRatio || 1);
   console.log(dpr, useCssScaling);
   const realWidth = roundDownToEven(width * dpr);
   const realHeight = roundDownToEven(height * dpr);
@@ -418,7 +418,7 @@ function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
     return;
   }
 
-  const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
+  const dpr = (window.isManualResolutionMode || useCssScaling) ? 1 : (window.devicePixelRatio || 1);
   const internalBufferWidth = roundDownToEven(targetWidth * dpr);
   const internalBufferHeight = roundDownToEven(targetHeight * dpr);
 
