@@ -1284,10 +1284,15 @@ export class Input {
 
         if (browser.isMac() && code !== "MetaLeft" && code !== "MetaRight" &&
             event.metaKey && !event.ctrlKey && !event.altKey) {
-            if (this._keyDownList["MetaLeft"]) this._sendKeyEvent(this._keyDownList["MetaLeft"], "MetaLeft", false);
-            if (this._keyDownList["MetaRight"]) this._sendKeyEvent(this._keyDownList["MetaRight"], "MetaRight", false);
+            if (this._keyDownList["MetaLeft"]) {
+                this._sendKeyEvent(this._keyDownList["MetaLeft"], "MetaLeft", false);
+                delete this._keyDownList["MetaLeft"];
+            }
+            if (this._keyDownList["MetaRight"]) {
+                this._sendKeyEvent(this._keyDownList["MetaRight"], "MetaRight", false);
+                delete this._keyDownList["MetaRight"];
+            }
             this._sendKeyEvent(KeyTable.XK_Control_L, "ControlLeft", true);
-            // The original non-meta key will be sent below
         }
 
         if (browser.isMac() || browser.isIOS()) {
