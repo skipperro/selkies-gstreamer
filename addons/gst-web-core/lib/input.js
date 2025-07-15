@@ -1242,6 +1242,22 @@ export class Input {
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) return;
         if (!this._guac_markEvent(event)) return;
 
+        for (const code in this._keyDownList) {
+            const keysym = this._keyDownList[code];
+            if ((code === 'ControlLeft' || code === 'ControlRight') && !event.ctrlKey) {
+                this._sendKeyEvent(keysym, code, false);
+            }
+            if ((code === 'MetaLeft' || code === 'MetaRight') && !event.metaKey) {
+                this._sendKeyEvent(keysym, code, false);
+            }
+            if ((code === 'AltLeft' || code === 'AltRight') && !event.altKey) {
+                this._sendKeyEvent(keysym, code, false);
+            }
+            if ((code === 'ShiftLeft' || code === 'ShiftRight') && !event.shiftKey) {
+                this._sendKeyEvent(keysym, code, false);
+            }
+        }
+
         if (this._isIMEInteraction(event)) {
              // Let IME handle this, input event will provide the characters
             return;
