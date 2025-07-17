@@ -151,7 +151,7 @@ class SelkiesStreamingApp:
 
     def send_ws_clipboard_data(
         self, data
-    ):  # Assumed to be called from a threaded context based on original run_coroutine_threadsafe
+    ):
         if (
             self.data_streaming_server
             and hasattr(self.data_streaming_server, "clients")
@@ -174,7 +174,11 @@ class SelkiesStreamingApp:
                 "Cannot broadcast clipboard data: prerequisites not met."
             )
 
-    def send_ws_cursor_data(self, data):  # Assumed to be called from a threaded context
+    def send_ws_cursor_data(self, data):
+        if len(data.get("curdata") or "") < 200:
+            data_logger.debug("Detected 'hide on typing' cursor state. Ignoring update.")
+            return
+        self.last_cursor_sent = data
         if (
             self.data_streaming_server
             and hasattr(self.data_streaming_server, "clients")
@@ -198,7 +202,6 @@ class SelkiesStreamingApp:
 
     async def stop_pipeline(self):
         logger_gst_app.info("Stopping pipelines (generic call)...")
-        # Actual stop logic is now in DataStreamingServer for each pipeline type.
         self.pipeline_running = False
         logger_gst_app.info("Pipelines stop signal processed.")
 
@@ -1601,6 +1604,14 @@ class DataStreamingServer:
                 self.data_ws = None
             return
 
+        if self.app and self.app.last_cursor_sent:
+            data_logger.info(f"Sending last known cursor to new client {raddr}")
+            try:
+                msg_str = json.dumps(self.app.last_cursor_sent)
+                await websocket.send(f"cursor,{msg_str}")
+            except Exception as e:
+                data_logger.warning(f"Failed to send initial cursor to new client {raddr}: {e}")
+
         available_encoders = []
         if X11_CAPTURE_AVAILABLE:
             available_encoders.append("x264enc")
@@ -2527,6 +2538,7 @@ class DataStreamingServer:
             # 5. Stop global pipelines if the flag is set
             if stop_pipelines_flag:
                 data_logger.info(f"Stopping global pipelines due to last client disconnect ({raddr}).")
+                self.capture_cursor = False
                 await self.shutdown_pipelines()
 
             data_logger.info(f"Data WS handler for {raddr} finished all cleanup.")

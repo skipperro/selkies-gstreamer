@@ -937,14 +937,6 @@ const fixedkeys = {
     'WakeUp': 'WakeUp',
 };
 
-const imekeys = {
-    0x30: 'Digit0', 0x31: 'Digit1', 0x32: 'Digit2', 0x33: 'Digit3',
-    0x34: 'Digit4', 0x35: 'Digit5', 0x36: 'Digit6', 0x37: 'Digit7',
-    0x38: 'Digit8', 0x39: 'Digit9', 0x60: 'Numpad0', 0x61: 'Numpad1',
-    0x62: 'Numpad2', 0x63: 'Numpad3', 0x64: 'Numpad4', 0x65: 'Numpad5',
-    0x66: 'Numpad6', 0x67: 'Numpad7', 0x68: 'Numpad8', 0x69: 'Numpad9'
-};
-
 const browser = {
     isMac: function() { return /Mac|iPod|iPhone|iPad/.test(navigator.platform); },
     isIOS: function() { return /iPod|iPhone|iPad/.test(navigator.platform); },
@@ -1156,7 +1148,6 @@ export class Input {
         this.compositionString = "";
         this.keyboardInputAssist = document.getElementById('keyboard-input-assist');
 
-
         this._activeTouches = new Map();
         this._activeTouchIdentifier = null;
         this._isTwoFingerGesture = false;
@@ -1222,22 +1213,6 @@ export class Input {
         return true;
     }
 
-    _isIMEInteraction(e) {
-        if (e.keyCode === 229) return true; // Standard IME indicator
-
-        // Check if the event target is the helper input field for IME
-        // and if certain keys known to be used by IMEs are pressed.
-        if (this.keyboardInputAssist && e.target === this.keyboardInputAssist) {
-            if (e.keyCode in imekeys) { // imekeys contains numpad keys, etc.
-                 // This might be too broad; refine if it blocks legitimate non-IME input to the helper.
-                return true;
-            }
-            // Add other conditions if necessary, e.g. for arrow keys if they are consumed by IME
-        }
-        return false;
-    }
-
-
     _handleKeyDown(event) {
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) return;
         if (!this._guac_markEvent(event)) return;
@@ -1256,11 +1231,6 @@ export class Input {
             if ((code === 'ShiftLeft' || code === 'ShiftRight') && !event.shiftKey) {
                 this._sendKeyEvent(keysym, code, false);
             }
-        }
-
-        if (this._isIMEInteraction(event)) {
-             // Let IME handle this, input event will provide the characters
-            return;
         }
 
         if (event.code === 'KeyM' && event.ctrlKey && event.shiftKey) {
@@ -1357,21 +1327,14 @@ export class Input {
     }
 
     _handleKeyPress(event) {
-        // This handler is generally not needed with modern event.key/code approach
-        // and can cause issues. It's kept if existing IME relies on it, but
-        // it's better to rely on `input` event for IME.
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) return;
         if (!this._guac_markEvent(event)) return;
-        if (this._isIMEInteraction(event)) return;
     }
 
     _handleKeyUp(event) {
         if (this._targetHasClass(event.target, WHITELIST_CLASS)) return;
         if (!this._guac_markEvent(event)) return;
-
-        if (this._isIMEInteraction(event)) {
-            return;
-        }
+        
         _stopEvent(event);
 
         const code = KeyboardUtil.getKeyCode(event);
@@ -1419,56 +1382,29 @@ export class Input {
     _compositionEnd(event) {
         if (!this._guac_markEvent(event)) return;
         this.isComposing = false;
-        let originalCompositionString = event.data || this.compositionString; // Prefer event.data if available
-
-        // Store it for the "co,end" message
+        let originalCompositionString = event.data || this.compositionString;
         this.compositionString = originalCompositionString;
         this.send("co,end," + this.compositionString);
-
-        let doTypeString = true;
-
-        if (this.compositionString && this.compositionString.length === 1) {
-            const composedChar = this.compositionString;
-            const composedKeysym = Keysyms.lookup(composedChar.charCodeAt(0));
-            for (const keyCodeInList in this._keyDownList) {
-                if (this._keyDownList[keyCodeInList] === composedKeysym) {
-                    console.log(`_compositionEnd: Suppressing _typeString for '${composedChar}' (keysym ${composedKeysym}) because a key producing it is already in _keyDownList.`);
-                    doTypeString = false;
-                    break;
-                }
-            }
-        }
-
-
-        if (originalCompositionString && doTypeString) {
-            console.log(`_compositionEnd: Proceeding with _typeString for '${originalCompositionString}'`);
-            this._typeString(originalCompositionString);
-        } else if (originalCompositionString && !doTypeString) {
-            console.log(`_compositionEnd: Skipped _typeString for '${originalCompositionString}' due to heuristic.`);
-        }
-
-        this.compositionString = ""; // Clear after use
+        this.compositionString = "";
     }
 
-    _typeString(str) { // This is your originalGuacamole-style method for typing out composed strings
-        for (let i = 0; i < str.length; i++) {
-            const codepoint = str.codePointAt ? str.codePointAt(i) : str.charCodeAt(i);
-            if (codepoint === undefined) continue;
-            // Use Keysyms.lookup (from noVNC's keysymdef.js) for char to keysym
-            const keysym = Keysyms.lookup(codepoint);
-            if (keysym !== null) {
-                 // Send key down then key up
-                 this._sendKeyEvent(keysym, 'Unidentified', true);
-                 // Small delay for release, though often not strictly necessary for typed chars
-                 setTimeout(() => this._sendKeyEvent(keysym, 'Unidentified', false), 5);
-            }
-             if (codepoint > 0xFFFF) i++; // Skip next part of surrogate pair
+    _handleMobileInput(event) {
+        const text = event.target.value;
+        if (!text) {
+            return;
         }
+        for (let i = 0; i < text.length; i++) {
+            const keysym = Keysyms.lookup(text.charCodeAt(i));
+            if (keysym) {
+                this.send("kd," + keysym);
+                this.send("ku," + keysym);
+            }
+        }
+        event.target.value = '';
     }
 
     _mouseButtonMovement(event) {
-        const client_dpr = window.devicePixelRatio || 1; // Actual client DPR
-        // dpr_for_input_coords: 1 if useCssScaling (logical coords), client_dpr otherwise (physical coords)
+        const client_dpr = window.devicePixelRatio || 1;
         const dpr_for_input_coords = this.useCssScaling ? 1 : client_dpr;
 
         const down = (event.type === 'mousedown' ? 1 : 0);
@@ -2180,18 +2116,15 @@ export class Input {
 
     attach_context() {
         this.listeners_context.push(addListener(window, 'keydown', this._handleKeyDown, this, true));
-        // this.listeners_context.push(addListener(window, 'keypress', this._handleKeyPress, this, true)); // keypress is generally not needed
         this.listeners_context.push(addListener(window, 'keyup', this._handleKeyUp, this, true));
-        this.listeners_context.push(addListener(window, 'blur', this.resetKeyboard, this)); // Release keys on blur
+        this.listeners_context.push(addListener(window, 'blur', this.resetKeyboard, this));
+        this.listeners_context.push(addListener(this.keyboardInputAssist, 'input', this._handleMobileInput, this));
 
 
         this.listeners_context.push(addListener(this.element, 'wheel', this._mouseWheelWrapper, this));
         this.listeners_context.push(addListener(this.element, 'contextmenu', this._contextMenu, this));
 
-        // Attach to the specific element you want for composition events.
-        // If you have a dedicated IME input field (this.keyboardInputAssist), use that.
-        // Otherwise, this.element is a common choice.
-        const compositionTarget = this.keyboardInputAssist || this.element;
+        const compositionTarget = this.element;
         this.listeners_context.push(addListener(compositionTarget, 'compositionstart', this._compositionStart, this));
         this.listeners_context.push(addListener(compositionTarget, 'compositionupdate', this._compositionUpdate, this));
         this.listeners_context.push(addListener(compositionTarget, 'compositionend', this._compositionEnd, this));

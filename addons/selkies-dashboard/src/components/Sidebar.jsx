@@ -646,6 +646,17 @@ function Sidebar({ isOpen }) {
   const notificationTimeouts = useRef({});
   const [isFilesModalOpen, setIsFilesModalOpen] = useState(false);
   const [isAppsModalOpen, setIsAppsModalOpen] = useState(false);
+  const [keyboardButtonPosition, setKeyboardButtonPosition] = useState({ bottom: 20, right: 20 });
+  const dragInfo = useRef({
+    isDragging: false,
+    hasDragged: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    initialBottom: 0,
+    initialRight: 0,
+  });
+
 
   // --- Debounce Settings ---
   const DEBOUNCE_DELAY = 500;
@@ -734,6 +745,55 @@ function Sidebar({ isOpen }) {
     });
 
     scheduleNotificationRemoval(notificationId, NOTIFICATION_TIMEOUT_ERROR); 
+  };
+
+  const DRAG_THRESHOLD = 10;
+
+  const handlePointerDown = (e) => {
+    dragInfo.current.isDragging = true;
+    dragInfo.current.hasDragged = false;
+    dragInfo.current.pointerId = e.pointerId;
+    dragInfo.current.startX = e.clientX;
+    dragInfo.current.startY = e.clientY;
+    dragInfo.current.initialBottom = keyboardButtonPosition.bottom;
+    dragInfo.current.initialRight = keyboardButtonPosition.right;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!dragInfo.current.isDragging) return;
+
+    const dx = e.clientX - dragInfo.current.startX;
+    const dy = e.clientY - dragInfo.current.startY;
+
+    if (!dragInfo.current.hasDragged && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+      dragInfo.current.hasDragged = true;
+    }
+
+    if (dragInfo.current.hasDragged) {
+      setKeyboardButtonPosition({
+        bottom: dragInfo.current.initialBottom - dy,
+        right: dragInfo.current.initialRight - dx,
+      });
+    }
+  };
+
+  const handlePointerUp = (e) => {
+    if (e.currentTarget.hasPointerCapture(dragInfo.current.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    dragInfo.current.isDragging = false;
+    dragInfo.current.pointerId = null;
+  };
+
+  const onKeyboardButtonClick = (e) => {
+    if (dragInfo.current.hasDragged) {
+      e.preventDefault();
+      e.stopPropagation();
+      dragInfo.current.hasDragged = false;
+      return;
+    }
+    handleShowVirtualKeyboard();
   };
 
   const toggleAppsModal = () => setIsAppsModalOpen(!isAppsModalOpen);
@@ -2893,7 +2953,17 @@ function Sidebar({ isOpen }) {
       {(isMobile || hasDetectedTouch) && (
         <button
           className={`virtual-keyboard-button theme-${theme} allow-native-input`}
-          onClick={handleShowVirtualKeyboard}
+          onClick={onKeyboardButtonClick}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          style={{
+            position: 'fixed',
+            right: `${keyboardButtonPosition.right}px`,
+            bottom: `${keyboardButtonPosition.bottom}px`,
+            touchAction: 'none',
+          }}
           title={t("buttons.virtualKeyboardButtonTitle", "Pop Keyboard")}
           aria-label={t("buttons.virtualKeyboardButtonTitle", "Pop Keyboard")}
         >

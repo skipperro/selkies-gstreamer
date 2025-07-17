@@ -578,7 +578,7 @@ const initializeUI = () => {
   videoContainer.appendChild(statusDisplayElement);
   overlayInput = document.createElement('input');
   overlayInput.type = 'text';
-  overlayInput.readOnly = true;
+  overlayInput.readOnly = false;
   overlayInput.id = 'overlayInput';
   videoContainer.appendChild(overlayInput);
 
