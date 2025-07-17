@@ -771,6 +771,7 @@ class WebRTCInput:
         cursor_debug=False,
     ):
         self.active_shortcut_modifiers = set()
+        self.typed_keys_to_ignore_keyup = set()
         self.SHORTCUT_MODIFIER_XKEY_NAMES = {
             'Control_L', 'Control_R', 
             'Alt_L', 'Alt_R', 
@@ -986,59 +987,51 @@ class WebRTCInput:
                 elif self.mouse: self.mouse.release(btn_uinput_or_pynput)
 
     def send_x11_keypress(self, keysym, down=True):
+        if not down and keysym in self.typed_keys_to_ignore_keyup:
+            self.typed_keys_to_ignore_keyup.remove(keysym)
+            return
         map_entry = X11_KEYSYM_MAP.get(keysym)
-        action_taken_by_map = False
-        xdotool_arg = None
-
         if map_entry:
-            xdotool_arg = map_entry.get('xkey_name') or map_entry.get('char')
-            
             xkey_name = map_entry.get('xkey_name')
             if xkey_name and xkey_name in self.SHORTCUT_MODIFIER_XKEY_NAMES:
                 if down:
                     self.active_shortcut_modifiers.add(xkey_name)
                 else:
-                    self.active_shortcut_modifiers.discard(xkey_name)
-
-        if xdotool_arg:
-            action = "keydown" if down else "keyup"
-            command = ["xdotool", action, xdotool_arg]
+                    try: self.active_shortcut_modifiers.remove(xkey_name)
+                    except KeyError: pass
+        is_printable = False
+        char_to_type = None
+        try:
+            if (0x20 <= keysym <= 0x7E) or (0xA0 <= keysym <= 0xFF):
+                char_to_type = chr(keysym)
+                is_printable = True
+            elif (keysym & 0xFF000000) == 0x01000000:
+                unicode_codepoint = keysym & 0x00FFFFFF
+                char_to_type = chr(unicode_codepoint)
+                is_printable = True
+        except (ValueError, TypeError):
+            is_printable = False
+        if is_printable and down and not self.active_shortcut_modifiers:
             try:
+                command = ["xdotool", "type", "--clearmodifiers", char_to_type]
                 subprocess.run(command, check=True, timeout=0.5, capture_output=True, text=True)
-                action_taken_by_map = True
+                self.typed_keys_to_ignore_keyup.add(keysym)
+                logger_webrtc_input.debug(f"Typed character '{char_to_type}' via xdotool type.")
+                return
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
-                logger_webrtc_input.warning(f"xdotool command '{' '.join(command)}' failed: {e}")
-                action_taken_by_map = False
-        
-        if action_taken_by_map:
-            return
-
-        original_keysym_for_fallback = keysym
-        pynput_keysym_to_try = keysym
-
-        if (keysym & 0xFF000000) == 0x01000000:
-            normalized_keysym = keysym & 0x00FFFFFF
-            pynput_keysym_to_try = normalized_keysym
-
-        if pynput_keysym_to_try == 60:
-            try:
-                if self.keyboard and hasattr(self.keyboard, '_display') and self.keyboard._display:
-                    if self.keyboard._display.keysym_to_keycode(pynput_keysym_to_try) == 94:
-                        pynput_keysym_to_try = 44
-            except Exception:
-                pass
-        
+                logger_webrtc_input.warning(f"xdotool type command failed for '{char_to_type}': {e}. Falling back.")
         try:
             if not self.keyboard:
-                self._xdotool_fallback(original_keysym_for_fallback, down)
+                self._xdotool_fallback(keysym, down)
                 return
-            pynput_key = pynput.keyboard.KeyCode.from_vk(pynput_keysym_to_try)
+
+            pynput_key = pynput.keyboard.KeyCode.from_vk(keysym)
             if down:
                 self.keyboard.press(pynput_key)
             else:
                 self.keyboard.release(pynput_key)
         except Exception:
-            self._xdotool_fallback(original_keysym_for_fallback, down)
+            self._xdotool_fallback(keysym, down)
 
     def _xdotool_fallback(self, keysym_number, down=True):
         if not self.xdisplay:
