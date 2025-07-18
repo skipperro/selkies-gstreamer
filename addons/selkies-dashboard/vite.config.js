@@ -9,7 +9,9 @@ export default defineConfig({
     host: '0.0.0.0'
   },
   plugins: [
-    react(),
+    react({
+      exclude: 'src/selkies-core.js'
+    }),
     ViteMinifyPlugin(),
     ViteRestart({restart: ['index.html', 'src/**']}),
   ]

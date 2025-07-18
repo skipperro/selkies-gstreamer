@@ -3,6 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
+import './selkies-core.js';
 
 const currentHash = window.location.hash;
 const noDashboardModes = ['#shared', '#player2', '#player3', '#player4'];
