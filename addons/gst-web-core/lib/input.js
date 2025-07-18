@@ -1424,6 +1424,7 @@ export class Input {
     }
 
     _mouseButtonMovement(event) {
+        if (this._trackpadMode) return;
         const client_dpr = window.devicePixelRatio || 1;
         const dpr_for_input_coords = this.useCssScaling ? 1 : client_dpr;
 
