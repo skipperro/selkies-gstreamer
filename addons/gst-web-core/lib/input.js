@@ -30,8 +30,6 @@ import { Queue } from './util.js';
  */
 const WHITELIST_CLASS = 'allow-native-input';
 
-// --- noVNC Style Keyboard Data Structures ---
-
 const KeyTable = {
     XK_VoidSymbol:                  0xffffff,
     XK_BackSpace:                   0xff08,
@@ -1364,27 +1362,49 @@ export class Input {
         }
     }
 
+    _updateCompositionText(newText) {
+        const oldValue = this.compositionString;
+        const newValue = newText || "";
+
+        let diff_start = 0;
+        while (diff_start < oldValue.length && diff_start < newValue.length && oldValue[diff_start] === newValue[diff_start]) {
+            diff_start++;
+        }
+
+        const backspaces = oldValue.length - diff_start;
+        for (let i = 0; i < backspaces; i++) {
+            this._sendKeyEvent(KeyTable.XK_BackSpace, "Backspace", true);
+            this._sendKeyEvent(KeyTable.XK_BackSpace, "Backspace", false);
+        }
+
+        const newChars = newValue.substring(diff_start);
+        for (let i = 0; i < newChars.length; i++) {
+            const keysym = Keysyms.lookup(newChars.charCodeAt(i));
+            if (keysym) {
+                this._sendKeyEvent(keysym, 'Unidentified', true);
+                this._sendKeyEvent(keysym, 'Unidentified', false);
+            }
+        }
+
+        this.compositionString = newValue;
+    }
+
     _compositionStart(event) {
         if (!this._guac_markEvent(event)) return;
         this.isComposing = true;
         this.compositionString = "";
-        this.send("co,start");
     }
+
     _compositionUpdate(event) {
         if (!this._guac_markEvent(event)) return;
         if (!this.isComposing) return;
-        if (event.data) {
-            this.compositionString = event.data;
-        }
-        this.send("co,update," + this.compositionString);
+        this._updateCompositionText(event.data);
     }
 
     _compositionEnd(event) {
         if (!this._guac_markEvent(event)) return;
+        if (!this.isComposing) return;
         this.isComposing = false;
-        let originalCompositionString = event.data || this.compositionString;
-        this.compositionString = originalCompositionString;
-        this.send("co,end," + this.compositionString);
         this.compositionString = "";
     }
 
