@@ -111,6 +111,7 @@ let videoBitRate = 8000;
 let videoFramerate = 60;
 let videoCRF = 25;
 let h264_fullcolor = false;
+let h264_streaming_mode = false;
 let audioBitRate = 320000;
 let showStart = true;
 let status = 'connecting';
@@ -210,7 +211,8 @@ const setStringParam = (key, value) => {
 videoBitRate = getIntParam('videoBitRate', videoBitRate);
 videoFramerate = getIntParam('videoFramerate', videoFramerate);
 videoCRF = getIntParam('videoCRF', videoCRF);
-h264_fullcolor = getBoolParam('h264_fullcolor', h264_fullcolor); // New line
+h264_fullcolor = getBoolParam('h264_fullcolor', h264_fullcolor);
+h264_streaming_mode = getBoolParam('h264_streaming_mode', h264_streaming_mode);
 audioBitRate = getIntParam('audioBitRate', audioBitRate);
 resizeRemote = getBoolParam('resizeRemote', resizeRemote);
 debug = getBoolParam('debug', debug);
@@ -223,7 +225,7 @@ useCssScaling = getBoolParam('useCssScaling', false);
 trackpadMode = getBoolParam('trackpadMode', false);
 
 if (isSharedMode) {
-    manualWidth = 1280; // Default stream dimensions for shared mode before first frame
+    manualWidth = 1280;
     manualHeight = 720;
     console.log(`Shared mode: Initialized manualWidth/Height to ${manualWidth}x${manualHeight}`);
 } else {
@@ -1694,6 +1696,25 @@ function handleSettingsMessage(settings) {
       console.log(`H.264 Full Color setting received (${newFullColorValue}), but it's the same as current. No change.`);
     }
   }
+  if (settings.h264_streaming_mode !== undefined) {
+    const newStreamingModeValue = !!settings.h264_streaming_mode;
+    if (h264_streaming_mode !== newStreamingModeValue) {
+      h264_streaming_mode = newStreamingModeValue;
+      setBoolParam('h264_streaming_mode', h264_streaming_mode);
+      console.log(`Applied H.264 Streaming Mode setting: ${h264_streaming_mode}.`);
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped')) {
+        const message = `SET_H264_STREAMING_MODE,${h264_streaming_mode}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else if (!isSharedMode && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped') {
+        console.log("H.264 Streaming Mode setting changed, but current encoder is not x264enc-striped. WebSocket command not sent.");
+      } else if (!isSharedMode) {
+        console.warn("Websocket connection not open, cannot send H.264 Streaming Mode setting.");
+      }
+    } else {
+      console.log(`H.264 Streaming Mode setting received (${newStreamingModeValue}), but it's the same as current. No change.`);
+    }
+  }
   if (settings.SCALING_DPI !== undefined) {
     const dpi = parseInt(settings.SCALING_DPI, 10);
     if (!isNaN(dpi)) {
@@ -1738,6 +1759,7 @@ function sendStatsMessage() {
   };
   stats.encoderName = currentEncoderMode;
   stats.h264_fullcolor = h264_fullcolor;
+  stats.h264_streaming_mode = h264_streaming_mode;
   window.parent.postMessage({
     type: 'stats',
     data: stats
@@ -2391,11 +2413,12 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
           else if (unprefixedKey === 'audioBitRate') serverExpectedKey = 'webrtc_audioBitRate';
           else if (unprefixedKey === 'videoBufferSize') serverExpectedKey = 'webrtc_videoBufferSize';
           else if (unprefixedKey === 'h264_fullcolor') serverExpectedKey = 'webrtc_h264_fullcolor';
+          else if (unprefixedKey === 'h264_streaming_mode') serverExpectedKey = 'webrtc_h264_streaming_mode';
 
           if (serverExpectedKey) {
             let value = localStorage.getItem(key);
             // Type conversions for specific settings
-            if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode' || serverExpectedKey === 'webrtc_h264_fullcolor') {
+            if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode' || serverExpectedKey === 'webrtc_h264_fullcolor' || serverExpectedKey === 'webrtc_h264_streaming_mode') {
               value = (value === 'true');
             } else if (['webrtc_videoBitRate', 'webrtc_videoFramerate', 'webrtc_videoCRF',
                 'webrtc_audioBitRate', 'webrtc_videoBufferSize'

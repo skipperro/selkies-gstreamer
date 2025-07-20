@@ -667,6 +667,8 @@ class DataStreamingServer:
         self.h264_crf = self._initial_x264_crf
         self._initial_h264_fullcolor = self.cli_args.h264_fullcolor
         self.h264_fullcolor = self._initial_h264_fullcolor
+        self._initial_h264_streaming_mode = self.cli_args.h264_streaming_mode
+        self.h264_streaming_mode = self._initial_h264_streaming_mode
         self.capture_cursor = False
         self._initial_jpeg_use_paint_over_quality = True
         self._current_jpeg_use_paint_over_quality = True
@@ -1201,6 +1203,7 @@ class DataStreamingServer:
             cs.damage_block_duration = 20
             cs.h264_fullcolor = self.h264_fullcolor
             cs.h264_fullframe = enable_fullframe
+            cs.h264_streaming_mode = self.h264_streaming_mode 
             cs.capture_cursor = self.capture_cursor
             if self.cli_args.dri_node:
                 cs.vaapi_render_node_index = parse_dri_node_to_index(self.cli_args.dri_node)
@@ -1413,6 +1416,7 @@ class DataStreamingServer:
         parsed["videoCRF"] = get_int("webrtc_videoCRF", self.h264_crf)
         parsed["encoder"] = get_str("webrtc_encoder", self.app.encoder)
         parsed["h264_fullcolor"] = get_bool("webrtc_h264_fullcolor", self.h264_fullcolor)
+        parsed["h264_streaming_mode"] = get_bool("webrtc_h264_streaming_mode", self.h264_streaming_mode)
         parsed["resizeRemote"] = get_bool(
             "webrtc_resizeRemote",
             getattr(self.app, "client_preferred_resize_enabled", True),
@@ -1454,6 +1458,7 @@ class DataStreamingServer:
         old_framerate = self.app.framerate
         old_h264_crf = self.h264_crf
         old_h264_fullcolor = self.h264_fullcolor
+        old_h264_streaming_mode = self.h264_streaming_mode
         old_audio_bitrate_bps = self.app.audio_bitrate
         old_display_width = self.app.display_width
         old_display_height = self.app.display_height
@@ -1516,7 +1521,11 @@ class DataStreamingServer:
         if "h264_fullcolor" in settings and is_pixelflux_h264:
             if self.h264_fullcolor != settings["h264_fullcolor"]:
                 self.h264_fullcolor = settings["h264_fullcolor"]
-        
+
+        if "h264_streaming_mode" in settings and is_pixelflux_h264:
+            if self.h264_streaming_mode != settings["h264_streaming_mode"]:
+                self.h264_streaming_mode = settings["h264_streaming_mode"]
+ 
         if "audioBitRate" in settings:
             if self.app.audio_bitrate != settings["audioBitRate"]:
                  self.app.audio_bitrate = settings["audioBitRate"]
@@ -1533,6 +1542,7 @@ class DataStreamingServer:
             framerate_param_changed = self.app.framerate != old_framerate
             crf_param_changed = is_pixelflux_h264 and self.h264_crf != old_h264_crf
             h264_fullcolor_param_changed = is_pixelflux_h264 and self.h264_fullcolor != old_h264_fullcolor
+            h264_streaming_mode_param_changed = is_pixelflux_h264 and self.h264_streaming_mode != old_h264_streaming_mode
             audio_bitrate_param_changed = self.app.audio_bitrate != old_audio_bitrate_bps
 
             restart_video_pipeline = False
@@ -1541,7 +1551,7 @@ class DataStreamingServer:
             else:
                 if self.app.encoder in PIXELFLUX_VIDEO_ENCODERS:
                     if framerate_param_changed: restart_video_pipeline = True
-                    if is_pixelflux_h264 and (crf_param_changed or h264_fullcolor_param_changed):
+                    if is_pixelflux_h264 and (crf_param_changed or h264_fullcolor_param_changed or h264_streaming_mode_param_changed):
                         restart_video_pipeline = True
 
             restart_audio_pipeline = audio_bitrate_param_changed
@@ -2267,6 +2277,30 @@ class DataStreamingServer:
                         except IndexError:
                             data_logger.warning(f"Malformed SET_H264_FULLCOLOR message: {message}")
 
+                    elif message.startswith("SET_H264_STREAMING_MODE,"):
+                        await self.client_settings_received.wait()
+                        try:
+                            new_streaming_mode_str = message.split(",")[1].strip().lower()
+                            new_streaming_mode = new_streaming_mode_str == "true"
+                            data_logger.info(f"Received SET_H264_STREAMING_MODE: {new_streaming_mode}")
+
+                            current_enc = getattr(self.app, "encoder", None)
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+
+                            if is_pixelflux_h264:
+                                if self.h264_streaming_mode != new_streaming_mode:
+                                    self.h264_streaming_mode = new_streaming_mode
+                                    if self.is_x264_striped_capturing:
+                                        data_logger.info(f"Restarting {current_enc} pipeline for H264_STREAMING_MODE change to {self.h264_streaming_mode}")
+                                        await self._stop_x264_striped_pipeline()
+                                        await self._start_x264_striped_pipeline()
+                                else:
+                                    data_logger.info(f"SET_H264_STREAMING_MODE: Value {new_streaming_mode} is already set.")
+                            else:
+                                data_logger.warning(f"SET_H264_STREAMING_MODE received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                        except IndexError:
+                            data_logger.warning(f"Malformed SET_H264_STREAMING_MODE message: {message}")
+
                     elif message.startswith("SET_NATIVE_CURSOR_RENDERING,"):
                         await self.client_settings_received.wait()
                         try:
@@ -2831,6 +2865,12 @@ async def main():
         default=os.environ.get("SELKIES_H264_FULLCOLOR", "False").lower() == "true",
         type=lambda x: (str(x).lower() == 'true'),
         help="Enable H.264 full color range for x264enc-striped (default: False)",
+    )
+    parser.add_argument(
+        "--h264_streaming_mode",
+        default=os.environ.get("SELKIES_H264_STREAMING_MODE", "False").lower() == "false",
+        type=lambda x: (str(x).lower() == 'true'),
+        help="Enable H.264 streaming mode for pixelflux encoders (default: False).",
     )
     parser.add_argument(
         "--watermark_path",

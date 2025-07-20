@@ -29,6 +29,8 @@ const en = {
         virtualKeyboardButtonTitle: "Pop Keyboard",
         h264FullColorEnableTitle: "Enable H.264 Full Color",
         h264FullColorDisableTitle: "Disable H.264 Full Color",
+        h264StreamingModeDisableTitle: "Disable Turbo",
+        h264StreamingModeEnableTitle: "Enable Turbo",
     },
     sections: {
         video: {
@@ -40,6 +42,8 @@ const en = {
             bufferLabelFrames: "Video Buffer Size ({videoBufferSize} frames):",
             crfLabel: "Video CRF ({crf}):",
             fullColorLabel: "FullColor 4:4:4:",
+            streamingModeDetails: "Turbo mode disables all VNC logic and encodes all frames like a traditional video encoder.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "Audio Settings",
@@ -191,6 +195,8 @@ const es = {
         virtualKeyboardButtonTitle: "Mostrar Teclado",
         h264FullColorEnableTitle: "Activar H.264 Color Completo",
         h264FullColorDisableTitle: "Desactivar H.264 Color Completo",
+        h264StreamingModeDisableTitle: "Desactivar Turbo",
+        h264StreamingModeEnableTitle: "Activar Turbo",
     },
     sections: {
         video: {
@@ -202,6 +208,8 @@ const es = {
             bufferLabelFrames: "Tamaño del Búfer de Vídeo ({videoBufferSize} fotogramas):",
             crfLabel: "CRF de Vídeo ({crf}):",
             fullColorLabel: "Color Completo 4:4:4:",
+            streamingModeDetails: "El modo Turbo desactiva toda la lógica VNC y codifica todos los fotogramas como un codificador de vídeo tradicional.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
              title: "Configuración de Audio",
@@ -353,6 +361,8 @@ const zh = {
         virtualKeyboardButtonTitle: "弹出键盘",
         h264FullColorEnableTitle: "启用 H.264 全彩",
         h264FullColorDisableTitle: "禁用 H.264 全彩",
+        h264StreamingModeDisableTitle: "禁用 Turbo",
+        h264StreamingModeEnableTitle: "启用 Turbo",
     },
     sections: {
         video: {
@@ -364,6 +374,8 @@ const zh = {
             bufferLabelFrames: "视频缓冲大小 ({videoBufferSize} 帧):",
             crfLabel: "视频 CRF ({crf}):",
             fullColorLabel: "全彩 4:4:4:",
+            streamingModeDetails: "Turbo 模式会禁用所有 VNC 逻辑，并像传统视频编码器一样对所有帧进行编码。",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "音频设置",
@@ -515,6 +527,8 @@ const hi = {
         virtualKeyboardButtonTitle: "कीबोर्ड दिखाएँ",
         h264FullColorEnableTitle: "H.264 फुल कलर सक्षम करें",
         h264FullColorDisableTitle: "H.264 फुल कलर अक्षम करें",
+        h264StreamingModeDisableTitle: "टर्बो अक्षम करें",
+        h264StreamingModeEnableTitle: "टर्बो सक्षम करें",
     },
     sections: {
         video: {
@@ -526,6 +540,8 @@ const hi = {
             bufferLabelFrames: "वीडियो बफर आकार ({videoBufferSize} फ्रेम):",
             crfLabel: "वीडियो CRF ({crf}):",
             fullColorLabel: "फुल कलर 4:4:4:",
+            streamingModeDetails: "टर्बो मोड सभी VNC लॉजिक को अक्षम कर देता है और सभी फ्रेम को एक पारंपरिक वीडियो एन्कोडर की तरह एन्कोड करता है।",
+            streamingModeLabel: "टर्बो",
         },
         audio: {
             title: "ऑडियो सेटिंग्स",
@@ -677,6 +693,8 @@ const pt = {
         virtualKeyboardButtonTitle: "Exibir Teclado",
         h264FullColorEnableTitle: "Ativar H.264 Cor Completa",
         h264FullColorDisableTitle: "Desativar H.264 Cor Completa",
+        h264StreamingModeDisableTitle: "Desativar Turbo",
+        h264StreamingModeEnableTitle: "Ativar Turbo",
     },
     sections: {
         video: {
@@ -688,6 +706,8 @@ const pt = {
             bufferLabelFrames: "Tamanho do Buffer de Vídeo ({videoBufferSize} quadros):",
             crfLabel: "CRF de Vídeo ({crf}):",
             fullColorLabel: "Cor Completa 4:4:4:",
+            streamingModeDetails: "O modo Turbo desativa toda a lógica VNC e codifica todos os quadros como um codificador de vídeo tradicional.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "Configurações de Áudio",
@@ -839,6 +859,8 @@ const fr = {
         virtualKeyboardButtonTitle: "Afficher le Clavier",
         h264FullColorEnableTitle: "Activer H.264 Couleur Complète",
         h264FullColorDisableTitle: "Désactiver H.264 Couleur Complète",
+        h264StreamingModeDisableTitle: "Désactiver le mode Turbo",
+        h264StreamingModeEnableTitle: "Activer le mode Turbo",
     },
     sections: {
         video: {
@@ -850,6 +872,8 @@ const fr = {
             bufferLabelFrames: "Taille du tampon vidéo ({videoBufferSize} images) :",
             crfLabel: "CRF Vidéo ({crf}) :",
             fullColorLabel: "Couleur Complète 4:4:4:",
+            streamingModeDetails: "Le mode Turbo désactive toute la logique VNC et encode toutes les trames comme un encodeur vidéo traditionnel.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "Paramètres audio",
@@ -1001,6 +1025,8 @@ const ru = {
         virtualKeyboardButtonTitle: "Показать Клавиатуру",
         h264FullColorEnableTitle: "Включить H.264 Полный цвет",
         h264FullColorDisableTitle: "Отключить H.264 Полный цвет",
+        h264StreamingModeDisableTitle: "Отключить Турбо",
+        h264StreamingModeEnableTitle: "Включить Турбо",
     },
     sections: {
         video: {
@@ -1012,6 +1038,8 @@ const ru = {
             bufferLabelFrames: "Размер буфера видео ({videoBufferSize} кадров):",
             crfLabel: "CRF видео ({crf}):",
             fullColorLabel: "Полный цвет 4:4:4:",
+            streamingModeDetails: "Режим Турбо отключает всю логику VNC и кодирует все кадры как традиционный видеокодер.",
+            streamingModeLabel: "Турбо",
         },
         audio: {
             title: "Настройки аудио",
@@ -1163,6 +1191,8 @@ const de = {
         virtualKeyboardButtonTitle: "Tastatur einblenden",
         h264FullColorEnableTitle: "H.264 Vollfarbe aktivieren",
         h264FullColorDisableTitle: "H.264 Vollfarbe deaktivieren",
+        h264StreamingModeDisableTitle: "Turbo deaktivieren",
+        h264StreamingModeEnableTitle: "Turbo aktivieren",
     },
     sections: {
         video: {
@@ -1174,6 +1204,8 @@ const de = {
             bufferLabelFrames: "Video-Puffergröße ({videoBufferSize} Frames):",
             crfLabel: "Video CRF ({crf}):",
             fullColorLabel: "Vollfarbe 4:4:4:",
+            streamingModeDetails: "Der Turbo-Modus deaktiviert die gesamte VNC-Logik und kodiert alle Frames wie ein herkömmlicher Video-Encoder.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "Audioeinstellungen",
@@ -1325,6 +1357,8 @@ const tr = {
         virtualKeyboardButtonTitle: "Klavyeyi Göster",
         h264FullColorEnableTitle: "H.264 Tam Renk Etkinleştir",
         h264FullColorDisableTitle: "H.264 Tam Renk Devre Dışı Bırak",
+        h264StreamingModeDisableTitle: "Turbo'yu Devre Dışı Bırak",
+        h264StreamingModeEnableTitle: "Turbo'yu Etkinleştir",
     },
     sections: {
         video: {
@@ -1336,6 +1370,8 @@ const tr = {
             bufferLabelFrames: "Video Tampon Boyutu ({videoBufferSize} kare):",
             crfLabel: "Video CRF ({crf}):",
             fullColorLabel: "Tam Renk 4:4:4:",
+            streamingModeDetails: "Turbo modu, tüm VNC mantığını devre dışı bırakır ve tüm kareleri geleneksel bir video kodlayıcı gibi kodlar.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "Ses Ayarları",
@@ -1487,6 +1523,8 @@ const it = {
         virtualKeyboardButtonTitle: "Mostra Tastiera",
         h264FullColorEnableTitle: "Abilita H.264 Colore Completo",
         h264FullColorDisableTitle: "Disabilita H.264 Colore Completo",
+        h264StreamingModeDisableTitle: "Disabilita Turbo",
+        h264StreamingModeEnableTitle: "Abilita Turbo",
     },
     sections: {
         video: {
@@ -1498,6 +1536,8 @@ const it = {
             bufferLabelFrames: "Dimensione Buffer Video ({videoBufferSize} frame):",
             crfLabel: "CRF Video ({crf}):",
             fullColorLabel: "Colore Completo 4:4:4:",
+            streamingModeDetails: "La modalità Turbo disabilita tutta la logica VNC e codifica tutti i fotogrammi come un codificatore video tradizionale.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "Impostazioni Audio",
@@ -1649,6 +1689,8 @@ const nl = {
         virtualKeyboardButtonTitle: "Toetsenbord Weergeven",
         h264FullColorEnableTitle: "H.264 Volledige Kleur inschakelen",
         h264FullColorDisableTitle: "H.264 Volledige Kleur uitschakelen",
+        h264StreamingModeDisableTitle: "Turbo uitschakelen",
+        h264StreamingModeEnableTitle: "Turbo inschakelen",
     },
     sections: {
         video: {
@@ -1660,6 +1702,8 @@ const nl = {
             bufferLabelFrames: "Video Buffergrootte ({videoBufferSize} frames):",
             crfLabel: "Video CRF ({crf}):",
             fullColorLabel: "Volledige Kleur 4:4:4:",
+            streamingModeDetails: "De Turbo-modus schakelt alle VNC-logica uit en codeert alle frames zoals een traditionele video-encoder.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "Audio-instellingen",
@@ -1811,6 +1855,8 @@ const ar = {
         virtualKeyboardButtonTitle: "إظهار لوحة المفاتيح",
         h264FullColorEnableTitle: "تمكين H.264 ألوان كاملة",
         h264FullColorDisableTitle: "تعطيل H.264 ألوان كاملة",
+        h264StreamingModeDisableTitle: "تعطيل وضع التوربو",
+        h264StreamingModeEnableTitle: "تمكين وضع التوربو",
     },
     sections: {
         video: {
@@ -1822,6 +1868,8 @@ const ar = {
             bufferLabelFrames: "حجم مخزن الفيديو المؤقت ({videoBufferSize} إطارات):",
             crfLabel: "CRF الفيديو ({crf}):",
             fullColorLabel: "ألوان كاملة 4:4:4:",
+            streamingModeDetails: "يعطل وضع التوربو كل منطق VNC ويقوم بترميز جميع الإطارات مثل مرمّز الفيديو التقليدي.",
+            streamingModeLabel: "توربو",
         },
         audio: {
             title: "إعدادات الصوت",
@@ -1973,6 +2021,8 @@ const ko = {
         virtualKeyboardButtonTitle: "키보드 표시",
         h264FullColorEnableTitle: "H.264 전체 색상 활성화",
         h264FullColorDisableTitle: "H.264 전체 색상 비활성화",
+        h264StreamingModeDisableTitle: "터보 비활성화",
+        h264StreamingModeEnableTitle: "터보 활성화",
     },
     sections: {
         video: {
@@ -1984,6 +2034,8 @@ const ko = {
             bufferLabelFrames: "비디오 버퍼 크기 ({videoBufferSize} 프레임):",
             crfLabel: "비디오 CRF ({crf}):",
             fullColorLabel: "전체 색상 4:4:4:",
+            streamingModeDetails: "터보 모드는 모든 VNC 로직을 비활성화하고 모든 프레임을 기존 비디오 인코더처럼 인코딩합니다.",
+            streamingModeLabel: "터보",
         },
         audio: {
             title: "오디오 설정",
@@ -2135,6 +2187,8 @@ const ja = {
         virtualKeyboardButtonTitle: "キーボードを表示",
         h264FullColorEnableTitle: "H.264 フルカラーを有効にする",
         h264FullColorDisableTitle: "H.264 フルカラーを無効にする",
+        h264StreamingModeDisableTitle: "ターボを無効にする",
+        h264StreamingModeEnableTitle: "ターボを有効にする",
     },
     sections: {
         video: {
@@ -2146,6 +2200,8 @@ const ja = {
             bufferLabelFrames: "ビデオバッファサイズ ({videoBufferSize} フレーム):",
             crfLabel: "ビデオ CRF ({crf}):",
             fullColorLabel: "フルカラー 4:4:4:",
+            streamingModeDetails: "ターボモードはすべてのVNCロジックを無効にし、すべてのフレームを従来のビデオエンコーダーのようにエンコードします。",
+            streamingModeLabel: "ターボ",
         },
         audio: {
             title: "オーディオ設定",
@@ -2297,6 +2353,8 @@ const vi = {
         virtualKeyboardButtonTitle: "Hiển thị Bàn phím",
         h264FullColorEnableTitle: "Bật H.264 Đầy đủ Màu sắc",
         h264FullColorDisableTitle: "Tắt H.264 Đầy đủ Màu sắc",
+        h264StreamingModeDisableTitle: "Tắt chế độ Turbo",
+        h264StreamingModeEnableTitle: "Bật chế độ Turbo",
     },
     sections: {
         video: {
@@ -2308,6 +2366,8 @@ const vi = {
             bufferLabelFrames: "Kích thước Bộ đệm Video ({videoBufferSize} khung hình):",
             crfLabel: "CRF Video ({crf}):",
             fullColorLabel: "Đầy đủ Màu sắc 4:4:4:",
+            streamingModeDetails: "Chế độ Turbo tắt tất cả logic VNC và mã hóa tất cả các khung hình như một bộ mã hóa video truyền thống.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "Cài đặt Âm thanh",
@@ -2459,6 +2519,8 @@ const th = {
         virtualKeyboardButtonTitle: "แสดงแป้นพิมพ์",
         h264FullColorEnableTitle: "เปิดใช้งาน H.264 สีสมบูรณ์",
         h264FullColorDisableTitle: "ปิดใช้งาน H.264 สีสมบูรณ์",
+        h264StreamingModeDisableTitle: "ปิดใช้งานเทอร์โบ",
+        h264StreamingModeEnableTitle: "เปิดใช้งานเทอร์โบ",
     },
     sections: {
         video: {
@@ -2470,6 +2532,8 @@ const th = {
             bufferLabelFrames: "ขนาดบัฟเฟอร์วิดีโอ ({videoBufferSize} เฟรม):",
             crfLabel: "วิดีโอ CRF ({crf}):",
             fullColorLabel: "สีสมบูรณ์ 4:4:4:",
+            streamingModeDetails: "โหมดเทอร์โบจะปิดการทำงานของ VNC ทั้งหมดและเข้ารหัสเฟรมทั้งหมดเหมือนตัวเข้ารหัสวิดีโอแบบดั้งเดิม",
+            streamingModeLabel: "เทอร์โบ",
         },
         audio: {
             title: "การตั้งค่าเสียง",
@@ -2621,6 +2685,8 @@ const fil = {
         virtualKeyboardButtonTitle: "Ipakita ang Keyboard",
         h264FullColorEnableTitle: "Paganahin ang H.264 Buong Kulay",
         h264FullColorDisableTitle: "Huwag paganahin ang H.264 Buong Kulay",
+        h264StreamingModeDisableTitle: "Huwag paganahin ang Turbo",
+        h264StreamingModeEnableTitle: "Paganahin ang Turbo",
     },
     sections: {
         video: {
@@ -2632,6 +2698,8 @@ const fil = {
             bufferLabelFrames: "Laki ng Video Buffer ({videoBufferSize} frames):",
             crfLabel: "Video CRF ({crf}):",
             fullColorLabel: "Buong Kulay 4:4:4:",
+            streamingModeDetails: "Ang Turbo mode ay hindi pinapagana ang lahat ng lohika ng VNC at ini-encode ang lahat ng mga frame tulad ng isang tradisyonal na video encoder.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "Mga Setting ng Audio",
@@ -2783,6 +2851,8 @@ const da = {
         virtualKeyboardButtonTitle: "Vis tastatur",
         h264FullColorEnableTitle: "Paganahin ang H.264 Buong Kulay",
         h264FullColorDisableTitle: "Huwag paganahin ang H.264 Buong Kulay",
+        h264StreamingModeDisableTitle: "Deaktiver Turbo",
+        h264StreamingModeEnableTitle: "Aktiver Turbo",
     },
     sections: {
         video: {
@@ -2794,6 +2864,8 @@ const da = {
             bufferLabelFrames: "Videobufferstørrelse ({videoBufferSize} billeder):",
             crfLabel: "Video CRF ({crf}):",
             fullColorLabel: "Fuld Farve 4:4:4:",
+            streamingModeDetails: "Turbo-tilstand deaktiverer al VNC-logik og koder alle billeder som en traditionel video-encoder.",
+            streamingModeLabel: "Turbo",
         },
         audio: {
             title: "Lydindstillinger",

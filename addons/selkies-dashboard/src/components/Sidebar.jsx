@@ -588,6 +588,9 @@ function Sidebar({ isOpen }) {
   const [h264FullColor, setH264FullColor] = useState(
     localStorage.getItem("h264_fullcolor") === "true"
   );
+  const [h264StreamingMode, setH264StreamingMode] = useState(
+    localStorage.getItem("h264_streaming_mode") === "true"
+  );
   const [selectedDpi, setSelectedDpi] = useState(
     parseInt(localStorage.getItem("scalingDPI"), 10) || DEFAULT_SCALING_DPI
   );
@@ -710,6 +713,17 @@ function Sidebar({ isOpen }) {
       localStorage.setItem("h264_fullcolor", newFullColor.toString());
       window.postMessage(
         { type: "settings", settings: { h264_fullcolor: newFullColor } },
+        window.location.origin
+      );
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdateH264StreamingModeSettings = useCallback(
+    debounce((newStreamingMode) => {
+      localStorage.setItem("h264_streaming_mode", newStreamingMode.toString());
+      window.postMessage(
+        { type: "settings", settings: { h264_streaming_mode: newStreamingMode } },
         window.location.origin
       );
     }, DEBOUNCE_DELAY),
@@ -1023,6 +1037,11 @@ function Sidebar({ isOpen }) {
     const newFullColorState = !h264FullColor;
     setH264FullColor(newFullColorState); // Immediate UI update
     debouncedUpdateH264FullColorSettings(newFullColorState); // Debounced action
+  };
+  const handleH264StreamingModeToggle = () => {
+    const newStreamingModeState = !h264StreamingMode;
+    setH264StreamingMode(newStreamingModeState); // Immediate UI update
+    debouncedUpdateH264StreamingModeSettings(newStreamingModeState); // Debounced action
   };
   const handleAudioInputChange = (event) => {
     const deviceId = event.target.value;
@@ -1377,6 +1396,13 @@ function Sidebar({ isOpen }) {
       setH264FullColor(false);
       localStorage.setItem("h264_fullcolor", "false");
     }
+    const savedH264StreamingMode = localStorage.getItem("h264_streaming_mode");
+    if (savedH264StreamingMode !== null) {
+      setH264StreamingMode(savedH264StreamingMode === "true");
+    } else {
+      setH264StreamingMode(false);
+      localStorage.setItem("h264_streaming_mode", "false");
+    }
     const savedScalingDPI = parseInt(localStorage.getItem("scalingDPI"), 10);
     if (!isNaN(savedScalingDPI) && dpiScalingOptions.some(opt => opt.value === savedScalingDPI)) {
       setSelectedDpi(savedScalingDPI);
@@ -1642,6 +1668,10 @@ function Sidebar({ isOpen }) {
                   const val = valueStr === true || valueStr === "true";
                   setH264FullColor(val);
                   localStorage.setItem("h264_fullcolor", val.toString());
+                } else if (prefixedKey.endsWith("h264_streaming_mode")) {
+                  const val = valueStr === true || valueStr === "true";
+                  setH264StreamingMode(val);
+                  localStorage.setItem("h264_streaming_mode", val.toString());
                 } else if (prefixedKey.endsWith("SCALING_DPI")) {
                   const val = parseInt(valueStr, 10);
                   if (!isNaN(val) && dpiScalingOptions.some(opt => opt.value === val)) {
@@ -1743,7 +1773,7 @@ function Sidebar({ isOpen }) {
   const showBufferSize = [
   ].includes(encoder);
   const showCRF = ["x264enc-striped", "x264enc"].includes(encoder);
-  const showH264FullColor = ["x264enc-striped", "x264enc"].includes(encoder);
+  const showH264Options = ["x264enc-striped", "x264enc"].includes(encoder);
 
   return (
     <>
@@ -1975,7 +2005,27 @@ function Sidebar({ isOpen }) {
                   />{" "}
                 </div>
               )}
-              {showH264FullColor && (
+              {showH264Options && (
+                <div className="dev-setting-item toggle-item">
+                  <label 
+                    htmlFor="h264StreamingModeToggle"
+                    title={t("sections.video.streamingModeDetails", "Turbo mode disables all VNC logic and encodes all frames like a traditional video encoder.")}
+                  >
+                    {t("sections.video.streamingModeLabel", "Turbo")}
+                  </label>
+                  <button
+                    id="h264StreamingModeToggle"
+                    className={`toggle-button-sidebar ${h264StreamingMode ? "active" : ""}`}
+                    onClick={handleH264StreamingModeToggle}
+                    aria-pressed={h264StreamingMode}
+                    title={t(h264StreamingMode ? "buttons.h264StreamingModeDisableTitle" : "buttons.h264StreamingModeEnableTitle",
+                               h264StreamingMode ? "Disable Turbo" : "Enable Turbo")}
+                  >
+                    <span className="toggle-button-sidebar-knob"></span>
+                  </button>
+                </div>
+              )}
+              {showH264Options && (
                 <div className="dev-setting-item toggle-item">
                   <label htmlFor="h264FullColorToggle">
                     {t("sections.video.fullColorLabel")}
