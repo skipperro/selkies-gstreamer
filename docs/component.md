@@ -53,13 +53,13 @@ Otherwise (for different system architectures), you can build your own portable 
 
 #### Python Application
 
-The term `host` or `server` refers to the [Python Components](https://github.com/selkies-project/selkies/tree/main/src/selkies_gstreamer) across this documentation.
+The term `host` or `server` refers to the [Python Components](https://github.com/selkies-project/selkies/tree/main/src/selkies) across this documentation.
 
-The [Python Components](https://github.com/selkies-project/selkies/tree/main/src/selkies_gstreamer) are responsible for the host server backend, capturing and encoding the host screen and audio, receiving input signals and communicating other data (including the clipboard) between the client and the host, and establishing the WebRTC (with RTP underneath) connection to the client.
+The [Python Components](https://github.com/selkies-project/selkies/tree/main/src/selkies) are responsible for the host server backend, capturing and encoding the host screen and audio, receiving input signals and communicating other data (including the clipboard) between the client and the host, and establishing the WebRTC (with RTP underneath) connection to the client.
 
 Host screen video and audio are transported using the WebRTC `MediaStream` interface, and other data are transported using the WebRTC `DataChannel` interface.
 
-The architecture-independent components are available with the name **`selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl`** for download in the [Releases](https://github.com/selkies-project/selkies/releases) for the latest stable version.
+The architecture-independent components are available with the name **`selkies-${SELKIES_VERSION}-py3-none-any.whl`** for download in the [Releases](https://github.com/selkies-project/selkies/releases) for the latest stable version.
 
 **Instructions from [Advanced Install](start.md#advanced-install) still apply below.**
 

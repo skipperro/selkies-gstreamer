@@ -57,7 +57,7 @@ import subprocess
 import sys
 import time
 import websockets
-import websockets.asyncio.server
+import websockets.asyncio.server as ws_async
 from collections import OrderedDict, deque
 from datetime import datetime
 from shutil import which
@@ -93,7 +93,7 @@ except ImportError:
         "pixelflux library not found. Striped encoding modes unavailable."
     )
 
-from input_handler import WebRTCInput as InputHandler, SelkiesGamepad, GamepadMapper
+from .input_handler import WebRTCInput as InputHandler, SelkiesGamepad, GamepadMapper
 import psutil
 import GPUtil
 
@@ -2583,7 +2583,7 @@ class DataStreamingServer:
             _current_server_instance = None
             wait_closed_task = None
             try:
-                async with websockets.asyncio.server.serve(
+                async with ws_async.serve(
                     self.ws_handler,
                     "0.0.0.0",
                     self.port,

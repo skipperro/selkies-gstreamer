@@ -223,8 +223,8 @@ jobs:
       matrix:
         include:
         - name: conda
-          source: /opt/selkies-gstreamer-conda.tar.gz
-          target: selkies-gstreamer-portable.tar.gz
+          source: /opt/selkies-conda.tar.gz
+          target: selkies-portable.tar.gz
 
         - name: gst-web
           source: /opt/gst-web.tar.gz
@@ -232,18 +232,18 @@ jobs:
 
         - name: gstreamer
           version_suffix: -ubuntu20.04
-          source: /opt/selkies-gstreamer-latest.tar.gz
-          target: selkies-gstreamer.tar.gz
+          source: /opt/selkies-latest.tar.gz
+          target: selkies.tar.gz
 
         - name: gstreamer
           version_suffix: -ubuntu22.04
-          source: /opt/selkies-gstreamer-latest.tar.gz
-          target: selkies-gstreamer.tar.gz
+          source: /opt/selkies-latest.tar.gz
+          target: selkies.tar.gz
 
         - name: gstreamer
           version_suffix: -ubuntu24.04
-          source: /opt/selkies-gstreamer-latest.tar.gz
-          target: selkies-gstreamer.tar.gz
+          source: /opt/selkies-latest.tar.gz
+          target: selkies.tar.gz
 
         - name: js-interposer
           version_suffix: -ubuntu20.04
@@ -324,8 +324,8 @@ jobs:
           platforms: linux/arm64
 
         - name: py-build
-          source: /opt/pypi/dist/selkies_gstreamer-0.0.0.dev0-py3-none-any.whl
-          target: selkies_gstreamer-0.0.0.dev0-py3-none-any.whl
+          source: /opt/pypi/dist/selkies-0.0.0.dev0-py3-none-any.whl
+          target: selkies-0.0.0.dev0-py3-none-any.whl
 
     name: ${{ matrix.name }}${{ matrix.version_suffix }}${{ matrix.suffix }}_${{ matrix.platforms || 'linux/amd64' }} build artifact extraction & upload
     steps:

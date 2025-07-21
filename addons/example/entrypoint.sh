@@ -33,7 +33,7 @@ export PULSE_SERVER="${PULSE_SERVER:-unix:${PULSE_RUNTIME_PATH:-${XDG_RUNTIME_DI
 echo 'Waiting for X Socket' && until [ -S "/tmp/.X11-unix/X${DISPLAY#*:}" ]; do sleep 0.5; done && echo 'X Server is ready'
 
 # Preset the resolution
-selkies-gstreamer-resize 1920x1080
+selkies-resize 1920x1080
 
 # Start Xfce4 Desktop session
 [ "${START_XFCE4:-true}" = "true" ] && rm -rf ~/.config/xfce4 && vglrun -d "${VGL_DISPLAY:-egl}" /usr/bin/dbus-launch --exit-with-session /usr/bin/xfce4-session &
