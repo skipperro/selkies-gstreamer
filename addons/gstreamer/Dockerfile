@@ -113,4 +113,4 @@ export PYTHONPATH=\"\${GSTREAMER_PATH}/lib/python3/dist-packages\${PYTHONPATH:+:
 " > /opt/gstreamer/gst-env
 
 # Bundle build result to tarball
-RUN cd /opt && tar -czvf selkies-gstreamer-latest.tar.gz gstreamer
+RUN cd /opt && tar -czvf selkies-latest.tar.gz gstreamer

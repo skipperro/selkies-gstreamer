@@ -23,7 +23,7 @@ export PIPEWIRE_RUNTIME_DIR="${PIPEWIRE_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}}"
 export PULSE_RUNTIME_PATH="${PULSE_RUNTIME_PATH:-${XDG_RUNTIME_DIR:-/tmp}/pulse}"
 export PULSE_SERVER="${PULSE_SERVER:-unix:${PULSE_RUNTIME_PATH:-${XDG_RUNTIME_DIR:-/tmp}/pulse}/native}"
 
-# Export environment variables required for Selkies-GStreamer
+# Export environment variables required for selkies
 export GST_DEBUG="${GST_DEBUG:-*:2}"
 export GSTREAMER_PATH=/opt/gstreamer
 
@@ -50,7 +50,7 @@ echo 'Waiting for X Socket' && until [ -S "/tmp/.X11-unix/X${DISPLAY#*:}" ]; do 
 
 # Configure NGINX
 if [ "$(echo ${SELKIES_ENABLE_BASIC_AUTH} | tr '[:upper:]' '[:lower:]')" != "false" ]; then htpasswd -bcm "${XDG_RUNTIME_DIR}/.htpasswd" "${SELKIES_BASIC_AUTH_USER:-${USER}}" "${SELKIES_BASIC_AUTH_PASSWORD:-${PASSWD}}"; fi
-echo "# Selkies-GStreamer NGINX Configuration
+echo "# selkies NGINX Configuration
 server {
     access_log /dev/stdout;
     error_log /dev/stderr;
@@ -109,7 +109,7 @@ server {
         proxy_pass http$(if [ \"$(echo ${SELKIES_ENABLE_HTTPS} | tr '[:upper:]' '[:lower:]')\" = \"true\" ]; then echo -n "s"; fi)://localhost:${SELKIES_PORT:-8081};
     }
 
-    location /webrtc/signalling {
+    location /webrtc/signaling {
         proxy_set_header        Upgrade \$http_upgrade;
         proxy_set_header        Connection \"upgrade\";
 
@@ -150,8 +150,8 @@ server {
 # Clear the cache registry
 rm -rf "${HOME}/.cache/gstreamer-1.0"
 
-# Start the Selkies-GStreamer WebRTC HTML5 remote desktop application
-selkies-gstreamer \
+# Start the selkies WebRTC HTML5 remote desktop application
+selkies \
     --addr="localhost" \
     --port="${SELKIES_PORT:-8081}" \
     --enable_basic_auth="false" \

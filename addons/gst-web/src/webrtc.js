@@ -44,16 +44,16 @@ class WebRTCDemo {
      * Interface to WebRTC demo.
      *
      * @constructor
-     * @param {WebRTCDemoSignalling} [signalling]
-     *    Instance of WebRTCDemoSignalling used to communicate with signalling server.
+     * @param {WebRTCDemoSignaling} [signaling]
+     *    Instance of WebRTCDemoSignaling used to communicate with signaling server.
      * @param {Element} [element]
      *    Element to attach stream to.
      */
-    constructor(signalling, element, peer_id) {
+    constructor(signaling, element, peer_id) {
         /**
-         * @type {WebRTCDemoSignalling}
+         * @type {WebRTCDemoSignaling}
          */
-        this.signalling = signalling;
+        this.signaling = signaling;
 
         /**
          * @type {Element}
@@ -161,9 +161,9 @@ class WebRTCDemo {
          */
         this.onsystemstats = null;
 
-        // Bind signalling server callbacks.
-        this.signalling.onsdp = this._onSDP.bind(this);
-        this.signalling.onice = this._onSignallingICE.bind(this);
+        // Bind signaling server callbacks.
+        this.signaling.onsdp = this._onSDP.bind(this);
+        this.signaling.onice = this._onSignalingICE.bind(this);
 
         /**
          * @type {boolean}
@@ -233,12 +233,12 @@ class WebRTCDemo {
     }
 
     /**
-     * Handles incoming ICE candidate from signalling server.
+     * Handles incoming ICE candidate from signaling server.
      *
      * @param {RTCIceCandidate} icecandidate
      */
-    _onSignallingICE(icecandidate) {
-        this._setDebug("received ice candidate from signalling server: " + JSON.stringify(icecandidate));
+    _onSignalingICE(icecandidate) {
+        this._setDebug("received ice candidate from signaling server: " + JSON.stringify(icecandidate));
         if (this.forceTurn && JSON.stringify(icecandidate).indexOf("relay") < 0) { // if no relay address is found, assuming it means no TURN server
             this._setDebug("Rejecting non-relay ICE candidate: " + JSON.stringify(icecandidate));
             return;
@@ -258,11 +258,11 @@ class WebRTCDemo {
             this._setStatus("Completed ICE candidates from peer connection");
             return;
         }
-        this.signalling.sendICE(event.candidate);
+        this.signaling.sendICE(event.candidate);
     }
 
     /**
-     * Handles incoming SDP from signalling server.
+     * Handles incoming SDP from signaling server.
      * Sets the remote description on the peer connection,
      * creates an answer with a local description and sends that to the peer.
      *
@@ -310,7 +310,7 @@ class WebRTCDemo {
                     console.log("Created local SDP", local_sdp);
                     this.peerConnection.setLocalDescription(local_sdp).then(() => {
                         this._setDebug("Sending SDP answer");
-                        this.signalling.sendSDP(this.peerConnection.localDescription);
+                        this.signaling.sendSDP(this.peerConnection.localDescription);
                     });
                 }).catch(() => {
                     this._setError("Error creating local SDP");
@@ -708,7 +708,7 @@ class WebRTCDemo {
     // [END playStream]
 
     /**
-     * Initiate connection to signalling server.
+     * Initiate connection to signaling server.
      */
     connect() {
         // Create the peer connection object and bind callbacks.
@@ -732,8 +732,8 @@ class WebRTCDemo {
             this.peerConnection.setConfiguration(config);
         }
 
-        this.signalling.peer_id = this.peer_id;
-        this.signalling.connect();
+        this.signaling.peer_id = this.peer_id;
+        this.signaling.connect();
     }
 
     /**

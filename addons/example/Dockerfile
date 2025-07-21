@@ -5,13 +5,13 @@
 # Supported base images: Ubuntu 24.04, 22.04, 20.04
 ARG DISTRIB_IMAGE=ubuntu
 ARG DISTRIB_RELEASE=24.04
-ARG GSTREAMER_BASE_IMAGE=ghcr.io/selkies-project/selkies-gstreamer/gstreamer
+ARG GSTREAMER_BASE_IMAGE=ghcr.io/selkies-project/selkies/gstreamer
 ARG GSTREAMER_BASE_IMAGE_RELEASE=main
-ARG PY_BUILD_IMAGE=ghcr.io/selkies-project/selkies-gstreamer/py-build:main
-ARG WEB_IMAGE=ghcr.io/selkies-project/selkies-gstreamer/gst-web:main
-ARG JS_BASE_IMAGE=ghcr.io/selkies-project/selkies-gstreamer/js-interposer
+ARG PY_BUILD_IMAGE=ghcr.io/selkies-project/selkies/py-build:main
+ARG WEB_IMAGE=ghcr.io/selkies-project/selkies/gst-web:main
+ARG JS_BASE_IMAGE=ghcr.io/selkies-project/selkies/js-interposer
 ARG JS_BASE_IMAGE_RELEASE=main
-FROM ${GSTREAMER_BASE_IMAGE}:${GSTREAMER_BASE_IMAGE_RELEASE}-${DISTRIB_IMAGE}${DISTRIB_RELEASE} AS selkies-gstreamer
+FROM ${GSTREAMER_BASE_IMAGE}:${GSTREAMER_BASE_IMAGE_RELEASE}-${DISTRIB_IMAGE}${DISTRIB_RELEASE} AS selkies
 FROM ${PY_BUILD_IMAGE} AS selkies-build
 FROM ${WEB_IMAGE} AS selkies-web
 FROM ${JS_BASE_IMAGE}:${JS_BASE_IMAGE_RELEASE}-${DISTRIB_IMAGE}${DISTRIB_RELEASE} AS selkies-js-interposer
@@ -61,7 +61,7 @@ USER 1000
 # Use BUILDAH_FORMAT=docker in buildah
 SHELL ["/usr/bin/fakeroot", "--", "/bin/sh", "-c"]
 
-# Install Selkies-GStreamer system dependencies
+# Install selkies system dependencies
 RUN apt-get update && apt-get install --no-install-recommends -y \
         # System dependencies
         build-essential \
@@ -243,7 +243,7 @@ Pin-Priority: -1" > /etc/apt/preferences.d/firefox-nosnap && \
     cp -rf /etc/xdg/xfce4/panel/default.xml /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
 
 # Install GStreamer distribution
-COPY --chown=1000:1000 --from=selkies-gstreamer /opt/gstreamer ./gstreamer
+COPY --chown=1000:1000 --from=selkies /opt/gstreamer ./gstreamer
 
 # Install web application
 COPY --chown=1000:1000 --from=selkies-web /usr/share/nginx/html ./gst-web
@@ -253,8 +253,8 @@ COPY --chown=1000:1000 --from=selkies-js-interposer /opt/*.deb /opt/selkies-js-i
 RUN apt-get update && apt-get install --no-install-recommends -y /opt/selkies-js-interposer.deb && rm -f /opt/selkies-js-interposer.deb && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
-# Install Selkies-GStreamer Python application
-ARG PYPI_PACKAGE=selkies_gstreamer
+# Install selkies Python application
+ARG PYPI_PACKAGE=selkies
 ARG PACKAGE_VERSION=0.0.0.dev0
 ARG PIP_BREAK_SYSTEM_PACKAGES=1
 COPY --chown=1000:1000 --from=selkies-build /opt/pypi/dist/${PYPI_PACKAGE}-${PACKAGE_VERSION}-py3-none-any.whl .
@@ -263,8 +263,8 @@ RUN pip3 install --no-cache-dir --force-reinstall /opt/${PYPI_PACKAGE}-${PACKAGE
 # Copy scripts and configurations used to start the container
 COPY --chown=1000:1000 entrypoint.sh /etc/entrypoint.sh
 RUN chmod -f 755 /etc/entrypoint.sh
-COPY --chown=1000:1000 selkies-gstreamer-entrypoint.sh /etc/selkies-gstreamer-entrypoint.sh
-RUN chmod -f 755 /etc/selkies-gstreamer-entrypoint.sh
+COPY --chown=1000:1000 selkies-entrypoint.sh /etc/selkies-entrypoint.sh
+RUN chmod -f 755 /etc/selkies-entrypoint.sh
 COPY --chown=1000:1000 supervisord.conf /etc/supervisord.conf
 RUN chmod -f 755 /etc/supervisord.conf
 
@@ -295,7 +295,7 @@ turnserver \
 # Configure bashrc to show /etc/motd and /etc/issue
 RUN echo "[ ! -z \"\$TERM\" -a -r /etc/motd ] && echo \"\$(grep '^PRETTY_NAME=' /etc/os-release | cut -d= -f2 | tr -d '\\\"')\" && cat /etc/motd" >> /etc/bash.bashrc && \
     echo "==============================================\n\
-= Selkies-GStreamer Example Docker Container =\n\
+= selkies Example Docker Container =\n\
 ==============================================\n\
 " > /etc/motd
 

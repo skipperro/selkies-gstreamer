@@ -44,7 +44,7 @@ If the latency becomes higher while the screen is idle or the tab is not focused
 
 If it does not, disable all power saving or efficiency features available in the web browser. In Windows 10 or 11, try `Start > Settings > System > Power & battery > Power mode > Best performance`. Also, note that if you saturate your CPU or GPU with an application on the host, the remote desktop interface will also substantially slow down as it cannot use the CPU or GPU enough to decode the screen. Also, check for GPU driver/firmware updates in the client computer.
 
-However, it might be that the parameters for the WebRTC interface, video encoders, the RTP payloader, or other [GStreamer](https://gstreamer.freedesktop.org) plugins are not optimized enough. If you find that it is the case, we always welcome [contributions](development.md). If your changes show noticeably better results in the same conditions, please make a [Pull Request](https://github.com/selkies-project/selkies-gstreamer/pulls), or tell us about the parameters in any channel that we can reach so that we could also test.
+However, it might be that the parameters for the WebRTC interface, video encoders, the RTP payloader, or other [GStreamer](https://gstreamer.freedesktop.org) plugins are not optimized enough. If you find that it is the case, we always welcome [contributions](development.md). If your changes show noticeably better results in the same conditions, please make a [Pull Request](https://github.com/selkies-project/selkies/pulls), or tell us about the parameters in any channel that we can reach so that we could also test.
 
 </details>
 
@@ -110,7 +110,7 @@ export SELKIES_TURN_PORT="YOUR_TURN_PORT"
 export SELKIES_TURN_SECRET="YOUR_SHARED_SECRET"
 export SELKIES_TURN_USER="user"
 
-python3 -c 'import os;from selkies_gstreamer.signalling_web import generate_rtc_config; print(generate_rtc_config(os.environ["SELKIES_TURN_HOST"], os.environ["SELKIES_TURN_PORT"], os.environ["SELKIES_TURN_SECRET"], os.environ["SELKIES_TURN_USER"]))'
+python3 -c 'import os;from selkies import generate_rtc_config; print(generate_rtc_config(os.environ["SELKIES_TURN_HOST"], os.environ["SELKIES_TURN_PORT"], os.environ["SELKIES_TURN_SECRET"], os.environ["SELKIES_TURN_USER"]))'
 ```
 
 Using both methods, you can then test your TURN server configuration from the [Trickle ICE](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/) website.

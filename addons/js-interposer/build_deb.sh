@@ -28,7 +28,7 @@ Architecture: $(dpkg --print-architecture)
 Essential: no
 Installed-Size: ${PKG_SIZE?missing env}
 Maintainer: ${DEBFULLNAME?missing env} <${DEBEMAIL?missing env}>
-Description: Joystick device interposer for Selkies-GStreamer project
+Description: Joystick device interposer for Selkies project
 EOF
 
 dpkg-deb --build ${PKG_DIR}
