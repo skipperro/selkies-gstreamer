@@ -22,11 +22,11 @@ import logging
 import struct
 import time
 import asyncio
+from asyncio import subprocess
 import socket
 import os
 import base64
 import io
-import subprocess
 import re 
 import json
 
@@ -899,7 +899,7 @@ class WebRTCInput:
         try: self.xdisplay = display.Display()
         except Exception as e: logger_webrtc_input.error(f"Failed to connect to X display: {e}"); self.xdisplay = None
         self.__keyboard_connect()
-        if self.xdisplay: self.reset_keyboard()
+        if self.xdisplay: await self.reset_keyboard()
         self.__mouse_connect()
         
         # Initialize persistent gamepad instances
@@ -948,7 +948,7 @@ class WebRTCInput:
         self.__mouse_disconnect()
         if self.xdisplay: self.xdisplay = None
 
-    def reset_keyboard(self):
+    async def reset_keyboard(self):
         if not self.keyboard or not self.xdisplay : 
             logger_webrtc_input.warning("Cannot reset keyboard, X display or keyboard controller not available.")
             return
@@ -956,7 +956,7 @@ class WebRTCInput:
         lctrl, lshift, lalt, rctrl, rshift, ralt = 65507, 65505, 65513, 65508, 65506, 65027
         lmeta, rmeta, keyf, keyF, keym, keyM, escape = 65511, 65512, 102, 70, 109, 77, 65307
         for k in [lctrl, lshift, lalt, rctrl, rshift, ralt, lmeta, rmeta, keyf, keyF, keym, keyM, escape]:
-            try: self.send_x11_keypress(k, down=False)
+            try: await self.send_x11_keypress(k, down=False)
             except Exception as e: logger_webrtc_input.warning(f"Error resetting key {k}: {e}")
     
     def send_mouse(self, action, data):
@@ -986,7 +986,7 @@ class WebRTCInput:
                 if self.uinput_mouse_socket_path: self.__mouse_emit(btn_uinput_or_pynput, 0)
                 elif self.mouse: self.mouse.release(btn_uinput_or_pynput)
 
-    def send_x11_keypress(self, keysym, down=True):
+    async def send_x11_keypress(self, keysym, down=True):
         if not down and keysym in self.typed_keys_to_ignore_keyup:
             self.typed_keys_to_ignore_keyup.remove(keysym)
             return
@@ -1014,15 +1014,23 @@ class WebRTCInput:
         if is_printable and down and not self.active_shortcut_modifiers:
             try:
                 command = ["xdotool", "type", "--clearmodifiers", char_to_type]
-                subprocess.run(command, check=True, timeout=0.5, capture_output=True, text=True)
-                self.typed_keys_to_ignore_keyup.add(keysym)
-                logger_webrtc_input.debug(f"Typed character '{char_to_type}' via xdotool type.")
-                return
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+                process = await subprocess.create_subprocess_exec(
+                    *command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=0.5)
+                if process.returncode == 0:
+                    self.typed_keys_to_ignore_keyup.add(keysym)
+                    logger_webrtc_input.debug(f"Typed character '{char_to_type}' via xdotool type.")
+                    return
+                else:
+                    raise Exception(f"xdotool returned {process.returncode}: {stderr.decode()}")
+            except (asyncio.TimeoutError, FileNotFoundError, Exception) as e:
                 logger_webrtc_input.warning(f"xdotool type command failed for '{char_to_type}': {e}. Falling back.")
         try:
             if not self.keyboard:
-                self._xdotool_fallback(keysym, down)
+                await self._xdotool_fallback(keysym, down)
                 return
 
             pynput_key = pynput.keyboard.KeyCode.from_vk(keysym)
@@ -1031,9 +1039,9 @@ class WebRTCInput:
             else:
                 self.keyboard.release(pynput_key)
         except Exception:
-            self._xdotool_fallback(keysym, down)
+            await self._xdotool_fallback(keysym, down)
 
-    def _xdotool_fallback(self, keysym_number, down=True):
+    async def _xdotool_fallback(self, keysym_number, down=True):
         if not self.xdisplay:
             return
 
@@ -1087,8 +1095,13 @@ class WebRTCInput:
         fallback_succeeded = False
 
         try:
-            result_key = subprocess.run(command_key, check=False, timeout=1.0, capture_output=True, text=True)
-            if result_key.returncode == 0 and not (result_key.stderr and ("No such key name" in result_key.stderr or "Error:" in result_key.stderr.lower())):
+            process_key = await subprocess.create_subprocess_exec(
+                *command_key,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout_key, stderr_key = await asyncio.wait_for(process_key.communicate(), timeout=1.0)
+            if process_key.returncode == 0 and not (stderr_key and (b"No such key name" in stderr_key or b"Error:" in stderr_key.lower())):
                 fallback_succeeded = True
             else:
                 char_to_type = char_for_type_cmd_fallback
@@ -1098,14 +1111,20 @@ class WebRTCInput:
                 if down and char_to_type and (0x20 <= ord(char_to_type) <= 0x7E or ord(char_to_type) >= 0xA0) and char_to_type.isprintable():
                     command_type = ["xdotool", "type", "--clearmodifiers", char_to_type]
                     try:
-                        subprocess.run(command_type, check=True, timeout=1.0, capture_output=True, text=True)
-                        fallback_succeeded = True
-                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError, Exception):
+                        process_type = await subprocess.create_subprocess_exec(
+                            *command_type,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE
+                        )
+                        await asyncio.wait_for(process_type.communicate(), timeout=1.0)
+                        if process_type.returncode == 0:
+                            fallback_succeeded = True
+                    except (asyncio.TimeoutError, FileNotFoundError, Exception):
                         pass
-        except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+        except (FileNotFoundError, asyncio.TimeoutError, Exception):
             pass
 
-    def send_x11_mouse(self, x, y, button_mask, scroll_magnitude, relative=False):
+    async def send_x11_mouse(self, x, y, button_mask, scroll_magnitude, relative=False):
         if relative:
             self.send_mouse(MOUSE_MOVE, (x, y))
         else:
@@ -1144,10 +1163,10 @@ class WebRTCInput:
                             if is_pressed_now: # Trigger on press
                                 if self.keyboard:
                                     logger_webrtc_input.debug("Sending Alt+Left Arrow for Back")
-                                    self.send_x11_keypress(KEYSYM_ALT_L, down=True)
-                                    self.send_x11_keypress(KEYSYM_LEFT_ARROW, down=True)
-                                    self.send_x11_keypress(KEYSYM_LEFT_ARROW, down=False)
-                                    self.send_x11_keypress(KEYSYM_ALT_L, down=False)
+                                    await self.send_x11_keypress(KEYSYM_ALT_L, down=True)
+                                    await self.send_x11_keypress(KEYSYM_LEFT_ARROW, down=True)
+                                    await self.send_x11_keypress(KEYSYM_LEFT_ARROW, down=False)
+                                    await self.send_x11_keypress(KEYSYM_ALT_L, down=False)
                                     performed_keyboard_combo = True
                                 else:
                                     logger_webrtc_input.warning("Keyboard not available for Alt+Left.")
@@ -1160,10 +1179,10 @@ class WebRTCInput:
                             if is_pressed_now: # Trigger on press
                                 if self.keyboard:
                                     logger_webrtc_input.debug("Sending Alt+Right Arrow for Forward")
-                                    self.send_x11_keypress(KEYSYM_ALT_L, down=True)
-                                    self.send_x11_keypress(KEYSYM_RIGHT_ARROW, down=True)
-                                    self.send_x11_keypress(KEYSYM_RIGHT_ARROW, down=False)
-                                    self.send_x11_keypress(KEYSYM_ALT_L, down=False)
+                                    await self.send_x11_keypress(KEYSYM_ALT_L, down=True)
+                                    await self.send_x11_keypress(KEYSYM_RIGHT_ARROW, down=True)
+                                    await self.send_x11_keypress(KEYSYM_RIGHT_ARROW, down=False)
+                                    await self.send_x11_keypress(KEYSYM_ALT_L, down=False)
                                     performed_keyboard_combo = True
                                 else:
                                     logger_webrtc_input.warning("Keyboard not available for Alt+Right.")
@@ -1179,14 +1198,36 @@ class WebRTCInput:
 
         if not relative and self.xdisplay:
             self.xdisplay.sync()
-    def read_clipboard(self):
+    async def read_clipboard(self):
         try:
-            result = subprocess.run(("xsel", "--clipboard", "--output"), check=True, text=True, capture_output=True, timeout=1)
-            return result.stdout
+            process = await subprocess.create_subprocess_exec(
+                "xsel", "--clipboard", "--output",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=1)
+            if process.returncode == 0:
+                return stdout.decode('utf-8')
+            else:
+                logger_webrtc_input.warning(f"xsel failed with return code {process.returncode}: {stderr.decode()}")
+                return None
         except Exception as e: logger_webrtc_input.warning(f"Error capturing clipboard: {e}"); return None
-    def write_clipboard(self, data):
-        try: subprocess.run(("xsel", "--clipboard", "--input"), input=data.encode(), check=True, timeout=1); return True
-        except Exception as e: logger_webrtc_input.warning(f"Error writing to clipboard: {e}"); return False
+    async def write_clipboard(self, data):
+        try:
+            process = await subprocess.create_subprocess_exec(
+                "xsel", "--clipboard", "--input",
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(input=data.encode()), 
+                timeout=1
+            )
+            return process.returncode == 0
+        except Exception as e: 
+            logger_webrtc_input.warning(f"Error writing to clipboard: {e}")
+            return False
 
     async def start_clipboard(self):
         if self.enable_clipboard not in ["true", "out"]:
@@ -1194,7 +1235,7 @@ class WebRTCInput:
         logger_webrtc_input.info("Starting clipboard monitor")
         self.clipboard_running = True; last_data = ""
         while self.clipboard_running:
-            curr_data = await self.loop.run_in_executor(None, self.read_clipboard)
+            curr_data = await self.read_clipboard()
             if curr_data is not None and curr_data != last_data:
                 logger_webrtc_input.info(f"Sending clipboard content, length: {len(curr_data)}")
                 self.on_clipboard_read(curr_data); last_data = curr_data
@@ -1305,14 +1346,14 @@ class WebRTCInput:
         if msg_type == "pong":
             if self.ping_start is None: logger_webrtc_input.warning("received pong before ping"); return
             self.on_ping_response(float("%.3f" % ((time.time() - self.ping_start) / 2 * 1000)))
-        elif msg_type == "kd": self.send_x11_keypress(int(toks[1]), down=True)
-        elif msg_type == "ku": self.send_x11_keypress(int(toks[1]), down=False)
-        elif msg_type == "kr": self.reset_keyboard()
+        elif msg_type == "kd": await self.send_x11_keypress(int(toks[1]), down=True)
+        elif msg_type == "ku": await self.send_x11_keypress(int(toks[1]), down=False)
+        elif msg_type == "kr": await self.reset_keyboard()
         elif msg_type in ["m", "m2"]:
             relative = msg_type == "m2"
             try: x, y, button_mask, scroll_magnitude = [int(i) for i in toks[1:]]
             except: x,y,button_mask,scroll_magnitude = 0,0,self.button_mask,0; relative=False 
-            try: self.send_x11_mouse(x, y, button_mask, scroll_magnitude, relative)
+            try: await self.send_x11_mouse(x, y, button_mask, scroll_magnitude, relative)
             except Exception as e: logger_webrtc_input.warning(f"Failed to set mouse cursor: {e}")
         elif msg_type == "p": self.on_mouse_pointer_visible(bool(int(toks[1])))
         elif msg_type == "vb": self.on_video_encoder_bit_rate(int(toks[1]))
@@ -1359,7 +1400,7 @@ class WebRTCInput:
             else: logger_webrtc_input.warning(f"Unhandled joystick command for slot {gamepad_idx}: js {cmd}")
         elif msg_type == "cr": 
             if self.enable_clipboard in ["true", "out"]:
-                data = await self.loop.run_in_executor(None, self.read_clipboard)
+                data = await self.read_clipboard()
                 if data: self.on_clipboard_read(data)
                 else: logger_webrtc_input.warning("No clipboard content to send")
             else: logger_webrtc_input.warning("Rejecting clipboard read: outbound clipboard disabled.")
@@ -1367,7 +1408,7 @@ class WebRTCInput:
             if self.enable_clipboard in ["true", "in"]:
                 try: data = base64.b64decode(toks[1]).decode("utf-8", 'ignore')
                 except Exception as e: logger_webrtc_input.error(f"Clipboard decode error: {e}"); return
-                if await self.loop.run_in_executor(None, self.write_clipboard, data):
+                if await self.write_clipboard(data):
                     logger_webrtc_input.info(f"Set clipboard content, length: {len(data)}")
             else: logger_webrtc_input.warning("Rejecting clipboard write: inbound clipboard disabled.")
         elif msg_type == "r": 
@@ -1386,17 +1427,15 @@ class WebRTCInput:
                 logger_webrtc_input.info(f"Attempting to execute command: '{command_to_run}'")
                 home_directory = os.path.expanduser("~")
                 try:
-                    # Use subprocess.Popen for fire-and-forget execution
+                    # Use asyncio subprocess for fire-and-forget execution
                     # stdout and stderr are redirected to DEVNULL to ignore output.
-                    # start_new_session=True detaches the process from the current one.
-                    subprocess.Popen(
-                        command_to_run, 
-                        shell=True,
+                    process = await subprocess.create_subprocess_shell(
+                        command_to_run,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        cwd=home_directory,
-                        start_new_session=True 
+                        cwd=home_directory
                     )
+                    # Don't wait for completion - fire and forget
                     logger_webrtc_input.info(f"Successfully launched command: '{command_to_run}'")
                 except Exception as e:
                     logger_webrtc_input.error(f"Failed to launch command '{command_to_run}': {e}")
@@ -1422,7 +1461,13 @@ class WebRTCInput:
             try: await self.on_client_webrtc_stats(msg_type, ",".join(toks[1:]))
             except: logger_webrtc_input.error("Failed to parse WebRTC Statistics")
         elif msg_type == "co" and toks[1] == "end" and len(toks) > 2: 
-            try: subprocess.run(["xdotool", "type", toks[2]], check=True, timeout=0.5)
+            try:
+                process = await subprocess.create_subprocess_exec(
+                    "xdotool", "type", toks[2],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                await asyncio.wait_for(process.communicate(), timeout=0.5)
             except Exception as e: logger_webrtc_input.warning(f"Error with xdotool type: {e}")
         else:
             logger_webrtc_input.info(f"Unknown data channel message: {msg[:100]}") 

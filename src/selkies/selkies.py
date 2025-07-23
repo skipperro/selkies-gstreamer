@@ -53,7 +53,7 @@ import os
 import pathlib
 import re
 import struct
-import subprocess
+from asyncio import subprocess
 import sys
 import time
 import websockets
@@ -171,7 +171,7 @@ class SelkiesStreamingApp:
             )
         else:
             data_logger.warning(
-                "Cannot broadcast clipboard data: prerequisites not met."
+                "Cannot broadcast clipboard data: no clients connected or server not ready."
             )
 
     def send_ws_cursor_data(self, data):
@@ -198,7 +198,7 @@ class SelkiesStreamingApp:
                 _broadcast_cursor_helper(), self.async_event_loop
             )
         else:
-            data_logger.warning("Cannot broadcast cursor data: prerequisites not met.")
+            data_logger.warning("Cannot broadcast cursor data: no clients connected or server not ready.")
 
     async def stop_pipeline(self):
         logger_gst_app.info("Stopping pipelines (generic call)...")
@@ -238,7 +238,7 @@ def fit_res(w, h, max_w, max_h):
     return w - (w % 2), h - (h % 2)
 
 
-def get_new_res(res_str):
+async def get_new_res(res_str):
     screen_name = None
     resolutions = []
     screen_pat = re.compile(r"(\S+) connected")
@@ -246,10 +246,14 @@ def get_new_res(res_str):
     res_pat = re.compile(r"^(\d+x\d+)\s+\d+\.\d+.*")
     curr_res = new_res = max_res_str = res_str
     try:
-        xrandr_output = subprocess.check_output(
-            ["xrandr"], text=True, stderr=subprocess.STDOUT
+        process = await subprocess.create_subprocess_exec(
+            "xrandr",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT
         )
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        stdout, _ = await process.communicate()
+        xrandr_output = stdout.decode('utf-8')
+    except (FileNotFoundError, Exception) as e:
         logger_gst_app_resize.error(f"xrandr command failed: {e}")
         return curr_res, new_res, resolutions, max_res_str, screen_name
     current_screen_modes_started = False
@@ -283,13 +287,13 @@ def get_new_res(res_str):
     return curr_res, new_res, resolutions, max_res_str, screen_name
 
 
-def resize_display(res_str):  # e.g., res_str is "2560x1280"
+async def resize_display(res_str):  # e.g., res_str is "2560x1280"
     """
     Resizes the display using xrandr to the specified resolution string.
     Adds a new mode via cvt/gtf if the requested mode doesn't exist,
     using res_str (e.g., "2560x1280") as the mode name for xrandr.
     """
-    _, _, available_resolutions, _, screen_name = get_new_res(res_str)
+    _, _, available_resolutions, _, screen_name = await get_new_res(res_str)
 
     if not screen_name:
         logger_gst_app_resize.error(
@@ -315,29 +319,45 @@ def resize_display(res_str):  # e.g., res_str is "2560x1280"
             return False
 
         cmd_new = ["xrandr", "--newmode", res_str] + modeline_params.split()
-        new_mode_proc = subprocess.run(cmd_new, capture_output=True, text=True)
+        new_mode_proc = await subprocess.create_subprocess_exec(
+            *cmd_new,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout_new, stderr_new = await new_mode_proc.communicate()
         if new_mode_proc.returncode != 0:
             logger_gst_app_resize.error(
-                f"Failed to create new xrandr mode with '{' '.join(cmd_new)}': {new_mode_proc.stderr}"
+                f"Failed to create new xrandr mode with '{' '.join(cmd_new)}': {stderr_new.decode()}"
             )
             return False
         logger_gst_app_resize.info(f"Successfully ran: {' '.join(cmd_new)}")
 
         # Use res_str (e.g., "2560x1280") as the mode name for --addmode
         cmd_add = ["xrandr", "--addmode", screen_name, res_str]
-        add_mode_proc = subprocess.run(cmd_add, capture_output=True, text=True)
+        add_mode_proc = await subprocess.create_subprocess_exec(
+            *cmd_add,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout_add, stderr_add = await add_mode_proc.communicate()
         if add_mode_proc.returncode != 0:
             logger_gst_app_resize.error(
-                f"Failed to add mode '{res_str}' to screen '{screen_name}': {add_mode_proc.stderr}"
+                f"Failed to add mode '{res_str}' to screen '{screen_name}': {stderr_add.decode()}"
             )
-            subprocess.run(
-                ["xrandr", "--delmode", screen_name, res_str],
-                capture_output=True,
-                check=False,
+            # Cleanup commands
+            delmode_proc = await subprocess.create_subprocess_exec(
+                "xrandr", "--delmode", screen_name, res_str,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
-            subprocess.run(
-                ["xrandr", "--rmmode", res_str], capture_output=True, check=False
+            await delmode_proc.communicate()
+            
+            rmmode_proc = await subprocess.create_subprocess_exec(
+                "xrandr", "--rmmode", res_str,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
+            await rmmode_proc.communicate()
             return False
         logger_gst_app_resize.info(f"Successfully ran: {' '.join(cmd_add)}")
 
@@ -345,10 +365,15 @@ def resize_display(res_str):  # e.g., res_str is "2560x1280"
         f"Applying xrandr mode '{target_mode_to_set}' for screen '{screen_name}'."
     )
     cmd_output = ["xrandr", "--output", screen_name, "--mode", target_mode_to_set]
-    set_mode_proc = subprocess.run(cmd_output, capture_output=True, text=True)
+    set_mode_proc = await subprocess.create_subprocess_exec(
+        *cmd_output,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    stdout_set, stderr_set = await set_mode_proc.communicate()
     if set_mode_proc.returncode != 0:
         logger_gst_app_resize.error(
-            f"Failed to set mode '{target_mode_to_set}' on screen '{screen_name}': {set_mode_proc.stderr}"
+            f"Failed to set mode '{target_mode_to_set}' on screen '{screen_name}': {stderr_set.decode()}"
         )
         return False
 
@@ -358,22 +383,38 @@ def resize_display(res_str):  # e.g., res_str is "2560x1280"
     return True
 
 
-def generate_xrandr_gtf_modeline(res_wh_str):
+async def generate_xrandr_gtf_modeline(res_wh_str):
     """Generates an xrandr modeline string using cvt or gtf."""
     try:
         w_str, h_str = res_wh_str.split("x")
         cmd = ["cvt", w_str, h_str, "60"]
         tool_name = "cvt"
         try:
-            modeline_output = subprocess.check_output(cmd, text=True)
-        except (FileNotFoundError, subprocess.CalledProcessError):
+            process = await subprocess.create_subprocess_exec(
+                *cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                raise Exception(f"cvt failed: {stderr.decode()}")
+            modeline_output = stdout.decode('utf-8')
+        except (FileNotFoundError, Exception):
             logger_gst_app_resize.warning(
                 "cvt command failed or not found, trying gtf."
             )
             cmd = ["gtf", w_str, h_str, "60"]
             tool_name = "gtf"
-            modeline_output = subprocess.check_output(cmd, text=True)
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+            process = await subprocess.create_subprocess_exec(
+                *cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                raise Exception(f"gtf failed: {stderr.decode()}")
+            modeline_output = stdout.decode('utf-8')
+    except (FileNotFoundError, Exception) as e:
         raise Exception(
             f"Failed to generate modeline using {tool_name} for {res_wh_str}: {e}"
         ) from e
@@ -411,7 +452,7 @@ def parse_dri_node_to_index(node_path: str) -> int:
         logger.warning(f"Could not parse DRI node path '{node_path}': {e}. VA-API will be disabled.")
         return -1
 
-def _run_xrdb(dpi_value, logger):
+async def _run_xrdb(dpi_value, logger):
     """Helper function to apply DPI via xrdb."""
     if not which("xrdb"):
         logger.debug("xrdb not found. Skipping Xresources DPI setting.")
@@ -424,18 +465,23 @@ def _run_xrdb(dpi_value, logger):
         logger.info(f"Wrote 'Xft.dpi:   {dpi_value}' to {xresources_path_str}.")
 
         cmd_xrdb = ["xrdb", xresources_path_str]
-        result_xrdb = subprocess.run(cmd_xrdb, capture_output=True, text=True, check=False)
-        if result_xrdb.returncode == 0:
+        process = await subprocess.create_subprocess_exec(
+            *cmd_xrdb,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode == 0:
             logger.info(f"Successfully loaded {xresources_path_str} using xrdb.")
             return True
         else:
-            logger.warning(f"Failed to load {xresources_path_str} using xrdb. RC: {result_xrdb.returncode}, Error: {result_xrdb.stderr.strip()}")
+            logger.warning(f"Failed to load {xresources_path_str} using xrdb. RC: {process.returncode}, Error: {stderr.decode().strip()}")
             return False
     except Exception as e:
         logger.error(f"Error updating or loading Xresources: {e}")
         return False
 
-def _run_xfconf(dpi_value, logger):
+async def _run_xfconf(dpi_value, logger):
     """Helper function to apply DPI via xfconf-query for XFCE."""
     if not which("xfconf-query"):
         logger.debug("xfconf-query not found. Skipping XFCE DPI setting via xfconf-query.")
@@ -450,18 +496,23 @@ def _run_xfconf(dpi_value, logger):
         "-t", "int",
     ]
     try:
-        result = subprocess.run(cmd_xfconf, capture_output=True, text=True, check=False)
-        if result.returncode == 0:
+        process = await subprocess.create_subprocess_exec(
+            *cmd_xfconf,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode == 0:
             logger.info(f"Successfully set XFCE DPI to {dpi_value} using xfconf-query.")
             return True
         else:
-            logger.warning(f"Failed to set XFCE DPI using xfconf-query. RC: {result.returncode}, Error: {result.stderr.strip()}")
+            logger.warning(f"Failed to set XFCE DPI using xfconf-query. RC: {process.returncode}, Error: {stderr.decode().strip()}")
             return False
     except Exception as e:
         logger.error(f"Error running xfconf-query: {e}")
         return False
 
-def _run_mate_gsettings(dpi_value, logger):
+async def _run_mate_gsettings(dpi_value, logger):
     """Helper function to apply DPI via gsettings for MATE."""
     if not which("gsettings"):
         logger.debug("gsettings not found. Skipping MATE gsettings.")
@@ -487,15 +538,21 @@ def _run_mate_gsettings(dpi_value, logger):
             "org.mate.interface", "window-scaling-factor",
             str(mate_window_scaling_factor)
         ]
-        result_mate_window_scale = subprocess.run(cmd_gsettings_mate_window_scale, capture_output=True, text=True, check=False)
+        result_mate_window_scale = await subprocess.create_subprocess_exec(
+            *cmd_gsettings_mate_window_scale,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout_mate_window, stderr_mate_window = await result_mate_window_scale.communicate()
         if result_mate_window_scale.returncode == 0:
             logger.info(f"Successfully set MATE window-scaling-factor to {mate_window_scaling_factor} (for DPI {dpi_value}) using gsettings.")
             mate_settings_succeeded_at_least_once = True
         else:
-            if "No such schema" in result_mate_window_scale.stderr or "No such key" in result_mate_window_scale.stderr:
-                logger.debug(f"gsettings: Schema/key 'org.mate.interface window-scaling-factor' not found. Error: {result_mate_window_scale.stderr.strip()}")
+            stderr_text = stderr_mate_window.decode().strip()
+            if "No such schema" in stderr_text or "No such key" in stderr_text:
+                logger.debug(f"gsettings: Schema/key 'org.mate.interface window-scaling-factor' not found. Error: {stderr_text}")
             else:
-                logger.warning(f"Failed to set MATE window-scaling-factor using gsettings. RC: {result_mate_window_scale.returncode}, Error: {result_mate_window_scale.stderr.strip()}")
+                logger.warning(f"Failed to set MATE window-scaling-factor using gsettings. RC: {result_mate_window_scale.returncode}, Error: {stderr_text}")
     except Exception as e:
         logger.error(f"Error running gsettings for MATE window-scaling-factor: {e}")
 
@@ -506,22 +563,28 @@ def _run_mate_gsettings(dpi_value, logger):
             "org.mate.font-rendering", "dpi",
             str(dpi_value) # MATE font rendering takes the direct DPI value
         ]
-        result_mate_font_dpi = subprocess.run(cmd_gsettings_mate_font_dpi, capture_output=True, text=True, check=False)
+        result_mate_font_dpi = await subprocess.create_subprocess_exec(
+            *cmd_gsettings_mate_font_dpi,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout_mate_font, stderr_mate_font = await result_mate_font_dpi.communicate()
         if result_mate_font_dpi.returncode == 0:
             logger.info(f"Successfully set MATE font-rendering DPI to {dpi_value} using gsettings.")
             mate_settings_succeeded_at_least_once = True
         else:
-            if "No such schema" in result_mate_font_dpi.stderr or "No such key" in result_mate_font_dpi.stderr:
-                logger.debug(f"gsettings: Schema/key 'org.mate.font-rendering dpi' not found. Error: {result_mate_font_dpi.stderr.strip()}")
+            stderr_font_text = stderr_mate_font.decode().strip()
+            if "No such schema" in stderr_font_text or "No such key" in stderr_font_text:
+                logger.debug(f"gsettings: Schema/key 'org.mate.font-rendering dpi' not found. Error: {stderr_font_text}")
             else:
-                logger.warning(f"Failed to set MATE font-rendering DPI using gsettings. RC: {result_mate_font_dpi.returncode}, Error: {result_mate_font_dpi.stderr.strip()}")
+                logger.warning(f"Failed to set MATE font-rendering DPI using gsettings. RC: {result_mate_font_dpi.returncode}, Error: {stderr_font_text}")
     except Exception as e:
         logger.error(f"Error running gsettings for MATE font-rendering DPI: {e}")
     
     return mate_settings_succeeded_at_least_once
 
 
-def set_dpi(dpi_setting):
+async def set_dpi(dpi_setting):
     """
     Sets the display DPI using DE-specific methods based on a defined detection order.
     The dpi_setting is expected to be an integer or a string representing an integer.
@@ -542,41 +605,41 @@ def set_dpi(dpi_setting):
     if which("startplasma-x11"):
         de_name_for_log = "KDE"
         logger_gst_app_resize.info(f"{de_name_for_log} detected. Applying xrdb for DPI {dpi_value}.")
-        if _run_xrdb(dpi_value, logger_gst_app_resize):
+        if await _run_xrdb(dpi_value, logger_gst_app_resize):
             any_method_succeeded = True
     
     elif which("xfce4-session"):
         de_name_for_log = "XFCE"
         logger_gst_app_resize.info(f"{de_name_for_log} detected. Applying xfconf-query for DPI {dpi_value}.")
-        if _run_xfconf(dpi_value, logger_gst_app_resize):
+        if await _run_xfconf(dpi_value, logger_gst_app_resize):
             any_method_succeeded = True
         # For XFCE, only xfconf-query is used to avoid potential double scaling.
 
     elif which("mate-session"):
         de_name_for_log = "MATE"
         logger_gst_app_resize.info(f"{de_name_for_log} detected. Applying MATE gsettings and xrdb for DPI {dpi_value}.")
-        mate_gsettings_success = _run_mate_gsettings(dpi_value, logger_gst_app_resize)
+        mate_gsettings_success = await _run_mate_gsettings(dpi_value, logger_gst_app_resize)
         # Also apply xrdb for MATE for wider application compatibility / fallback
-        xrdb_for_mate_success = _run_xrdb(dpi_value, logger_gst_app_resize)
+        xrdb_for_mate_success = await _run_xrdb(dpi_value, logger_gst_app_resize)
         if mate_gsettings_success or xrdb_for_mate_success:
             any_method_succeeded = True
 
     elif which("i3"):
         de_name_for_log = "i3"
         logger_gst_app_resize.info(f"{de_name_for_log} detected. Applying xrdb for DPI {dpi_value}.")
-        if _run_xrdb(dpi_value, logger_gst_app_resize):
+        if await _run_xrdb(dpi_value, logger_gst_app_resize):
             any_method_succeeded = True
             
     elif which("openbox-session") or which("openbox"): # Check for openbox binary as well
         de_name_for_log = "Openbox"
         logger_gst_app_resize.info(f"{de_name_for_log} detected. Applying xrdb for DPI {dpi_value}.")
-        if _run_xrdb(dpi_value, logger_gst_app_resize):
+        if await _run_xrdb(dpi_value, logger_gst_app_resize):
             any_method_succeeded = True
             
     else:
         de_name_for_log = "Generic/Unknown DE"
         logger_gst_app_resize.info(f"No specific DE session binary found (KDE, XFCE, MATE, i3, Openbox). Attempting generic xrdb as a fallback for DPI {dpi_value}.")
-        if _run_xrdb(dpi_value, logger_gst_app_resize):
+        if await _run_xrdb(dpi_value, logger_gst_app_resize):
             any_method_succeeded = True
 
     if not any_method_succeeded:
@@ -584,7 +647,7 @@ def set_dpi(dpi_setting):
 
     return any_method_succeeded
 
-def set_cursor_size(size):
+async def set_cursor_size(size):
     if not isinstance(size, int) or size <= 0:
         logger_gst_app_resize.error(f"Invalid cursor size: {size}")
         return False
@@ -601,7 +664,13 @@ def set_cursor_size(size):
             "-t",
             "int",
         ]
-        if subprocess.run(cmd, capture_output=True).returncode == 0:
+        process = await subprocess.create_subprocess_exec(
+            *cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        await process.communicate()
+        if process.returncode == 0:
             return True
         logger_gst_app_resize.warning("Failed to set XFCE cursor size.")
     if which("gsettings"):
@@ -613,7 +682,13 @@ def set_cursor_size(size):
                 "cursor-size",
                 str(size),
             ]
-            if subprocess.run(cmd_set, capture_output=True).returncode == 0:
+            process_set = await subprocess.create_subprocess_exec(
+                *cmd_set,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            await process_set.communicate()
+            if process_set.returncode == 0:
                 logger_gst_app_resize.info(f"Set GNOME cursor-size to {size}")
                 return True
             logger_gst_app_resize.warning("Failed to set GNOME cursor-size.")
@@ -2335,7 +2410,7 @@ class DataStreamingServer:
                             dpi_value = int(dpi_value_str)
                             data_logger.info(f"Received DPI setting from client: {dpi_value}")
 
-                            if set_dpi(dpi_value): # set_dpi defined globally
+                            if await set_dpi(dpi_value): # set_dpi defined globally
                                 data_logger.info(f"Successfully set DPI to {dpi_value}")
                             else:
                                 data_logger.error(f"Failed to set DPI to {dpi_value}")
@@ -2345,7 +2420,7 @@ class DataStreamingServer:
                                 new_cursor_size = max(1, calculated_cursor_size) # Ensure at least 1px
 
                                 data_logger.info(f"Attempting to set cursor size to: {new_cursor_size} (based on DPI {dpi_value})")
-                                if set_cursor_size(new_cursor_size): # set_cursor_size defined globally
+                                if await set_cursor_size(new_cursor_size): # set_cursor_size defined globally
                                     data_logger.info(f"Successfully set cursor size to {new_cursor_size}")
                                 else:
                                     data_logger.error(f"Failed to set cursor size to {new_cursor_size}")
@@ -2787,7 +2862,7 @@ async def on_resize_handler(res_str, current_app_instance, data_server_instance=
             f"App dimensions updated to {target_w}x{target_h} before xrandr call."
         )
 
-        success = resize_display(f"{target_w}x{target_h}")
+        success = await resize_display(f"{target_w}x{target_h}")
 
         if success:
             logger_gst_app_resize.info(
