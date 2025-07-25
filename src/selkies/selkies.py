@@ -311,7 +311,7 @@ async def resize_display(res_str):  # e.g., res_str is "2560x1280"
             (
                 modeline_name_from_cvt_output,
                 modeline_params,
-            ) = generate_xrandr_gtf_modeline(res_str)
+            ) = await generate_xrandr_gtf_modeline(res_str)
         except Exception as e:
             logger_gst_app_resize.error(
                 f"Failed to generate modeline for {res_str}: {e}"
