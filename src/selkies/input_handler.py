@@ -1299,39 +1299,64 @@ class WebRTCInput:
     def stop_cursor_monitor(self):
         logger_webrtc_input.info("stopping cursor monitor")
         self.cursors_running = False
-    def cursor_to_msg(self, cursor, scale=1.0, cursor_size=-1):
-        if cursor_size > -1:
-            target_width = cursor_size
-            target_height = cursor_size
-            xhot_scaled = int(cursor_size / cursor.width * cursor.xhot)
-            yhot_scaled = int(cursor_size / cursor.height * cursor.yhot)
-        else:
-            target_width = int(cursor.width * scale)
-            target_height = int(cursor.height * scale)
-            xhot_scaled = int(cursor.xhot * scale)
-            yhot_scaled = int(cursor.yhot * scale)
-        png_data_b64 = base64.b64encode(
-            self.cursor_to_png(cursor, target_width, target_height)
+
+    def cursor_to_msg(self, cursor, scale=1.0, cursor_size=32):
+        if cursor.width == 0 or cursor.height == 0:
+            return {
+                "curdata": "", "handle": cursor.cursor_serial,
+                "override": "none", "hotspot": {"x": 0, "y": 0},
+            }
+
+        target_canvas_size = cursor_size
+        target_hotspot = (target_canvas_size // 2, target_canvas_size // 2)
+
+        source_width = cursor.width
+        source_height = cursor.height
+        source_hotspot_x = cursor.xhot
+        source_hotspot_y = cursor.yhot
+
+        max_dim = max(source_width, source_height)
+        if max_dim > target_canvas_size:
+            scale_factor = target_canvas_size / max_dim
+            source_width = int(source_width * scale_factor)
+            source_height = int(source_height * scale_factor)
+            source_hotspot_x = int(source_hotspot_x * scale_factor)
+            source_hotspot_y = int(source_hotspot_y * scale_factor)
+        
+        paste_x = target_hotspot[0] - source_hotspot_x
+        paste_y = target_hotspot[1] - source_hotspot_y
+
+        png_data = self.cursor_to_png(
+            cursor, 
+            (source_width, source_height), 
+            (paste_x, paste_y),
+            (target_canvas_size, target_canvas_size)
         )
+
+        png_data_b64 = base64.b64encode(png_data)
         override = None
         if sum(cursor.cursor_image) == 0:
             override = "none"
+            
         return {
             "curdata": png_data_b64.decode(),
             "handle": cursor.cursor_serial,
             "override": override,
             "hotspot": {
-                "x": xhot_scaled,
-                "y": yhot_scaled,
+                "x": target_hotspot[0],
+                "y": target_hotspot[1],
             },
         }
-    def cursor_to_png(self, cursor, resize_width, resize_height):
+
+    def cursor_to_png(self, cursor, resize_dim, paste_pos, canvas_dim):
         with io.BytesIO() as f:
             s = [((i >> b) & 0xFF) for i in cursor.cursor_image for b in [16, 8, 0, 24]]
-            im = Image.frombytes("RGBA", (cursor.width, cursor.height), bytes(s), "raw")
-            if cursor.width != resize_width or cursor.height != resize_height:
-                im = im.resize((resize_width, resize_height))
-            im.save(f, "PNG")
+            im = Image.frombytes("RGBA", (cursor.width, cursor.height), bytes(s), "raw", "BGRA")
+            if im.size != resize_dim:
+                im = im.resize(resize_dim, Image.Resampling.LANCZOS)
+            final_im = Image.new("RGBA", canvas_dim, (0, 0, 0, 0))
+            final_im.paste(im, paste_pos, im if im.mode == 'RGBA' else None)
+            final_im.save(f, "PNG")
             data = f.getvalue()
             return data
 
