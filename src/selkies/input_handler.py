@@ -1308,27 +1308,30 @@ class WebRTCInput:
             }
 
         target_canvas_size = cursor_size
-        target_hotspot = (target_canvas_size // 2, target_canvas_size // 2)
-
         source_width = cursor.width
         source_height = cursor.height
         source_hotspot_x = cursor.xhot
         source_hotspot_y = cursor.yhot
 
-        max_dim = max(source_width, source_height)
-        if max_dim > target_canvas_size:
-            scale_factor = target_canvas_size / max_dim
-            source_width = int(source_width * scale_factor)
-            source_height = int(source_height * scale_factor)
-            source_hotspot_x = int(source_hotspot_x * scale_factor)
-            source_hotspot_y = int(source_hotspot_y * scale_factor)
-        
-        paste_x = target_hotspot[0] - source_hotspot_x
-        paste_y = target_hotspot[1] - source_hotspot_y
+        scaled_width = source_width
+        scaled_height = source_height
+        paste_x = 0
+        paste_y = 0
+        final_hotspot = {"x": source_hotspot_x, "y": source_hotspot_y}
+
+        if source_width > target_canvas_size or source_height > target_canvas_size:
+            scale_factor = min(target_canvas_size / source_width, target_canvas_size / source_height)
+            scaled_width = int(source_width * scale_factor)
+            scaled_height = int(source_height * scale_factor)
+            
+            paste_x = (target_canvas_size - scaled_width) // 2
+            paste_y = (target_canvas_size - scaled_height) // 2
+            
+            final_hotspot = {"x": target_canvas_size // 2, "y": target_canvas_size // 2}
 
         png_data = self.cursor_to_png(
             cursor, 
-            (source_width, source_height), 
+            (scaled_width, scaled_height),
             (paste_x, paste_y),
             (target_canvas_size, target_canvas_size)
         )
@@ -1342,10 +1345,7 @@ class WebRTCInput:
             "curdata": png_data_b64.decode(),
             "handle": cursor.cursor_serial,
             "override": override,
-            "hotspot": {
-                "x": target_hotspot[0],
-                "y": target_hotspot[1],
-            },
+            "hotspot": final_hotspot,
         }
 
     def cursor_to_png(self, cursor, resize_dim, paste_pos, canvas_dim):
