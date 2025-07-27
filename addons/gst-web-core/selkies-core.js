@@ -2869,7 +2869,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
               if (isAudioPipelineActive) websocket.send('START_AUDIO');
             }
         }
-        loadingText = 'Waiting for stream...';
+        loadingText = 'Waiting for stream...(ensure you are using https)';
         updateStatusDisplay();
         initializationComplete = true;
       }
