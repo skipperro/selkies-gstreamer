@@ -1141,6 +1141,7 @@ export class Input {
         this._altGrArmed = false;
         this._altGrTimeout = null;
         this._altGrCtrlTime = 0;
+        this._macCmdSwapped = false;
 
         this.isComposing = false;
         this.compositionString = "";
@@ -1272,15 +1273,17 @@ export class Input {
 
         if (browser.isMac() && code !== "MetaLeft" && code !== "MetaRight" &&
             event.metaKey && !event.ctrlKey && !event.altKey) {
-            if (this._keyDownList["MetaLeft"]) {
-                this._sendKeyEvent(this._keyDownList["MetaLeft"], "MetaLeft", false);
-                delete this._keyDownList["MetaLeft"];
+            if (this._keyDownList["MetaLeft"] || this._keyDownList["MetaRight"]) {
+                console.log(`macOS: Cmd+key detected for code '${code}'. Remapping Cmd to Ctrl.`);
+                if (this._keyDownList["MetaLeft"]) {
+                    this._sendKeyEvent(this._keyDownList["MetaLeft"], "MetaLeft", false);
+                }
+                if (this._keyDownList["MetaRight"]) {
+                    this._sendKeyEvent(this._keyDownList["MetaRight"], "MetaRight", false);
+                }
+                this._sendKeyEvent(KeyTable.XK_Control_L, "ControlLeft", true);
+                this._macCmdSwapped = true;
             }
-            if (this._keyDownList["MetaRight"]) {
-                this._sendKeyEvent(this._keyDownList["MetaRight"], "MetaRight", false);
-                delete this._keyDownList["MetaRight"];
-            }
-            this._sendKeyEvent(KeyTable.XK_Control_L, "ControlLeft", true);
         }
 
         if (browser.isMac() || browser.isIOS()) {
@@ -1341,6 +1344,32 @@ export class Input {
 
         const code = KeyboardUtil.getKeyCode(event);
 
+        if (browser.isMac() && (code === 'MetaLeft' || code === 'MetaRight')) {
+            console.log(`macOS: Command key ('${code}') released. Cleaning up potentially stuck keys.`);
+
+            const pressedCodes = Object.keys(this._keyDownList);
+            for (const pressedCode of pressedCodes) {
+                // Ignore the meta key that is currently being released, and other modifiers.
+                if (pressedCode === 'ShiftLeft' || pressedCode === 'ShiftRight' ||
+                    pressedCode === 'ControlLeft' || pressedCode === 'ControlRight' ||
+                    pressedCode === 'AltLeft' || pressedCode === 'AltRight' ||
+                    pressedCode === 'MetaLeft' || pressedCode === 'MetaRight') {
+                    continue;
+                }
+
+                console.log(`macOS: Force-releasing stuck key: ${pressedCode}`);
+                this._sendKeyEvent(this._keyDownList[pressedCode], pressedCode, false);
+            }
+            
+            if (this._macCmdSwapped) {
+                console.log("macOS: Releasing the swapped virtual Ctrl key.");
+                if ('ControlLeft' in this._keyDownList) {
+                    this._sendKeyEvent(this._keyDownList['ControlLeft'], 'ControlLeft', false);
+                }
+                this._macCmdSwapped = false;
+            }
+        }
+
         if (this._altGrArmed) { // Abort AltGr if keyup is not AltRight
             this._altGrArmed = false;
             clearTimeout(this._altGrTimeout);
@@ -1348,8 +1377,6 @@ export class Input {
         }
 
         if ((browser.isMac() || browser.isIOS()) && (code === 'CapsLock')) {
-            // CapsLock on macOS doesn't send keyup, so we fake it on keydown.
-            // Nothing to do here for keyup.
             return;
         }
 
