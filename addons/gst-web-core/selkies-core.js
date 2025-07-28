@@ -277,6 +277,24 @@ const roundDownToEven = (num) => {
   return Math.floor(num / 2) * 2;
 };
 
+const updateCanvasImageRendering = () => {
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const isOneToOne = !useCssScaling || (useCssScaling && dpr <= 1);
+  if (isOneToOne) {
+    if (canvas.style.imageRendering !== 'pixelated') {
+      console.log("Setting canvas rendering to 'pixelated' for 1:1 display.");
+      canvas.style.imageRendering = 'pixelated';
+      canvas.style.setProperty('image-rendering', 'crisp-edges', '');
+    }
+  } else {
+    if (canvas.style.imageRendering !== 'auto') {
+      console.log("Setting canvas rendering to 'auto' for smooth upscaling.");
+      canvas.style.imageRendering = 'auto';
+    }
+  }
+};
+
 const injectCSS = () => {
   const style = document.createElement('style');
   style.textContent = `
@@ -462,6 +480,7 @@ function applyManualCanvasStyle(targetWidth, targetHeight, scaleToFit) {
     console.log(`Applied manual style (Exact): CSS ${targetWidth}x${targetHeight}, Buffer ${internalBufferWidth}x${internalBufferHeight}, Pos 0,0`);
   }
   canvas.style.display = 'block';
+  updateCanvasImageRendering();
 }
 
 function resetCanvasStyle(streamWidth, streamHeight) {
@@ -507,6 +526,7 @@ function resetCanvasStyle(streamWidth, streamHeight) {
 
   canvas.style.objectFit = 'fill';
   canvas.style.display = 'block'; // Ensure canvas is displayed
+  updateCanvasImageRendering();
 }
 
 function enableAutoResize() {
@@ -1237,6 +1257,7 @@ function receiveMessage(event) {
           window.webrtcInput.updateCssScaling(useCssScaling);
         }
         if (changed) {
+          updateCanvasImageRendering();
           if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
             sendResolutionToServer(manualWidth, manualHeight);
             applyManualCanvasStyle(manualWidth, manualHeight, scaleLocallyManual);
