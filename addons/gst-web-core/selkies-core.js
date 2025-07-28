@@ -42,7 +42,7 @@ let preferredOutputDeviceId = null;
 let metricsIntervalId = null;
 const METRICS_INTERVAL_MS = 50;
 const UPLOAD_CHUNK_SIZE = (1024 * 1024) - 1;
-// Elements for resolution controls
+// Resources for resolution controls
 window.isManualResolutionMode = false;
 let manualWidth = null;
 let manualHeight = null;
@@ -53,6 +53,11 @@ let wakeLockSentinel = null;
 let currentEncoderMode = 'x264enc-stiped';
 let useCssScaling = false;
 let trackpadMode = false;
+function setRealViewportHeight() {
+  const vh = window.innerHeight * 0.01;
+  document.documentElement.style.setProperty('--vh', `${vh}px`);
+}
+
 
 let detectedSharedModeType = null;
 let playerInputTargetIndex = 0; // Default for primary player
@@ -309,7 +314,7 @@ body {
 #app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: calc(var(--vh, 1vh) * 100);
   width: 100%;
 }
 .video-container {
@@ -585,6 +590,8 @@ function updateUIForSharedMode() {
 
 const initializeUI = () => {
   injectCSS();
+  setRealViewportHeight();
+  window.addEventListener('resize', setRealViewportHeight);
   window.addEventListener('requestFileUpload', handleRequestFileUpload);
   const appDiv = document.getElementById('app');
   if (!appDiv) {
