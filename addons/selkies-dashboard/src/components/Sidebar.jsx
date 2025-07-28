@@ -505,7 +505,12 @@ function Sidebar({ isOpen }) {
   const [isMobile, setIsMobile] = useState(false);
   const [isTrackpadModeActive, setIsTrackpadModeActive] = useState(false);
   const [hasDetectedTouch, setHasDetectedTouch] = useState(false);
-
+  const [heldKeys, setHeldKeys] = useState({
+    Control: false,
+    Alt: false,
+    Meta: false,
+  });
+  const [isKeyboardButtonVisible, setIsKeyboardButtonVisible] = useState(true);
   const [isTouchGamepadActive, setIsTouchGamepadActive] = useState(false);
   const [isTouchGamepadSetup, setIsTouchGamepadSetup] = useState(false);
 
@@ -565,7 +570,43 @@ function Sidebar({ isOpen }) {
   }, []);
 
   const { t, raw } = translator;
-
+  const sendKeyEvent = (type, key, code, modifierState) => {
+    const event = new KeyboardEvent(type, {
+      key: key,
+      code: code,
+      ctrlKey: modifierState.Control,
+      altKey: modifierState.Alt,
+      metaKey: modifierState.Meta,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+  };
+  const handleHoldKeyClick = (key, code) => {
+    const isCurrentlyHeld = heldKeys[key];
+    const nextHeldState = {
+      ...heldKeys,
+      [key]: !isCurrentlyHeld,
+    };
+    setHeldKeys(nextHeldState);
+    if (isCurrentlyHeld) {
+      sendKeyEvent('keyup', key, code, nextHeldState);
+      console.log(`Dashboard: Dispatched keyup for ${key} with state:`, nextHeldState);
+    } else {
+      sendKeyEvent('keydown', key, code, nextHeldState);
+      console.log(`Dashboard: Dispatched keydown for ${key} with state:`, nextHeldState);
+    }
+  };
+  const handleOnceKeyClick = (key, code) => {
+    console.log(`Dashboard: Dispatching key press for ${key} with modifiers:`, heldKeys);
+    sendKeyEvent('keydown', key, code, heldKeys);
+    setTimeout(() => {
+      sendKeyEvent('keyup', key, code, heldKeys);
+    }, 50);
+  };
+  const toggleKeyboardButtonVisibility = () => {
+    setIsKeyboardButtonVisible(prev => !prev);
+  };
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "dark");
   const [encoder, setEncoder] = useState(
     localStorage.getItem("encoder") || DEFAULT_ENCODER
@@ -1892,6 +1933,50 @@ function Sidebar({ isOpen }) {
           </button>
         </div>
 
+        {(isMobile || hasDetectedTouch) && (
+          <>
+            <div className="sidebar-section-divider"></div>
+            <div className="sidebar-mobile-key-actions">
+              <button
+                className={`mobile-key-button ${heldKeys.Control ? "active" : ""}`}
+                onClick={() => handleHoldKeyClick('Control', 'ControlLeft')}
+              >
+                CTL
+              </button>
+              <button
+                className={`mobile-key-button ${heldKeys.Alt ? "active" : ""}`}
+                onClick={() => handleHoldKeyClick('Alt', 'AltLeft')}
+              >
+                ALT
+              </button>
+              <button
+                className={`mobile-key-button ${heldKeys.Meta ? "active" : ""}`}
+                onClick={() => handleHoldKeyClick('Meta', 'MetaLeft')}
+              >
+                WIN
+              </button>
+              <button
+                className="mobile-key-button"
+                onClick={() => handleOnceKeyClick('Tab', 'Tab')}
+              >
+                TAB
+              </button>
+              <button
+                className="mobile-key-button"
+                onClick={() => handleOnceKeyClick('Escape', 'Escape')}
+              >
+                ESC
+              </button>
+              <button
+                className={`mobile-key-button icon-button ${isKeyboardButtonVisible ? "active" : ""}`}
+                onClick={toggleKeyboardButtonVisibility}
+              >
+                <KeyboardIcon />
+              </button>
+            </div>
+          </>
+        )}
+
         <div className="sidebar-section">
           <div
             className="sidebar-section-header"
@@ -3000,7 +3085,7 @@ function Sidebar({ isOpen }) {
         <AppsModal isOpen={isAppsModalOpen} onClose={toggleAppsModal} t={t} />
       )}
 
-      {(isMobile || hasDetectedTouch) && (
+      {(isMobile || hasDetectedTouch) && isKeyboardButtonVisible && (
         <button
           className={`virtual-keyboard-button theme-${theme} allow-native-input`}
           onClick={onKeyboardButtonClick}

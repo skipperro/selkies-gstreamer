@@ -1695,3 +1695,75 @@ a:active {
 .toggle-button-sidebar.active .toggle-button-sidebar-knob {
   transform: translateX(24px);
 }
+
+/* --- Mobile Key Action Buttons --- */
+/* A horizontal rule used as a visual separator. */
+.sidebar-section-divider {
+    border: 0;
+    height: 1px;
+    background-color: var(--sidebar-border);
+    margin: 0 0 15px 0;
+}
+
+/* Container for touch-specific keyboard action buttons. */
+.sidebar-mobile-key-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 0;
+    margin-bottom: 20px;
+}
+
+/* Base style for individual keyboard action buttons. */
+.mobile-key-button {
+    flex: 1;
+    padding: 8px 4px;
+    border: 1px solid var(--item-border);
+    border-radius: 6px;
+    background-color: var(--input-bg);
+    color: var(--sidebar-text);
+    font-size: 12px;
+    font-weight: bold;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
+
+/* Hover state for keyboard action buttons. */
+.mobile-key-button:hover {
+    border-color: var(--sidebar-header-color);
+    background-color: var(--section-bg);
+}
+
+/* Active/toggled state for keyboard action buttons. */
+.mobile-key-button.active {
+    background-color: var(--sidebar-header-color);
+    color: var(--button-text);
+    border-color: var(--sidebar-header-color);
+}
+
+/* Hover state for active keyboard action buttons. */
+.mobile-key-button.active:hover {
+     background-color: var(--button-hover-bg);
+     border-color: var(--button-hover-bg);
+}
+
+/* Modifier for keyboard action buttons containing an SVG icon. */
+.mobile-key-button.icon-button {
+    padding: 6px;
+}
+
+/* SVG styling within an icon-based keyboard action button. */
+.mobile-key-button.icon-button svg {
+    fill: currentColor;
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+}
