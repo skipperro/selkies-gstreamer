@@ -1841,27 +1841,24 @@ document.addEventListener('DOMContentLoaded', () => {
       console.warn("VideoDecoder already exists, closing before re-initializing.");
       decoder.close();
     }
-    let targetWidth = 1280; // Logical default
-    let targetHeight = 720; // Logical default
-
+    let targetWidth = 1024;
+    let targetHeight = 768;
     if (isSharedMode) {
-        targetWidth = manualWidth > 0 ? manualWidth : 1280; // manualWidth is logical
-        targetHeight = manualHeight > 0 ? manualHeight : 720; // manualHeight is logical
-    } else if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) { // manualWidth/Height are logical
+        targetWidth = manualWidth > 0 ? manualWidth : 1024;
+        targetHeight = manualHeight > 0 ? manualHeight : 768;
+    } else if (window.isManualResolutionMode && manualWidth != null && manualHeight != null) {
       targetWidth = manualWidth;
       targetHeight = manualHeight;
     } else if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
       try {
-        const currentRes = window.webrtcInput.getWindowResolution(); // Logical
+        const currentRes = window.webrtcInput.getWindowResolution();
         const autoWidth = roundDownToEven(currentRes[0]);
         const autoHeight = roundDownToEven(currentRes[1]);
         if (autoWidth > 0 && autoHeight > 0) {
           targetWidth = autoWidth;
           targetHeight = autoHeight;
         }
-      } catch (e) {
-        /* use defaults */
-      }
+      } catch (e) { /* use defaults */ }
     }
 
     const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
@@ -1870,23 +1867,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     decoder = new VideoDecoder({
       output: handleDecodedFrame,
-      error: (e) => {
-        console.error('VideoDecoder error:', e.message);
-        if (isSharedMode && (sharedClientState === 'configuring' || sharedClientState === 'ready' || sharedClientState === 'awaiting_identification')) {
-            if (decoder && e.target === decoder) {
-                 console.error(`Shared mode: Main VideoDecoder error in state ${sharedClientState}. Message: ${e.message}. Transitioning to error state.`);
-                 sharedClientState = 'error';
-            } else if (!decoder && identifiedEncoderModeForShared === 'h264_full_frame') {
-                 console.error(`Shared mode: Main VideoDecoder (expected for h264_full_frame) is null and an error occurred. State: ${sharedClientState}. Message: ${e.message}. Transitioning to error state.`);
-                 sharedClientState = 'error';
-            }
-        } else if (!isSharedMode) {
-            if (e.message.includes('fatal') || (decoder && (decoder.state === 'closed' || decoder.state === 'unconfigured'))) {
-              console.warn("Non-shared mode: Main VideoDecoder fatal error or closed/unconfigured. Attempting re-initialization.");
-              initializeDecoder();
-            }
-        }
-      },
+      error: (e) => initiateFallback(e, 'main_decoder'),
     });
     const decoderConfig = {
       codec: 'avc1.42E01E',
@@ -1896,22 +1877,20 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     try {
       const support = await VideoDecoder.isConfigSupported(decoderConfig);
-      if (support.supported) {
-        await decoder.configure(decoderConfig);
-        console.log('Main VideoDecoder configured successfully with config:', decoderConfig);
-        return true;
-      } else {
-        console.error('Main VideoDecoder configuration not supported:', support, decoderConfig);
-        decoder = null;
-        return false;
+      if (!support.supported) {
+        throw new Error(`Configuration not supported: ${JSON.stringify(decoderConfig)}`);
       }
+      await decoder.configure(decoderConfig);
+      console.log('Main VideoDecoder configured successfully with config:', decoderConfig);
+      return true;
     } catch (e) {
-      console.error('Error configuring Main VideoDecoder with config:', e, decoderConfig);
-      decoder = null;
+      initiateFallback(e, 'main_decoder_configure');
       return false;
     }
   }
-  initializeUI();
+  if (!runPreflightChecks()) {
+    return;
+  }
 
 
   const pathname = window.location.pathname.substring(
@@ -2653,14 +2632,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
             try {
               decoder.decode(chunk);
             } catch (e) {
-              console.error('Video Decoding error (Full H.264):', e.message, e);
-              if (!isSharedMode && (decoder.state === 'closed' || decoder.state === 'unconfigured')) {
-                console.warn("Re-initializing main decoder due to error.");
-                initializeDecoder(); // Uses logical dimensions, applies DPR
-              } else if (isSharedMode && (decoder.state === 'closed' || decoder.state === 'unconfigured')) {
-                console.error("Shared mode: Main H.264 decoder error after configuration. Entering error state.");
-                sharedClientState = 'error';
-              }
+              initiateFallback(e, 'main_decoder_decode');
             }
           } else {
             if (!isSharedMode && (!decoder || decoder.state === 'closed' || decoder.state === 'unconfigured')) {
@@ -2767,7 +2739,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
 
                 const newStripeDecoder = new VideoDecoder({
                     output: handleDecodedVncStripeFrame.bind(null, vncStripeYStart, vncFrameID),
-                    error: (e) => console.error(`Error in VideoDecoder for VNC stripe Y=${vncStripeYStart} (FrameID: ${vncFrameID}):`, e.message)
+                    error: (e) => initiateFallback(e, `stripe_decoder_Y=${vncStripeYStart}`)
                 });
                 const decoderConfig = { // Configured with physical dimensions
                     codec: 'avc1.42E01E',
@@ -2817,7 +2789,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
                     try {
                         decoderInfo.decoder.decode(chunk);
                     } catch (e) {
-                        console.error(`Error decoding VNC stripe chunk Y=${vncStripeYStart}:`, e.message, e);
+                        initiateFallback(e, `stripe_decode_Y=${vncStripeYStart}`);
                     }
                 } else if (decoderInfo.decoder.state === "unconfigured" || decoderInfo.decoder.state === "configuring") {
                     decoderInfo.pendingChunks.push(chunkData);
@@ -3726,12 +3698,76 @@ function performServerInitiatedVideoReset(reason = "unknown") {
     if (currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped') {
       console.log("  Ensuring main video decoder is re-initialized after server reset.");
       if (isVideoPipelineActive) {
-         triggerInitializeDecoder(); // Uses logical dimensions, applies DPR
+         triggerInitializeDecoder();
       } else {
         console.log("  isVideoPipelineActive is false, decoder re-initialization deferred until video is enabled by user.");
       }
     }
   }
+}
+
+function initiateFallback(error, context) {
+    console.error(`FATAL DECODER ERROR (Context: ${context}).`, error);
+    if (window.isFallingBack) return;
+    window.isFallingBack = true;
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.onclose = null;
+        websocket.close();
+    }
+    if (metricsIntervalId) {
+      clearInterval(metricsIntervalId);
+      metricsIntervalId = null;
+    }
+    if (isSharedMode) {
+        console.log("Shared client fallback: Reloading page to re-sync with the stream.");
+        if (statusDisplayElement) {
+            statusDisplayElement.textContent = 'A video error occurred. Reloading to re-sync with the stream...';
+            statusDisplayElement.classList.remove('hidden');
+        }
+    } else {
+        console.log("Primary client fallback: Forcing client settings to safe defaults.");
+        setStringParam('encoder', 'x264enc');
+        setBoolParam('h264_fullcolor', false);
+        setIntParam('videoFramerate', 60);
+        setIntParam('videoCRF', 25);
+        setBoolParam('isManualResolutionMode', false);
+        setIntParam('manualWidth', null);
+        setIntParam('manualHeight', null);
+        
+        if (statusDisplayElement) {
+            statusDisplayElement.textContent = 'A critical video error occurred. Resetting to default settings and reloading...';
+            statusDisplayElement.classList.remove('hidden');
+        }
+    }
+    setTimeout(() => {
+        window.location.reload();
+    }, 3000);
+}
+
+function runPreflightChecks() {
+    initializeUI();
+    if (!window.isSecureContext) {
+        console.error("FATAL: Not in a secure context. WebCodecs require HTTPS.");
+        if (statusDisplayElement) {
+            statusDisplayElement.textContent = 'Error: This application requires a secure connection (HTTPS). Please check the URL.';
+            statusDisplayElement.classList.remove('hidden');
+        }
+        if (playButtonElement) playButtonElement.classList.add('hidden');
+        return false;
+    }
+
+    if (typeof window.VideoDecoder === 'undefined') {
+        console.error("FATAL: Browser does not support the VideoDecoder API.");
+        if (statusDisplayElement) {
+            statusDisplayElement.textContent = 'Error: Your browser does not support the WebCodecs API required for video streaming.';
+            statusDisplayElement.classList.remove('hidden');
+        }
+        if (playButtonElement) playButtonElement.classList.add('hidden');
+        return false;
+    }
+
+    console.log("Pre-flight checks passed: Secure context and VideoDecoder API are available.");
+    return true;
 }
 
 window.addEventListener('beforeunload', cleanup);
