@@ -420,7 +420,7 @@ function sendResolutionToServer(width, height) {
     console.log("Shared mode: Resolution sending to server is blocked.");
     return;
   }
-  const dpr = (window.isManualResolutionMode || useCssScaling) ? 1 : (window.devicePixelRatio || 1);
+  const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
   console.log(dpr, useCssScaling);
   const realWidth = roundDownToEven(width * dpr);
   const realHeight = roundDownToEven(height * dpr);
@@ -2402,21 +2402,19 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
       const settingsPrefix = `${appName}_`;
       const settingsToSend = {};
       let foundSettings = false;
-      let initialClientWidthForSettings, initialClientHeightForSettings; // These will be logical
-      const dpr = window.devicePixelRatio || 1;
+      let initialClientWidthForSettings, initialClientHeightForSettings;
+      const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
 
       for (const key in localStorage) {
         if (Object.hasOwnProperty.call(localStorage, key) && key.startsWith(settingsPrefix)) {
           const unprefixedKey = key.substring(settingsPrefix.length);
           let serverExpectedKey = null;
-          // Map localStorage keys to server-expected keys
           if (unprefixedKey === 'videoBitRate') serverExpectedKey = 'webrtc_videoBitRate';
           else if (unprefixedKey === 'videoFramerate') serverExpectedKey = 'webrtc_videoFramerate';
           else if (unprefixedKey === 'videoCRF') serverExpectedKey = 'webrtc_videoCRF';
           else if (unprefixedKey === 'encoder') serverExpectedKey = 'webrtc_encoder';
           else if (unprefixedKey === 'resizeRemote') serverExpectedKey = 'webrtc_resizeRemote';
           else if (unprefixedKey === 'isManualResolutionMode') serverExpectedKey = 'webrtc_isManualResolutionMode';
-          // For manualWidth/Height, we'll handle them specially below to apply DPR
           else if (unprefixedKey === 'audioBitRate') serverExpectedKey = 'webrtc_audioBitRate';
           else if (unprefixedKey === 'videoBufferSize') serverExpectedKey = 'webrtc_videoBufferSize';
           else if (unprefixedKey === 'h264_fullcolor') serverExpectedKey = 'webrtc_h264_fullcolor';
@@ -2424,14 +2422,13 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
 
           if (serverExpectedKey) {
             let value = localStorage.getItem(key);
-            // Type conversions for specific settings
             if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode' || serverExpectedKey === 'webrtc_h264_fullcolor' || serverExpectedKey === 'webrtc_h264_streaming_mode') {
               value = (value === 'true');
             } else if (['webrtc_videoBitRate', 'webrtc_videoFramerate', 'webrtc_videoCRF',
                 'webrtc_audioBitRate', 'webrtc_videoBufferSize'
               ].includes(serverExpectedKey)) {
               value = parseInt(value, 10);
-              if (isNaN(value)) value = localStorage.getItem(key); // Revert if NaN
+              if (isNaN(value)) value = localStorage.getItem(key);
             }
             settingsToSend[serverExpectedKey] = value;
             foundSettings = true;
@@ -2439,26 +2436,24 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
         }
       }
 
-      if (isManualResolutionMode && manualWidth != null && manualHeight != null) { // manualWidth/Height are logical
-        settingsToSend['webrtc_isManualResolutionMode'] = true; // Ensure this is set
-        settingsToSend['webrtc_manualWidth'] = roundDownToEven(manualWidth * dpr); // Send physical
-        settingsToSend['webrtc_manualHeight'] = roundDownToEven(manualHeight * dpr); // Send physical
+      if (isManualResolutionMode && manualWidth != null && manualHeight != null) {
+        settingsToSend['webrtc_isManualResolutionMode'] = true;
+        settingsToSend['webrtc_manualWidth'] = roundDownToEven(manualWidth * dpr);
+        settingsToSend['webrtc_manualHeight'] = roundDownToEven(manualHeight * dpr);
       } else {
         const videoContainer = document.querySelector('.video-container');
         const rect = videoContainer ? videoContainer.getBoundingClientRect() : {
-          width: window.innerWidth, // Logical
-          height: window.innerHeight // Logical
+          width: window.innerWidth,
+          height: window.innerHeight
         };
-        initialClientWidthForSettings = rect.width; // Store logical temporarily
-        initialClientHeightForSettings = rect.height; // Store logical temporarily
+        initialClientWidthForSettings = rect.width;
+        initialClientHeightForSettings = rect.height;
 
-        settingsToSend['webrtc_isManualResolutionMode'] = false; // Ensure this is set
-        settingsToSend['webrtc_initialClientWidth'] = roundDownToEven(initialClientWidthForSettings * dpr); // Send physical
-        settingsToSend['webrtc_initialClientHeight'] = roundDownToEven(initialClientHeightForSettings * dpr); // Send physical
+        settingsToSend['webrtc_isManualResolutionMode'] = false;
+        settingsToSend['webrtc_initialClientWidth'] = roundDownToEven(initialClientWidthForSettings * dpr);
+        settingsToSend['webrtc_initialClientHeight'] = roundDownToEven(initialClientHeightForSettings * dpr);
       }
 
-      // Ensure manualWidth/Height from localStorage are also DPR adjusted if isManualResolutionMode is true
-      // This covers the case where isManualResolutionMode is true from localStorage but manualWidth/Height were not set above
       if (settingsToSend['webrtc_isManualResolutionMode'] === true) {
           const storedManualWidth = getIntParam('manualWidth', null);
           const storedManualHeight = getIntParam('manualHeight', null);
@@ -2476,7 +2471,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
         console.log('[websockets] Sent initial settings (resolutions are physical) to server:', settingsToSend);
         window.postMessage({
           type: 'initialClientSettings',
-          settings: settingsToSend // UI might want to know what was sent
+          settings: settingsToSend
         }, window.location.origin);
       } catch (e) {
         console.error('[websockets] Error constructing or sending initial settings:', e);
@@ -2484,7 +2479,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
 
       const isCurrentModePixelfluxH264_ws = currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped';
       const isCurrentModeJpeg_ws = currentEncoderMode === 'jpeg';
-      const isCurrentModeGStreamerPipeline_ws = !isCurrentModePixelfluxH264_ws && !isCurrentModeJpeg_ws; // GStreamer H.264
+      const isCurrentModeGStreamerPipeline_ws = !isCurrentModePixelfluxH264_ws && !isCurrentModeJpeg_ws;
 
       if (isCurrentModeGStreamerPipeline_ws) {
         if (websocket && websocket.readyState === WebSocket.OPEN) {
