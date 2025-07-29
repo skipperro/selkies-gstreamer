@@ -770,6 +770,7 @@ class DataStreamingServer:
             self.app.video_bitrate if self.app else TARGET_VIDEO_BITRATE_KBPS
         )
         self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
+        self._pipeline_lock = asyncio.Lock()
         # Frame-based backpressure settings
         self.allowed_desync_ms = BACKPRESSURE_ALLOWED_DESYNC_MS
         self.latency_threshold_for_adjustment_ms = BACKPRESSURE_LATENCY_THRESHOLD_MS
@@ -1609,61 +1610,62 @@ class DataStreamingServer:
             setattr(self.app, "video_buffer_size", settings["videoBufferSize"])
 
         if not is_initial_settings:
-            resolution_actually_changed_on_server = (
-                self.app.display_width != old_display_width
-                or self.app.display_height != old_display_height
-            )
-            bitrate_param_changed = self.app.video_bitrate != old_video_bitrate_kbps
-            framerate_param_changed = self.app.framerate != old_framerate
-            crf_param_changed = is_pixelflux_h264 and self.h264_crf != old_h264_crf
-            h264_fullcolor_param_changed = is_pixelflux_h264 and self.h264_fullcolor != old_h264_fullcolor
-            h264_streaming_mode_param_changed = is_pixelflux_h264 and self.h264_streaming_mode != old_h264_streaming_mode
-            audio_bitrate_param_changed = self.app.audio_bitrate != old_audio_bitrate_bps
+            async with self._pipeline_lock:
+                resolution_actually_changed_on_server = (
+                    self.app.display_width != old_display_width
+                    or self.app.display_height != old_display_height
+                )
+                bitrate_param_changed = self.app.video_bitrate != old_video_bitrate_kbps
+                framerate_param_changed = self.app.framerate != old_framerate
+                crf_param_changed = is_pixelflux_h264 and self.h264_crf != old_h264_crf
+                h264_fullcolor_param_changed = is_pixelflux_h264 and self.h264_fullcolor != old_h264_fullcolor
+                h264_streaming_mode_param_changed = is_pixelflux_h264 and self.h264_streaming_mode != old_h264_streaming_mode
+                audio_bitrate_param_changed = self.app.audio_bitrate != old_audio_bitrate_bps
 
-            restart_video_pipeline = False
-            if encoder_actually_changed or resolution_actually_changed_on_server:
-                restart_video_pipeline = True
-            else:
-                if self.app.encoder in PIXELFLUX_VIDEO_ENCODERS:
-                    if framerate_param_changed: restart_video_pipeline = True
-                    if is_pixelflux_h264 and (crf_param_changed or h264_fullcolor_param_changed or h264_streaming_mode_param_changed):
-                        restart_video_pipeline = True
-
-            restart_audio_pipeline = audio_bitrate_param_changed
-
-            video_pipeline_was_active = False
-            if old_encoder == "jpeg" and self.is_jpeg_capturing: video_pipeline_was_active = True
-            elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg" and self.is_x264_striped_capturing: video_pipeline_was_active = True
-            
-            audio_pipeline_was_active = self.is_pcmflux_capturing
-
-            if restart_video_pipeline:
-                if video_pipeline_was_active:
-                    data_logger.info(
-                        f"Restarting video pipeline (was {old_encoder}, now {self.app.encoder}) due to settings change."
-                    )
-                    # Stop old pipeline
-                    if old_encoder == "jpeg": await self._stop_jpeg_pipeline()
-                    elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg": await self._stop_x264_striped_pipeline()
+                restart_video_pipeline = False
+                if encoder_actually_changed or resolution_actually_changed_on_server:
+                    restart_video_pipeline = True
                 else:
-                    data_logger.info(f"Video pipeline for {self.app.encoder} needs to start due to settings change (was not active).")
+                    if self.app.encoder in PIXELFLUX_VIDEO_ENCODERS:
+                        if framerate_param_changed: restart_video_pipeline = True
+                        if is_pixelflux_h264 and (crf_param_changed or h264_fullcolor_param_changed or h264_streaming_mode_param_changed):
+                            restart_video_pipeline = True
 
-                # Start new pipeline
-                if self.app.encoder == "jpeg": await self._start_jpeg_pipeline()
-                elif self.app.encoder in PIXELFLUX_VIDEO_ENCODERS and self.app.encoder != "jpeg": await self._start_x264_striped_pipeline()
-            
-            if restart_audio_pipeline:
-                if audio_pipeline_was_active:
-                    data_logger.info("Restarting audio pipeline due to settings update.")
-                    await self._stop_pcmflux_pipeline()
-                    await self._start_pcmflux_pipeline()
-                else:
-                    data_logger.info("Audio pipeline needs to start due to settings (was not active).")
-                    await self._start_pcmflux_pipeline()
+                restart_audio_pipeline = audio_bitrate_param_changed
 
-        if is_initial_settings and not self.client_settings_received.is_set():
-            self.client_settings_received.set()
-            data_logger.info("Initial client settings processed and event set by _apply_client_settings.")
+                video_pipeline_was_active = False
+                if old_encoder == "jpeg" and self.is_jpeg_capturing: video_pipeline_was_active = True
+                elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg" and self.is_x264_striped_capturing: video_pipeline_was_active = True
+
+                audio_pipeline_was_active = self.is_pcmflux_capturing
+
+                if restart_video_pipeline:
+                    if video_pipeline_was_active:
+                        data_logger.info(
+                            f"Restarting video pipeline (was {old_encoder}, now {self.app.encoder}) due to settings change."
+                        )
+                        # Stop old pipeline
+                        if old_encoder == "jpeg": await self._stop_jpeg_pipeline()
+                        elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg": await self._stop_x264_striped_pipeline()
+                    else:
+                        data_logger.info(f"Video pipeline for {self.app.encoder} needs to start due to settings change (was not active).")
+
+                    # Start new pipeline
+                    if self.app.encoder == "jpeg": await self._start_jpeg_pipeline()
+                    elif self.app.encoder in PIXELFLUX_VIDEO_ENCODERS and self.app.encoder != "jpeg": await self._start_x264_striped_pipeline()
+
+                if restart_audio_pipeline:
+                    if audio_pipeline_was_active:
+                        data_logger.info("Restarting audio pipeline due to settings update.")
+                        await self._stop_pcmflux_pipeline()
+                        await self._start_pcmflux_pipeline()
+                    else:
+                        data_logger.info("Audio pipeline needs to start due to settings (was not active).")
+                        await self._start_pcmflux_pipeline()
+
+            if is_initial_settings and not self.client_settings_received.is_set():
+                self.client_settings_received.set()
+                data_logger.info("Initial client settings processed and event set by _apply_client_settings.")
 
     async def ws_handler(self, websocket):
         global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
@@ -2099,12 +2101,13 @@ class DataStreamingServer:
                                 if not video_is_active and current_encoder:
                                     data_logger.warning(f"Initial setup: Video pipeline for '{current_encoder}' was expected to be started by _apply_client_settings but is not. This might indicate an issue or a no-op change.")
                                 
-                                audio_is_active = self.is_pcmflux_capturing
-                                if not audio_is_active and PCMFLUX_AVAILABLE:
-                                    data_logger.info("Initial setup: Audio pipeline not yet active, attempting start.")
-                                    await self._start_pcmflux_pipeline()
-                                elif not PCMFLUX_AVAILABLE and not audio_is_active:
-                                     data_logger.warning("Initial setup: Audio pipeline (server-to-client) cannot be started (pcmflux not available).")
+                                async with self._pipeline_lock:
+                                    audio_is_active = self.is_pcmflux_capturing
+                                    if not audio_is_active and PCMFLUX_AVAILABLE:
+                                        data_logger.info("Initial setup: Audio pipeline not yet active, attempting start.")
+                                        await self._start_pcmflux_pipeline()
+                                    elif not PCMFLUX_AVAILABLE and not audio_is_active:
+                                         data_logger.warning("Initial setup: Audio pipeline (server-to-client) cannot be started (pcmflux not available).")
 
                         except json.JSONDecodeError:
                             data_logger.error(f"SETTINGS JSON decode error: {message}")
@@ -2174,53 +2177,57 @@ class DataStreamingServer:
                         active_upload_target_path_conn = None
 
                     elif message == "START_VIDEO":
-                        current_encoder = getattr(self.app, "encoder", None)
-                        data_logger.info(f"Received START_VIDEO for encoder: {current_encoder}")
-                        started_successfully = False
+                        async with self._pipeline_lock:
+                            current_encoder = getattr(self.app, "encoder", None)
+                            data_logger.info(f"Received START_VIDEO for encoder: {current_encoder}")
+                            started_successfully = False
 
-                        if current_encoder == "jpeg":
-                            started_successfully = await self._start_jpeg_pipeline()
-                        elif current_encoder in PIXELFLUX_VIDEO_ENCODERS and current_encoder != "jpeg":
-                            started_successfully = await self._start_x264_striped_pipeline()
+                            if current_encoder == "jpeg":
+                                started_successfully = await self._start_jpeg_pipeline()
+                            elif current_encoder in PIXELFLUX_VIDEO_ENCODERS and current_encoder != "jpeg":
+                                started_successfully = await self._start_x264_striped_pipeline()
                         
-                        if started_successfully:
-                            websockets.broadcast(self.clients, "VIDEO_STARTED")
-                        elif not started_successfully:
-                            data_logger.warning(f"START_VIDEO: Failed to start pipeline for encoder '{current_encoder}'.")
+                            if started_successfully:
+                                websockets.broadcast(self.clients, "VIDEO_STARTED")
+                            elif not started_successfully:
+                                data_logger.warning(f"START_VIDEO: Failed to start pipeline for encoder '{current_encoder}'.")
 
                     elif message == "STOP_VIDEO":
-                        data_logger.info("Received STOP_VIDEO")
-                        current_encoder = getattr(self.app, "encoder", None) 
+                        async with self._pipeline_lock:
+                            data_logger.info("Received STOP_VIDEO")
+                            current_encoder = getattr(self.app, "encoder", None) 
 
-                        if self.is_jpeg_capturing and current_encoder == "jpeg":
-                            await self._stop_jpeg_pipeline()
-                        elif self.is_x264_striped_capturing and (current_encoder in PIXELFLUX_VIDEO_ENCODERS and current_encoder != "jpeg"):
-                            await self._stop_x264_striped_pipeline()
+                            if self.is_jpeg_capturing and current_encoder == "jpeg":
+                                await self._stop_jpeg_pipeline()
+                            elif self.is_x264_striped_capturing and (current_encoder in PIXELFLUX_VIDEO_ENCODERS and current_encoder != "jpeg"):
+                                await self._stop_x264_striped_pipeline()
                         
-                        if self.clients:
-                            websockets.broadcast(self.clients, "VIDEO_STOPPED")
+                            if self.clients:
+                                websockets.broadcast(self.clients, "VIDEO_STOPPED")
 
-                    elif message == "START_AUDIO": 
-                        await self.client_settings_received.wait()
-                        data_logger.info(
-                            "Received START_AUDIO command from client for server-to-client audio."
-                        )
-                        if PCMFLUX_AVAILABLE:
-                            if not self.is_pcmflux_capturing:
-                                data_logger.info("START_AUDIO: Starting pcmflux audio pipeline.")
-                                await self._start_pcmflux_pipeline()
+                    elif message == "START_AUDIO":
+                        async with self._pipeline_lock:
+                            await self.client_settings_received.wait()
+                            data_logger.info(
+                                "Received START_AUDIO command from client for server-to-client audio."
+                            )
+                            if PCMFLUX_AVAILABLE:
+                                if not self.is_pcmflux_capturing:
+                                    data_logger.info("START_AUDIO: Starting pcmflux audio pipeline.")
+                                    await self._start_pcmflux_pipeline()
+                                else:
+                                    data_logger.info("START_AUDIO: pcmflux audio pipeline already active.")
                             else:
-                                data_logger.info("START_AUDIO: pcmflux audio pipeline already active.")
-                        else:
-                            data_logger.warning("START_AUDIO: Cannot start server-to-client audio (pcmflux not available).")
-                        websockets.broadcast(self.clients, "AUDIO_STARTED")
+                                data_logger.warning("START_AUDIO: Cannot start server-to-client audio (pcmflux not available).")
+                            websockets.broadcast(self.clients, "AUDIO_STARTED")
 
                     elif message == "STOP_AUDIO":
-                        data_logger.info("Received STOP_AUDIO")
-                        if self.is_pcmflux_capturing:
-                            await self._stop_pcmflux_pipeline()
-                        if self.clients:
-                            websockets.broadcast(self.clients, "AUDIO_STOPPED")
+                        async with self._pipeline_lock:
+                            data_logger.info("Received STOP_AUDIO")
+                            if self.is_pcmflux_capturing:
+                                await self._stop_pcmflux_pipeline()
+                            if self.clients:
+                                websockets.broadcast(self.clients, "AUDIO_STOPPED")
 
                     elif message.startswith("r,"):
                         await self.client_settings_received.wait() 
@@ -2648,7 +2655,8 @@ class DataStreamingServer:
             if stop_pipelines_flag:
                 data_logger.info(f"Stopping global pipelines due to last client disconnect ({raddr}).")
                 self.capture_cursor = False
-                await self.shutdown_pipelines()
+                async with self._pipeline_lock:  # WRAP HERE
+                    await self.shutdown_pipelines()
 
             data_logger.info(f"Data WS handler for {raddr} finished all cleanup.")
 
