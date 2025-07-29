@@ -421,7 +421,6 @@ function sendResolutionToServer(width, height) {
     return;
   }
   const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
-  console.log(dpr, useCssScaling);
   const realWidth = roundDownToEven(width * dpr);
   const realHeight = roundDownToEven(height * dpr);
   const resString = `${realWidth}x${realHeight}`;
@@ -2864,7 +2863,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
               if (isAudioPipelineActive) websocket.send('START_AUDIO');
             }
         }
-        loadingText = 'Waiting for stream...(ensure you are using https)';
+        loadingText = 'Waiting for stream...';
         updateStatusDisplay();
         initializationComplete = true;
       }
