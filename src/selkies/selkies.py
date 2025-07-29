@@ -1528,7 +1528,6 @@ class DataStreamingServer:
         data_logger.info(
             f"Applying client settings (initial={is_initial_settings}): {settings}"
         )
-
         old_encoder = self.app.encoder
         old_video_bitrate_kbps = self.app.video_bitrate
         old_framerate = self.app.framerate
@@ -1608,64 +1607,50 @@ class DataStreamingServer:
 
         if "videoBufferSize" in settings:
             setattr(self.app, "video_buffer_size", settings["videoBufferSize"])
-
-        if not is_initial_settings:
-            async with self._pipeline_lock:
-                resolution_actually_changed_on_server = (
-                    self.app.display_width != old_display_width
-                    or self.app.display_height != old_display_height
-                )
-                bitrate_param_changed = self.app.video_bitrate != old_video_bitrate_kbps
-                framerate_param_changed = self.app.framerate != old_framerate
-                crf_param_changed = is_pixelflux_h264 and self.h264_crf != old_h264_crf
-                h264_fullcolor_param_changed = is_pixelflux_h264 and self.h264_fullcolor != old_h264_fullcolor
-                h264_streaming_mode_param_changed = is_pixelflux_h264 and self.h264_streaming_mode != old_h264_streaming_mode
-                audio_bitrate_param_changed = self.app.audio_bitrate != old_audio_bitrate_bps
-
-                restart_video_pipeline = False
-                if encoder_actually_changed or resolution_actually_changed_on_server:
+        async with self._pipeline_lock:
+            resolution_actually_changed_on_server = (
+                self.app.display_width != old_display_width
+                or self.app.display_height != old_display_height
+            )
+            framerate_param_changed = self.app.framerate != old_framerate
+            crf_param_changed = is_pixelflux_h264 and self.h264_crf != old_h264_crf
+            h264_fullcolor_param_changed = is_pixelflux_h264 and self.h264_fullcolor != old_h264_fullcolor
+            h264_streaming_mode_param_changed = is_pixelflux_h264 and self.h264_streaming_mode != old_h264_streaming_mode
+            audio_bitrate_param_changed = self.app.audio_bitrate != old_audio_bitrate_bps
+            restart_video_pipeline = False
+            if encoder_actually_changed or resolution_actually_changed_on_server:
+                restart_video_pipeline = True
+            elif self.app.encoder in PIXELFLUX_VIDEO_ENCODERS:
+                if framerate_param_changed:
                     restart_video_pipeline = True
+                if is_pixelflux_h264 and (crf_param_changed or h264_fullcolor_param_changed or h264_streaming_mode_param_changed):
+                    restart_video_pipeline = True
+            video_is_currently_active = self.is_jpeg_capturing or self.is_x264_striped_capturing
+            if is_initial_settings and not video_is_currently_active:
+                data_logger.warning(
+                    "Pipeline is inactive for the initial client. Forcing a start."
+                )
+                restart_video_pipeline = True
+            restart_audio_pipeline = audio_bitrate_param_changed
+            if restart_video_pipeline:
+                if self.is_jpeg_capturing or self.is_x264_striped_capturing:
+                    data_logger.info(
+                        f"Restarting video pipeline (was {old_encoder}, now {self.app.encoder}) due to settings change or inactive state."
+                    )
+                    if old_encoder == "jpeg": await self._stop_jpeg_pipeline()
+                    elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg": await self._stop_x264_striped_pipeline()
                 else:
-                    if self.app.encoder in PIXELFLUX_VIDEO_ENCODERS:
-                        if framerate_param_changed: restart_video_pipeline = True
-                        if is_pixelflux_h264 and (crf_param_changed or h264_fullcolor_param_changed or h264_streaming_mode_param_changed):
-                            restart_video_pipeline = True
-
-                restart_audio_pipeline = audio_bitrate_param_changed
-
-                video_pipeline_was_active = False
-                if old_encoder == "jpeg" and self.is_jpeg_capturing: video_pipeline_was_active = True
-                elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg" and self.is_x264_striped_capturing: video_pipeline_was_active = True
-
-                audio_pipeline_was_active = self.is_pcmflux_capturing
-
-                if restart_video_pipeline:
-                    if video_pipeline_was_active:
-                        data_logger.info(
-                            f"Restarting video pipeline (was {old_encoder}, now {self.app.encoder}) due to settings change."
-                        )
-                        # Stop old pipeline
-                        if old_encoder == "jpeg": await self._stop_jpeg_pipeline()
-                        elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg": await self._stop_x264_striped_pipeline()
-                    else:
-                        data_logger.info(f"Video pipeline for {self.app.encoder} needs to start due to settings change (was not active).")
-
-                    # Start new pipeline
-                    if self.app.encoder == "jpeg": await self._start_jpeg_pipeline()
-                    elif self.app.encoder in PIXELFLUX_VIDEO_ENCODERS and self.app.encoder != "jpeg": await self._start_x264_striped_pipeline()
-
-                if restart_audio_pipeline:
-                    if audio_pipeline_was_active:
-                        data_logger.info("Restarting audio pipeline due to settings update.")
-                        await self._stop_pcmflux_pipeline()
-                        await self._start_pcmflux_pipeline()
-                    else:
-                        data_logger.info("Audio pipeline needs to start due to settings (was not active).")
-                        await self._start_pcmflux_pipeline()
-
-            if is_initial_settings and not self.client_settings_received.is_set():
-                self.client_settings_received.set()
-                data_logger.info("Initial client settings processed and event set by _apply_client_settings.")
+                    data_logger.info(f"Video pipeline for {self.app.encoder} needs to start (was not active or forced).")
+                if self.app.encoder == "jpeg": await self._start_jpeg_pipeline()
+                elif self.app.encoder in PIXELFLUX_VIDEO_ENCODERS and self.app.encoder != "jpeg": await self._start_x264_striped_pipeline()
+            if restart_audio_pipeline:
+                if self.is_pcmflux_capturing:
+                    data_logger.info("Restarting audio pipeline due to settings update.")
+                    await self._stop_pcmflux_pipeline()
+                    await self._start_pcmflux_pipeline()
+        if is_initial_settings and self.client_settings_received and not self.client_settings_received.is_set():
+            self.client_settings_received.set()
+            data_logger.info("Initial client settings processed and event set by _apply_client_settings.")
 
     async def ws_handler(self, websocket):
         global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
