@@ -1113,17 +1113,19 @@ export class Input {
         this.send = send;
         this.isSharedMode = isSharedMode;
         this.playerIndex = playerIndex;
-        this.cursorDiv = document.createElement('div');
+        this.cursorDiv = document.createElement('canvas');
         this.cursorDiv.style.position = 'fixed';
         this.cursorDiv.style.pointerEvents = 'none';
         this.cursorDiv.style.zIndex = '999999';
         this.cursorDiv.style.display = 'none';
         this.cursorDiv.style.left = '0px';
         this.cursorDiv.style.top = '0px';
-        this.cursorImg = document.createElement('img');
-        this.cursorDiv.appendChild(this.cursorImg);
+        this.cursorImg = this.cursorDiv.getContext('2d');
         document.body.appendChild(this.cursorDiv);
         this.cursorHotspot = { x: 0, y: 0 };
+        this._cursorImageBitmap = null;
+        this._rawHotspotX = 0;
+        this._rawHotspotY = 0;
         this._latestMouseX = 0;
         this._latestMouseY = 0;
         this.useCssScaling = useCssScaling;
@@ -1181,6 +1183,23 @@ export class Input {
 
     static _nextGuacID = 0;
 
+    _drawAndScaleCursor() {
+        if (!this._cursorImageBitmap) {
+            return;
+        }
+        const dpr = this.useCssScaling ? 1 : (window.devicePixelRatio || 1);
+        const img = this._cursorImageBitmap;
+        this.cursorDiv.width = img.width;
+        this.cursorDiv.height = img.height;
+        this.cursorDiv.style.width = `${img.width / dpr}px`;
+        this.cursorDiv.style.height = `${img.height / dpr}px`;
+        this.cursorImg.clearRect(0, 0, img.width, img.height);
+        this.cursorImg.drawImage(img, 0, 0);
+        this.cursorHotspot.x = this._rawHotspotX / dpr;
+        this.cursorHotspot.y = this._rawHotspotY / dpr;
+        this._updateCursorPosition(this._latestMouseX, this._latestMouseY);
+    }
+
     _updateCursorPosition(clientX, clientY) {
         if (this.cursorDiv.style.display !== 'none') {
             const newX = clientX - this.cursorHotspot.x;
@@ -1189,26 +1208,29 @@ export class Input {
         }
     }
 
-    updateServerCursor(cursorData) {
+    async updateServerCursor(cursorData) {
         if (!cursorData.curdata ||
             parseInt(cursorData.handle, 10) === 0 ||
             this._trackpadMode)
         {
             this.cursorDiv.style.display = 'none';
+            this._cursorImageBitmap = null;
             return;
         }
+        this._rawHotspotX = parseInt(cursorData.hotx) || 0;
+        this._rawHotspotY = parseInt(cursorData.hoty) || 0;
+        const blob = await (await fetch(`data:image/png;base64,${cursorData.curdata}`)).blob();
+        this._cursorImageBitmap = await createImageBitmap(blob);
         this.cursorDiv.style.display = 'block';
-        this.cursorImg.src = `data:image/png;base64,${cursorData.curdata}`;
-        this.cursorHotspot.x = parseInt(cursorData.hotx) || 0;
-        this.cursorHotspot.y = parseInt(cursorData.hoty) || 0;
-        this._updateCursorPosition(this._latestMouseX, this._latestMouseY);
+        this._drawAndScaleCursor();
     }
 
     updateCssScaling(newUseCssScalingValue) {
         if (this.useCssScaling !== newUseCssScalingValue) {
             console.log(`Input: Updating useCssScaling from ${this.useCssScaling} to ${newUseCssScalingValue}`);
             this.useCssScaling = newUseCssScalingValue;
-            this._windowMath(); // Recalculate mouse coordinate scaling factors
+            this._windowMath();
+            this._drawAndScaleCursor();
         }
     }
 
