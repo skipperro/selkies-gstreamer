@@ -755,7 +755,7 @@ class SelkiesGamepad:
         logger_selkies_gamepad.info(f"Gamepad services fully closed.")
 
 
-# --- WebRTCInput Class (Modified for new Gamepad handling) ---
+# --- WebRTCInput Class ---
 class WebRTCInputError(Exception): pass
 
 class WebRTCInput:
@@ -1270,9 +1270,7 @@ class WebRTCInput:
         logger_webrtc_input.info("watching for cursor changes")
         try:
             image = self.xdisplay.xfixes_get_cursor_image(screen.root)
-            self.cursor_cache[image.cursor_serial] = self.cursor_to_msg(
-                image, self.cursor_scale, self.cursor_size
-            )
+            self.cursor_cache[image.cursor_serial] = self.cursor_to_msg(image)
             self.on_cursor_change(self.cursor_cache[image.cursor_serial])
         except Exception as e:
             logger_webrtc_input.warning("exception from fetching cursor image: %s" % e)
@@ -1288,78 +1286,47 @@ class WebRTCInput:
                 else:
                     try:
                         cursor = self.xdisplay.xfixes_get_cursor_image(screen.root)
-                        self.cursor_cache[cache_key] = self.cursor_to_msg(
-                            cursor, self.cursor_scale, self.cursor_size
-                        )
+                        self.cursor_cache[cache_key] = self.cursor_to_msg(cursor)
                     except Exception as e:
                         logger_webrtc_input.warning(
                             "exception from fetching cursor image: %s" % e
                         )
                 self.on_cursor_change(self.cursor_cache.get(cache_key))
         logger_webrtc_input.info("cursor monitor stopped")
+
     def stop_cursor_monitor(self):
         logger_webrtc_input.info("stopping cursor monitor")
         self.cursors_running = False
 
-    def cursor_to_msg(self, cursor, scale=1.0, cursor_size=32):
-        if cursor.width == 0 or cursor.height == 0:
-            return {
-                "curdata": "", "handle": cursor.cursor_serial,
-                "override": "none", "hotspot": {"x": 0, "y": 0},
-            }
-
-        target_canvas_size = cursor_size
-        source_width = cursor.width
-        source_height = cursor.height
-        source_hotspot_x = cursor.xhot
-        source_hotspot_y = cursor.yhot
-
-        scaled_width = source_width
-        scaled_height = source_height
-        paste_x = 0
-        paste_y = 0
-        final_hotspot = {"x": source_hotspot_x, "y": source_hotspot_y}
-
-        if source_width > target_canvas_size or source_height > target_canvas_size:
-            scale_factor = min(target_canvas_size / source_width, target_canvas_size / source_height)
-            scaled_width = int(source_width * scale_factor)
-            scaled_height = int(source_height * scale_factor)
-            
-            paste_x = (target_canvas_size - scaled_width) // 2
-            paste_y = (target_canvas_size - scaled_height) // 2
-            
-            final_hotspot = {"x": target_canvas_size // 2, "y": target_canvas_size // 2}
-
-        png_data = self.cursor_to_png(
-            cursor, 
-            (scaled_width, scaled_height),
-            (paste_x, paste_y),
-            (target_canvas_size, target_canvas_size)
-        )
-
-        png_data_b64 = base64.b64encode(png_data)
-        override = None
-        if sum(cursor.cursor_image) == 0:
-            override = "none"
-            
-        return {
-            "curdata": png_data_b64.decode(),
-            "handle": cursor.cursor_serial,
-            "override": override,
-            "hotspot": final_hotspot,
-        }
-
-    def cursor_to_png(self, cursor, resize_dim, paste_pos, canvas_dim):
+    def _cursor_image_to_png(self, cursor):
         with io.BytesIO() as f:
             s = [((i >> b) & 0xFF) for i in cursor.cursor_image for b in [16, 8, 0, 24]]
             im = Image.frombytes("RGBA", (cursor.width, cursor.height), bytes(s), "raw", "BGRA")
-            if im.size != resize_dim:
-                im = im.resize(resize_dim, Image.Resampling.LANCZOS)
-            final_im = Image.new("RGBA", canvas_dim, (0, 0, 0, 0))
-            final_im.paste(im, paste_pos, im if im.mode == 'RGBA' else None)
-            final_im.save(f, "PNG")
-            data = f.getvalue()
-            return data
+            im.save(f, "PNG")
+            return f.getvalue()
+
+    def cursor_to_msg(self, cursor):
+        if cursor.width == 0 or cursor.height == 0:
+            return {
+                "curdata": "",
+                "width": 0,
+                "height": 0,
+                "hotx": 0,
+                "hoty": 0,
+                "handle": cursor.cursor_serial,
+            }
+
+        png_data = self._cursor_image_to_png(cursor)
+        png_data_b64 = base64.b64encode(png_data)
+
+        return {
+            "curdata": png_data_b64.decode(),
+            "width": cursor.width,
+            "height": cursor.height,
+            "hotx": cursor.xhot,
+            "hoty": cursor.yhot,
+            "handle": cursor.cursor_serial,
+        }
 
     async def stop_gamepad_servers(self):
         logger_webrtc_input.info("Stopping all gamepad instances.")

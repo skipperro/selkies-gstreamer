@@ -168,7 +168,6 @@ let videoElement;
 let audioElement;
 let playButtonElement;
 let overlayInput;
-let currentServerCursor = 'auto';
 
 const getIntParam = (key, default_value) => {
   const prefixedKey = `${appName}_${key}`;
@@ -1018,21 +1017,9 @@ const initializeInput = () => {
   if (overlayInput) {
     const handlePointerDown = (e) => {
       requestWakeLock();
-      if (e.pointerType === 'touch' && (e.width > 1 || e.height > 1)) {
-        overlayInput.style.cursor = 'none';
-      } else {
-        overlayInput.style.cursor = currentServerCursor;
-      }
-    };
-    const handlePointerMove = (e) => {
-      if (overlayInput.style.cursor !== currentServerCursor) {
-        overlayInput.style.cursor = currentServerCursor;
-      }
     };
     overlayInput.removeEventListener('pointerdown', handlePointerDown);
-    overlayInput.removeEventListener('pointermove', handlePointerMove);
     overlayInput.addEventListener('pointerdown', handlePointerDown);
-    overlayInput.addEventListener('pointermove', handlePointerMove);
     overlayInput.addEventListener('contextmenu', e => {
       e.preventDefault();
     });
@@ -2962,19 +2949,8 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
         } else if (event.data.startsWith('cursor,')) {
           try {
             const cursorData = JSON.parse(event.data.substring(7));
-            if (parseInt(cursorData.handle, 10) === 0) {
-              currentServerCursor = 'auto';
-            } else {
-              let cursorStyle = `url('data:image/png;base64,${cursorData.curdata}')`;
-              if (cursorData.hotspot) {
-                cursorStyle += ` ${cursorData.hotspot.x} ${cursorData.hotspot.y}, auto`;
-              } else {
-                cursorStyle += ', auto';
-              }
-              currentServerCursor = cursorStyle;
-            }
-            if (overlayInput && overlayInput.style.cursor !== 'none') {
-              overlayInput.style.cursor = currentServerCursor;
+            if (window.webrtcInput && typeof window.webrtcInput.updateServerCursor === 'function') {
+                window.webrtcInput.updateServerCursor(cursorData);
             }
           } catch (e) {
             console.error('Error parsing cursor data:', e);

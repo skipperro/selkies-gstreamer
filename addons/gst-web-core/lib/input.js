@@ -1113,6 +1113,19 @@ export class Input {
         this.send = send;
         this.isSharedMode = isSharedMode;
         this.playerIndex = playerIndex;
+        this.cursorDiv = document.createElement('div');
+        this.cursorDiv.style.position = 'fixed';
+        this.cursorDiv.style.pointerEvents = 'none';
+        this.cursorDiv.style.zIndex = '999999';
+        this.cursorDiv.style.display = 'none';
+        this.cursorDiv.style.left = '0px';
+        this.cursorDiv.style.top = '0px';
+        this.cursorImg = document.createElement('img');
+        this.cursorDiv.appendChild(this.cursorImg);
+        document.body.appendChild(this.cursorDiv);
+        this.cursorHotspot = { x: 0, y: 0 };
+        this._latestMouseX = 0;
+        this._latestMouseY = 0;
         this.useCssScaling = useCssScaling;
         this.mouseRelative = false;
         this.m = null;
@@ -1167,6 +1180,30 @@ export class Input {
     }
 
     static _nextGuacID = 0;
+
+    _updateCursorPosition(clientX, clientY) {
+        if (this.cursorDiv.style.display !== 'none') {
+            const newX = clientX - this.cursorHotspot.x;
+            const newY = clientY - this.cursorHotspot.y;
+            this.cursorDiv.style.transform = `translate(${newX}px, ${newY}px)`;
+        }
+    }
+
+    updateServerCursor(cursorData) {
+        if ((cursorData.curdata && cursorData.curdata.length === 1) ||
+            !cursorData.curdata ||
+            parseInt(cursorData.handle, 10) === 0 ||
+            this._trackpadMode)
+        {
+            this.cursorDiv.style.display = 'none';
+            return;
+        }
+        this.cursorDiv.style.display = 'block';
+        this.cursorImg.src = `data:image/png;base64,${cursorData.curdata}`;
+        this.cursorHotspot.x = parseInt(cursorData.hotx) || 0;
+        this.cursorHotspot.y = parseInt(cursorData.hoty) || 0;
+        this._updateCursorPosition(this._latestMouseX, this._latestMouseY);
+    }
 
     updateCssScaling(newUseCssScalingValue) {
         if (this.useCssScaling !== newUseCssScalingValue) {
@@ -1456,10 +1493,25 @@ export class Input {
     }
 
     _mouseButtonMovement(event) {
+        if (this.element.style.cursor !== 'none') {
+            this.element.style.cursor = 'none';
+        }
+        let visualClientX = event.clientX;
+        let visualClientY = event.clientY;
+        if (event.getPredictedEvents && typeof event.getPredictedEvents === 'function') {
+            const predictedEvents = event.getPredictedEvents();
+            if (predictedEvents.length > 0) {
+                const lastPredictedEvent = predictedEvents[predictedEvents.length - 1];
+                visualClientX = lastPredictedEvent.clientX;
+                visualClientY = lastPredictedEvent.clientY;
+            }
+        }
+        this._updateCursorPosition(visualClientX, visualClientY);
+        this._latestMouseX = visualClientX;
+        this._latestMouseY = visualClientY;
         if (this._trackpadMode) return;
         const client_dpr = window.devicePixelRatio || 1;
         const dpr_for_input_coords = this.useCssScaling ? 1 : client_dpr;
-
         const down = (event.type === 'mousedown' ? 1 : 0);
         var mtype = "m";
         let canvas = document.getElementById('videoCanvas');
@@ -1476,13 +1528,10 @@ export class Input {
             event.preventDefault();
             return;
         }
-
         if (document.pointerLockElement === this.element || document.pointerLockElement === canvas) {
             mtype = "m2";
             let movementX_logical = event.movementX || 0;
             let movementY_logical = event.movementY || 0;
-
-            // For pointer lock, movementX/Y are logical. Scale to physical if not useCssScaling.
             this.x = Math.round(movementX_logical * dpr_for_input_coords);
             this.y = Math.round(movementY_logical * dpr_for_input_coords);
 
@@ -1494,10 +1543,8 @@ export class Input {
                     const mouseY_on_canvas_logical_css = event.clientY - canvasRect.top;
                     const scaleX = canvas.width / canvasRect.width;
                     const scaleY = canvas.height / canvasRect.height;
-
                     let coordX = mouseX_on_canvas_logical_css * scaleX;
                     let coordY = mouseY_on_canvas_logical_css * scaleY;
-
                     this.x = Math.max(0, Math.min(canvas.width, Math.round(coordX)));
                     this.y = Math.max(0, Math.min(canvas.height, Math.round(coordY)));
                 } else {
@@ -1668,6 +1715,7 @@ export class Input {
     }
 
     _calculateTouchCoordinates(touchPoint) {
+        this._updateCursorPosition(touchPoint.clientX, touchPoint.clientY);
         const client_dpr = window.devicePixelRatio || 1; // Actual client DPR
         const dpr_for_input_coords = this.useCssScaling ? 1 : client_dpr;
         let canvas = document.getElementById('videoCanvas');
@@ -1712,6 +1760,9 @@ export class Input {
     setTrackpadMode(enabled) {
         this._trackpadMode = !!enabled;
         console.log(`Input: Trackpad mode ${this._trackpadMode ? 'enabled' : 'disabled'}.`);
+        if (this._trackpadMode) {
+            this.cursorDiv.style.display = 'none';
+        }
         // Reset state on mode change
         this._trackpadTouchIdentifier = null;
         this._lastTrackpadX = 0;
@@ -1789,6 +1840,7 @@ export class Input {
             } else {
                 if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
                 if (touchCount === 2) {
+                    this.cursorDiv.style.visibility = 'hidden';
                     this._isTwoFingerGesture = true; this._activeTouchIdentifier = null;
                     const touches = Array.from(this._activeTouches.values());
                     this._touchScrollLastCentroid = {
@@ -1894,6 +1946,9 @@ export class Input {
             if (!swipeDetected) {
                 const remainingTouchCount = this._activeTouches.size;
                 if (this._isTwoFingerGesture && remainingTouchCount < 2) {
+                    if (!this._trackpadMode) {
+                        this.cursorDiv.style.visibility = 'visible';
+                    }
                     this._isTwoFingerGesture = false;
                     this._touchScrollLastCentroid = null;
                 }
@@ -2191,7 +2246,7 @@ export class Input {
         }
         this.listeners_context.push(addListener(this.element, 'mousemove', this._mouseButtonMovement, this));
         this.listeners_context.push(addListener(this.element, 'mousedown', this._mouseButtonMovement, this));
-        this.listeners_context.push(addListener(window, 'mouseup', this._mouseButtonMovement, this));
+        this.listeners_context.push(addListener(this.element, 'mouseup', this._mouseButtonMovement, this));
 
         if (document.fullscreenElement === this.element.parentElement) {
              if (document.pointerLockElement !== this.element) {
