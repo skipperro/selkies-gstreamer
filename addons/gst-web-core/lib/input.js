@@ -1200,6 +1200,11 @@ export class Input {
         this._updateCursorPosition(this._latestMouseX, this._latestMouseY);
     }
 
+    _handleOutsideClick(event) {
+        if (!this.element.contains(event.target)) {
+            this.cursorDiv.style.display = 'none';
+        }
+    }
     _updateCursorPosition(clientX, clientY) {
         if (this.cursorDiv.style.display !== 'none') {
             const newX = clientX - this.cursorHotspot.x;
@@ -1514,6 +1519,7 @@ export class Input {
     }
 
     _mouseButtonMovement(event) {
+        this.cursorDiv.style.display = 'block';
         if (this.element.style.cursor !== 'none') {
             this.element.style.cursor = 'none';
         }
@@ -1737,6 +1743,8 @@ export class Input {
 
     _calculateTouchCoordinates(touchPoint) {
         this._updateCursorPosition(touchPoint.clientX, touchPoint.clientY);
+        this._latestMouseX = touchPoint.clientX;
+        this._latestMouseY = touchPoint.clientY;
         const client_dpr = window.devicePixelRatio || 1; // Actual client DPR
         const dpr_for_input_coords = this.useCssScaling ? 1 : client_dpr;
         let canvas = document.getElementById('videoCanvas');
@@ -1779,15 +1787,37 @@ export class Input {
     }
 
     setTrackpadMode(enabled) {
-        this._trackpadMode = !!enabled;
-        console.log(`Input: Trackpad mode ${this._trackpadMode ? 'enabled' : 'disabled'}.`);
+        const newMode = !!enabled;
+        if (this._trackpadMode === newMode) {
+            return;
+        }
+
+        console.log(`Input: Trackpad mode ${newMode ? 'enabled' : 'disabled'}.`);
+        this._trackpadMode = newMode;
+
+        this._activeTouches.clear();
+        this._activeTouchIdentifier = null;
+        this._isTwoFingerGesture = false;
+        this._touchScrollLastCentroid = null;
+
+        if (this._longPressTimer) {
+            clearTimeout(this._longPressTimer);
+            this._longPressTimer = null;
+            this._longPressTouchIdentifier = null;
+        }
+
+        if (this.buttonMask !== 0) {
+            this.buttonMask = 0;
+            this._sendMouseState();
+        }
+
         if (this._trackpadMode) {
             this.cursorDiv.style.display = 'none';
+            this.element.style.cursor = 'default';
+        } else {
+            this.element.style.cursor = 'none';
+            this.cursorDiv.style.display = 'none';
         }
-        // Reset state on mode change
-        this._trackpadTouchIdentifier = null;
-        this._lastTrackpadX = 0;
-        this._lastTrackpadY = 0;
     }
 
     _handleTouchEvent(event) {
@@ -1806,6 +1836,7 @@ export class Input {
         const TAP_THRESHOLD_DISTANCE_SQ_LOGICAL = this._TAP_THRESHOLD_DISTANCE_SQ;
 
         if (type === 'touchstart') {
+            this.cursorDiv.style.display = 'block';
             for (let i = 0; i < event.changedTouches.length; i++) {
                 const touch = event.changedTouches[i];
                 if (!this._activeTouches.has(touch.identifier)) {
@@ -2239,7 +2270,8 @@ export class Input {
         this.listeners_context.push(addListener(window, 'keyup', this._handleKeyUp, this, true));
         this.listeners_context.push(addListener(window, 'blur', this.resetKeyboard, this));
         this.listeners_context.push(addListener(this.keyboardInputAssist, 'input', this._handleMobileInput, this));
-
+        this.listeners_context.push(addListener(document, 'mousedown', this._handleOutsideClick, this, true));
+        this.listeners_context.push(addListener(document, 'touchstart', this._handleOutsideClick, this, true));
 
         this.listeners_context.push(addListener(this.element, 'wheel', this._mouseWheelWrapper, this));
         this.listeners_context.push(addListener(this.element, 'contextmenu', this._contextMenu, this));
