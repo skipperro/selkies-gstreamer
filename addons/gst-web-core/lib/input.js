@@ -1190,8 +1190,7 @@ export class Input {
     }
 
     updateServerCursor(cursorData) {
-        if ((cursorData.curdata && cursorData.curdata.length === 1) ||
-            !cursorData.curdata ||
+        if (!cursorData.curdata ||
             parseInt(cursorData.handle, 10) === 0 ||
             this._trackpadMode)
         {
@@ -2189,15 +2188,6 @@ export class Input {
             element = element.parentElement;
         }
         return false;
-    }
-
-    getCursorScaleFactor({ remoteResolutionEnabled = false } = {}) {
-        if (remoteResolutionEnabled) { this.cursorScaleFactor = null; return; }
-        var clientResolution = this.getWindowResolution();
-        var serverHeight = this.element.offsetHeight; var serverWidth = this.element.offsetWidth;
-        if (isNaN(serverWidth) || isNaN(serverHeight) || serverWidth <=0 || serverHeight <= 0) { return; }
-        if (Math.abs(clientResolution[0] - serverWidth) <= 10 && Math.abs(clientResolution[1] - serverHeight) <= 10) { this.cursorScaleFactor = null; return; }
-        this.cursorScaleFactor = Math.sqrt((serverWidth ** 2) + (serverHeight ** 2)) / Math.sqrt((clientResolution[0] ** 2) + (clientResolution[1] ** 2));
     }
 
     getWindowResolution() {

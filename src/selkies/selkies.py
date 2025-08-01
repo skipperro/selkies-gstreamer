@@ -175,12 +175,6 @@ class SelkiesStreamingApp:
             )
 
     def send_ws_cursor_data(self, data):
-        if len(data.get("curdata") or "") < 200:
-            data['curdata'] = 'A'
-            data['width'] = 0
-            data['height'] = 0
-            data['hotx'] = 0
-            data['hoty'] = 0
         self.last_cursor_sent = data
         if (
             self.data_streaming_server
