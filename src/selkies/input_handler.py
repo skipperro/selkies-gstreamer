@@ -1276,14 +1276,13 @@ class WebRTCInput:
             logger_webrtc_input.warning("exception from fetching cursor image: %s" % e)
         while self.cursors_running:
             if self.xdisplay.pending_events() == 0:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.02)
                 continue
             event = self.xdisplay.next_event()
             if (event.type, 0) == self.xdisplay.extension_event.DisplayCursorNotify:
                 cache_key = event.cursor_serial
-                if cache_key in self.cursor_cache:
-                    pass
-                else:
+                
+                if cache_key not in self.cursor_cache:
                     try:
                         cursor = self.xdisplay.xfixes_get_cursor_image(screen.root)
                         self.cursor_cache[cache_key] = self.cursor_to_msg(cursor)
@@ -1291,7 +1290,9 @@ class WebRTCInput:
                         logger_webrtc_input.warning(
                             "exception from fetching cursor image: %s" % e
                         )
-                self.on_cursor_change(self.cursor_cache.get(cache_key))
+                cursor_data = self.cursor_cache.get(cache_key)
+                if cursor_data:
+                    self.on_cursor_change(cursor_data)
         logger_webrtc_input.info("cursor monitor stopped")
 
     def stop_cursor_monitor(self):
