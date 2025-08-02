@@ -769,6 +769,7 @@ class WebRTCInput:
         cursor_size=16, 
         cursor_scale=1.0,
         cursor_debug=False,
+        max_cursor_size=32,
     ):
         self.active_shortcut_modifiers = set()
         self.SHORTCUT_MODIFIER_XKEY_NAMES = {
@@ -793,6 +794,9 @@ class WebRTCInput:
         self.cursor_scale = cursor_scale
         self.cursor_size = cursor_size
         self.cursor_debug = cursor_debug
+        self.max_cursor_size = max_cursor_size
+        self.system_dpi = 96.0
+        self.cursor_size_cap = max_cursor_size
         self.keyboard = None
         self.mouse = None
         self.xdisplay = None
@@ -896,6 +900,23 @@ class WebRTCInput:
     async def connect(self):
         try: self.xdisplay = display.Display()
         except Exception as e: logger_webrtc_input.error(f"Failed to connect to X display: {e}"); self.xdisplay = None
+        if self.xdisplay:
+            try:
+                screen = self.xdisplay.screen()
+                width_mm = screen.width_in_mms
+                height_mm = screen.height_in_mms
+                if width_mm > 0 and height_mm > 0:
+                    dpi_x = (screen.width_in_pixels * 25.4) / width_mm
+                    dpi_y = (screen.height_in_pixels * 25.4) / height_mm
+                    self.system_dpi = (dpi_x + dpi_y) / 2.0
+                dpi_scale_factor = self.system_dpi / 96.0
+                self.cursor_size_cap = int(self.max_cursor_size * dpi_scale_factor)
+                logger_webrtc_input.info(
+                    f"System DPI detected as ~{self.system_dpi:.0f}. "
+                    f"Cursor size cap set to {self.cursor_size_cap}x{self.cursor_size_cap}px."
+                )
+            except Exception as e:
+                logger_webrtc_input.warning(f"Could not determine system DPI, using default 96. Error: {e}")
         self.__keyboard_connect()
         if self.xdisplay: await self.reset_keyboard()
         self.__mouse_connect()
@@ -1313,6 +1334,20 @@ class WebRTCInput:
         left, upper, right, lower = bbox
         new_hotx = cursor.xhot - left
         new_hoty = cursor.yhot - upper
+        if cropped_im.width > self.cursor_size_cap or cropped_im.height > self.cursor_size_cap:
+            if self.cursor_debug:
+                logger_webrtc_input.info(f"Cursor ({cropped_im.width}x{cropped_im.height}) exceeds cap ({self.cursor_size_cap}x{self.cursor_size_cap}). Resizing.")
+            max_dim = max(cropped_im.width, cropped_im.height)
+            scale_factor = self.cursor_size_cap / max_dim
+            new_width = int(cropped_im.width * scale_factor)
+            new_height = int(cropped_im.height * scale_factor)
+            try:
+                resampling_filter = Image.Resampling.LANCZOS
+            except AttributeError:
+                resampling_filter = Image.LANCZOS
+            cropped_im = cropped_im.resize((new_width, new_height), resample=resampling_filter)
+            new_hotx = int(new_hotx * scale_factor)
+            new_hoty = int(new_hoty * scale_factor)
         with io.BytesIO() as f:
             cropped_im.save(f, "PNG")
             png_data = f.getvalue()
