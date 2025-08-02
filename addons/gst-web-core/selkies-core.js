@@ -97,20 +97,25 @@ function getCookieValue(name) {
   return b ? b.pop() : '';
 }
 // Set app name from manifest if possible
-let appName = 'Selkies';
-document.title = appName;
-!async function() {
+async function getAppName() {
   try {
-    const t = await fetch("manifest.json", {
-      signal: AbortSignal.timeout(500)
+    const response = await fetch("manifest.json", {
+      signal: AbortSignal.timeout(1000)
     });
-    if (t.ok) {
-      const a = await t.json();
-      appName = a.name;
-      document.title = `${appName}`;
+    if (response.ok) {
+      const manifest = await response.json();
+      if (manifest && manifest.name) {
+        return manifest.name;
+      }
     }
-  } catch (t) {}
-}();
+  } catch (err) {
+    console.warn('Could not fetch manifest.json to set app name, using default. Error:', err);
+  }
+  return 'Selkies';
+}
+const appName = await getAppName();
+document.title = appName;
+const storageAppName = appName.replace(/[^a-zA-Z0-9.-_]/g, '_');
 
 let videoBitRate = 8000;
 let videoFramerate = 60;
@@ -170,12 +175,12 @@ let playButtonElement;
 let overlayInput;
 
 const getIntParam = (key, default_value) => {
-  const prefixedKey = `${appName}_${key}`;
+  const prefixedKey = `${storageAppName}_${key}`;
   const value = window.localStorage.getItem(prefixedKey);
   return (value === null || value === undefined) ? default_value : parseInt(value);
 };
 const setIntParam = (key, value) => {
-  const prefixedKey = `${appName}_${key}`;
+  const prefixedKey = `${storageAppName}_${key}`;
   if (value === null || value === undefined) {
     window.localStorage.removeItem(prefixedKey);
   } else {
@@ -183,7 +188,7 @@ const setIntParam = (key, value) => {
   }
 };
 const getBoolParam = (key, default_value) => {
-  const prefixedKey = `${appName}_${key}`;
+  const prefixedKey = `${storageAppName}_${key}`;
   const v = window.localStorage.getItem(prefixedKey);
   if (v === null) {
     return default_value;
@@ -191,7 +196,7 @@ const getBoolParam = (key, default_value) => {
   return v.toString().toLowerCase() === 'true';
 };
 const setBoolParam = (key, value) => {
-  const prefixedKey = `${appName}_${key}`;
+  const prefixedKey = `${storageAppName}_${key}`;
   if (value === null || value === undefined) {
     window.localStorage.removeItem(prefixedKey);
   } else {
@@ -199,12 +204,12 @@ const setBoolParam = (key, value) => {
   }
 };
 const getStringParam = (key, default_value) => {
-  const prefixedKey = `${appName}_${key}`;
+  const prefixedKey = `${storageAppName}_${key}`;
   const value = window.localStorage.getItem(prefixedKey);
   return (value === null || value === undefined) ? default_value : value;
 };
 const setStringParam = (key, value) => {
-  const prefixedKey = `${appName}_${key}`;
+  const prefixedKey = `${storageAppName}_${key}`;
   if (value === null || value === undefined) {
     window.localStorage.removeItem(prefixedKey);
   } else {
@@ -237,8 +242,7 @@ if (isSharedMode) {
     manualHeight = getIntParam('manualHeight', null);
 }
 
-
-const getUsername = () => getCookieValue(`broker_${appName}`)?.split('#')[0] || 'websocket_user'; // Default user for WS
+const getUsername = () => getCookieValue(`broker_${storageAppName}`)?.split('#')[0] || 'websocket_user';
 
 const enterFullscreen = () => {
   if ('webrtcInput' in window && window.webrtcInput && typeof window.webrtcInput.enterFullscreen === 'function') {
@@ -2385,7 +2389,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
     updateStatusDisplay();
     window.postMessage({ type: 'trackpadModeUpdate', enabled: trackpadMode }, window.location.origin);
     if (!isSharedMode) {
-      const settingsPrefix = `${appName}_`;
+      const settingsPrefix = `${storageAppName}_`;
       const settingsToSend = {};
       let foundSettings = false;
       let initialClientWidthForSettings, initialClientHeightForSettings;
