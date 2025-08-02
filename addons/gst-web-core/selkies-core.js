@@ -1223,6 +1223,11 @@ function receiveMessage(event) {
         console.warn("Invalid value received for setScaleLocally:", message.value);
       }
       break;
+    case 'setSynth':
+      if (window.webrtcInput && typeof window.webrtcInput.setSynth === 'function') {
+        window.webrtcInput.setSynth(message.value);
+      }
+      break;
     case 'showVirtualKeyboard':
       if (isSharedMode) {
         console.log("Shared mode: showVirtualKeyboard message ignored.");

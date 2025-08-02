@@ -592,6 +592,12 @@ function Sidebar({ isOpen }) {
   };
   const handleHoldKeyClick = (key, code) => {
     const isCurrentlyHeld = heldKeys[key];
+    const currentHeldCount = Object.values(heldKeys).filter(Boolean).length;
+    if (!isCurrentlyHeld && currentHeldCount === 0) {
+      window.postMessage({ type: 'setSynth', value: true }, window.location.origin);
+    } else if (isCurrentlyHeld && currentHeldCount === 1) {
+      window.postMessage({ type: 'setSynth', value: false }, window.location.origin);
+    }
     const nextHeldState = {
       ...heldKeys,
       [key]: !isCurrentlyHeld,

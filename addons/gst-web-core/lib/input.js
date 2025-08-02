@@ -1158,6 +1158,7 @@ export class Input {
         this._altGrCtrlTime = 0;
         this._macCmdSwapped = false;
 
+        this._isSynth = false;
         this.isComposing = false;
         this.compositionString = "";
         this.keyboardInputAssist = document.getElementById('keyboard-input-assist');
@@ -1230,6 +1231,11 @@ export class Input {
         this._drawAndScaleCursor();
     }
 
+    setSynth(isSynth) {
+        console.log(`Input: Synthetic mode ${isSynth ? 'enabled' : 'disabled'}.`);
+        this._isSynth = isSynth;
+    }
+
     updateCssScaling(newUseCssScalingValue) {
         if (this.useCssScaling !== newUseCssScalingValue) {
             console.log(`Input: Updating useCssScaling from ${this.useCssScaling} to ${newUseCssScalingValue}`);
@@ -1283,19 +1289,21 @@ export class Input {
             return;
         }
 
-        for (const code in this._keyDownList) {
-            const keysym = this._keyDownList[code];
-            if ((code === 'ControlLeft' || code === 'ControlRight') && !event.ctrlKey) {
-                this._sendKeyEvent(keysym, code, false);
-            }
-            if ((code === 'MetaLeft' || code === 'MetaRight') && !event.metaKey) {
-                this._sendKeyEvent(keysym, code, false);
-            }
-            if ((code === 'AltLeft' || code === 'AltRight') && !event.altKey) {
-                this._sendKeyEvent(keysym, code, false);
-            }
-            if ((code === 'ShiftLeft' || code === 'ShiftRight') && !event.shiftKey) {
-                this._sendKeyEvent(keysym, code, false);
+        if (!this._isSynth) {
+            for (const code in this._keyDownList) {
+                const keysym = this._keyDownList[code];
+                if ((code === 'ControlLeft' || code === 'ControlRight') && !event.ctrlKey) {
+                    this._sendKeyEvent(keysym, code, false);
+                }
+                if ((code === 'MetaLeft' || code === 'MetaRight') && !event.metaKey) {
+                    this._sendKeyEvent(keysym, code, false);
+                }
+                if ((code === 'AltLeft' || code === 'AltRight') && !event.altKey) {
+                    this._sendKeyEvent(keysym, code, false);
+                }
+                if ((code === 'ShiftLeft' || code === 'ShiftRight') && !event.shiftKey) {
+                    this._sendKeyEvent(keysym, code, false);
+                }
             }
         }
 
