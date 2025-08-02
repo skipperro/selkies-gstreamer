@@ -2126,20 +2126,22 @@ export class Input {
     }
 
     _mouseWheel(event) {
-        var mtype = (document.pointerLockElement === this.element ? "m2" : "m");
-        var button = (event.deltaY < 0) ? 4 : 3;
-        var deltaY = Math.abs(Math.trunc(event.deltaY));
-        if (deltaY < this._smallestDeltaY && deltaY != 0) { this._smallestDeltaY = deltaY; }
-        deltaY = Math.max(1, Math.floor(deltaY / this._smallestDeltaY));
-        var magnitude = Math.min(deltaY, this._scrollMagnitude);
-        var mask = 1 << button;
-        var toks;
-        this.buttonMask |= mask;
-        toks = [ mtype, this.x, this.y, this.buttonMask, magnitude ];
-        this.send(toks.join(","));
-        this.buttonMask &= ~mask;
-        toks = [ mtype, this.x, this.y, this.buttonMask, magnitude ];
-        this.send(toks.join(","));
+        if (event.deltaY !== 0) {
+            const direction = (event.deltaY < 0) ? 'up' : 'down';
+            let deltaY = Math.abs(Math.trunc(event.deltaY));
+            if (deltaY < this._smallestDeltaY && deltaY !== 0) {
+                this._smallestDeltaY = deltaY;
+            }
+            const verticalMagnitude = Math.max(1, Math.floor(deltaY / this._smallestDeltaY));
+            const magnitude = Math.min(verticalMagnitude, this._scrollMagnitude);
+            this._triggerMouseWheel(direction, magnitude);
+        }
+        if (event.deltaX !== 0) {
+            const direction = (event.deltaX < 0) ? 'left' : 'right';
+            const horizontalMagnitude = Math.max(1, Math.round(Math.abs(event.deltaX) / 100));
+            const magnitude = Math.min(horizontalMagnitude, this._scrollMagnitude);
+            this._triggerHorizontalMouseWheel(direction, magnitude);
+        }
     }
 
     _contextMenu(event) {

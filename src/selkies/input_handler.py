@@ -995,6 +995,10 @@ class WebRTCInput:
         elif action == MOUSE_SCROLL_DOWN:
             if self.uinput_mouse_socket_path: self.__mouse_emit(UINPUT_REL_WHEEL, -1)
             elif self.mouse: self.mouse.scroll(0, 1)
+        elif action == MOUSE_SCROLL_LEFT:
+            if self.mouse: self.mouse.scroll(-1, 0)
+        elif action == MOUSE_SCROLL_RIGHT:
+            if self.mouse: self.mouse.scroll(1, 0)
         elif action == MOUSE_BUTTON: 
             btn_map_key = "uinput" if self.uinput_mouse_socket_path else "pynput"
             btn_uinput_or_pynput = MOUSE_BUTTON_MAP[data[1]][btn_map_key]
@@ -1152,7 +1156,7 @@ class WebRTCInput:
             self.send_mouse(MOUSE_POSITION, (x, y))
 
         if button_mask != self.button_mask:
-            for bit_index in range(5): # Check bits 0 through 4
+            for bit_index in range(8): # Check bits 0 through 7
                 current_button_bit_value = (1 << bit_index)
                 button_state_changed = ((self.button_mask & current_button_bit_value) != \
                                         (button_mask & current_button_bit_value))
@@ -1207,6 +1211,14 @@ class WebRTCInput:
                                     performed_keyboard_combo = True
                                 else:
                                     logger_webrtc_input.warning("Keyboard not available for Alt+Right.")
+                    elif bit_index == 6:
+                        if scroll_magnitude > 0 and is_pressed_now:
+                            action_to_send = MOUSE_SCROLL_LEFT
+                            is_scroll_action = True
+                    elif bit_index == 7:
+                        if scroll_magnitude > 0 and is_pressed_now:
+                            action_to_send = MOUSE_SCROLL_RIGHT
+                            is_scroll_action = True
                     # Send the determined MOUSE action (if any and no keyboard combo was done)
                     if not performed_keyboard_combo and action_to_send is not None:
                         if is_scroll_action:
@@ -1504,6 +1516,8 @@ MOUSE_POSITION = 10
 MOUSE_MOVE = 11
 MOUSE_SCROLL_UP = 20
 MOUSE_SCROLL_DOWN = 21
+MOUSE_SCROLL_LEFT = 22
+MOUSE_SCROLL_RIGHT = 23
 MOUSE_BUTTON_PRESS = 30
 MOUSE_BUTTON_RELEASE = 31
 MOUSE_BUTTON = 40
