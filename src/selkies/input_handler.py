@@ -790,7 +790,6 @@ class WebRTCInput:
         self.enable_clipboard = enable_clipboard
         self.enable_cursors = enable_cursors
         self.cursors_running = False
-        self.cursor_cache = {}
         self.cursor_scale = cursor_scale
         self.cursor_size = cursor_size
         self.cursor_debug = cursor_debug
@@ -1254,14 +1253,11 @@ class WebRTCInput:
                 return
         xfixes_version = self.xdisplay.xfixes_query_version()
         logger_webrtc_input.info(
-            "Found XFIXES version %s.%s"
-            % (
-                xfixes_version.major_version,
-                xfixes_version.minor_version,
-            )
+            "Found XFIXES version %s.%s",
+            xfixes_version.major_version,
+            xfixes_version.minor_version,
         )
         logger_webrtc_input.info("starting cursor monitor")
-        self.cursor_cache = {}
         self.cursors_running = True
         screen = self.xdisplay.screen()
         self.xdisplay.xfixes_select_cursor_input(
@@ -1269,63 +1265,64 @@ class WebRTCInput:
         )
         logger_webrtc_input.info("watching for cursor changes")
         try:
-            image = self.xdisplay.xfixes_get_cursor_image(screen.root)
-            self.cursor_cache[image.cursor_serial] = self.cursor_to_msg(image)
-            self.on_cursor_change(self.cursor_cache[image.cursor_serial])
+            cursor_image = self.xdisplay.xfixes_get_cursor_image(screen.root)
+            cursor_data = self.cursor_to_msg(cursor_image)
+            self.on_cursor_change(cursor_data)
         except Exception as e:
-            logger_webrtc_input.warning("exception from fetching cursor image: %s" % e)
+            logger_webrtc_input.warning("exception from fetching initial cursor image: %s", e)
+            
         while self.cursors_running:
             if self.xdisplay.pending_events() == 0:
                 await asyncio.sleep(0.02)
                 continue
+            
             event = self.xdisplay.next_event()
             if (event.type, 0) == self.xdisplay.extension_event.DisplayCursorNotify:
-                cache_key = event.cursor_serial
-                
-                if cache_key not in self.cursor_cache:
-                    try:
-                        cursor = self.xdisplay.xfixes_get_cursor_image(screen.root)
-                        self.cursor_cache[cache_key] = self.cursor_to_msg(cursor)
-                    except Exception as e:
-                        logger_webrtc_input.warning(
-                            "exception from fetching cursor image: %s" % e
-                        )
-                cursor_data = self.cursor_cache.get(cache_key)
-                if cursor_data:
+                try:
+                    cursor_image = self.xdisplay.xfixes_get_cursor_image(screen.root)
+                    cursor_data = self.cursor_to_msg(cursor_image)
                     self.on_cursor_change(cursor_data)
+                except Exception as e:
+                    logger_webrtc_input.warning(
+                        "exception from fetching cursor image on change: %s", e
+                    )
         logger_webrtc_input.info("cursor monitor stopped")
 
     def stop_cursor_monitor(self):
         logger_webrtc_input.info("stopping cursor monitor")
         self.cursors_running = False
 
-    def _cursor_image_to_png(self, cursor):
-        with io.BytesIO() as f:
-            s = [((i >> b) & 0xFF) for i in cursor.cursor_image for b in [16, 8, 0, 24]]
-            im = Image.frombytes("RGBA", (cursor.width, cursor.height), bytes(s), "raw", "BGRA")
-            im.save(f, "PNG")
-            return f.getvalue()
+    def _cursor_image_to_pil(self, cursor):
+        byte_data = b''.join(p.to_bytes(4, 'little') for p in cursor.cursor_image)
+        return Image.frombytes("RGBA", (cursor.width, cursor.height), byte_data, "raw", "BGRA")
 
     def cursor_to_msg(self, cursor):
-        if cursor.width == 0 or cursor.height == 0:
+        if not cursor or cursor.width == 0 or cursor.height == 0:
             return {
-                "curdata": "",
-                "width": 0,
-                "height": 0,
-                "hotx": 0,
-                "hoty": 0,
-                "handle": cursor.cursor_serial,
+                "curdata": "", "width": 0, "height": 0,
+                "hotx": 0, "hoty": 0, "handle": cursor.cursor_serial if cursor else 0,
             }
-
-        png_data = self._cursor_image_to_png(cursor)
+        im = self._cursor_image_to_pil(cursor)
+        bbox = im.getbbox()
+        if bbox is None:
+            return {
+                "curdata": "", "width": 0, "height": 0,
+                "hotx": 0, "hoty": 0, "handle": cursor.cursor_serial,
+            }
+        cropped_im = im.crop(bbox)
+        left, upper, right, lower = bbox
+        new_hotx = cursor.xhot - left
+        new_hoty = cursor.yhot - upper
+        with io.BytesIO() as f:
+            cropped_im.save(f, "PNG")
+            png_data = f.getvalue()
         png_data_b64 = base64.b64encode(png_data)
-
         return {
             "curdata": png_data_b64.decode(),
-            "width": cursor.width,
-            "height": cursor.height,
-            "hotx": cursor.xhot,
-            "hoty": cursor.yhot,
+            "width": cropped_im.width,
+            "height": cropped_im.height,
+            "hotx": new_hotx,
+            "hoty": new_hoty,
             "handle": cursor.cursor_serial,
         }
 
