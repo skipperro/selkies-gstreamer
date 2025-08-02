@@ -92,30 +92,22 @@ window.onload = () => {
   'use strict';
 };
 
-function getCookieValue(name) {
-  const b = document.cookie.match(`(^|[^;]+)\\s*${name}\\s*=\\s*([^;]+)`);
-  return b ? b.pop() : '';
-}
-// Set app name from manifest if possible
-async function getAppName() {
-  try {
-    const response = await fetch("manifest.json", {
-      signal: AbortSignal.timeout(1000)
-    });
-    if (response.ok) {
-      const manifest = await response.json();
-      if (manifest && manifest.name) {
-        return manifest.name;
-      }
+// Set storage key based on URL
+const urlForKey = window.location.href.split('#')[0];
+const storageAppName = urlForKey.replace(/[^a-zA-Z0-9.-_]/g, '_');
+
+// Set page title
+document.title = 'Selkies';
+fetch('manifest.json')
+  .then(response => response.json())
+  .then(manifest => {
+    if (manifest.name) {
+      document.title = manifest.name;
     }
-  } catch (err) {
-    console.warn('Could not fetch manifest.json to set app name, using default. Error:', err);
-  }
-  return 'Selkies';
-}
-const appName = await getAppName();
-document.title = appName;
-const storageAppName = appName.replace(/[^a-zA-Z0-9.-_]/g, '_');
+  })
+  .catch(() => {
+    // Pass
+  });
 
 let videoBitRate = 8000;
 let videoFramerate = 60;
@@ -218,20 +210,35 @@ const setStringParam = (key, value) => {
 };
 
 videoBitRate = getIntParam('videoBitRate', videoBitRate);
+setIntParam('videoBitRate', videoBitRate);
 videoFramerate = getIntParam('videoFramerate', videoFramerate);
+setIntParam('videoFramerate', videoFramerate);
 videoCRF = getIntParam('videoCRF', videoCRF);
+setIntParam('videoCRF', videoCRF);
 h264_fullcolor = getBoolParam('h264_fullcolor', h264_fullcolor);
+setBoolParam('h264_fullcolor', h264_fullcolor);
 h264_streaming_mode = getBoolParam('h264_streaming_mode', h264_streaming_mode);
+setBoolParam('h264_streaming_mode', h264_streaming_mode);
 audioBitRate = getIntParam('audioBitRate', audioBitRate);
+setIntParam('audioBitRate', audioBitRate);
 resizeRemote = getBoolParam('resizeRemote', resizeRemote);
+setBoolParam('resizeRemote', resizeRemote);
 debug = getBoolParam('debug', debug);
+setBoolParam('debug', debug);
 videoBufferSize = getIntParam('videoBufferSize', 0);
+setIntParam('videoBufferSize', videoBufferSize);
 currentEncoderMode = getStringParam('encoder', 'x264enc');
+setStringParam('encoder', currentEncoderMode);
 scaleLocallyManual = getBoolParam('scaleLocallyManual', true);
+setBoolParam('scaleLocallyManual', scaleLocallyManual);
 isManualResolutionMode = getBoolParam('isManualResolutionMode', false);
+setBoolParam('isManualResolutionMode', isManualResolutionMode);
 isGamepadEnabled = getBoolParam('isGamepadEnabled', true);
+setBoolParam('isGamepadEnabled', isGamepadEnabled);
 useCssScaling = getBoolParam('useCssScaling', false);
+setBoolParam('useCssScaling', useCssScaling);
 trackpadMode = getBoolParam('trackpadMode', false);
+setBoolParam('trackpadMode', trackpadMode);
 
 if (isSharedMode) {
     manualWidth = 1280;
@@ -239,10 +246,10 @@ if (isSharedMode) {
     console.log(`Shared mode: Initialized manualWidth/Height to ${manualWidth}x${manualHeight}`);
 } else {
     manualWidth = getIntParam('manualWidth', null);
+    setIntParam('manualWidth', manualWidth);
     manualHeight = getIntParam('manualHeight', null);
+    setIntParam('manualHeight', manualHeight);
 }
-
-const getUsername = () => getCookieValue(`broker_${storageAppName}`)?.split('#')[0] || 'websocket_user';
 
 const enterFullscreen = () => {
   if ('webrtcInput' in window && window.webrtcInput && typeof window.webrtcInput.enterFullscreen === 'function') {
@@ -2459,10 +2466,6 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
         const message = `SETTINGS,${settingsJson}`;
         websocket.send(message);
         console.log('[websockets] Sent initial settings (resolutions are physical) to server:', settingsToSend);
-        window.postMessage({
-          type: 'initialClientSettings',
-          settings: settingsToSend
-        }, window.location.origin);
       } catch (e) {
         console.error('[websockets] Error constructing or sending initial settings:', e);
       }

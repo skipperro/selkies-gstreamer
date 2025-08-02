@@ -499,6 +499,14 @@ function AppsModal({ isOpen, onClose, t }) {
   );
 }
 
+const getStorageAppName = () => {
+  if (typeof window === 'undefined') return '';
+  const urlForKey = window.location.href.split('#')[0];
+  return urlForKey.replace(/[^a-zA-Z0-9.-_]/g, '_');
+};
+const storageAppName = getStorageAppName();
+const getPrefixedKey = (key) => `${storageAppName}_${key}`;
+
 function Sidebar({ isOpen }) {
   const [langCode, setLangCode] = useState("en");
   const [translator, setTranslator] = useState(() => getTranslator("en"));
@@ -609,41 +617,44 @@ function Sidebar({ isOpen }) {
   };
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "dark");
   const [encoder, setEncoder] = useState(
-    localStorage.getItem("encoder") || DEFAULT_ENCODER
+    localStorage.getItem(getPrefixedKey("encoder")) || DEFAULT_ENCODER
   );
   const [dynamicEncoderOptions, setDynamicEncoderOptions] =
     useState(encoderOptions);
   const [framerate, setFramerate] = useState(
-    parseInt(localStorage.getItem("videoFramerate"), 10) || DEFAULT_FRAMERATE
+    parseInt(localStorage.getItem(getPrefixedKey("videoFramerate")), 10) ||
+      DEFAULT_FRAMERATE
   );
   const [videoBitRate, setVideoBitRate] = useState(
-    parseInt(localStorage.getItem("videoBitRate"), 10) || DEFAULT_VIDEO_BITRATE
+    parseInt(localStorage.getItem(getPrefixedKey("videoBitRate")), 10) ||
+      DEFAULT_VIDEO_BITRATE
   );
   const [videoBufferSize, setVideoBufferSize] = useState(
-    parseInt(localStorage.getItem("videoBufferSize"), 10) ||
+    parseInt(localStorage.getItem(getPrefixedKey("videoBufferSize")), 10) ||
       DEFAULT_VIDEO_BUFFER_SIZE
   );
   const [videoCRF, setVideoCRF] = useState(
-    parseInt(localStorage.getItem("videoCRF"), 10) || DEFAULT_VIDEO_CRF
+    parseInt(localStorage.getItem(getPrefixedKey("videoCRF")), 10) ||
+      DEFAULT_VIDEO_CRF
   );
   const [h264FullColor, setH264FullColor] = useState(
-    localStorage.getItem("h264_fullcolor") === "true"
+    localStorage.getItem(getPrefixedKey("h264_fullcolor")) === "true"
   );
   const [h264StreamingMode, setH264StreamingMode] = useState(
-    localStorage.getItem("h264_streaming_mode") === "true"
+    localStorage.getItem(getPrefixedKey("h264_streaming_mode")) === "true"
   );
   const [selectedDpi, setSelectedDpi] = useState(
     parseInt(localStorage.getItem("scalingDPI"), 10) || DEFAULT_SCALING_DPI
   );
-  const [manualWidth, setManualWidth] = useState("");
-  const [manualHeight, setManualHeight] = useState("");
+  const [manualWidth, setManualWidth] = useState(localStorage.getItem(getPrefixedKey("manualWidth")) || "");
+  const [manualHeight, setManualHeight] = useState(localStorage.getItem(getPrefixedKey("manualHeight")) || "");
   const [scaleLocally, setScaleLocally] = useState(() => {
-    const saved = localStorage.getItem("scaleLocallyManual");
+    const saved = localStorage.getItem(getPrefixedKey("scaleLocallyManual"));
     return saved !== null ? saved === "true" : DEFAULT_SCALE_LOCALLY;
   });
   const [hidpiEnabled, setHidpiEnabled] = useState(() => {
-    const saved = localStorage.getItem("hidpiEnabled");
-    return saved !== null ? saved === "true" : true;
+    const saved = localStorage.getItem(getPrefixedKey("useCssScaling"));
+    return saved !== "true";
   });
   const [presetValue, setPresetValue] = useState("");
   const [clientFps, setClientFps] = useState(0);
@@ -707,7 +718,6 @@ function Sidebar({ isOpen }) {
 
   const debouncedUpdateFramerateSettings = useCallback(
     debounce((newFramerate) => {
-      localStorage.setItem("videoFramerate", newFramerate.toString());
       window.postMessage(
         { type: "settings", settings: { videoFramerate: newFramerate } },
         window.location.origin
@@ -718,7 +728,6 @@ function Sidebar({ isOpen }) {
 
   const debouncedUpdateVideoBitrateSettings = useCallback(
     debounce((newBitrate) => {
-      localStorage.setItem("videoBitRate", newBitrate.toString());
       window.postMessage(
         { type: "settings", settings: { videoBitRate: newBitrate } },
         window.location.origin
@@ -729,7 +738,6 @@ function Sidebar({ isOpen }) {
 
   const debouncedUpdateVideoBufferSizeSettings = useCallback(
     debounce((newSize) => {
-      localStorage.setItem("videoBufferSize", newSize.toString());
       window.postMessage(
         { type: "settings", settings: { videoBufferSize: newSize } },
         window.location.origin
@@ -740,7 +748,6 @@ function Sidebar({ isOpen }) {
 
   const debouncedUpdateVideoCRFSettings = useCallback(
     debounce((newCRF) => {
-      localStorage.setItem("videoCRF", newCRF.toString());
       window.postMessage(
         { type: "settings", settings: { videoCRF: newCRF } },
         window.location.origin
@@ -751,7 +758,6 @@ function Sidebar({ isOpen }) {
 
   const debouncedUpdateH264FullColorSettings = useCallback(
     debounce((newFullColor) => {
-      localStorage.setItem("h264_fullcolor", newFullColor.toString());
       window.postMessage(
         { type: "settings", settings: { h264_fullcolor: newFullColor } },
         window.location.origin
@@ -762,7 +768,6 @@ function Sidebar({ isOpen }) {
 
   const debouncedUpdateH264StreamingModeSettings = useCallback(
     debounce((newStreamingMode) => {
-      localStorage.setItem("h264_streaming_mode", newStreamingMode.toString());
       window.postMessage(
         { type: "settings", settings: { h264_streaming_mode: newStreamingMode } },
         window.location.origin
@@ -774,7 +779,6 @@ function Sidebar({ isOpen }) {
   const handleDpiScalingChange = (event) => {
     const newDpi = parseInt(event.target.value, 10);
     setSelectedDpi(newDpi);
-    localStorage.setItem("scalingDPI", newDpi.toString());
     window.postMessage(
       { type: "settings", settings: { SCALING_DPI: newDpi } },
       window.location.origin
@@ -1036,7 +1040,6 @@ function Sidebar({ isOpen }) {
   const handleEncoderChange = (event) => {
     const selectedEncoder = event.target.value;
     setEncoder(selectedEncoder);
-    localStorage.setItem("encoder", selectedEncoder);
     window.postMessage(
       { type: "settings", settings: { encoder: selectedEncoder } },
       window.location.origin
@@ -1135,7 +1138,6 @@ function Sidebar({ isOpen }) {
   const handleScaleLocallyToggle = () => {
     const newState = !scaleLocally;
     setScaleLocally(newState);
-    localStorage.setItem("scaleLocallyManual", newState.toString());
     window.postMessage(
       { type: "setScaleLocally", value: newState },
       window.location.origin
@@ -1144,7 +1146,6 @@ function Sidebar({ isOpen }) {
   const handleHidpiToggle = () => {
     const newHidpiState = !hidpiEnabled;
     setHidpiEnabled(newHidpiState);
-    localStorage.setItem("hidpiEnabled", newHidpiState.toString());
     window.postMessage(
       { type: "setUseCssScaling", value: !newHidpiState },
       window.location.origin
@@ -1245,7 +1246,6 @@ function Sidebar({ isOpen }) {
   const toggleTheme = () => {
     const newTheme = theme === "dark" ? "light" : "dark";
     setTheme(newTheme);
-    localStorage.setItem("theme", newTheme);
   };
   const handleMouseEnter = (e, itemKey) => {
     setHoveredItem(itemKey);
@@ -1378,86 +1378,6 @@ function Sidebar({ isOpen }) {
 
   const handleUploadClick = () =>
     window.dispatchEvent(new CustomEvent("requestFileUpload"));
-
-  useEffect(() => {
-    const savedEncoder = localStorage.getItem("encoder");
-    if (savedEncoder && encoderOptions.includes(savedEncoder))
-      setEncoder(savedEncoder);
-    else {
-      setEncoder(DEFAULT_ENCODER);
-      localStorage.setItem("encoder", DEFAULT_ENCODER);
-    }
-    const savedFramerate = parseInt(localStorage.getItem("videoFramerate"), 10);
-    if (!isNaN(savedFramerate) && framerateOptions.includes(savedFramerate))
-      setFramerate(savedFramerate);
-    else {
-      setFramerate(DEFAULT_FRAMERATE);
-      localStorage.setItem("videoFramerate", DEFAULT_FRAMERATE.toString());
-    }
-    const savedVideoBitRate = parseInt(
-      localStorage.getItem("videoBitRate"),
-      10
-    );
-    if (
-      !isNaN(savedVideoBitRate) &&
-      videoBitrateOptions.includes(savedVideoBitRate)
-    )
-      setVideoBitRate(savedVideoBitRate);
-    else {
-      setVideoBitRate(DEFAULT_VIDEO_BITRATE);
-      localStorage.setItem("videoBitRate", DEFAULT_VIDEO_BITRATE.toString());
-    }
-    const savedVideoBufferSize = parseInt(
-      localStorage.getItem("videoBufferSize"),
-      10
-    );
-    if (
-      !isNaN(savedVideoBufferSize) &&
-      videoBufferOptions.includes(savedVideoBufferSize)
-    )
-      setVideoBufferSize(savedVideoBufferSize);
-    else {
-      setVideoBufferSize(DEFAULT_VIDEO_BUFFER_SIZE);
-      localStorage.setItem(
-        "videoBufferSize",
-        DEFAULT_VIDEO_BUFFER_SIZE.toString()
-      );
-    }
-    const savedVideoCRF = parseInt(localStorage.getItem("videoCRF"), 10);
-    if (!isNaN(savedVideoCRF) && videoCRFOptions.includes(savedVideoCRF))
-      setVideoCRF(savedVideoCRF);
-    else {
-      setVideoCRF(DEFAULT_VIDEO_CRF);
-      localStorage.setItem("videoCRF", DEFAULT_VIDEO_CRF.toString());
-    }
-    const savedH264FullColor = localStorage.getItem("h264_fullcolor");
-    if (savedH264FullColor !== null) {
-      setH264FullColor(savedH264FullColor === "true");
-    } else {
-      setH264FullColor(false);
-      localStorage.setItem("h264_fullcolor", "false");
-    }
-    const savedH264StreamingMode = localStorage.getItem("h264_streaming_mode");
-    if (savedH264StreamingMode !== null) {
-      setH264StreamingMode(savedH264StreamingMode === "true");
-    } else {
-      setH264StreamingMode(false);
-      localStorage.setItem("h264_streaming_mode", "false");
-    }
-    const savedScalingDPI = parseInt(localStorage.getItem("scalingDPI"), 10);
-    if (!isNaN(savedScalingDPI) && dpiScalingOptions.some(opt => opt.value === savedScalingDPI)) {
-      setSelectedDpi(savedScalingDPI);
-    } else {
-      setSelectedDpi(DEFAULT_SCALING_DPI);
-      localStorage.setItem("scalingDPI", DEFAULT_SCALING_DPI.toString());
-    }
-    const initialHidpi = localStorage.getItem("hidpiEnabled");
-    const hidpiIsCurrentlyEnabled = initialHidpi !== null ? initialHidpi === "true" : true;
-    window.postMessage(
-      { type: "setUseCssScaling", value: !hidpiIsCurrentlyEnabled },
-      window.location.origin
-    );
-  }, []);
 
   useEffect(() => {
     const readStats = () => {
@@ -1625,110 +1545,6 @@ function Sidebar({ isOpen }) {
         } else if (message.type === "trackpadModeUpdate") {
           if (typeof message.enabled === 'boolean') {
             setIsTrackpadModeActive(message.enabled);
-          }
-        } else if (message.type === "initialClientSettings") {
-          console.log(
-            "Dashboard: Received initialClientSettings",
-            message.settings
-          );
-          const receivedSettings = message.settings;
-          if (
-            receivedSettings &&
-            typeof receivedSettings === "object" &&
-            Object.keys(receivedSettings).length > 0
-          ) {
-            for (const prefixedKey in receivedSettings) {
-              if (Object.hasOwnProperty.call(receivedSettings, prefixedKey)) {
-                const valueStr = receivedSettings[prefixedKey];
-
-                if (prefixedKey.endsWith("videoBitRate")) {
-                  const val = parseInt(valueStr, 10);
-                  if (!isNaN(val) && videoBitrateOptions.includes(val)) {
-                    setVideoBitRate(val);
-                    localStorage.setItem("videoBitRate", val.toString());
-                  }
-                } else if (prefixedKey.endsWith("videoFramerate")) {
-                  const val = parseInt(valueStr, 10);
-                  if (!isNaN(val) && framerateOptions.includes(val)) {
-                    setFramerate(val);
-                    localStorage.setItem("videoFramerate", val.toString());
-                  }
-                } else if (prefixedKey.endsWith("videoCRF")) {
-                  const val = parseInt(valueStr, 10);
-                  if (!isNaN(val) && videoCRFOptions.includes(val)) {
-                    setVideoCRF(val);
-                    localStorage.setItem("videoCRF", val.toString());
-                  }
-                } else if (prefixedKey.endsWith("encoder")) {
-                  if (
-                    dynamicEncoderOptions.includes(valueStr) ||
-                    encoderOptions.includes(valueStr)
-                  ) {
-                    setEncoder(valueStr);
-                    localStorage.setItem("encoder", valueStr);
-                  }
-                } else if (prefixedKey.endsWith("videoBufferSize")) {
-                  const val = parseInt(valueStr, 10);
-                  if (!isNaN(val) && videoBufferOptions.includes(val)) {
-                    setVideoBufferSize(val);
-                    localStorage.setItem("videoBufferSize", val.toString());
-                  }
-                } else if (prefixedKey.endsWith("scaleLocallyManual")) {
-                  const val = valueStr === "true";
-                  setScaleLocally(val);
-                  localStorage.setItem("scaleLocallyManual", val.toString());
-                } else if (prefixedKey.endsWith("manualWidth")) {
-                  if (valueStr && valueStr !== "null") setManualWidth(valueStr);
-                  else setManualWidth("");
-                  localStorage.setItem(
-                    "manualWidth",
-                    valueStr && valueStr !== "null" ? valueStr : ""
-                  );
-                } else if (prefixedKey.endsWith("manualHeight")) {
-                  if (valueStr && valueStr !== "null")
-                    setManualHeight(valueStr);
-                  else setManualHeight("");
-                  localStorage.setItem(
-                    "manualHeight",
-                    valueStr && valueStr !== "null" ? valueStr : ""
-                  );
-                } else if (prefixedKey.endsWith("isManualResolutionMode")) {
-                  const isManual = valueStr === "true";
-                  localStorage.setItem(
-                    "isManualResolutionMode",
-                    isManual.toString()
-                  );
-                } else if (prefixedKey.endsWith("isGamepadEnabled")) {
-                  const isGpEnabled = valueStr === "true";
-                  setIsGamepadEnabled(isGpEnabled);
-                  localStorage.setItem(
-                    "isGamepadEnabled",
-                    isGpEnabled.toString()
-                  );
-                } else if (prefixedKey.endsWith("h264_fullcolor")) {
-                  const val = valueStr === true || valueStr === "true";
-                  setH264FullColor(val);
-                  localStorage.setItem("h264_fullcolor", val.toString());
-                } else if (prefixedKey.endsWith("h264_streaming_mode")) {
-                  const val = valueStr === true || valueStr === "true";
-                  setH264StreamingMode(val);
-                  localStorage.setItem("h264_streaming_mode", val.toString());
-                } else if (prefixedKey.endsWith("SCALING_DPI")) {
-                  const val = parseInt(valueStr, 10);
-                  if (!isNaN(val) && dpiScalingOptions.some(opt => opt.value === val)) {
-                    setSelectedDpi(val);
-                    localStorage.setItem("scalingDPI", val.toString());
-                  }
-                } else if (prefixedKey.endsWith("useCssScaling")) {
-                  const clientIsUsingCssScaling = valueStr === true || valueStr === "true";
-                  const correspondingHidpiState = !clientIsUsingCssScaling;
-                  if (hidpiEnabled !== correspondingHidpiState) {
-                    setHidpiEnabled(correspondingHidpiState);
-                    localStorage.setItem("hidpiEnabled", correspondingHidpiState.toString());
-                  }
-                }
-              }
-            }
           }
         }
       }
