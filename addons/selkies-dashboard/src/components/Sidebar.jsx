@@ -1762,30 +1762,35 @@ function Sidebar({ isOpen }) {
               <button
                 className={`mobile-key-button ${heldKeys.Control ? "active" : ""}`}
                 onClick={() => handleHoldKeyClick('Control', 'ControlLeft')}
+                onMouseDown={(e) => e.preventDefault()}
               >
                 CTL
               </button>
               <button
                 className={`mobile-key-button ${heldKeys.Alt ? "active" : ""}`}
                 onClick={() => handleHoldKeyClick('Alt', 'AltLeft')}
+                onMouseDown={(e) => e.preventDefault()}
               >
                 ALT
               </button>
               <button
                 className={`mobile-key-button ${heldKeys.Meta ? "active" : ""}`}
                 onClick={() => handleHoldKeyClick('Meta', 'MetaLeft')}
+                onMouseDown={(e) => e.preventDefault()}
               >
                 WIN
               </button>
               <button
                 className="mobile-key-button"
                 onClick={() => handleOnceKeyClick('Tab', 'Tab')}
+                onMouseDown={(e) => e.preventDefault()}
               >
                 TAB
               </button>
               <button
                 className="mobile-key-button"
                 onClick={() => handleOnceKeyClick('Escape', 'Escape')}
+                onMouseDown={(e) => e.preventDefault()}
               >
                 ESC
               </button>
