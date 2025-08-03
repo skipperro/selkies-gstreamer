@@ -1547,10 +1547,10 @@ export class Input {
         if (this._trackpadMode) return;
         const client_dpr = window.devicePixelRatio || 1;
         const dpr_for_input_coords = this.useCssScaling ? 1 : client_dpr;
-        const down = (event.type === 'mousedown' ? 1 : 0);
+        const down = (event.type === 'mousedown' || event.type === 'pointerdown' ? 1 : 0);
         var mtype = "m";
         let canvas = document.getElementById('videoCanvas');
-        if (event.type === 'mousedown' || event.type === 'mouseup') {
+        if (event.type === 'mousedown' || event.type === 'mouseup' || event.type === 'pointerdown' || event.type === 'pointerup' || event.type === 'pointercancel') {
             if (event.button === 3) {
                 event.preventDefault();
             } else if (event.button === 4) {
@@ -1570,7 +1570,7 @@ export class Input {
             this.x = Math.round(movementX_logical * dpr_for_input_coords);
             this.y = Math.round(movementY_logical * dpr_for_input_coords);
 
-        } else if (event.type === 'mousemove') {
+        } else if (event.type === 'mousemove' || event.type === 'pointermove') {
              if (window.isManualResolutionMode && canvas) {
                 const canvasRect = canvas.getBoundingClientRect(); // CSS logical size
                 if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
@@ -1609,6 +1609,28 @@ export class Input {
         }
         var toks = [ mtype, this.x, this.y, this.buttonMask, 0 ];
         this.send(toks.join(","));
+    }
+
+    _handlePointerDown(event) {
+        if (event.pointerType !== 'pen') {
+            return;
+        }
+        event.preventDefault();
+        this._mouseButtonMovement(event);
+    }
+
+    _handlePointerMove(event) {
+        if (event.pointerType !== 'pen') {
+           return;
+        }
+        this._mouseButtonMovement(event);
+    }
+ 
+    _handlePointerUp(event) {
+        if (event.pointerType !== 'pen') {
+            return;
+        }
+        this._mouseButtonMovement(event);
     }
 
     _handleTrackpadEvent(event) {
@@ -2290,7 +2312,10 @@ export class Input {
         this.listeners_context.push(addListener(compositionTarget, 'compositionstart', this._compositionStart, this));
         this.listeners_context.push(addListener(compositionTarget, 'compositionupdate', this._compositionUpdate, this));
         this.listeners_context.push(addListener(compositionTarget, 'compositionend', this._compositionEnd, this));
-
+        this.listeners_context.push(addListener(this.element, 'pointerdown', this._handlePointerDown, this));
+        this.listeners_context.push(addListener(this.element, 'pointermove', this._handlePointerMove, this));
+        this.listeners_context.push(addListener(this.element, 'pointerup', this._handlePointerUp, this));
+        this.listeners_context.push(addListener(this.element, 'pointercancel', this._handlePointerUp, this)); 
 
         if ('ontouchstart' in window) {
             this.listeners_context.push(addListener(this.element, 'touchstart', this._handleTouchEvent, this, false));
