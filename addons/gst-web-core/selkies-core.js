@@ -2169,72 +2169,83 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
     try {
       const audioWorkletProcessorCode = `
         class AudioFrameProcessor extends AudioWorkletProcessor {
-          constructor() {
-            super();
-            this.audioBufferQueue = [];
-            this.currentAudioData = null;
-            this.currentDataOffset = 0;
-            this.port.onmessage = (event) => {
-            if (event.data.audioData) {
-                const pcmData = new Float32Array(event.data.audioData);
-                this.audioBufferQueue.push(pcmData);
-              } else if (event.data.type === 'getBufferSize') {
-                this.port.postMessage({ type: 'audioBufferSize', size: this.audioBufferQueue.length });
-              }
-            };
-          }
+            constructor(options) {
+                super();
+                this.audioBufferQueue = [];
+                this.currentAudioData = null;
+                this.currentDataOffset = 0;
 
-          process(inputs, outputs, parameters) {
-            const output = outputs[0];
-            const leftChannel = output ? output[0] : undefined;
-            const rightChannel = output ? output[1] : undefined;
+                this.TARGET_BUFFER_PACKETS = 3;
+                this.MAX_BUFFER_PACKETS = 8;
 
-            if (!leftChannel || !rightChannel) {
-              if (leftChannel) leftChannel.fill(0);
-              if (rightChannel) rightChannel.fill(0);
-              return true;
+                this.port.onmessage = (event) => {
+                    if (event.data.audioData) {
+                        const pcmData = new Float32Array(event.data.audioData);
+                        if (this.audioBufferQueue.length >= this.MAX_BUFFER_PACKETS) {
+                            this.audioBufferQueue.shift();
+                        }
+                        this.audioBufferQueue.push(pcmData);
+                    } else if (event.data.type === 'getBufferSize') {
+                        const bufferMillis = this.audioBufferQueue.reduce((total, buf) => total + (buf.length / 2 / sampleRate) * 1000, 0);
+                        this.port.postMessage({
+                            type: 'audioBufferSize',
+                            size: this.audioBufferQueue.length,
+                            durationMs: bufferMillis
+                        });
+                    }
+                };
             }
 
-            const samplesPerBuffer = leftChannel.length;
-            if (this.audioBufferQueue.length === 0 && this.currentAudioData === null) {
-              leftChannel.fill(0);
-              rightChannel.fill(0);
-              return true;
-            }
+            process(inputs, outputs, parameters) {
+                const output = outputs[0];
+                const leftChannel = output ? output[0] : undefined;
 
-            let data = this.currentAudioData;
-            let offset = this.currentDataOffset;
-
-            for (let sampleIndex = 0; sampleIndex < samplesPerBuffer; sampleIndex++) {
-              if (!data || offset >= data.length) {
-                if (this.audioBufferQueue.length > 0) {
-                  data = this.currentAudioData = this.audioBufferQueue.shift();
-                  offset = this.currentDataOffset = 0;
-                } else {
-                  this.currentAudioData = null;
-                  this.currentDataOffset = 0;
-                  leftChannel.fill(0, sampleIndex);
-                  rightChannel.fill(0, sampleIndex);
-                  return true;
+                if (!leftChannel) {
+                    return true;
                 }
-              }
-              leftChannel[sampleIndex] = data[offset++];
-              if (offset < data.length) {
-                rightChannel[sampleIndex] = data[offset++];
-              } else {
-                 rightChannel[sampleIndex] = leftChannel[sampleIndex];
-                 offset++;
-              }
+                
+                const rightChannel = output ? output[1] : leftChannel;
+                const samplesPerBuffer = leftChannel.length;
+
+                if (this.audioBufferQueue.length === 0 && this.currentAudioData === null) {
+                    leftChannel.fill(0);
+                    rightChannel.fill(0);
+                    return true;
+                }
+
+                let data = this.currentAudioData;
+                let offset = this.currentDataOffset;
+
+                for (let sampleIndex = 0; sampleIndex < samplesPerBuffer; sampleIndex++) {
+                    if (!data || offset >= data.length) {
+                        if (this.audioBufferQueue.length > 0) {
+                            data = this.currentAudioData = this.audioBufferQueue.shift();
+                            offset = this.currentDataOffset = 0;
+                        } else {
+                            this.currentAudioData = null;
+                            this.currentDataOffset = 0;
+                            leftChannel.fill(0, sampleIndex);
+                            rightChannel.fill(0, sampleIndex);
+                            return true;
+                        }
+                    }
+                    
+                    leftChannel[sampleIndex] = data[offset++];
+                    if (offset < data.length) {
+                        rightChannel[sampleIndex] = data[offset++];
+                    } else {
+                        rightChannel[sampleIndex] = leftChannel[sampleIndex];
+                    }
+                }
+
+                this.currentDataOffset = offset;
+                if (data && offset >= data.length) {
+                    this.currentAudioData = null;
+                    this.currentDataOffset = 0;
+                }
+
+                return true;
             }
-            this.currentDataOffset = offset;
-            if (offset >= data.length) {
-                 this.currentAudioData = null;
-                 this.currentDataOffset = 0;
-            } else {
-                 this.currentAudioData = data;
-            }
-            return true;
-          }
         }
         registerProcessor('audio-frame-processor', AudioFrameProcessor);
       `;
@@ -2251,7 +2262,8 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
       audioWorkletProcessorPort = audioWorkletNode.port;
       audioWorkletProcessorPort.onmessage = (event) => {
         if (event.data.type === 'audioBufferSize') {
-          window.currentAudioBufferSize = event.data.size;
+            window.currentAudioBufferSize = event.data.size;
+            window.currentAudioBufferDuration = event.data.durationMs;
         }
       };
       audioWorkletNode.connect(audioContext.destination);
