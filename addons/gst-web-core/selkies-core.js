@@ -83,6 +83,7 @@ let sharedProbingTimeoutId = null;
 let sharedProbingAttempts = 0;
 const MAX_SHARED_PROBING_ATTEMPTS = 3; // e.g., initial + 2 retries
 const isSharedMode = detectedSharedModeType !== null;
+let sharedClientHasReceivedKeyframe = false;
 
 if (isSharedMode) {
   console.log(`Client is running in ${detectedSharedModeType} mode.`);
@@ -2587,7 +2588,6 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
                     sharedClientState = 'ready';
                     console.log(`Shared mode: Client is now ready to process video of type '${identifiedEncoderModeForShared}'.`);
                 }
-                return;
             } else if (dataTypeByte !== 1) { // Ignore audio packets during identification
                 console.warn(`Shared mode (awaiting_identification): Received non-identifying binary packet type 0x${dataTypeByte.toString(16)}. Still waiting for a video packet.`);
                 return;
@@ -2628,6 +2628,15 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
           (!isSharedMode && isVideoPipelineActive && currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped');
 
         if (canProcessFullH264) {
+          if (isSharedMode && !sharedClientHasReceivedKeyframe) {
+            if (frameTypeFlag === 1) {
+              console.log("Shared mode: First keyframe received. Opening the gate for video decoding.");
+              sharedClientHasReceivedKeyframe = true;
+            } else {
+              console.log("Shared mode: Gate is closed. Discarding non-keyframe packet.");
+              return;
+            }
+          }
           if (decoder && decoder.state === 'configured') {
             const chunk = new EncodedVideoChunk({
               type: frameTypeFlag === 1 ? 'key' : 'delta',
@@ -2731,6 +2740,15 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
             (!isSharedMode && isVideoPipelineActive && (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped'));
 
         if (canProcessVncStripe) {
+            if (isSharedMode && !sharedClientHasReceivedKeyframe) {
+                if (video_frame_type_byte === 0x01) {
+                    console.log("Shared mode: First keyframe received for striped video. Opening the gate.");
+                    sharedClientHasReceivedKeyframe = true;
+                } else {
+                    console.log("Shared mode: Gate is closed. Discarding non-keyframe striped packet.");
+                    return;
+                }
+            }
             if (h264Payload.byteLength === 0) return;
 
             let decoderInfo = vncStripeDecoders[vncStripeYStart];
@@ -3659,6 +3677,11 @@ function uploadFileObject(file, pathToSend) {
 
 function performServerInitiatedVideoReset(reason = "unknown") {
   console.log(`Performing server-initiated video reset. Reason: ${reason}. Current lastReceivedVideoFrameId before reset: ${lastReceivedVideoFrameId}`);
+
+  if (isSharedMode) {
+    sharedClientHasReceivedKeyframe = false;
+    console.log("  Shared mode reset: Gate closed. Waiting for a new keyframe.");
+  }
 
   lastReceivedVideoFrameId = -1;
   console.log(`  Reset lastReceivedVideoFrameId to ${lastReceivedVideoFrameId}.`);
