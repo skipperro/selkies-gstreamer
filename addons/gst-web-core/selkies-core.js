@@ -115,6 +115,9 @@ let videoFramerate = 60;
 let videoCRF = 25;
 let h264_fullcolor = false;
 let h264_streaming_mode = false;
+let jpegQuality = 60;
+let paintOverJpegQuality = 90;
+let useCpu = false;
 let audioBitRate = 320000;
 let showStart = true;
 let status = 'connecting';
@@ -220,6 +223,12 @@ h264_fullcolor = getBoolParam('h264_fullcolor', h264_fullcolor);
 setBoolParam('h264_fullcolor', h264_fullcolor);
 h264_streaming_mode = getBoolParam('h264_streaming_mode', h264_streaming_mode);
 setBoolParam('h264_streaming_mode', h264_streaming_mode);
+jpegQuality = getIntParam('jpegQuality', jpegQuality);
+setIntParam('jpegQuality', jpegQuality);
+paintOverJpegQuality = getIntParam('paintOverJpegQuality', paintOverJpegQuality);
+setIntParam('paintOverJpegQuality', paintOverJpegQuality);
+useCpu = getBoolParam('useCpu', useCpu);
+setBoolParam('useCpu', useCpu);
 audioBitRate = getIntParam('audioBitRate', audioBitRate);
 setIntParam('audioBitRate', audioBitRate);
 resizeRemote = getBoolParam('resizeRemote', resizeRemote);
@@ -1746,6 +1755,64 @@ function handleSettingsMessage(settings) {
       console.log(`H.264 Streaming Mode setting received (${newStreamingModeValue}), but it's the same as current. No change.`);
     }
   }
+  if (settings.jpegQuality !== undefined) {
+    const newQuality = parseInt(settings.jpegQuality, 10);
+    if (jpegQuality !== newQuality) {
+      jpegQuality = newQuality;
+      setIntParam('jpegQuality', jpegQuality);
+      console.log(`Applied JPEG Quality setting: ${jpegQuality}.`);
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && currentEncoderMode === 'jpeg') {
+        const message = `SET_JPEG_QUALITY,${jpegQuality}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else if (!isSharedMode && currentEncoderMode !== 'jpeg') {
+        console.log("JPEG Quality setting changed, but current encoder is not 'jpeg'. WebSocket command not sent.");
+      } else if (!isSharedMode) {
+        console.warn("Websocket connection not open, cannot send JPEG Quality setting.");
+      }
+    } else {
+      console.log(`JPEG Quality setting received (${newQuality}), but it's the same as current. No change.`);
+    }
+  }
+  if (settings.paintOverJpegQuality !== undefined) {
+    const newQuality = parseInt(settings.paintOverJpegQuality, 10);
+    if (paintOverJpegQuality !== newQuality) {
+      paintOverJpegQuality = newQuality;
+      setIntParam('paintOverJpegQuality', paintOverJpegQuality);
+      console.log(`Applied Paint-Over JPEG Quality setting: ${paintOverJpegQuality}.`);
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && currentEncoderMode === 'jpeg') {
+        const message = `SET_PAINT_OVER_JPEG_QUALITY,${paintOverJpegQuality}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else if (!isSharedMode && currentEncoderMode !== 'jpeg') {
+        console.log("Paint-Over JPEG Quality setting changed, but current encoder is not 'jpeg'. WebSocket command not sent.");
+      } else if (!isSharedMode) {
+        console.warn("Websocket connection not open, cannot send Paint-Over JPEG Quality setting.");
+      }
+    } else {
+      console.log(`Paint-Over JPEG Quality setting received (${newQuality}), but it's the same as current. No change.`);
+    }
+  }
+  if (settings.useCpu !== undefined) {
+    const newUseCpu = !!settings.useCpu;
+    if (useCpu !== newUseCpu) {
+      useCpu = newUseCpu;
+      setBoolParam('useCpu', useCpu);
+      console.log(`Applied Use CPU setting: ${useCpu}.`);
+      const isPixelfluxH264 = currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped';
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && isPixelfluxH264) {
+        const message = `SET_USE_CPU,${useCpu}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else if (!isSharedMode && !isPixelfluxH264) {
+        console.log("Use CPU setting changed, but current encoder is not a Pixelflux H.264 encoder. WebSocket command not sent.");
+      } else if (!isSharedMode) {
+        console.warn("Websocket connection not open, cannot send Use CPU setting.");
+      }
+    } else {
+      console.log(`Use CPU setting received (${newUseCpu}), but it's the same as current. No change.`);
+    }
+  }
   if (settings.SCALING_DPI !== undefined) {
     const dpi = parseInt(settings.SCALING_DPI, 10);
     if (!isNaN(dpi)) {
@@ -2434,13 +2501,16 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
           else if (unprefixedKey === 'videoBufferSize') serverExpectedKey = 'webrtc_videoBufferSize';
           else if (unprefixedKey === 'h264_fullcolor') serverExpectedKey = 'webrtc_h264_fullcolor';
           else if (unprefixedKey === 'h264_streaming_mode') serverExpectedKey = 'webrtc_h264_streaming_mode';
+          else if (unprefixedKey === 'jpegQuality') serverExpectedKey = 'webrtc_jpegQuality';
+          else if (unprefixedKey === 'paintOverJpegQuality') serverExpectedKey = 'webrtc_paintOverJpegQuality';
+          else if (unprefixedKey === 'useCpu') serverExpectedKey = 'webrtc_useCpu';
 
           if (serverExpectedKey) {
             let value = localStorage.getItem(key);
-            if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode' || serverExpectedKey === 'webrtc_h264_fullcolor' || serverExpectedKey === 'webrtc_h264_streaming_mode') {
+            if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode' || serverExpectedKey === 'webrtc_h264_fullcolor' || serverExpectedKey === 'webrtc_h264_streaming_mode' || serverExpectedKey === 'webrtc_useCpu') {
               value = (value === 'true');
             } else if (['webrtc_videoBitRate', 'webrtc_videoFramerate', 'webrtc_videoCRF',
-                'webrtc_audioBitRate', 'webrtc_videoBufferSize'
+                'webrtc_audioBitRate', 'webrtc_videoBufferSize', 'webrtc_jpegQuality', 'webrtc_paintOverJpegQuality'
               ].includes(serverExpectedKey)) {
               value = parseInt(value, 10);
               if (isNaN(value)) value = localStorage.getItem(key);

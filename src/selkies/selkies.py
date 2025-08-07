@@ -742,6 +742,12 @@ class DataStreamingServer:
         self._initial_h264_streaming_mode = self.cli_args.h264_streaming_mode
         self.h264_streaming_mode = self._initial_h264_streaming_mode
         self.capture_cursor = False
+        self._initial_jpeg_quality = 60
+        self.jpeg_quality = self._initial_jpeg_quality
+        self._initial_paint_over_jpeg_quality = 90
+        self.paint_over_jpeg_quality = self._initial_paint_over_jpeg_quality
+        self._initial_use_cpu = False
+        self.use_cpu = self._initial_use_cpu
         self._initial_jpeg_use_paint_over_quality = True
         self._current_jpeg_use_paint_over_quality = True
         self._system_monitor_task_ws = None
@@ -1278,6 +1284,7 @@ class DataStreamingServer:
             cs.h264_fullframe = enable_fullframe
             cs.h264_streaming_mode = self.h264_streaming_mode 
             cs.capture_cursor = self.capture_cursor
+            cs.use_cpu = self.use_cpu
             if self.cli_args.dri_node:
                 cs.vaapi_render_node_index = parse_dri_node_to_index(self.cli_args.dri_node)
             else:
@@ -1390,9 +1397,8 @@ class DataStreamingServer:
         width = getattr(self.app, "display_width", 1024)
         height = getattr(self.app, "display_height", 768)
         fps = float(getattr(self.app, "framerate", TARGET_FRAMERATE))
-        quality = 60
 
-        data_logger.info(f"Starting JPEG: {width}x{height} @ {fps}fps, Q: {quality}")
+        data_logger.info(f"Starting JPEG: {width}x{height} @ {fps}fps, Q: {self.jpeg_quality}")
         try:
             cs = CaptureSettings()
             cs.capture_width = width
@@ -1402,10 +1408,10 @@ class DataStreamingServer:
             cs.target_fps = fps
             cs.output_mode = 0
             cs.capture_cursor = self.capture_cursor
-            cs.jpeg_quality = quality
-            cs.paint_over_jpeg_quality = 95
+            cs.jpeg_quality = self.jpeg_quality
+            cs.paint_over_jpeg_quality = self.paint_over_jpeg_quality
             cs.use_paint_over_quality = self._current_jpeg_use_paint_over_quality
-            cs.paint_over_trigger_frames = 5
+            cs.paint_over_trigger_frames = 15
             cs.damage_block_threshold = 10
             cs.damage_block_duration = 20
 
@@ -1516,6 +1522,11 @@ class DataStreamingServer:
         parsed["initialClientHeight"] = get_int(
             "webrtc_initialClientHeight", self.app.display_height
         )
+        parsed["jpeg_quality"] = get_int("pixelflux_jpeg_quality", self.jpeg_quality)
+        parsed["paint_over_jpeg_quality"] = get_int(
+            "pixelflux_paint_over_jpeg_quality", self.paint_over_jpeg_quality
+        )
+        parsed["use_cpu"] = get_bool("pixelflux_use_cpu", self.use_cpu)
         data_logger.debug(f"Parsed client settings: {parsed}")
         return parsed
 
@@ -1534,6 +1545,9 @@ class DataStreamingServer:
         old_audio_bitrate_bps = self.app.audio_bitrate
         old_display_width = self.app.display_width
         old_display_height = self.app.display_height
+        old_jpeg_quality = self.jpeg_quality
+        old_paint_over_jpeg_quality = self.paint_over_jpeg_quality
+        old_use_cpu = self.use_cpu
 
         is_manual_res_mode_from_settings = settings.get(
             "isManualResolutionMode",
@@ -1597,6 +1611,16 @@ class DataStreamingServer:
         if "h264_streaming_mode" in settings and is_pixelflux_h264:
             if self.h264_streaming_mode != settings["h264_streaming_mode"]:
                 self.h264_streaming_mode = settings["h264_streaming_mode"]
+
+        is_jpeg = self.app.encoder == "jpeg"
+        if "jpeg_quality" in settings and is_jpeg:
+            self.jpeg_quality = settings["jpeg_quality"]
+
+        if "paint_over_jpeg_quality" in settings and is_jpeg:
+            self.paint_over_jpeg_quality = settings["paint_over_jpeg_quality"]
+
+        if "use_cpu" in settings and is_pixelflux_h264:
+            self.use_cpu = settings["use_cpu"]
  
         if "audioBitRate" in settings:
             if self.app.audio_bitrate != settings["audioBitRate"]:
@@ -1613,6 +1637,11 @@ class DataStreamingServer:
             crf_param_changed = is_pixelflux_h264 and self.h264_crf != old_h264_crf
             h264_fullcolor_param_changed = is_pixelflux_h264 and self.h264_fullcolor != old_h264_fullcolor
             h264_streaming_mode_param_changed = is_pixelflux_h264 and self.h264_streaming_mode != old_h264_streaming_mode
+            jpeg_quality_param_changed = is_jpeg and self.jpeg_quality != old_jpeg_quality
+            paint_over_jpeg_quality_param_changed = (
+                is_jpeg and self.paint_over_jpeg_quality != old_paint_over_jpeg_quality
+            )
+            use_cpu_param_changed = is_pixelflux_h264 and self.use_cpu != old_use_cpu
             audio_bitrate_param_changed = self.app.audio_bitrate != old_audio_bitrate_bps
             restart_video_pipeline = False
             if encoder_actually_changed or resolution_actually_changed_on_server:
@@ -1620,7 +1649,16 @@ class DataStreamingServer:
             elif self.app.encoder in PIXELFLUX_VIDEO_ENCODERS:
                 if framerate_param_changed:
                     restart_video_pipeline = True
-                if is_pixelflux_h264 and (crf_param_changed or h264_fullcolor_param_changed or h264_streaming_mode_param_changed):
+                if is_pixelflux_h264 and (
+                    crf_param_changed
+                    or h264_fullcolor_param_changed
+                    or h264_streaming_mode_param_changed
+                    or use_cpu_param_changed
+                ):
+                    restart_video_pipeline = True
+                if is_jpeg and (
+                    jpeg_quality_param_changed or paint_over_jpeg_quality_param_changed
+                ):
                     restart_video_pipeline = True
             video_is_currently_active = self.is_jpeg_capturing or self.is_x264_striped_capturing
             if is_initial_settings and not video_is_currently_active:
@@ -1710,12 +1748,18 @@ class DataStreamingServer:
         self._last_client_stable_report_time = time.monotonic()
         self._initial_x264_crf = self.cli_args.h264_crf
         self.h264_crf = self._initial_x264_crf
+        self.h264_fullcolor = self._initial_h264_fullcolor
+        self.h264_streaming_mode = self._initial_h264_streaming_mode
+        self.jpeg_quality = self._initial_jpeg_quality
+        self.paint_over_jpeg_quality = self._initial_paint_over_jpeg_quality
+        self.use_cpu = self._initial_use_cpu
+
         self._backpressure_send_frames_enabled = True
         active_uploads_by_path_conn = {}
         active_upload_target_path_conn = None
         upload_dir_valid = upload_dir_path is not None
-
-        mic_setup_done = False
+        
+        mic_setup_done = False 
         pa_module_index = None  # Stores the index of the loaded module-virtual-source
         pa_stream = None  # For pasimple playback
         pulse = None  # pulsectl.Pulse client instance
@@ -2364,6 +2408,72 @@ class DataStreamingServer:
                                 data_logger.warning(f"SET_H264_STREAMING_MODE received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
                         except IndexError:
                             data_logger.warning(f"Malformed SET_H264_STREAMING_MODE message: {message}")
+
+                    elif message.startswith("SET_JPEG_QUALITY,"):
+                        await self.client_settings_received.wait()
+                        try:
+                            new_quality = int(message.split(",")[1])
+                            data_logger.info(f"Received SET_JPEG_QUALITY: {new_quality}")
+
+                            current_enc = getattr(self.app, "encoder", None)
+                            if current_enc == "jpeg":
+                                if self.jpeg_quality != new_quality:
+                                    self.jpeg_quality = new_quality
+                                    if self.is_jpeg_capturing:
+                                        data_logger.info(f"Restarting jpeg pipeline for JPEG_QUALITY change to {self.jpeg_quality}")
+                                        await self._stop_jpeg_pipeline()
+                                        await self._start_jpeg_pipeline()
+                                else:
+                                    data_logger.info(f"SET_JPEG_QUALITY: Value {new_quality} is already set.")
+                            else:
+                                data_logger.warning(f"SET_JPEG_QUALITY received but current encoder is '{current_enc}', not 'jpeg'.")
+                        except (IndexError, ValueError):
+                            data_logger.warning(f"Malformed SET_JPEG_QUALITY message: {message}")
+
+                    elif message.startswith("SET_PAINT_OVER_JPEG_QUALITY,"):
+                        await self.client_settings_received.wait()
+                        try:
+                            new_quality = int(message.split(",")[1])
+                            data_logger.info(f"Received SET_PAINT_OVER_JPEG_QUALITY: {new_quality}")
+
+                            current_enc = getattr(self.app, "encoder", None)
+                            if current_enc == "jpeg":
+                                if self.paint_over_jpeg_quality != new_quality:
+                                    self.paint_over_jpeg_quality = new_quality
+                                    if self.is_jpeg_capturing:
+                                        data_logger.info(f"Restarting jpeg pipeline for PAINT_OVER_JPEG_QUALITY change to {self.paint_over_jpeg_quality}")
+                                        await self._stop_jpeg_pipeline()
+                                        await self._start_jpeg_pipeline()
+                                else:
+                                    data_logger.info(f"SET_PAINT_OVER_JPEG_QUALITY: Value {new_quality} is already set.")
+                            else:
+                                data_logger.warning(f"SET_PAINT_OVER_JPEG_QUALITY received but current encoder is '{current_enc}', not 'jpeg'.")
+                        except (IndexError, ValueError):
+                            data_logger.warning(f"Malformed SET_PAINT_OVER_JPEG_QUALITY message: {message}")
+
+                    elif message.startswith("SET_USE_CPU,"):
+                        await self.client_settings_received.wait()
+                        try:
+                            new_use_cpu_str = message.split(",")[1].strip().lower()
+                            new_use_cpu = new_use_cpu_str == "true"
+                            data_logger.info(f"Received SET_USE_CPU: {new_use_cpu}")
+
+                            current_enc = getattr(self.app, "encoder", None)
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+
+                            if is_pixelflux_h264:
+                                if self.use_cpu != new_use_cpu:
+                                    self.use_cpu = new_use_cpu
+                                    if self.is_x264_striped_capturing:
+                                        data_logger.info(f"Restarting {current_enc} pipeline for USE_CPU change to {self.use_cpu}")
+                                        await self._stop_x264_striped_pipeline()
+                                        await self._start_x264_striped_pipeline()
+                                else:
+                                    data_logger.info(f"SET_USE_CPU: Value {new_use_cpu} is already set.")
+                            else:
+                                data_logger.warning(f"SET_USE_CPU received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                        except IndexError:
+                            data_logger.warning(f"Malformed SET_USE_CPU message: {message}")
 
                     elif message.startswith("SET_NATIVE_CURSOR_RENDERING,"):
                         await self.client_settings_received.wait()

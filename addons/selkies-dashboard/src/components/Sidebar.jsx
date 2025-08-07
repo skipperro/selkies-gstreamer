@@ -24,6 +24,9 @@ const videoBufferOptions = Array.from({ length: 16 }, (_, i) => i);
 
 const videoCRFOptions = [50, 45, 40, 35, 30, 25, 20, 10, 1];
 
+const jpegQualityOptions = Array.from({ length: (100 - 5) / 5 + 1 }, (_, i) => 5 + i * 5);
+const paintOverJpegQualityOptions = Array.from({ length: (100 - 5) / 5 + 1 }, (_, i) => 5 + i * 5);
+
 const commonResolutionValues = [
   "",
   "1920x1080",
@@ -55,6 +58,9 @@ const STATS_READ_INTERVAL_MS = 100;
 const MAX_AUDIO_BUFFER = 10;
 const DEFAULT_FRAMERATE = 60;
 const DEFAULT_VIDEO_BITRATE = 8000;
+const DEFAULT_JPEG_QUALITY = 60;
+const DEFAULT_PAINT_OVER_JPEG_QUALITY = 90;
+const DEFAULT_USE_CPU = false;
 const DEFAULT_VIDEO_BUFFER_SIZE = 0;
 const DEFAULT_ENCODER = encoderOptions[0];
 const DEFAULT_VIDEO_CRF = 25;
@@ -646,6 +652,17 @@ function Sidebar({ isOpen }) {
   const [h264FullColor, setH264FullColor] = useState(
     localStorage.getItem(getPrefixedKey("h264_fullcolor")) === "true"
   );
+  const [jpegQuality, setJpegQuality] = useState(
+    parseInt(localStorage.getItem(getPrefixedKey("jpegQuality")), 10) ||
+      DEFAULT_JPEG_QUALITY
+  );
+  const [paintOverJpegQuality, setPaintOverJpegQuality] = useState(
+    parseInt(localStorage.getItem(getPrefixedKey("paintOverJpegQuality")), 10) ||
+      DEFAULT_PAINT_OVER_JPEG_QUALITY
+  );
+  const [useCpu, setUseCpu] = useState(
+    localStorage.getItem(getPrefixedKey("useCpu")) === "true"
+  );
   const [h264StreamingMode, setH264StreamingMode] = useState(
     localStorage.getItem(getPrefixedKey("h264_streaming_mode")) === "true"
   );
@@ -776,6 +793,36 @@ function Sidebar({ isOpen }) {
     debounce((newStreamingMode) => {
       window.postMessage(
         { type: "settings", settings: { h264_streaming_mode: newStreamingMode } },
+        window.location.origin
+      );
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdateJpegQualitySettings = useCallback(
+    debounce((newQuality) => {
+      window.postMessage(
+        { type: "settings", settings: { jpegQuality: newQuality } },
+        window.location.origin
+      );
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdatePaintOverJpegQualitySettings = useCallback(
+    debounce((newQuality) => {
+      window.postMessage(
+        { type: "settings", settings: { paintOverJpegQuality: newQuality } },
+        window.location.origin
+      );
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdateUseCpuSettings = useCallback(
+    debounce((newUseCpu) => {
+      window.postMessage(
+        { type: "settings", settings: { useCpu: newUseCpu } },
         window.location.origin
       );
     }, DEBOUNCE_DELAY),
@@ -1055,43 +1102,64 @@ function Sidebar({ isOpen }) {
     const index = parseInt(event.target.value, 10);
     const selectedFramerate = framerateOptions[index];
     if (selectedFramerate !== undefined) {
-      setFramerate(selectedFramerate); // Immediate UI update
-      debouncedUpdateFramerateSettings(selectedFramerate); // Debounced action
+      setFramerate(selectedFramerate);
+      debouncedUpdateFramerateSettings(selectedFramerate);
+    }
+  };
+  const handleJpegQualityChange = (event) => {
+    const index = parseInt(event.target.value, 10);
+    const selectedQuality = jpegQualityOptions[index];
+    if (selectedQuality !== undefined) {
+      setJpegQuality(selectedQuality);
+      debouncedUpdateJpegQualitySettings(selectedQuality);
+    }
+  };
+  const handlePaintOverJpegQualityChange = (event) => {
+    const index = parseInt(event.target.value, 10);
+    const selectedQuality = paintOverJpegQualityOptions[index];
+    if (selectedQuality !== undefined) {
+      setPaintOverJpegQuality(selectedQuality);
+      debouncedUpdatePaintOverJpegQualitySettings(selectedQuality);
     }
   };
   const handleVideoBitrateChange = (event) => {
     const index = parseInt(event.target.value, 10);
     const selectedBitrate = videoBitrateOptions[index];
     if (selectedBitrate !== undefined) {
-      setVideoBitRate(selectedBitrate); // Immediate UI update
-      debouncedUpdateVideoBitrateSettings(selectedBitrate); // Debounced action
+      setVideoBitRate(selectedBitrate);
+      debouncedUpdateVideoBitrateSettings(selectedBitrate);
     }
   };
   const handleVideoBufferSizeChange = (event) => {
     const index = parseInt(event.target.value, 10);
     const selectedSize = videoBufferOptions[index];
     if (selectedSize !== undefined) {
-      setVideoBufferSize(selectedSize); // Immediate UI update
-      debouncedUpdateVideoBufferSizeSettings(selectedSize); // Debounced action
+      setVideoBufferSize(selectedSize);
+      debouncedUpdateVideoBufferSizeSettings(selectedSize);
     }
   };
   const handleVideoCRFChange = (event) => {
     const index = parseInt(event.target.value, 10);
     const selectedCRF = videoCRFOptions[index];
     if (selectedCRF !== undefined) {
-      setVideoCRF(selectedCRF); // Immediate UI update
-      debouncedUpdateVideoCRFSettings(selectedCRF); // Debounced action
+      setVideoCRF(selectedCRF);
+      debouncedUpdateVideoCRFSettings(selectedCRF);
     }
   };
   const handleH264FullColorToggle = () => {
     const newFullColorState = !h264FullColor;
-    setH264FullColor(newFullColorState); // Immediate UI update
-    debouncedUpdateH264FullColorSettings(newFullColorState); // Debounced action
+    setH264FullColor(newFullColorState);
+    debouncedUpdateH264FullColorSettings(newFullColorState);
+  };
+  const handleUseCpuToggle = () => {
+    const newUseCpuState = !useCpu;
+    setUseCpu(newUseCpuState);
+    debouncedUpdateUseCpuSettings(newUseCpuState);
   };
   const handleH264StreamingModeToggle = () => {
     const newStreamingModeState = !h264StreamingMode;
-    setH264StreamingMode(newStreamingModeState); // Immediate UI update
-    debouncedUpdateH264StreamingModeSettings(newStreamingModeState); // Debounced action
+    setH264StreamingMode(newStreamingModeState);
+    debouncedUpdateH264StreamingModeSettings(newStreamingModeState);
   };
   const handleAudioInputChange = (event) => {
     const deviceId = event.target.value;
@@ -1637,6 +1705,7 @@ function Sidebar({ isOpen }) {
   ].includes(encoder);
   const showCRF = ["x264enc-striped", "x264enc"].includes(encoder);
   const showH264Options = ["x264enc-striped", "x264enc"].includes(encoder);
+  const showJpegOptions = encoder === 'jpeg';
 
   return (
     <>
@@ -1860,6 +1929,42 @@ function Sidebar({ isOpen }) {
                   />{" "}
                 </div>
               )}
+              {showJpegOptions && (
+                <>
+                  <div className="dev-setting-item">
+                    <label htmlFor="jpegQualitySlider">
+                      {t("sections.video.jpegQualityLabel", {
+                        jpegQuality: jpegQuality,
+                      })}
+                    </label>
+                    <input
+                      type="range"
+                      id="jpegQualitySlider"
+                      min="0"
+                      max={jpegQualityOptions.length - 1}
+                      step="1"
+                      value={jpegQualityOptions.indexOf(jpegQuality)}
+                      onChange={handleJpegQualityChange}
+                    />
+                  </div>
+                  <div className="dev-setting-item">
+                    <label htmlFor="paintOverJpegQualitySlider">
+                      {t("sections.video.paintOverJpegQualityLabel", {
+                        paintOverJpegQuality: paintOverJpegQuality,
+                      })}
+                    </label>
+                    <input
+                      type="range"
+                      id="paintOverJpegQualitySlider"
+                      min="0"
+                      max={paintOverJpegQualityOptions.length - 1}
+                      step="1"
+                      value={paintOverJpegQualityOptions.indexOf(paintOverJpegQuality)}
+                      onChange={handlePaintOverJpegQualityChange}
+                    />
+                  </div>
+                </>
+              )}
               {showBitrate && (
                 <div className="dev-setting-item">
                   {" "}
@@ -1949,6 +2054,23 @@ function Sidebar({ isOpen }) {
                     aria-pressed={h264FullColor}
                     title={t(h264FullColor ? "buttons.h264FullColorDisableTitle" : "buttons.h264FullColorEnableTitle", 
                                h264FullColor ? "Disable H.264 Full Color" : "Enable H.264 Full Color")}
+                  >
+                    <span className="toggle-button-sidebar-knob"></span>
+                  </button>
+                </div>
+              )}
+              {showH264Options && (
+                <div className="dev-setting-item toggle-item">
+                  <label htmlFor="useCpuToggle">
+                    {t("sections.video.useCpuLabel", "CPU Encoding")}
+                  </label>
+                  <button
+                    id="useCpuToggle"
+                    className={`toggle-button-sidebar ${useCpu ? "active" : ""}`}
+                    onClick={handleUseCpuToggle}
+                    aria-pressed={useCpu}
+                    title={t(useCpu ? "buttons.useCpuDisableTitle" : "buttons.useCpuEnableTitle",
+                               useCpu ? "Disable CPU Encoding" : "Enable CPU Encoding")}
                   >
                     <span className="toggle-button-sidebar-knob"></span>
                   </button>

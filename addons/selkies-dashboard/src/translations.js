@@ -31,6 +31,8 @@ const en = {
         h264FullColorDisableTitle: "Disable H.264 Full Color",
         h264StreamingModeDisableTitle: "Disable Turbo",
         h264StreamingModeEnableTitle: "Enable Turbo",
+        useCpuEnableTitle: "Enable Force CPU Encoding (Overrides nvenc/vaapi)",
+        useCpuDisableTitle: "Disable Force CPU Encoding (Overrides nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -41,9 +43,12 @@ const en = {
             bufferLabelImmediate: "Video Buffer Size (0 (Immediate)):",
             bufferLabelFrames: "Video Buffer Size ({videoBufferSize} frames):",
             crfLabel: "Video CRF ({crf}):",
-            fullColorLabel: "FullColor 4:4:4:",
+            fullColorLabel: "FullColor 4:4:4",
             streamingModeDetails: "Turbo mode disables all VNC logic and encodes all frames like a traditional video encoder.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "CPU Encoding",
+            jpegQualityLabel: "Base Quality: {jpegQuality}",
+            paintOverJpegQualityLabel: "Paintover Quality: {paintOverJpegQuality}",
         },
         audio: {
             title: "Audio Settings",
@@ -197,6 +202,8 @@ const es = {
         h264FullColorDisableTitle: "Desactivar H.264 Color Completo",
         h264StreamingModeDisableTitle: "Desactivar Turbo",
         h264StreamingModeEnableTitle: "Activar Turbo",
+        useCpuEnableTitle: "Activar Codificación Forzada por CPU (Sobrescribe nvenc/vaapi)",
+        useCpuDisableTitle: "Desactivar Codificación Forzada por CPU (Sobrescribe nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -207,9 +214,12 @@ const es = {
             bufferLabelImmediate: "Tamaño del Búfer de Vídeo (0 (Inmediato)):",
             bufferLabelFrames: "Tamaño del Búfer de Vídeo ({videoBufferSize} fotogramas):",
             crfLabel: "CRF de Vídeo ({crf}):",
-            fullColorLabel: "Color Completo 4:4:4:",
+            fullColorLabel: "Color Completo 4:4:4",
             streamingModeDetails: "El modo Turbo desactiva toda la lógica VNC y codifica todos los fotogramas como un codificador de vídeo tradicional.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "Codificación por CPU",
+            jpegQualityLabel: "Calidad Base: {jpegQuality}",
+            paintOverJpegQualityLabel: "Calidad de Sobrepintado: {paintOverJpegQuality}",
         },
         audio: {
              title: "Configuración de Audio",
@@ -363,6 +373,8 @@ const zh = {
         h264FullColorDisableTitle: "禁用 H.264 全彩",
         h264StreamingModeDisableTitle: "禁用 Turbo",
         h264StreamingModeEnableTitle: "启用 Turbo",
+        useCpuEnableTitle: "启用强制 CPU 编码 (覆盖 nvenc/vaapi)",
+        useCpuDisableTitle: "禁用强制 CPU 编码 (覆盖 nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -373,9 +385,12 @@ const zh = {
             bufferLabelImmediate: "视频缓冲大小 (0 (立即)):",
             bufferLabelFrames: "视频缓冲大小 ({videoBufferSize} 帧):",
             crfLabel: "视频 CRF ({crf}):",
-            fullColorLabel: "全彩 4:4:4:",
+            fullColorLabel: "全彩 4:4:4",
             streamingModeDetails: "Turbo 模式会禁用所有 VNC 逻辑，并像传统视频编码器一样对所有帧进行编码。",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "CPU 编码",
+            jpegQualityLabel: "基础质量: {jpegQuality}",
+            paintOverJpegQualityLabel: "覆盖图质量: {paintOverJpegQuality}",
         },
         audio: {
             title: "音频设置",
@@ -529,6 +544,8 @@ const hi = {
         h264FullColorDisableTitle: "H.264 फुल कलर अक्षम करें",
         h264StreamingModeDisableTitle: "टर्बो अक्षम करें",
         h264StreamingModeEnableTitle: "टर्बो सक्षम करें",
+        useCpuEnableTitle: "फोर्स सीपीयू एन्कोडिंग सक्षम करें (nvenc/vaapi को ओवरराइड करता है)",
+        useCpuDisableTitle: "फोर्स सीपीयू एन्कोडिंग अक्षम करें (nvenc/vaapi को ओवरराइड करता है)",
     },
     sections: {
         video: {
@@ -539,9 +556,12 @@ const hi = {
             bufferLabelImmediate: "वीडियो बफर आकार (0 (तत्काल)):",
             bufferLabelFrames: "वीडियो बफर आकार ({videoBufferSize} फ्रेम):",
             crfLabel: "वीडियो CRF ({crf}):",
-            fullColorLabel: "फुल कलर 4:4:4:",
+            fullColorLabel: "फुल कलर 4:4:4",
             streamingModeDetails: "टर्बो मोड सभी VNC लॉजिक को अक्षम कर देता है और सभी फ्रेम को एक पारंपरिक वीडियो एन्कोडर की तरह एन्कोड करता है।",
             streamingModeLabel: "टर्बो",
+            useCpuLabel: "सीपीयू एन्कोडिंग",
+            jpegQualityLabel: "आधार गुणवत्ता: {jpegQuality}",
+            paintOverJpegQualityLabel: "पेंटओवर गुणवत्ता: {paintOverJpegQuality}",
         },
         audio: {
             title: "ऑडियो सेटिंग्स",
@@ -695,6 +715,8 @@ const pt = {
         h264FullColorDisableTitle: "Desativar H.264 Cor Completa",
         h264StreamingModeDisableTitle: "Desativar Turbo",
         h264StreamingModeEnableTitle: "Ativar Turbo",
+        useCpuEnableTitle: "Ativar Codificação Forçada por CPU (Substitui nvenc/vaapi)",
+        useCpuDisableTitle: "Desativar Codificação Forçada por CPU (Substitui nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -705,9 +727,12 @@ const pt = {
             bufferLabelImmediate: "Tamanho do Buffer de Vídeo (0 (Imediato)):",
             bufferLabelFrames: "Tamanho do Buffer de Vídeo ({videoBufferSize} quadros):",
             crfLabel: "CRF de Vídeo ({crf}):",
-            fullColorLabel: "Cor Completa 4:4:4:",
+            fullColorLabel: "Cor Completa 4:4:4",
             streamingModeDetails: "O modo Turbo desativa toda a lógica VNC e codifica todos os quadros como um codificador de vídeo tradicional.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "Codificação por CPU",
+            jpegQualityLabel: "Qualidade Base: {jpegQuality}",
+            paintOverJpegQualityLabel: "Qualidade de Sobreposição: {paintOverJpegQuality}",
         },
         audio: {
             title: "Configurações de Áudio",
@@ -861,6 +886,8 @@ const fr = {
         h264FullColorDisableTitle: "Désactiver H.264 Couleur Complète",
         h264StreamingModeDisableTitle: "Désactiver le mode Turbo",
         h264StreamingModeEnableTitle: "Activer le mode Turbo",
+        useCpuEnableTitle: "Activer l'encodage forcé par CPU (Remplace nvenc/vaapi)",
+        useCpuDisableTitle: "Désactiver l'encodage forcé par CPU (Remplace nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -871,9 +898,12 @@ const fr = {
             bufferLabelImmediate: "Taille du tampon vidéo (0 (Immédiat)) :",
             bufferLabelFrames: "Taille du tampon vidéo ({videoBufferSize} images) :",
             crfLabel: "CRF Vidéo ({crf}) :",
-            fullColorLabel: "Couleur Complète 4:4:4:",
+            fullColorLabel: "Couleur Complète 4:4:4",
             streamingModeDetails: "Le mode Turbo désactive toute la logique VNC et encode toutes les trames comme un encodeur vidéo traditionnel.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "Encodage CPU",
+            jpegQualityLabel: "Qualité de base : {jpegQuality}",
+            paintOverJpegQualityLabel: "Qualité de la surimpression : {paintOverJpegQuality}",
         },
         audio: {
             title: "Paramètres audio",
@@ -1027,6 +1057,8 @@ const ru = {
         h264FullColorDisableTitle: "Отключить H.264 Полный цвет",
         h264StreamingModeDisableTitle: "Отключить Турбо",
         h264StreamingModeEnableTitle: "Включить Турбо",
+        useCpuEnableTitle: "Включить принудительное кодирование ЦП (Переопределяет nvenc/vaapi)",
+        useCpuDisableTitle: "Отключить принудительное кодирование ЦП (Переопределяет nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -1037,9 +1069,12 @@ const ru = {
             bufferLabelImmediate: "Размер буфера видео (0 (Немедленно)):",
             bufferLabelFrames: "Размер буфера видео ({videoBufferSize} кадров):",
             crfLabel: "CRF видео ({crf}):",
-            fullColorLabel: "Полный цвет 4:4:4:",
+            fullColorLabel: "Полный цвет 4:4:4",
             streamingModeDetails: "Режим Турбо отключает всю логику VNC и кодирует все кадры как традиционный видеокодер.",
             streamingModeLabel: "Турбо",
+            useCpuLabel: "Кодирование ЦП",
+            jpegQualityLabel: "Базовое качество: {jpegQuality}",
+            paintOverJpegQualityLabel: "Качество дорисовки: {paintOverJpegQuality}",
         },
         audio: {
             title: "Настройки аудио",
@@ -1193,6 +1228,8 @@ const de = {
         h264FullColorDisableTitle: "H.264 Vollfarbe deaktivieren",
         h264StreamingModeDisableTitle: "Turbo deaktivieren",
         h264StreamingModeEnableTitle: "Turbo aktivieren",
+        useCpuEnableTitle: "Erzwungene CPU-Kodierung aktivieren (Überschreibt nvenc/vaapi)",
+        useCpuDisableTitle: "Erzwungene CPU-Kodierung deaktivieren (Überschreibt nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -1203,9 +1240,12 @@ const de = {
             bufferLabelImmediate: "Video-Puffergröße (0 (Sofort)):",
             bufferLabelFrames: "Video-Puffergröße ({videoBufferSize} Frames):",
             crfLabel: "Video CRF ({crf}):",
-            fullColorLabel: "Vollfarbe 4:4:4:",
+            fullColorLabel: "Vollfarbe 4:4:4",
             streamingModeDetails: "Der Turbo-Modus deaktiviert die gesamte VNC-Logik und kodiert alle Frames wie ein herkömmlicher Video-Encoder.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "CPU-Kodierung",
+            jpegQualityLabel: "Basisqualität: {jpegQuality}",
+            paintOverJpegQualityLabel: "Übermalungsqualität: {paintOverJpegQuality}",
         },
         audio: {
             title: "Audioeinstellungen",
@@ -1359,6 +1399,8 @@ const tr = {
         h264FullColorDisableTitle: "H.264 Tam Renk Devre Dışı Bırak",
         h264StreamingModeDisableTitle: "Turbo'yu Devre Dışı Bırak",
         h264StreamingModeEnableTitle: "Turbo'yu Etkinleştir",
+        useCpuEnableTitle: "CPU Kodlamasını Zorla Etkinleştir (nvenc/vaapi'yi geçersiz kılar)",
+        useCpuDisableTitle: "CPU Kodlamasını Zorla Devre Dışı Bırak (nvenc/vaapi'yi geçersiz kılar)",
     },
     sections: {
         video: {
@@ -1369,9 +1411,12 @@ const tr = {
             bufferLabelImmediate: "Video Tampon Boyutu (0 (Anında)):",
             bufferLabelFrames: "Video Tampon Boyutu ({videoBufferSize} kare):",
             crfLabel: "Video CRF ({crf}):",
-            fullColorLabel: "Tam Renk 4:4:4:",
+            fullColorLabel: "Tam Renk 4:4:4",
             streamingModeDetails: "Turbo modu, tüm VNC mantığını devre dışı bırakır ve tüm kareleri geleneksel bir video kodlayıcı gibi kodlar.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "CPU Kodlaması",
+            jpegQualityLabel: "Temel Kalite: {jpegQuality}",
+            paintOverJpegQualityLabel: "Üzerine Boyama Kalitesi: {paintOverJpegQuality}",
         },
         audio: {
             title: "Ses Ayarları",
@@ -1525,6 +1570,8 @@ const it = {
         h264FullColorDisableTitle: "Disabilita H.264 Colore Completo",
         h264StreamingModeDisableTitle: "Disabilita Turbo",
         h264StreamingModeEnableTitle: "Abilita Turbo",
+        useCpuEnableTitle: "Abilita Codifica CPU Forzata (Sovrascrive nvenc/vaapi)",
+        useCpuDisableTitle: "Disabilita Codifica CPU Forzata (Sovrascrive nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -1535,9 +1582,12 @@ const it = {
             bufferLabelImmediate: "Dimensione Buffer Video (0 (Immediato)):",
             bufferLabelFrames: "Dimensione Buffer Video ({videoBufferSize} frame):",
             crfLabel: "CRF Video ({crf}):",
-            fullColorLabel: "Colore Completo 4:4:4:",
+            fullColorLabel: "Colore Completo 4:4:4",
             streamingModeDetails: "La modalità Turbo disabilita tutta la logica VNC e codifica tutti i fotogrammi come un codificatore video tradizionale.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "Codifica CPU",
+            jpegQualityLabel: "Qualità di Base: {jpegQuality}",
+            paintOverJpegQualityLabel: "Qualità Sovrapposizione: {paintOverJpegQuality}",
         },
         audio: {
             title: "Impostazioni Audio",
@@ -1691,6 +1741,8 @@ const nl = {
         h264FullColorDisableTitle: "H.264 Volledige Kleur uitschakelen",
         h264StreamingModeDisableTitle: "Turbo uitschakelen",
         h264StreamingModeEnableTitle: "Turbo inschakelen",
+        useCpuEnableTitle: "Forceer CPU-codering inschakelen (Overschrijft nvenc/vaapi)",
+        useCpuDisableTitle: "Forceer CPU-codering uitschakelen (Overschrijft nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -1701,9 +1753,12 @@ const nl = {
             bufferLabelImmediate: "Video Buffergrootte (0 (Onmiddellijk)):",
             bufferLabelFrames: "Video Buffergrootte ({videoBufferSize} frames):",
             crfLabel: "Video CRF ({crf}):",
-            fullColorLabel: "Volledige Kleur 4:4:4:",
+            fullColorLabel: "Volledige Kleur 4:4:4",
             streamingModeDetails: "De Turbo-modus schakelt alle VNC-logica uit en codeert alle frames zoals een traditionele video-encoder.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "CPU-codering",
+            jpegQualityLabel: "Basiskwaliteit: {jpegQuality}",
+            paintOverJpegQualityLabel: "Overschilderkwaliteit: {paintOverJpegQuality}",
         },
         audio: {
             title: "Audio-instellingen",
@@ -1857,6 +1912,8 @@ const ar = {
         h264FullColorDisableTitle: "تعطيل H.264 ألوان كاملة",
         h264StreamingModeDisableTitle: "تعطيل وضع التوربو",
         h264StreamingModeEnableTitle: "تمكين وضع التوربو",
+        useCpuEnableTitle: "تمكين فرض ترميز CPU (يتجاوز nvenc/vaapi)",
+        useCpuDisableTitle: "تعطيل فرض ترميز CPU (يتجاوز nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -1867,9 +1924,12 @@ const ar = {
             bufferLabelImmediate: "حجم مخزن الفيديو المؤقت (0 (فوري)):",
             bufferLabelFrames: "حجم مخزن الفيديو المؤقت ({videoBufferSize} إطارات):",
             crfLabel: "CRF الفيديو ({crf}):",
-            fullColorLabel: "ألوان كاملة 4:4:4:",
+            fullColorLabel: "ألوان كاملة 4:4:4",
             streamingModeDetails: "يعطل وضع التوربو كل منطق VNC ويقوم بترميز جميع الإطارات مثل مرمّز الفيديو التقليدي.",
             streamingModeLabel: "توربو",
+            useCpuLabel: "ترميز CPU",
+            jpegQualityLabel: "الجودة الأساسية: {jpegQuality}",
+            paintOverJpegQualityLabel: "جودة الرسم فوق الصورة: {paintOverJpegQuality}",
         },
         audio: {
             title: "إعدادات الصوت",
@@ -2023,6 +2083,8 @@ const ko = {
         h264FullColorDisableTitle: "H.264 전체 색상 비활성화",
         h264StreamingModeDisableTitle: "터보 비활성화",
         h264StreamingModeEnableTitle: "터보 활성화",
+        useCpuEnableTitle: "강제 CPU 인코딩 활성화 (nvenc/vaapi 재정의)",
+        useCpuDisableTitle: "강제 CPU 인코딩 비활성화 (nvenc/vaapi 재정의)",
     },
     sections: {
         video: {
@@ -2033,9 +2095,12 @@ const ko = {
             bufferLabelImmediate: "비디오 버퍼 크기 (0 (즉시)):",
             bufferLabelFrames: "비디오 버퍼 크기 ({videoBufferSize} 프레임):",
             crfLabel: "비디오 CRF ({crf}):",
-            fullColorLabel: "전체 색상 4:4:4:",
+            fullColorLabel: "전체 색상 4:4:4",
             streamingModeDetails: "터보 모드는 모든 VNC 로직을 비활성화하고 모든 프레임을 기존 비디오 인코더처럼 인코딩합니다.",
             streamingModeLabel: "터보",
+            useCpuLabel: "CPU 인코딩",
+            jpegQualityLabel: "기본 품질: {jpegQuality}",
+            paintOverJpegQualityLabel: "덧칠 품질: {paintOverJpegQuality}",
         },
         audio: {
             title: "오디오 설정",
@@ -2189,6 +2254,8 @@ const ja = {
         h264FullColorDisableTitle: "H.264 フルカラーを無効にする",
         h264StreamingModeDisableTitle: "ターボを無効にする",
         h264StreamingModeEnableTitle: "ターボを有効にする",
+        useCpuEnableTitle: "強制 CPU エンコーディングを有効にする (nvenc/vaapi を上書き)",
+        useCpuDisableTitle: "強制 CPU エンコーディングを無効にする (nvenc/vaapi を上書き)",
     },
     sections: {
         video: {
@@ -2199,9 +2266,12 @@ const ja = {
             bufferLabelImmediate: "ビデオバッファサイズ (0 (即時)):",
             bufferLabelFrames: "ビデオバッファサイズ ({videoBufferSize} フレーム):",
             crfLabel: "ビデオ CRF ({crf}):",
-            fullColorLabel: "フルカラー 4:4:4:",
+            fullColorLabel: "フルカラー 4:4:4",
             streamingModeDetails: "ターボモードはすべてのVNCロジックを無効にし、すべてのフレームを従来のビデオエンコーダーのようにエンコードします。",
             streamingModeLabel: "ターボ",
+            useCpuLabel: "CPU エンコーディング",
+            jpegQualityLabel: "基本品質: {jpegQuality}",
+            paintOverJpegQualityLabel: "ペイントオーバー品質: {paintOverJpegQuality}",
         },
         audio: {
             title: "オーディオ設定",
@@ -2355,6 +2425,8 @@ const vi = {
         h264FullColorDisableTitle: "Tắt H.264 Đầy đủ Màu sắc",
         h264StreamingModeDisableTitle: "Tắt chế độ Turbo",
         h264StreamingModeEnableTitle: "Bật chế độ Turbo",
+        useCpuEnableTitle: "Bật Mã hóa CPU Bắt buộc (Ghi đè nvenc/vaapi)",
+        useCpuDisableTitle: "Tắt Mã hóa CPU Bắt buộc (Ghi đè nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -2365,9 +2437,12 @@ const vi = {
             bufferLabelImmediate: "Kích thước Bộ đệm Video (0 (Ngay lập tức)):",
             bufferLabelFrames: "Kích thước Bộ đệm Video ({videoBufferSize} khung hình):",
             crfLabel: "CRF Video ({crf}):",
-            fullColorLabel: "Đầy đủ Màu sắc 4:4:4:",
+            fullColorLabel: "Đầy đủ Màu sắc 4:4:4",
             streamingModeDetails: "Chế độ Turbo tắt tất cả logic VNC và mã hóa tất cả các khung hình như một bộ mã hóa video truyền thống.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "Mã hóa CPU",
+            jpegQualityLabel: "Chất lượng Cơ bản: {jpegQuality}",
+            paintOverJpegQualityLabel: "Chất lượng Vẽ đè: {paintOverJpegQuality}",
         },
         audio: {
             title: "Cài đặt Âm thanh",
@@ -2521,6 +2596,8 @@ const th = {
         h264FullColorDisableTitle: "ปิดใช้งาน H.264 สีสมบูรณ์",
         h264StreamingModeDisableTitle: "ปิดใช้งานเทอร์โบ",
         h264StreamingModeEnableTitle: "เปิดใช้งานเทอร์โบ",
+        useCpuEnableTitle: "เปิดใช้งานการเข้ารหัส CPU แบบบังคับ (เขียนทับ nvenc/vaapi)",
+        useCpuDisableTitle: "ปิดใช้งานการเข้ารหัส CPU แบบบังคับ (เขียนทับ nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -2531,9 +2608,12 @@ const th = {
             bufferLabelImmediate: "ขนาดบัฟเฟอร์วิดีโอ (0 (ทันที)):",
             bufferLabelFrames: "ขนาดบัฟเฟอร์วิดีโอ ({videoBufferSize} เฟรม):",
             crfLabel: "วิดีโอ CRF ({crf}):",
-            fullColorLabel: "สีสมบูรณ์ 4:4:4:",
+            fullColorLabel: "สีสมบูรณ์ 4:4:4",
             streamingModeDetails: "โหมดเทอร์โบจะปิดการทำงานของ VNC ทั้งหมดและเข้ารหัสเฟรมทั้งหมดเหมือนตัวเข้ารหัสวิดีโอแบบดั้งเดิม",
             streamingModeLabel: "เทอร์โบ",
+            useCpuLabel: "การเข้ารหัส CPU",
+            jpegQualityLabel: "คุณภาพพื้นฐาน: {jpegQuality}",
+            paintOverJpegQualityLabel: "คุณภาพการวาดทับ: {paintOverJpegQuality}",
         },
         audio: {
             title: "การตั้งค่าเสียง",
@@ -2687,6 +2767,8 @@ const fil = {
         h264FullColorDisableTitle: "Huwag paganahin ang H.264 Buong Kulay",
         h264StreamingModeDisableTitle: "Huwag paganahin ang Turbo",
         h264StreamingModeEnableTitle: "Paganahin ang Turbo",
+        useCpuEnableTitle: "Paganahin ang Puwersahang CPU Encoding (Pinapalitan ang nvenc/vaapi)",
+        useCpuDisableTitle: "Huwag paganahin ang Puwersahang CPU Encoding (Pinapalitan ang nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -2697,9 +2779,12 @@ const fil = {
             bufferLabelImmediate: "Laki ng Video Buffer (0 (Agad)):",
             bufferLabelFrames: "Laki ng Video Buffer ({videoBufferSize} frames):",
             crfLabel: "Video CRF ({crf}):",
-            fullColorLabel: "Buong Kulay 4:4:4:",
+            fullColorLabel: "Buong Kulay 4:4:4",
             streamingModeDetails: "Ang Turbo mode ay hindi pinapagana ang lahat ng lohika ng VNC at ini-encode ang lahat ng mga frame tulad ng isang tradisyonal na video encoder.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "CPU Encoding",
+            jpegQualityLabel: "Batayang Kalidad: {jpegQuality}",
+            paintOverJpegQualityLabel: "Kalidad ng Paintover: {paintOverJpegQuality}",
         },
         audio: {
             title: "Mga Setting ng Audio",
@@ -2853,6 +2938,8 @@ const da = {
         h264FullColorDisableTitle: "Huwag paganahin ang H.264 Buong Kulay",
         h264StreamingModeDisableTitle: "Deaktiver Turbo",
         h264StreamingModeEnableTitle: "Aktiver Turbo",
+        useCpuEnableTitle: "Aktiver Tvungen CPU-kodning (Tilsidesætter nvenc/vaapi)",
+        useCpuDisableTitle: "Deaktiver Tvungen CPU-kodning (Tilsidesætter nvenc/vaapi)",
     },
     sections: {
         video: {
@@ -2863,9 +2950,12 @@ const da = {
             bufferLabelImmediate: "Videobufferstørrelse (0 (Øjeblikkelig)):",
             bufferLabelFrames: "Videobufferstørrelse ({videoBufferSize} billeder):",
             crfLabel: "Video CRF ({crf}):",
-            fullColorLabel: "Fuld Farve 4:4:4:",
+            fullColorLabel: "Fuld Farve 4:4:4",
             streamingModeDetails: "Turbo-tilstand deaktiverer al VNC-logik og koder alle billeder som en traditionel video-encoder.",
             streamingModeLabel: "Turbo",
+            useCpuLabel: "CPU-kodning",
+            jpegQualityLabel: "Grundkvalitet: {jpegQuality}",
+            paintOverJpegQualityLabel: "Overmalingskvalitet: {paintOverJpegQuality}",
         },
         audio: {
             title: "Lydindstillinger",
