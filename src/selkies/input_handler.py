@@ -778,6 +778,14 @@ class WebRTCInput:
             'Super_L', 'Super_R',
             'Meta_L', 'Meta_R'
         }
+        self.active_modifiers = set()
+        self.MODIFIER_KEYSYMS = {
+            65505, 65506,  # Shift_L, Shift_R
+            65507, 65508,  # Control_L, Control_R
+            65513, 65514,  # Alt_L, Alt_R
+            65027,        # ISO_Level3_Shift (AltGr)
+            65511, 65512,  # Meta_L, Meta_R / Super_L, Super_R
+        }
         self.gst_webrtc_app = gst_webrtc_app
         self.loop = asyncio.get_event_loop()
         self.js_socket_path_prefix = js_socket_path_prefix
@@ -1384,8 +1392,32 @@ class WebRTCInput:
         if msg_type == "pong":
             if self.ping_start is None: logger_webrtc_input.warning("received pong before ping"); return
             self.on_ping_response(float("%.3f" % ((time.time() - self.ping_start) / 2 * 1000)))
-        elif msg_type == "kd": await self.send_x11_keypress(int(toks[1]), down=True)
-        elif msg_type == "ku": await self.send_x11_keypress(int(toks[1]), down=False)
+        elif msg_type == "kd":
+            keysym = int(toks[1])
+            is_printable = (0x20 <= keysym <= 0xFF) or ((keysym & 0xFF000000) == 0x01000000)
+            if keysym in self.MODIFIER_KEYSYMS:
+                self.active_modifiers.add(keysym)
+            if is_printable and not self.active_modifiers:
+                unicode_codepoint = keysym & 0x00FFFFFF if (keysym & 0xFF000000) == 0x01000000 else keysym
+                try:
+                    char_to_type = chr(unicode_codepoint)
+                    logger_webrtc_input.debug(f"No modifiers active. Using atomic 'type' for '{char_to_type}'.")
+                    await self.on_message(f"co,end,{char_to_type}")
+                except (ValueError, TypeError):
+                    await self.send_x11_keypress(keysym, down=True)
+            else:
+                await self.send_x11_keypress(keysym, down=True)
+        elif msg_type == "ku":
+            keysym = int(toks[1])
+            was_modifier_active = bool(self.active_modifiers)
+            is_modifier_key = keysym in self.MODIFIER_KEYSYMS
+            if is_modifier_key:
+                self.active_modifiers.discard(keysym)
+            is_printable = (0x20 <= keysym <= 0xFF) or ((keysym & 0xFF000000) == 0x01000000)
+            if is_printable and not was_modifier_active:
+                pass
+            else:
+                await self.send_x11_keypress(keysym, down=False)
         elif msg_type == "kr": await self.reset_keyboard()
         elif msg_type in ["m", "m2"]:
             relative = msg_type == "m2"
