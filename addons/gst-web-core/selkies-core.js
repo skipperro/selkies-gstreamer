@@ -2501,16 +2501,16 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
           else if (unprefixedKey === 'videoBufferSize') serverExpectedKey = 'webrtc_videoBufferSize';
           else if (unprefixedKey === 'h264_fullcolor') serverExpectedKey = 'webrtc_h264_fullcolor';
           else if (unprefixedKey === 'h264_streaming_mode') serverExpectedKey = 'webrtc_h264_streaming_mode';
-          else if (unprefixedKey === 'jpegQuality') serverExpectedKey = 'webrtc_jpegQuality';
-          else if (unprefixedKey === 'paintOverJpegQuality') serverExpectedKey = 'webrtc_paintOverJpegQuality';
-          else if (unprefixedKey === 'useCpu') serverExpectedKey = 'webrtc_useCpu';
+          else if (unprefixedKey === 'jpegQuality') serverExpectedKey = 'pixelflux_jpeg_quality';
+          else if (unprefixedKey === 'paintOverJpegQuality') serverExpectedKey = 'pixelflux_paint_over_jpeg_quality';
+          else if (unprefixedKey === 'useCpu') serverExpectedKey = 'pixelflux_use_cpu';
 
           if (serverExpectedKey) {
             let value = localStorage.getItem(key);
-            if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode' || serverExpectedKey === 'webrtc_h264_fullcolor' || serverExpectedKey === 'webrtc_h264_streaming_mode' || serverExpectedKey === 'webrtc_useCpu') {
+            if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode' || serverExpectedKey === 'webrtc_h264_fullcolor' || serverExpectedKey === 'webrtc_h264_streaming_mode' || serverExpectedKey === 'pixelflux_use_cpu') {
               value = (value === 'true');
             } else if (['webrtc_videoBitRate', 'webrtc_videoFramerate', 'webrtc_videoCRF',
-                'webrtc_audioBitRate', 'webrtc_videoBufferSize', 'webrtc_jpegQuality', 'webrtc_paintOverJpegQuality'
+                'webrtc_audioBitRate', 'webrtc_videoBufferSize', 'pixelflux_jpeg_quality', 'pixelflux_paint_over_jpeg_quality'
               ].includes(serverExpectedKey)) {
               value = parseInt(value, 10);
               if (isNaN(value)) value = localStorage.getItem(key);
