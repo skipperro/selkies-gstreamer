@@ -779,6 +779,7 @@ class WebRTCInput:
             'Meta_L', 'Meta_R'
         }
         self.active_modifiers = set()
+        self.atomically_typed_keys = set()
         self.MODIFIER_KEYSYMS = {
             65505, 65506,  # Shift_L, Shift_R
             65507, 65508,  # Control_L, Control_R
@@ -1401,20 +1402,23 @@ class WebRTCInput:
                 unicode_codepoint = keysym & 0x00FFFFFF if (keysym & 0xFF000000) == 0x01000000 else keysym
                 try:
                     char_to_type = chr(unicode_codepoint)
-                    logger_webrtc_input.debug(f"No modifiers active. Using atomic 'type' for '{char_to_type}'.")
-                    await self.on_message(f"co,end,{char_to_type}")
+                    if not char_to_type.isalpha():
+                        logger_webrtc_input.debug(f"Handling non-alpha '{char_to_type}' with atomic 'type' to prevent stuck modifiers.")
+                        await self.on_message(f"co,end,{char_to_type}")
+                        self.atomically_typed_keys.add(keysym)
+                    else:
+                        await self.send_x11_keypress(keysym, down=True)
                 except (ValueError, TypeError):
                     await self.send_x11_keypress(keysym, down=True)
             else:
                 await self.send_x11_keypress(keysym, down=True)
         elif msg_type == "ku":
             keysym = int(toks[1])
-            was_modifier_active = bool(self.active_modifiers)
-            is_modifier_key = keysym in self.MODIFIER_KEYSYMS
-            if is_modifier_key:
+            
+            if keysym in self.MODIFIER_KEYSYMS:
                 self.active_modifiers.discard(keysym)
-            is_printable = (0x20 <= keysym <= 0xFF) or ((keysym & 0xFF000000) == 0x01000000)
-            if is_printable and not was_modifier_active:
+            if keysym in self.atomically_typed_keys:
+                self.atomically_typed_keys.discard(keysym)
                 pass
             else:
                 await self.send_x11_keypress(keysym, down=False)
