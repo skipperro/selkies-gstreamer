@@ -1534,10 +1534,11 @@ class WebRTCInput:
         elif msg_type in ["_stats_video", "_stats_audio"]: 
             try: await self.on_client_webrtc_stats(msg_type, ",".join(toks[1:]))
             except: logger_webrtc_input.error("Failed to parse WebRTC Statistics")
-        elif msg_type == "co" and toks[1] == "end" and len(toks) > 2: 
+        elif msg_type == "co" and toks[1] == "end": 
             try:
+                text_to_type = msg[7:]
                 process = await subprocess.create_subprocess_exec(
-                    "xdotool", "type", toks[2],
+                    "xdotool", "type", text_to_type,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE
                 )
