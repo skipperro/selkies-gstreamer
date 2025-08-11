@@ -583,6 +583,20 @@ function Sidebar({ isOpen }) {
     };
   }, []);
 
+  useEffect(() => {
+    const setRealViewportHeight = () => {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    };
+    window.addEventListener('resize', setRealViewportHeight);
+    window.addEventListener('orientationchange', setRealViewportHeight);
+    setRealViewportHeight();
+    return () => {
+      window.removeEventListener('resize', setRealViewportHeight);
+      window.removeEventListener('orientationchange', setRealViewportHeight);
+    };
+  }, []);
+
   const { t, raw } = translator;
   const sendKeyEvent = (type, key, code, modifierState) => {
     const event = new KeyboardEvent(type, {

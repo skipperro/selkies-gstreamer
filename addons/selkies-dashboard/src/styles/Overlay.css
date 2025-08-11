@@ -89,7 +89,7 @@
   top: 0;
   left: 0;
   width: 280px;
-  height: 100vh;
+  height: calc(var(--vh, 1vh) * 100);
   background-color: var(--sidebar-bg);
   box-shadow: 2px 0 5px var(--sidebar-shadow);
   transform: translateX(-100%);
