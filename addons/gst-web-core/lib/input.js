@@ -2291,10 +2291,16 @@ export class Input {
         this.listeners.push(addListener(window, 'resize', this._windowMath, this));
         this.listeners.push(addListener(window, 'gamepadconnected', this._gamepadConnected, this));
         this.listeners.push(addListener(window, 'gamepaddisconnected', this._gamepadDisconnect, this));
-        
+
         if (!this.isSharedMode) {
             this.attach_context();
-        }
+        } else {
+            const preventDefaultHandler = (e) => e.preventDefault();
+            this.listeners.push(addListener(this.element, 'touchstart', preventDefaultHandler, this));
+            this.listeners.push(addListener(this.element, 'touchend', preventDefaultHandler, this));
+            this.listeners.push(addListener(this.element, 'touchmove', preventDefaultHandler, this));
+            this.listeners.push(addListener(this.element, 'touchcancel', preventDefaultHandler, this));
+        }    
     }
 
     attach_context() {
