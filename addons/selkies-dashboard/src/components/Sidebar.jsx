@@ -2493,6 +2493,14 @@ function Sidebar({ isOpen }) {
                         viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
                       >
                         <circle
+                          stroke="var(--item-border)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter}
+                        />
+                        <circle
                           stroke="var(--sidebar-header-color)"
                           fill="transparent"
                           strokeWidth={gaugeStrokeWidth}
@@ -2536,6 +2544,14 @@ function Sidebar({ isOpen }) {
                         height={gaugeSize}
                         viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
                       >
+                        <circle
+                          stroke="var(--item-border)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter}
+                        />
                         <circle
                           stroke="var(--sidebar-header-color)"
                           fill="transparent"
