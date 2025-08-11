@@ -696,6 +696,8 @@ function Sidebar({ isOpen }) {
   const [presetValue, setPresetValue] = useState("");
   const [clientFps, setClientFps] = useState(0);
   const [audioBuffer, setAudioBuffer] = useState(0);
+  const [bandwidthMbps, setBandwidthMbps] = useState(0);
+  const [latencyMs, setLatencyMs] = useState(0);
   const [cpuPercent, setCpuPercent] = useState(0);
   const [gpuPercent, setGpuPercent] = useState(0);
   const [sysMemPercent, setSysMemPercent] = useState(0);
@@ -1418,6 +1420,10 @@ function Sidebar({ isOpen }) {
           return t("sections.stats.tooltipFps", { value: clientFps });
         case "audio":
           return t("sections.stats.tooltipAudio", { value: audioBuffer });
+        case "bandwidth":
+          return t("sections.stats.tooltipBandwidth", { value: bandwidthMbps.toFixed(2) }, `Bandwidth: ${bandwidthMbps.toFixed(2)} Mbps`);
+        case "latency":
+          return t("sections.stats.tooltipLatency", { value: latencyMs.toFixed(1) }, `Latency: ${latencyMs.toFixed(1)} ms`);
         default:
           return "";
       }
@@ -1495,6 +1501,9 @@ function Sidebar({ isOpen }) {
       );
       setClientFps(window.fps ?? 0);
       setAudioBuffer(window.currentAudioBufferSize ?? 0);
+      const netStats = window.network_stats;
+      setBandwidthMbps(netStats?.bandwidth_mbps ?? 0);
+      setLatencyMs(netStats?.latency_ms ?? 0);
     };
     const intervalId = setInterval(readStats, STATS_READ_INTERVAL_MS);
     return () => clearInterval(intervalId);
@@ -1695,6 +1704,20 @@ function Sidebar({ isOpen }) {
   );
   const audioBufferOffset = calculateGaugeOffset(
     audioBufferPercent,
+    gaugeRadius,
+    gaugeCircumference
+  );
+  const MAX_BANDWIDTH_MBPS = 1000;
+  const MAX_LATENCY_MS = 1000;
+  const bandwidthPercent = Math.min(100, (bandwidthMbps / MAX_BANDWIDTH_MBPS) * 100);
+  const bandwidthOffset = calculateGaugeOffset(
+    bandwidthPercent,
+    gaugeRadius,
+    gaugeCircumference
+  );
+  const latencyPercent = Math.min(100, (latencyMs / MAX_LATENCY_MS) * 100);
+  const latencyOffset = calculateGaugeOffset(
+    latencyPercent,
     gaugeRadius,
     gaugeCircumference
   );
@@ -2404,60 +2427,6 @@ function Sidebar({ isOpen }) {
                 </div>
                 <div
                   className="gauge-container"
-                  onMouseEnter={(e) => handleMouseEnter(e, "gpu")}
-                  onMouseLeave={handleMouseLeave}
-                >
-                  {" "}
-                  <svg
-                    width={gaugeSize}
-                    height={gaugeSize}
-                    viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                  >
-                    {" "}
-                    <circle
-                      stroke="var(--item-border)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                    />{" "}
-                    <circle
-                      stroke="var(--sidebar-header-color)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                      transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                      style={{
-                        strokeDasharray: gaugeCircumference,
-                        strokeDashoffset: gpuOffset,
-                        transition: "stroke-dashoffset 0.3s ease-in-out",
-                        strokeLinecap: "round",
-                      }}
-                    />{" "}
-                    <text
-                      x={gaugeCenter}
-                      y={gaugeCenter}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fontSize={`${gaugeSize / 5}px`}
-                      fill="var(--sidebar-text)"
-                      fontWeight="bold"
-                    >
-                      {" "}
-                      {Math.round(
-                        Math.max(0, Math.min(100, gpuPercent || 0))
-                      )}%{" "}
-                    </text>{" "}
-                  </svg>{" "}
-                  <div className="gauge-label">
-                    {t("sections.stats.gpuLabel")}
-                  </div>{" "}
-                </div>
-                <div
-                  className="gauge-container"
                   onMouseEnter={(e) => handleMouseEnter(e, "sysmem")}
                   onMouseLeave={handleMouseLeave}
                 >
@@ -2511,61 +2480,99 @@ function Sidebar({ isOpen }) {
                     {t("sections.stats.sysMemLabel")}
                   </div>{" "}
                 </div>
-                <div
-                  className="gauge-container"
-                  onMouseEnter={(e) => handleMouseEnter(e, "gpumem")}
-                  onMouseLeave={handleMouseLeave}
-                >
-                  {" "}
-                  <svg
-                    width={gaugeSize}
-                    height={gaugeSize}
-                    viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                  >
-                    {" "}
-                    <circle
-                      stroke="var(--item-border)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                    />{" "}
-                    <circle
-                      stroke="var(--sidebar-header-color)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                      transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                      style={{
-                        strokeDasharray: gaugeCircumference,
-                        strokeDashoffset: gpuMemOffset,
-                        transition: "stroke-dashoffset 0.3s ease-in-out",
-                        strokeLinecap: "round",
-                      }}
-                    />{" "}
-                    <text
-                      x={gaugeCenter}
-                      y={gaugeCenter}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fontSize={`${gaugeSize / 5}px`}
-                      fill="var(--sidebar-text)"
-                      fontWeight="bold"
+                {window.gpu_stats && (
+                  <>
+                    <div
+                      className="gauge-container"
+                      onMouseEnter={(e) => handleMouseEnter(e, "gpu")}
+                      onMouseLeave={handleMouseLeave}
                     >
-                      {" "}
-                      {Math.round(
-                        Math.max(0, Math.min(100, gpuMemPercent || 0))
-                      )}
-                      %{" "}
-                    </text>{" "}
-                  </svg>{" "}
-                  <div className="gauge-label">
-                    {t("sections.stats.gpuMemLabel")}
-                  </div>{" "}
-                </div>
+                       <svg
+                        width={gaugeSize}
+                        height={gaugeSize}
+                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                      >
+                        <circle
+                          stroke="var(--sidebar-header-color)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter}
+                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                          style={{
+                            strokeDasharray: gaugeCircumference,
+                            strokeDashoffset: gpuOffset,
+                            transition: "stroke-dashoffset 0.3s ease-in-out",
+                            strokeLinecap: "round",
+                          }}
+                        />
+                        <text
+                          x={gaugeCenter}
+                          y={gaugeCenter}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={`${gaugeSize / 5}px`}
+                          fill="var(--sidebar-text)"
+                          fontWeight="bold"
+                        >
+                          {" "}
+                          {Math.round(
+                            Math.max(0, Math.min(100, gpuPercent || 0))
+                          )}%{" "}
+                        </text>
+                      </svg>
+                      <div className="gauge-label">
+                        {t("sections.stats.gpuLabel")}
+                      </div>
+                    </div>
+                    <div
+                      className="gauge-container"
+                      onMouseEnter={(e) => handleMouseEnter(e, "gpumem")}
+                      onMouseLeave={handleMouseLeave}
+                    >
+                       <svg
+                        width={gaugeSize}
+                        height={gaugeSize}
+                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                      >
+                        <circle
+                          stroke="var(--sidebar-header-color)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter}
+                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                          style={{
+                            strokeDasharray: gaugeCircumference,
+                            strokeDashoffset: gpuMemOffset,
+                            transition: "stroke-dashoffset 0.3s ease-in-out",
+                            strokeLinecap: "round",
+                          }}
+                        />
+                        <text
+                          x={gaugeCenter}
+                          y={gaugeCenter}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={`${gaugeSize / 5}px`}
+                          fill="var(--sidebar-text)"
+                          fontWeight="bold"
+                        >
+                          {" "}
+                          {Math.round(
+                            Math.max(0, Math.min(100, gpuMemPercent || 0))
+                          )}
+                          %{" "}
+                        </text>
+                      </svg>
+                      <div className="gauge-label">
+                        {t("sections.stats.gpuMemLabel")}
+                      </div>
+                    </div>
+                  </>
+                )}
                 <div
                   className="gauge-container"
                   onMouseEnter={(e) => handleMouseEnter(e, "fps")}
@@ -2668,6 +2675,110 @@ function Sidebar({ isOpen }) {
                   </svg>{" "}
                   <div className="gauge-label">
                     {t("sections.stats.audioLabel")}
+                  </div>{" "}
+                </div>
+                <div
+                  className="gauge-container"
+                  onMouseEnter={(e) => handleMouseEnter(e, "bandwidth")}
+                  onMouseLeave={handleMouseLeave}
+                >
+                  {" "}
+                  <svg
+                    width={gaugeSize}
+                    height={gaugeSize}
+                    viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                  >
+                    {" "}
+                    <circle
+                      stroke="var(--item-border)"
+                      fill="transparent"
+                      strokeWidth={gaugeStrokeWidth}
+                      r={gaugeRadius}
+                      cx={gaugeCenter}
+                      cy={gaugeCenter}
+                    />{" "}
+                    <circle
+                      stroke="var(--sidebar-header-color)"
+                      fill="transparent"
+                      strokeWidth={gaugeStrokeWidth}
+                      r={gaugeRadius}
+                      cx={gaugeCenter}
+                      cy={gaugeCenter}
+                      transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                      style={{
+                        strokeDasharray: gaugeCircumference,
+                        strokeDashoffset: bandwidthOffset,
+                        transition: "stroke-dashoffset 0.3s ease-in-out",
+                        strokeLinecap: "round",
+                      }}
+                    />{" "}
+                    <text
+                      x={gaugeCenter}
+                      y={gaugeCenter}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fontSize={`${gaugeSize / 5}px`}
+                      fill="var(--sidebar-text)"
+                      fontWeight="bold"
+                    >
+                      {" "}
+                      {Math.round(bandwidthMbps)}{" "}
+                    </text>{" "}
+                  </svg>{" "}
+                  <div className="gauge-label">
+                    {t("sections.stats.bandwidthLabel", "Bandwidth")}
+                  </div>{" "}
+                </div>
+                <div
+                  className="gauge-container"
+                  onMouseEnter={(e) => handleMouseEnter(e, "latency")}
+                  onMouseLeave={handleMouseLeave}
+                >
+                  {" "}
+                  <svg
+                    width={gaugeSize}
+                    height={gaugeSize}
+                    viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                  >
+                    {" "}
+                    <circle
+                      stroke="var(--item-border)"
+                      fill="transparent"
+                      strokeWidth={gaugeStrokeWidth}
+                      r={gaugeRadius}
+                      cx={gaugeCenter}
+                      cy={gaugeCenter}
+                    />{" "}
+                    <circle
+                      stroke="var(--sidebar-header-color)"
+                      fill="transparent"
+                      strokeWidth={gaugeStrokeWidth}
+                      r={gaugeRadius}
+                      cx={gaugeCenter}
+                      cy={gaugeCenter}
+                      transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                      style={{
+                        strokeDasharray: gaugeCircumference,
+                        strokeDashoffset: latencyOffset,
+                        transition: "stroke-dashoffset 0.3s ease-in-out",
+                        strokeLinecap: "round",
+                      }}
+                    />{" "}
+                    <text
+                      x={gaugeCenter}
+                      y={gaugeCenter}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fontSize={`${gaugeSize / 5}px`}
+                      fill="var(--sidebar-text)"
+                      fontWeight="bold"
+                    >
+                      {" "}
+                      {Math.round(latencyMs)}{" "}
+                    </text>{" "}
+                  </svg>{" "}
+                  <div className="gauge-label">
+                    {t("sections.stats.latencyLabel", "Latency")}
                   </div>{" "}
                 </div>
               </div>

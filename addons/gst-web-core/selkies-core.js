@@ -154,6 +154,10 @@ const cpuStat = {
   serverMemoryTotal: 0,
   serverMemoryUsed: 0,
 };
+const networkStat = {
+  bandwidthMbps: 0,
+  latencyMs: 0,
+};
 let resizeRemote = true;
 let debug = false;
 let streamStarted = false;
@@ -1848,6 +1852,7 @@ function sendStatsMessage() {
     connection: connectionStat,
     gpu: gpuStat,
     cpu: cpuStat,
+    network: networkStat,
     clientFps: window.fps,
     audioBuffer: window.currentAudioBufferSize,
     videoBuffer: videoFrameBuffer.length,
@@ -2189,9 +2194,12 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
             }
           }
         }
-        if (jpegPaintedThisFrame && !streamStarted) {
-          startStream();
-          if (!inputInitialized && !isSharedMode) initializeInput();
+        if (jpegPaintedThisFrame) {
+          frameCount++;
+          if (!streamStarted) {
+            startStream();
+            if (!inputInitialized && !isSharedMode) initializeInput();
+          }
         }
       }
     } else if ( (isSharedMode && currentEncoderMode === 'h264_full_frame' && sharedClientState === 'ready') ||
@@ -2977,6 +2985,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
           }
           if (obj.type === 'system_stats') window.system_stats = obj;
           else if (obj.type === 'gpu_stats') window.gpu_stats = obj;
+          else if (obj.type === 'network_stats') window.network_stats = obj;
           else if (obj.type === 'server_settings') window.postMessage({
             type: 'serverSettings',
             encoders: obj.encoders

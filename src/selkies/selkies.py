@@ -774,6 +774,8 @@ class DataStreamingServer:
         )
         self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
         self._pipeline_lock = asyncio.Lock()
+        self._bytes_sent_in_interval = 0
+        self._last_bandwidth_calc_time = time.monotonic()
         # Frame-based backpressure settings
         self.allowed_desync_ms = BACKPRESSURE_ALLOWED_DESYNC_MS
         self.latency_threshold_for_adjustment_ms = BACKPRESSURE_LATENCY_THRESHOLD_MS
@@ -821,7 +823,7 @@ class DataStreamingServer:
                 
                 # Protocol: 1-byte data type (0x01=audio) + 1-byte frame type (0x00=opus) + payload
                 message_to_send = b'\x01\x00' + opus_bytes
-
+                self._bytes_sent_in_interval += len(message_to_send)
                 active_clients = list(self.clients)
                 tasks = [client.send(message_to_send) for client in active_clients]
                 if tasks:
@@ -1230,6 +1232,7 @@ class DataStreamingServer:
                 if not self._backpressure_send_frames_enabled:
                     return
                 if clients_ref:
+                    self._bytes_sent_in_interval += len(data_to_send_ref)
                     websockets.broadcast(clients_ref, data_to_send_ref)
             if current_async_loop and current_async_loop.is_running():
                 asyncio.run_coroutine_threadsafe(
@@ -1375,6 +1378,7 @@ class DataStreamingServer:
                 if not self._backpressure_send_frames_enabled:
                     return
                 if clients_ref:
+                    self._bytes_sent_in_interval += len(prefixed_jpeg_data)
                     websockets.broadcast(clients_ref, prefixed_jpeg_data)
             if current_async_loop and current_async_loop.is_running():
                 asyncio.run_coroutine_threadsafe(
@@ -1786,6 +1790,9 @@ class DataStreamingServer:
             _send_stats_periodically_ws(
                 websocket, self._shared_stats_ws
             )  # Stats are per-client
+        )
+        self._network_monitor_task_ws = asyncio.create_task(
+            _collect_network_stats_ws(self._shared_stats_ws, self)
         )
 
         try:
@@ -2582,6 +2589,16 @@ class DataStreamingServer:
                         await _task_to_cancel
                     except asyncio.CancelledError:
                         pass
+
+            if "_network_monitor_task_ws" in locals():
+                _task_to_cancel = locals()["_network_monitor_task_ws"]
+                if _task_to_cancel and not _task_to_cancel.done():
+                    _task_to_cancel.cancel()
+                    try:
+                        await _task_to_cancel
+                    except asyncio.CancelledError:
+                        pass
+
             if (
                 self._frame_backpressure_task
                 and not self._frame_backpressure_task.done()
@@ -2891,6 +2908,33 @@ async def _collect_gpu_stats_ws(shared_data, gpu_id=0, interval_seconds=1):
     except Exception as e:
         data_logger.error(f"GPU monitor (WS) error: {e}", exc_info=True)
 
+async def _collect_network_stats_ws(shared_data, server_instance, interval_seconds=2):
+    """Periodically calculates bandwidth and collects latency."""
+    data_logger.debug(
+        f"Network monitor loop (WS mode) started, interval: {interval_seconds}s"
+    )
+    try:
+        while True:
+            await asyncio.sleep(interval_seconds)
+            current_time = time.monotonic()
+            elapsed_time = current_time - server_instance._last_bandwidth_calc_time
+            if elapsed_time > 0:
+                current_mbps = (server_instance._bytes_sent_in_interval * 8) / elapsed_time / 1_000_000
+            else:
+                current_mbps = 0.0
+            server_instance._bytes_sent_in_interval = 0
+            server_instance._last_bandwidth_calc_time = current_time
+            latency_ms = server_instance._smoothed_rtt_ms
+            shared_data["network"] = {
+                "type": "network_stats",
+                "timestamp": datetime.now().isoformat(),
+                "bandwidth_mbps": round(current_mbps, 2),
+                "latency_ms": round(latency_ms, 1),
+            }
+    except asyncio.CancelledError:
+        data_logger.info("Network monitor (WS) cancelled.")
+    except Exception as e:
+        data_logger.error(f"Network monitor (WS) error: {e}", exc_info=True)
 
 async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5):
     try:
@@ -2898,6 +2942,7 @@ async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5
             await asyncio.sleep(interval_seconds)
             system_stats = shared_data.pop("system", None)
             gpu_stats = shared_data.pop("gpu", None)
+            network_stats = shared_data.pop("network", None)
             try:
                 if not websocket:  # Check if websocket is still valid
                     data_logger.info("Stats sender: WS closed or invalid.")
@@ -2906,6 +2951,8 @@ async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5
                     await websocket.send(json.dumps(system_stats))
                 if gpu_stats:
                     await websocket.send(json.dumps(gpu_stats))
+                if network_stats:
+                    await websocket.send(json.dumps(network_stats))
             except websockets.exceptions.ConnectionClosed:
                 data_logger.info("Stats sender: WS connection closed.")
                 break

@@ -97,6 +97,10 @@ const en = {
             tooltipFps: "Client FPS: {value}",
             tooltipAudio: "Audio Buffers: {value}",
             tooltipMemoryNA: "N/A",
+            bandwidthLabel: "Bandwidth",
+            tooltipBandwidth: "Bandwidth: {value}mbps",
+            latencyLabel: "Latency",
+            tooltipLatency: "Round Trip Latency: {value}ms",
         },
         clipboard: {
             title: "Clipboard",
@@ -267,7 +271,11 @@ const es = {
              tooltipGpuMem: "Memoria GPU: {used} / {total}",
              tooltipFps: "FPS del Cliente: {value}",
              tooltipAudio: "Búferes de Audio: {value}",
-             tooltipMemoryNA: "N/D", // N/D = No Disponible
+             tooltipMemoryNA: "N/D",
+             bandwidthLabel: "Ancho de Banda",
+             tooltipBandwidth: "Ancho de Banda: {value}mbps",
+             latencyLabel: "Latencia",
+             tooltipLatency: "Latencia de Ida y Vuelta: {value}ms",
         },
         clipboard: {
              title: "Portapapeles",
@@ -439,6 +447,10 @@ const zh = {
             tooltipFps: "客户端 FPS: {value}",
             tooltipAudio: "音频缓冲区: {value}",
             tooltipMemoryNA: "不可用",
+            bandwidthLabel: "带宽",
+            tooltipBandwidth: "带宽: {value}mbps",
+            latencyLabel: "延迟",
+            tooltipLatency: "往返延迟: {value}ms",
         },
         clipboard: {
             title: "剪贴板",
@@ -610,6 +622,10 @@ const hi = {
             tooltipFps: "क्लाइंट FPS: {value}",
             tooltipAudio: "ऑडियो बफ़र्स: {value}",
             tooltipMemoryNA: "लागू नहीं",
+            bandwidthLabel: "बैंडविड्थ",
+            tooltipBandwidth: "बैंडविड्थ: {value}mbps",
+            latencyLabel: "विलंबता",
+            tooltipLatency: "राउंड ट्रिप विलंबता: {value}ms",
         },
         clipboard: {
             title: "क्लिपबोर्ड",
@@ -780,7 +796,11 @@ const pt = {
             tooltipGpuMem: "Memória da GPU: {used} / {total}",
             tooltipFps: "FPS do Cliente: {value}",
             tooltipAudio: "Buffers de Áudio: {value}",
-            tooltipMemoryNA: "N/D", // Não Disponível
+            tooltipMemoryNA: "N/D",
+            bandwidthLabel: "Largura de Banda",
+            tooltipBandwidth: "Largura de Banda: {value}mbps",
+            latencyLabel: "Latência",
+            tooltipLatency: "Latência de Ida e Volta: {value}ms",
         },
         clipboard: {
             title: "Área de Transferência",
@@ -951,7 +971,11 @@ const fr = {
             tooltipGpuMem: "Mémoire GPU : {used} / {total}",
             tooltipFps: "FPS Client : {value}",
             tooltipAudio: "Tampons audio : {value}",
-            tooltipMemoryNA: "N/D", // Non Disponible
+            tooltipMemoryNA: "N/D",
+            bandwidthLabel: "Bande Passante",
+            tooltipBandwidth: "Bande Passante : {value}mbps",
+            latencyLabel: "Latence",
+            tooltipLatency: "Latence Aller-Retour : {value}ms",
         },
         clipboard: {
             title: "Presse-papiers",
@@ -1122,7 +1146,11 @@ const ru = {
             tooltipGpuMem: "Память ГП: {used} / {total}",
             tooltipFps: "FPS клиента: {value}",
             tooltipAudio: "Аудиобуферы: {value}",
-            tooltipMemoryNA: "Н/Д", // Недоступно
+            tooltipMemoryNA: "Н/Д",
+            bandwidthLabel: "Пропускная способность",
+            tooltipBandwidth: "Пропускная способность: {value}mbps",
+            latencyLabel: "Задержка",
+            tooltipLatency: "Задержка приема-передачи: {value}ms",
         },
         clipboard: {
             title: "Буфер обмена",
@@ -1293,7 +1321,11 @@ const de = {
             tooltipGpuMem: "GPU-Speicher: {used} / {total}",
             tooltipFps: "Client FPS: {value}",
             tooltipAudio: "Audio-Puffer: {value}",
-            tooltipMemoryNA: "N/V", // Nicht Verfügbar
+            tooltipMemoryNA: "N/V",
+            bandwidthLabel: "Bandbreite",
+            tooltipBandwidth: "Bandbreite: {value}mbps",
+            latencyLabel: "Latenz",
+            tooltipLatency: "Round-Trip-Latenz: {value}ms",
         },
         clipboard: {
             title: "Zwischenablage",
@@ -1464,7 +1496,11 @@ const tr = {
             tooltipGpuMem: "GPU Belleği: {used} / {total}",
             tooltipFps: "İstemci FPS: {value}",
             tooltipAudio: "Ses Tamponları: {value}",
-            tooltipMemoryNA: "N/A", // Yok/Uygulanamaz
+            tooltipMemoryNA: "N/A",
+            bandwidthLabel: "Bant Genişliği",
+            tooltipBandwidth: "Bant Genişliği: {value}mbps",
+            latencyLabel: "Gecikme",
+            tooltipLatency: "Gidiş-Dönüş Gecikmesi: {value}ms",
         },
         clipboard: {
             title: "Pano",
@@ -1635,7 +1671,11 @@ const it = {
             tooltipGpuMem: "Memoria GPU: {used} / {total}",
             tooltipFps: "FPS Client: {value}",
             tooltipAudio: "Buffer Audio: {value}",
-            tooltipMemoryNA: "N/D", // Non Disponibile
+            tooltipMemoryNA: "N/D",
+            bandwidthLabel: "Larghezza di Banda",
+            tooltipBandwidth: "Larghezza di Banda: {value}mbps",
+            latencyLabel: "Latenza",
+            tooltipLatency: "Latenza di Andata e Ritorno: {value}ms",
         },
         clipboard: {
             title: "Appunti",
@@ -1806,7 +1846,11 @@ const nl = {
             tooltipGpuMem: "GPU Geheugen: {used} / {total}",
             tooltipFps: "Client FPS: {value}",
             tooltipAudio: "Audio Buffers: {value}",
-            tooltipMemoryNA: "N.v.t.", // Niet van toepassing
+            tooltipMemoryNA: "N.v.t.",
+            bandwidthLabel: "Bandbreedte",
+            tooltipBandwidth: "Bandbreedte: {value}mbps",
+            latencyLabel: "Latentie",
+            tooltipLatency: "Round-trip Latentie: {value}ms",
         },
         clipboard: {
             title: "Klembord",
@@ -1978,6 +2022,10 @@ const ar = {
             tooltipFps: "FPS العميل: {value}",
             tooltipAudio: "مخازن الصوت المؤقتة: {value}",
             tooltipMemoryNA: "غير متاح",
+            bandwidthLabel: "عرض النطاق",
+            tooltipBandwidth: "عرض النطاق: {value}mbps",
+            latencyLabel: "الكمون",
+            tooltipLatency: "كمون الرحلة ذهابًا وإيابًا: {value}ms",
         },
         clipboard: {
             title: "الحافظة",
@@ -2149,6 +2197,10 @@ const ko = {
             tooltipFps: "클라이언트 FPS: {value}",
             tooltipAudio: "오디오 버퍼: {value}",
             tooltipMemoryNA: "해당 없음",
+            bandwidthLabel: "대역폭",
+            tooltipBandwidth: "대역폭: {value}mbps",
+            latencyLabel: "지연 시간",
+            tooltipLatency: "왕복 지연 시간: {value}ms",
         },
         clipboard: {
             title: "클립보드",
@@ -2319,7 +2371,11 @@ const ja = {
             tooltipGpuMem: "GPU メモリ: {used} / {total}",
             tooltipFps: "クライアント FPS: {value}",
             tooltipAudio: "オーディオバッファ: {value}",
-            tooltipMemoryNA: "N/A", // 該当なし
+            tooltipMemoryNA: "N/A",
+            bandwidthLabel: "帯域幅",
+            tooltipBandwidth: "帯域幅: {value}mbps",
+            latencyLabel: "遅延",
+            tooltipLatency: "ラウンドトリップ遅延: {value}ms",
         },
         clipboard: {
             title: "クリップボード",
@@ -2491,6 +2547,10 @@ const vi = {
             tooltipFps: "FPS Máy khách: {value}",
             tooltipAudio: "Bộ đệm Âm thanh: {value}",
             tooltipMemoryNA: "Không có",
+            bandwidthLabel: "Băng thông",
+            tooltipBandwidth: "Băng thông: {value}mbps",
+            latencyLabel: "Độ trễ",
+            tooltipLatency: "Độ trễ trọn vòng: {value}ms",
         },
         clipboard: {
             title: "Bộ nhớ tạm",
@@ -2662,6 +2722,10 @@ const th = {
             tooltipFps: "FPS ไคลเอ็นต์: {value}",
             tooltipAudio: "บัฟเฟอร์เสียง: {value}",
             tooltipMemoryNA: "ไม่มีข้อมูล",
+            bandwidthLabel: "แบนด์วิดท์",
+            tooltipBandwidth: "แบนด์วิดท์: {value}mbps",
+            latencyLabel: "ความหน่วง",
+            tooltipLatency: "ความหน่วงไป-กลับ: {value}ms",
         },
         clipboard: {
             title: "คลิปบอร์ด",
@@ -2832,7 +2896,11 @@ const fil = {
             tooltipGpuMem: "Memorya ng GPU: {used} / {total}",
             tooltipFps: "Client FPS: {value}",
             tooltipAudio: "Mga Audio Buffer: {value}",
-            tooltipMemoryNA: "N/A", // Hindi Applicable
+            tooltipMemoryNA: "N/A",
+            bandwidthLabel: "Bandwidth",
+            tooltipBandwidth: "Bandwidth: {value}mbps",
+            latencyLabel: "Latency",
+            tooltipLatency: "Round Trip Latency: {value}ms",
         },
         clipboard: {
             title: "Clipboard",
@@ -3004,6 +3072,10 @@ const da = {
             tooltipFps: "Klient FPS: {value}",
             tooltipAudio: "Lydbuffere: {value}",
             tooltipMemoryNA: "Utilgængelig",
+            bandwidthLabel: "Båndbredde",
+            tooltipBandwidth: "Båndbredde: {value}mbps",
+            latencyLabel: "Forsinkelse",
+            tooltipLatency: "Tur-retur forsinkelse: {value}ms",
         },
         clipboard: {
             title: "Udklipsholder",
