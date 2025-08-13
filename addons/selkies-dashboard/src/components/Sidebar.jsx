@@ -54,7 +54,7 @@ const dpiScalingOptions = [
 ];
 const DEFAULT_SCALING_DPI = 96;
 
-const STATS_READ_INTERVAL_MS = 100;
+const STATS_READ_INTERVAL_MS = 500;
 const MAX_AUDIO_BUFFER = 10;
 const DEFAULT_FRAMERATE = 60;
 const DEFAULT_VIDEO_BITRATE = 8000;
@@ -516,6 +516,9 @@ const getPrefixedKey = (key) => `${storageAppName}_${key}`;
 function Sidebar({ isOpen }) {
   const [langCode, setLangCode] = useState("en");
   const [translator, setTranslator] = useState(() => getTranslator("en"));
+  useEffect(() => {
+    window.postMessage({ type: 'sidebarVisibilityChanged', isOpen }, window.location.origin);
+  }, [isOpen]);
   const [isMobile, setIsMobile] = useState(false);
   const [isTrackpadModeActive, setIsTrackpadModeActive] = useState(false);
   const [hasDetectedTouch, setHasDetectedTouch] = useState(false);
@@ -1474,6 +1477,9 @@ function Sidebar({ isOpen }) {
     window.dispatchEvent(new CustomEvent("requestFileUpload"));
 
   useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
     const readStats = () => {
       const cs = window.system_stats,
         su = cs?.mem_used ?? null,
@@ -1507,7 +1513,7 @@ function Sidebar({ isOpen }) {
     };
     const intervalId = setInterval(readStats, STATS_READ_INTERVAL_MS);
     return () => clearInterval(intervalId);
-  }, []);
+  }, [isOpen]);
 
   useEffect(() => {
     const handleWindowMessage = (event) => {
@@ -1661,6 +1667,7 @@ function Sidebar({ isOpen }) {
     removeNotification,
     t,
     dynamicEncoderOptions,
+    isOpen,
   ]);
 
   const sidebarClasses = `sidebar ${isOpen ? "is-open" : ""} theme-${theme}`;

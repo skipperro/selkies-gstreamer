@@ -1111,6 +1111,7 @@ export class Input {
     constructor(element, send, isSharedMode = false, playerIndex = 0,  useCssScaling = false) {
         this.element = element;
         this.send = send;
+        this._isSidebarOpen = false;
         this.isSharedMode = isSharedMode;
         this.playerIndex = playerIndex;
         this.cursorDiv = document.createElement('canvas');
@@ -1180,6 +1181,14 @@ export class Input {
         this._trackpadTapTimeout = null;
         this._trackpadLastScrollCentroid = null;
         this._touchScrollLastCentroid = null;
+    }
+
+    _handleVisibilityMessage(event) {
+        if (event.origin !== window.location.origin) return;
+        const message = event.data;
+        if (typeof message === "object" && message !== null && message.type === 'sidebarVisibilityChanged') {
+            this._isSidebarOpen = !!message.isOpen;
+        }
     }
 
     static _nextGuacID = 0;
@@ -2242,13 +2251,17 @@ export class Input {
     _gamepadButton(gp_num, btn_num, val) {
         const server_gp_num = this.playerIndex;
         this.send("js,b," + server_gp_num + "," + btn_num + "," + val);
-        window.postMessage({ type: 'gamepadButtonUpdate', gamepadIndex: server_gp_num, buttonIndex: btn_num, value: val }, window.location.origin);
+        if (this._isSidebarOpen) {
+            window.postMessage({ type: 'gamepadButtonUpdate', gamepadIndex: server_gp_num, buttonIndex: btn_num, value: val }, window.location.origin);
+        }
     }
 
     _gamepadAxis(gp_num, axis_num, val) {
         const server_gp_num = this.playerIndex;
         this.send("js,a," + server_gp_num + "," + axis_num + "," + val);
-        window.postMessage({ type: 'gamepadAxisUpdate', gamepadIndex: server_gp_num, axisIndex: axis_num, value: val }, window.location.origin);
+        if (this._isSidebarOpen) {
+            window.postMessage({ type: 'gamepadAxisUpdate', gamepadIndex: server_gp_num, axisIndex: axis_num, value: val }, window.location.origin);
+        }
     }
 
     _onFullscreenChange() {
@@ -2291,6 +2304,7 @@ export class Input {
         this.listeners.push(addListener(window, 'resize', this._windowMath, this));
         this.listeners.push(addListener(window, 'gamepadconnected', this._gamepadConnected, this));
         this.listeners.push(addListener(window, 'gamepaddisconnected', this._gamepadDisconnect, this));
+        this.listeners.push(addListener(window, 'message', this._handleVisibilityMessage, this));
 
         if (!this.isSharedMode) {
             this.attach_context();

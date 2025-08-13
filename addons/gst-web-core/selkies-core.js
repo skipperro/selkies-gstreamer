@@ -11,6 +11,7 @@ import {
   Input
 } from './lib/input.js';
 let decoder;
+let isSidebarOpen = false;
 let audioDecoderWorker = null;
 let canvas = null;
 let canvasContext = null;
@@ -40,8 +41,10 @@ let micWorkletNode = null;
 let preferredInputDeviceId = null;
 let preferredOutputDeviceId = null;
 let metricsIntervalId = null;
-const METRICS_INTERVAL_MS = 50;
+const METRICS_INTERVAL_MS = 500;
 const UPLOAD_CHUNK_SIZE = (1024 * 1024) - 1;
+const FILE_UPLOAD_THROTTLE_MS = 200;
+let fileUploadProgressLastSent = {};
 // Resources for resolution controls
 window.isManualResolutionMode = false;
 let manualWidth = null;
@@ -1220,6 +1223,9 @@ function receiveMessage(event) {
     return;
   }
   switch (message.type) {
+    case 'sidebarVisibilityChanged':
+      isSidebarOpen = !!message.isOpen;
+      break;
     case 'setScaleLocally':
       if (isSharedMode) {
         console.log("Shared mode: setScaleLocally message ignored (forced true behavior).");
@@ -2436,33 +2442,41 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
   const sendClientMetrics = () => {
     if (isSharedMode) return; // Shared mode does not have client-side FPS display in this context
 
-    const now = performance.now();
-    const elapsedStriped = now - lastStripedFpsUpdateTime;
-    const elapsedFullFrame = now - lastFpsUpdateTime;
-    const fpsUpdateInterval = 1000; // ms
+    if (isSidebarOpen) {
+      const now = performance.now();
+      const elapsedStriped = now - lastStripedFpsUpdateTime;
+      const elapsedFullFrame = now - lastFpsUpdateTime;
+      const fpsUpdateInterval = 1000; // ms
 
-    if (uniqueStripedFrameIdsThisPeriod.size > 0) {
-      if (elapsedStriped >= fpsUpdateInterval) {
-        const stripedFps = (uniqueStripedFrameIdsThisPeriod.size * 1000) / elapsedStriped;
-        window.fps = Math.round(stripedFps);
-        uniqueStripedFrameIdsThisPeriod.clear();
-        lastStripedFpsUpdateTime = now;
-        frameCount = 0; // Reset full frame count as striped is primary
-        lastFpsUpdateTime = now; // Also reset its timer
+      if (uniqueStripedFrameIdsThisPeriod.size > 0) {
+        if (elapsedStriped >= fpsUpdateInterval) {
+          const stripedFps = (uniqueStripedFrameIdsThisPeriod.size * 1000) / elapsedStriped;
+          window.fps = Math.round(stripedFps);
+          uniqueStripedFrameIdsThisPeriod.clear();
+          lastStripedFpsUpdateTime = now;
+          frameCount = 0; // Reset full frame count as striped is primary
+          lastFpsUpdateTime = now; // Also reset its timer
+        }
+      } else if (frameCount > 0) {
+        if (elapsedFullFrame >= fpsUpdateInterval) {
+          const fullFrameFps = (frameCount * 1000) / elapsedFullFrame;
+          window.fps = Math.round(fullFrameFps);
+          frameCount = 0;
+          lastFpsUpdateTime = now;
+          lastStripedFpsUpdateTime = now; // Reset its timer too
+        }
+      } else {
+        if (elapsedStriped >= fpsUpdateInterval || elapsedFullFrame >= fpsUpdateInterval) {
+             window.fps = 0;
+             lastFpsUpdateTime = now;
+             lastStripedFpsUpdateTime = now;
+        }
       }
-    } else if (frameCount > 0) {
-      if (elapsedFullFrame >= fpsUpdateInterval) {
-        const fullFrameFps = (frameCount * 1000) / elapsedFullFrame;
-        window.fps = Math.round(fullFrameFps);
-        frameCount = 0;
-        lastFpsUpdateTime = now;
-        lastStripedFpsUpdateTime = now; // Reset its timer too
-      }
-    } else {
-      if (elapsedStriped >= fpsUpdateInterval || elapsedFullFrame >= fpsUpdateInterval) {
-           window.fps = 0;
-           lastFpsUpdateTime = now;
-           lastStripedFpsUpdateTime = now;
+
+      if (audioWorkletProcessorPort) {
+        audioWorkletProcessorPort.postMessage({
+          type: 'getBufferSize'
+        });
       }
     }
 
@@ -3682,6 +3696,7 @@ function uploadFileObject(file, pathToSend) {
     }, window.location.origin);
     websocket.send(`FILE_UPLOAD_START:${pathToSend}:${file.size}`);
     let offset = 0;
+    fileUploadProgressLastSent[pathToSend] = 0;
     const reader = new FileReader();
     reader.onload = function(e) {
       if (!websocket || websocket.readyState !== WebSocket.OPEN) {
@@ -3704,17 +3719,26 @@ function uploadFileObject(file, pathToSend) {
         websocket.send(prefixedView.buffer);
         offset += e.target.result.byteLength;
         const progress = file.size > 0 ? Math.round((offset / file.size) * 100) : 100;
-        window.postMessage({
-          type: 'fileUpload',
-          payload: {
-            status: 'progress',
-            fileName: pathToSend,
-            progress: progress,
-            fileSize: file.size
-          }
-        }, window.location.origin);
-        if (offset < file.size) readChunk(offset);
-        else {
+        const now = Date.now();
+        if (now - fileUploadProgressLastSent[pathToSend] > FILE_UPLOAD_THROTTLE_MS) {
+          window.postMessage({
+            type: 'fileUpload',
+            payload: {
+              status: 'progress',
+              fileName: pathToSend,
+              progress: progress,
+              fileSize: file.size
+            }
+          }, window.location.origin);
+          fileUploadProgressLastSent[pathToSend] = now;
+        }
+        if (offset < file.size) {
+          setTimeout(() => readChunk(offset), 0);
+        } else {
+          window.postMessage({
+            type: 'fileUpload',
+            payload: { status: 'progress', fileName: pathToSend, progress: 100, fileSize: file.size }
+          }, window.location.origin);
           websocket.send(`FILE_UPLOAD_END:${pathToSend}`);
           window.postMessage({
             type: 'fileUpload',
