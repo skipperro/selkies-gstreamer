@@ -12,7 +12,7 @@ const encoderOptions = [
 ];
 
 const framerateOptions = [
-  8, 12, 15, 24, 25, 30, 48, 50, 60, 90, 100, 120, 144, 165,
+  8, 12, 15, 24, 25, 30, 48, 50, 60, 90, 100, 120, 144,
 ];
 
 const videoBitrateOptions = [
@@ -22,7 +22,7 @@ const videoBitrateOptions = [
 
 const videoBufferOptions = Array.from({ length: 16 }, (_, i) => i);
 
-const videoCRFOptions = [50, 45, 40, 35, 30, 25, 20, 10, 1];
+const videoCRFOptions = [...[50, 45, 40, 35, 30], ...Array.from({ length: 12 }, (_, i) => 28 - i), ...[15, 10, 5]];
 
 const jpegQualityOptions = Array.from({ length: (100 - 5) / 5 + 1 }, (_, i) => 5 + i * 5);
 const paintOverJpegQualityOptions = Array.from({ length: (100 - 5) / 5 + 1 }, (_, i) => 5 + i * 5);
