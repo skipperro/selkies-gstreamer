@@ -121,6 +121,9 @@ let h264_streaming_mode = false;
 let jpegQuality = 60;
 let paintOverJpegQuality = 90;
 let useCpu = false;
+let h264_paintover_crf = 18;
+let h264_paintover_burst_frames = 5;
+let use_paint_over_quality = true;
 let audioBitRate = 320000;
 let showStart = true;
 let status = 'connecting';
@@ -236,6 +239,12 @@ paintOverJpegQuality = getIntParam('paintOverJpegQuality', paintOverJpegQuality)
 setIntParam('paintOverJpegQuality', paintOverJpegQuality);
 useCpu = getBoolParam('useCpu', useCpu);
 setBoolParam('useCpu', useCpu);
+h264_paintover_crf = getIntParam('h264_paintover_crf', h264_paintover_crf);
+setIntParam('h264_paintover_crf', h264_paintover_crf);
+h264_paintover_burst_frames = getIntParam('h264_paintover_burst_frames', h264_paintover_burst_frames);
+setIntParam('h264_paintover_burst_frames', h264_paintover_burst_frames);
+use_paint_over_quality = getBoolParam('use_paint_over_quality', use_paint_over_quality);
+setBoolParam('use_paint_over_quality', use_paint_over_quality);
 audioBitRate = getIntParam('audioBitRate', audioBitRate);
 setIntParam('audioBitRate', audioBitRate);
 resizeRemote = getBoolParam('resizeRemote', resizeRemote);
@@ -1823,6 +1832,66 @@ function handleSettingsMessage(settings) {
       console.log(`Use CPU setting received (${newUseCpu}), but it's the same as current. No change.`);
     }
   }
+  if (settings.h264_paintover_crf !== undefined) {
+    const newCrf = parseInt(settings.h264_paintover_crf, 10);
+    if (h264_paintover_crf !== newCrf) {
+      h264_paintover_crf = newCrf;
+      setIntParam('h264_paintover_crf', h264_paintover_crf);
+      console.log(`Applied H.264 Paint-Over CRF setting: ${h264_paintover_crf}.`);
+      const isPixelfluxH264 = currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped';
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && isPixelfluxH264) {
+        const message = `SET_H264_PAINTOVER_CRF,${h264_paintover_crf}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else if (!isSharedMode && !isPixelfluxH264) {
+        console.log("H.264 Paint-Over CRF setting changed, but current encoder is not a Pixelflux H.264 encoder. WebSocket command not sent.");
+      } else if (!isSharedMode) {
+        console.warn("Websocket connection not open, cannot send H.264 Paint-Over CRF setting.");
+      }
+    } else {
+      console.log(`H.264 Paint-Over CRF setting received (${newCrf}), but it's the same as current. No change.`);
+    }
+  }
+  if (settings.h264_paintover_burst_frames !== undefined) {
+    const newBurst = parseInt(settings.h264_paintover_burst_frames, 10);
+    if (h264_paintover_burst_frames !== newBurst) {
+      h264_paintover_burst_frames = newBurst;
+      setIntParam('h264_paintover_burst_frames', h264_paintover_burst_frames);
+      console.log(`Applied H.264 Paint-Over Burst Frames setting: ${h264_paintover_burst_frames}.`);
+      const isPixelfluxH264 = currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped';
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && isPixelfluxH264) {
+        const message = `SET_H264_PAINTOVER_BURST_FRAMES,${h264_paintover_burst_frames}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else if (!isSharedMode && !isPixelfluxH264) {
+        console.log("H.264 Paint-Over Burst Frames setting changed, but current encoder is not a Pixelflux H.264 encoder. WebSocket command not sent.");
+      } else if (!isSharedMode) {
+        console.warn("Websocket connection not open, cannot send H.264 Paint-Over Burst Frames setting.");
+      }
+    } else {
+      console.log(`H.264 Paint-Over Burst Frames setting received (${newBurst}), but it's the same as current. No change.`);
+    }
+  }
+  if (settings.use_paint_over_quality !== undefined) {
+    const newUsePaintOver = !!settings.use_paint_over_quality;
+    if (use_paint_over_quality !== newUsePaintOver) {
+      use_paint_over_quality = newUsePaintOver;
+      setBoolParam('use_paint_over_quality', use_paint_over_quality);
+      console.log(`Applied Use Paint-Over Quality setting: ${use_paint_over_quality}.`);
+      const isApplicableEncoder = currentEncoderMode === 'jpeg' || currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped';
+      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && isApplicableEncoder) {
+        const message = `SET_USE_PAINT_OVER_QUALITY,${use_paint_over_quality}`;
+        console.log(`Sent websocket message: ${message}`);
+        websocket.send(message);
+      } else if (!isSharedMode && !isApplicableEncoder) {
+        console.log("Use Paint-Over Quality setting changed, but current encoder is not applicable. WebSocket command not sent.");
+      } else if (!isSharedMode) {
+        console.warn("Websocket connection not open, cannot send Use Paint-Over Quality setting.");
+      }
+    } else {
+      console.log(`Use Paint-Over Quality setting received (${newUsePaintOver}), but it's the same as current. No change.`);
+    }
+  }
   if (settings.SCALING_DPI !== undefined) {
     const dpi = parseInt(settings.SCALING_DPI, 10);
     if (!isNaN(dpi)) {
@@ -2526,14 +2595,34 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
           else if (unprefixedKey === 'jpegQuality') serverExpectedKey = 'pixelflux_jpeg_quality';
           else if (unprefixedKey === 'paintOverJpegQuality') serverExpectedKey = 'pixelflux_paint_over_jpeg_quality';
           else if (unprefixedKey === 'useCpu') serverExpectedKey = 'pixelflux_use_cpu';
+          else if (unprefixedKey === 'h264_paintover_crf') serverExpectedKey = 'pixelflux_h264_paintover_crf';
+          else if (unprefixedKey === 'h264_paintover_burst_frames') serverExpectedKey = 'pixelflux_h264_paintover_burst_frames';
+          else if (unprefixedKey === 'use_paint_over_quality') serverExpectedKey = 'pixelflux_use_paint_over_quality';
 
           if (serverExpectedKey) {
             let value = localStorage.getItem(key);
-            if (serverExpectedKey === 'webrtc_resizeRemote' || serverExpectedKey === 'webrtc_isManualResolutionMode' || serverExpectedKey === 'webrtc_h264_fullcolor' || serverExpectedKey === 'webrtc_h264_streaming_mode' || serverExpectedKey === 'pixelflux_use_cpu') {
+            const booleanSettingKeys = [
+              'webrtc_resizeRemote',
+              'webrtc_isManualResolutionMode',
+              'webrtc_h264_fullcolor',
+              'webrtc_h264_streaming_mode',
+              'pixelflux_use_cpu',
+              'pixelflux_use_paint_over_quality',
+            ];
+            const integerSettingKeys = [
+              'webrtc_videoBitRate',
+              'webrtc_videoFramerate',
+              'webrtc_videoCRF',
+              'webrtc_audioBitRate',
+              'webrtc_videoBufferSize',
+              'pixelflux_jpeg_quality',
+              'pixelflux_paint_over_jpeg_quality',
+              'pixelflux_h264_paintover_crf',
+              'pixelflux_h264_paintover_burst_frames',
+            ];
+            if (booleanSettingKeys.includes(serverExpectedKey)) {
               value = (value === 'true');
-            } else if (['webrtc_videoBitRate', 'webrtc_videoFramerate', 'webrtc_videoCRF',
-                'webrtc_audioBitRate', 'webrtc_videoBufferSize', 'pixelflux_jpeg_quality', 'pixelflux_paint_over_jpeg_quality'
-              ].includes(serverExpectedKey)) {
+            } else if (integerSettingKeys.includes(serverExpectedKey)) {
               value = parseInt(value, 10);
               if (isNaN(value)) value = localStorage.getItem(key);
             }

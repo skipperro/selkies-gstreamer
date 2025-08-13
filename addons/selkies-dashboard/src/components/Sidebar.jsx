@@ -61,6 +61,8 @@ const DEFAULT_VIDEO_BITRATE = 8000;
 const DEFAULT_JPEG_QUALITY = 60;
 const DEFAULT_PAINT_OVER_JPEG_QUALITY = 90;
 const DEFAULT_USE_CPU = false;
+const DEFAULT_H264_PAINTOVER_CRF = 18;
+const DEFAULT_USE_PAINT_OVER_QUALITY = true;
 const DEFAULT_VIDEO_BUFFER_SIZE = 0;
 const DEFAULT_ENCODER = encoderOptions[0];
 const DEFAULT_VIDEO_CRF = 25;
@@ -666,6 +668,14 @@ function Sidebar({ isOpen }) {
     parseInt(localStorage.getItem(getPrefixedKey("videoCRF")), 10) ||
       DEFAULT_VIDEO_CRF
   );
+  const [h264PaintoverCRF, setH264PaintoverCRF] = useState(
+    parseInt(localStorage.getItem(getPrefixedKey("h264_paintover_crf")), 10) ||
+      DEFAULT_H264_PAINTOVER_CRF
+  );
+  const [usePaintOverQuality, setUsePaintOverQuality] = useState(() => {
+    const saved = localStorage.getItem(getPrefixedKey("use_paint_over_quality"));
+    return saved !== null ? saved === 'true' : DEFAULT_USE_PAINT_OVER_QUALITY;
+  });
   const [h264FullColor, setH264FullColor] = useState(
     localStorage.getItem(getPrefixedKey("h264_fullcolor")) === "true"
   );
@@ -792,6 +802,26 @@ function Sidebar({ isOpen }) {
     debounce((newCRF) => {
       window.postMessage(
         { type: "settings", settings: { videoCRF: newCRF } },
+        window.location.origin
+      );
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdateH264PaintoverCRFSettings = useCallback(
+    debounce((newCRF) => {
+      window.postMessage(
+        { type: "settings", settings: { h264_paintover_crf: newCRF } },
+        window.location.origin
+      );
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdateUsePaintOverQualitySettings = useCallback(
+    debounce((newVal) => {
+      window.postMessage(
+        { type: "settings", settings: { use_paint_over_quality: newVal } },
         window.location.origin
       );
     }, DEBOUNCE_DELAY),
@@ -1165,10 +1195,23 @@ function Sidebar({ isOpen }) {
       debouncedUpdateVideoCRFSettings(selectedCRF);
     }
   };
+  const handleH264PaintoverCRFChange = (event) => {
+    const index = parseInt(event.target.value, 10);
+    const selectedCRF = videoCRFOptions[index];
+    if (selectedCRF !== undefined) {
+      setH264PaintoverCRF(selectedCRF);
+      debouncedUpdateH264PaintoverCRFSettings(selectedCRF);
+    }
+  };
   const handleH264FullColorToggle = () => {
     const newFullColorState = !h264FullColor;
     setH264FullColor(newFullColorState);
     debouncedUpdateH264FullColorSettings(newFullColorState);
+  };
+  const handleUsePaintOverQualityToggle = () => {
+    const newUsePaintOverQualityState = !usePaintOverQuality;
+    setUsePaintOverQuality(newUsePaintOverQualityState);
+    debouncedUpdateUsePaintOverQualitySettings(newUsePaintOverQualityState);
   };
   const handleUseCpuToggle = () => {
     const newUseCpuState = !useCpu;
@@ -1750,6 +1793,7 @@ function Sidebar({ isOpen }) {
   const showCRF = ["x264enc-striped", "x264enc"].includes(encoder);
   const showH264Options = ["x264enc-striped", "x264enc"].includes(encoder);
   const showJpegOptions = encoder === 'jpeg';
+  const showPaintOverQualityToggle = showH264Options || showJpegOptions;
 
   return (
     <>
@@ -2064,6 +2108,40 @@ function Sidebar({ isOpen }) {
                     value={videoCRFOptions.indexOf(videoCRF)}
                     onChange={handleVideoCRFChange}
                   />{" "}
+                </div>
+              )}
+              {showCRF && (
+                <div className="dev-setting-item">
+                  {" "}
+                  <label htmlFor="h264PaintoverCRFSlider">
+                    {t("sections.video.paintoverCrfLabel", { crf: h264PaintoverCRF }, `Paint-Over CRF: ${h264PaintoverCRF}`)}
+                  </label>{" "}
+                  <input
+                    type="range"
+                    id="h264PaintoverCRFSlider"
+                    min="0"
+                    max={videoCRFOptions.length - 1}
+                    step="1"
+                    value={videoCRFOptions.indexOf(h264PaintoverCRF)}
+                    onChange={handleH264PaintoverCRFChange}
+                  />{" "}
+                </div>
+              )}
+              {showPaintOverQualityToggle && (
+                <div className="dev-setting-item toggle-item">
+                  <label htmlFor="usePaintOverQualityToggle">
+                    {t("sections.video.usePaintOverQualityLabel", "Use Paint-Over Quality")}
+                  </label>
+                  <button
+                    id="usePaintOverQualityToggle"
+                    className={`toggle-button-sidebar ${usePaintOverQuality ? "active" : ""}`}
+                    onClick={handleUsePaintOverQualityToggle}
+                    aria-pressed={usePaintOverQuality}
+                    title={t(usePaintOverQuality ? "buttons.usePaintOverQualityDisableTitle" : "buttons.usePaintOverQualityEnableTitle",
+                               usePaintOverQuality ? "Disable Paint-Over Quality" : "Enable Paint-Over Quality")}
+                  >
+                    <span className="toggle-button-sidebar-knob"></span>
+                  </button>
                 </div>
               )}
               {showH264Options && (

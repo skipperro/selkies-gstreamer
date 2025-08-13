@@ -746,10 +746,14 @@ class DataStreamingServer:
         self.jpeg_quality = self._initial_jpeg_quality
         self._initial_paint_over_jpeg_quality = 90
         self.paint_over_jpeg_quality = self._initial_paint_over_jpeg_quality
+        self._initial_h264_paintover_crf = 18
+        self.h264_paintover_crf = self._initial_h264_paintover_crf
+        self._initial_h264_paintover_burst_frames = 5
+        self.h264_paintover_burst_frames = self._initial_h264_paintover_burst_frames
         self._initial_use_cpu = False
         self.use_cpu = self._initial_use_cpu
-        self._initial_jpeg_use_paint_over_quality = True
-        self._current_jpeg_use_paint_over_quality = True
+        self._initial_use_paint_over_quality = True
+        self.use_paint_over_quality = self._initial_use_paint_over_quality
         self._system_monitor_task_ws = None
         self._gpu_monitor_task_ws = None
         self._stats_sender_task_ws = None
@@ -1279,7 +1283,9 @@ class DataStreamingServer:
             cs.output_mode = 1
             cs.h264_crf = crf
 
-            cs.use_paint_over_quality = True
+            cs.use_paint_over_quality = self.use_paint_over_quality
+            cs.h264_paintover_crf = self.h264_paintover_crf
+            cs.h264_paintover_burst_frames = self.h264_paintover_burst_frames
             cs.paint_over_trigger_frames = 5
             cs.damage_block_threshold = 10
             cs.damage_block_duration = 20
@@ -1414,7 +1420,7 @@ class DataStreamingServer:
             cs.capture_cursor = self.capture_cursor
             cs.jpeg_quality = self.jpeg_quality
             cs.paint_over_jpeg_quality = self.paint_over_jpeg_quality
-            cs.use_paint_over_quality = self._current_jpeg_use_paint_over_quality
+            cs.use_paint_over_quality = self.use_paint_over_quality
             cs.paint_over_trigger_frames = 15
             cs.damage_block_threshold = 10
             cs.damage_block_duration = 20
@@ -1531,6 +1537,9 @@ class DataStreamingServer:
             "pixelflux_paint_over_jpeg_quality", self.paint_over_jpeg_quality
         )
         parsed["use_cpu"] = get_bool("pixelflux_use_cpu", self.use_cpu)
+        parsed["h264_paintover_crf"] = get_int("pixelflux_h264_paintover_crf", self.h264_paintover_crf)
+        parsed["h264_paintover_burst_frames"] = get_int("pixelflux_h264_paintover_burst_frames", self.h264_paintover_burst_frames)
+        parsed["use_paint_over_quality"] = get_bool("pixelflux_use_paint_over_quality", self.use_paint_over_quality)
         data_logger.debug(f"Parsed client settings: {parsed}")
         return parsed
 
@@ -1552,6 +1561,9 @@ class DataStreamingServer:
         old_jpeg_quality = self.jpeg_quality
         old_paint_over_jpeg_quality = self.paint_over_jpeg_quality
         old_use_cpu = self.use_cpu
+        old_h264_paintover_crf = self.h264_paintover_crf
+        old_h264_paintover_burst_frames = self.h264_paintover_burst_frames
+        old_use_paint_over_quality = self.use_paint_over_quality
 
         is_manual_res_mode_from_settings = settings.get(
             "isManualResolutionMode",
@@ -1623,6 +1635,15 @@ class DataStreamingServer:
         if "paint_over_jpeg_quality" in settings and is_jpeg:
             self.paint_over_jpeg_quality = settings["paint_over_jpeg_quality"]
 
+        if "use_paint_over_quality" in settings:
+            self.use_paint_over_quality = settings["use_paint_over_quality"]
+
+        if "h264_paintover_crf" in settings and is_pixelflux_h264:
+            self.h264_paintover_crf = settings["h264_paintover_crf"]
+
+        if "h264_paintover_burst_frames" in settings and is_pixelflux_h264:
+            self.h264_paintover_burst_frames = settings["h264_paintover_burst_frames"]
+
         if "use_cpu" in settings and is_pixelflux_h264:
             self.use_cpu = settings["use_cpu"]
  
@@ -1646,6 +1667,9 @@ class DataStreamingServer:
                 is_jpeg and self.paint_over_jpeg_quality != old_paint_over_jpeg_quality
             )
             use_cpu_param_changed = is_pixelflux_h264 and self.use_cpu != old_use_cpu
+            h264_paintover_crf_param_changed = is_pixelflux_h264 and self.h264_paintover_crf != old_h264_paintover_crf
+            h264_paintover_burst_frames_param_changed = is_pixelflux_h264 and self.h264_paintover_burst_frames != old_h264_paintover_burst_frames
+            use_paint_over_quality_param_changed = self.use_paint_over_quality != old_use_paint_over_quality
             audio_bitrate_param_changed = self.app.audio_bitrate != old_audio_bitrate_bps
             restart_video_pipeline = False
             if encoder_actually_changed or resolution_actually_changed_on_server:
@@ -1658,10 +1682,15 @@ class DataStreamingServer:
                     or h264_fullcolor_param_changed
                     or h264_streaming_mode_param_changed
                     or use_cpu_param_changed
+                    or h264_paintover_crf_param_changed
+                    or h264_paintover_burst_frames_param_changed
+                    or use_paint_over_quality_param_changed
                 ):
                     restart_video_pipeline = True
                 if is_jpeg and (
-                    jpeg_quality_param_changed or paint_over_jpeg_quality_param_changed
+                    jpeg_quality_param_changed 
+                    or paint_over_jpeg_quality_param_changed
+                    or use_paint_over_quality_param_changed
                 ):
                     restart_video_pipeline = True
             video_is_currently_active = self.is_jpeg_capturing or self.is_x264_striped_capturing
@@ -1757,6 +1786,9 @@ class DataStreamingServer:
         self.jpeg_quality = self._initial_jpeg_quality
         self.paint_over_jpeg_quality = self._initial_paint_over_jpeg_quality
         self.use_cpu = self._initial_use_cpu
+        self.h264_paintover_crf = self._initial_h264_paintover_crf
+        self.h264_paintover_burst_frames = self._initial_h264_paintover_burst_frames
+        self.use_paint_over_quality = self._initial_use_paint_over_quality
 
         self._backpressure_send_frames_enabled = True
         active_uploads_by_path_conn = {}
@@ -2457,6 +2489,74 @@ class DataStreamingServer:
                                 data_logger.warning(f"SET_PAINT_OVER_JPEG_QUALITY received but current encoder is '{current_enc}', not 'jpeg'.")
                         except (IndexError, ValueError):
                             data_logger.warning(f"Malformed SET_PAINT_OVER_JPEG_QUALITY message: {message}")
+
+                    elif message.startswith("SET_USE_PAINT_OVER_QUALITY,"):
+                        await self.client_settings_received.wait()
+                        try:
+                            new_val_str = message.split(",")[1].strip().lower()
+                            new_val = new_val_str == "true"
+                            data_logger.info(f"Received SET_USE_PAINT_OVER_QUALITY: {new_val}")
+                            
+                            if self.use_paint_over_quality != new_val:
+                                self.use_paint_over_quality = new_val
+                                current_enc = getattr(self.app, "encoder", None)
+                                is_pixelflux_h264_active = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg" and self.is_x264_striped_capturing)
+                                is_jpeg_active = (current_enc == "jpeg" and self.is_jpeg_capturing)
+                                
+                                if is_jpeg_active or is_pixelflux_h264_active:
+                                    data_logger.info(f"Restarting {current_enc} pipeline for USE_PAINT_OVER_QUALITY change to {self.use_paint_over_quality}")
+                                    if is_jpeg_active:
+                                        await self._stop_jpeg_pipeline()
+                                        await self._start_jpeg_pipeline()
+                                    if is_pixelflux_h264_active:
+                                        await self._stop_x264_striped_pipeline()
+                                        await self._start_x264_striped_pipeline()
+                            else:
+                                data_logger.info(f"SET_USE_PAINT_OVER_QUALITY: Value {new_val} is already set.")
+                        except IndexError:
+                            data_logger.warning(f"Malformed SET_USE_PAINT_OVER_QUALITY message: {message}")
+
+                    elif message.startswith("SET_H264_PAINTOVER_CRF,"):
+                        await self.client_settings_received.wait()
+                        try:
+                            new_crf = int(message.split(",")[1])
+                            data_logger.info(f"Received SET_H264_PAINTOVER_CRF: {new_crf}")
+                            current_enc = getattr(self.app, "encoder", None)
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+                            if is_pixelflux_h264:
+                                if self.h264_paintover_crf != new_crf:
+                                    self.h264_paintover_crf = new_crf
+                                    if self.is_x264_striped_capturing:
+                                        data_logger.info(f"Restarting {current_enc} pipeline for H264_PAINTOVER_CRF change to {self.h264_paintover_crf}")
+                                        await self._stop_x264_striped_pipeline()
+                                        await self._start_x264_striped_pipeline()
+                                else:
+                                    data_logger.info(f"SET_H264_PAINTOVER_CRF: Value {new_crf} is already set.")
+                            else:
+                                data_logger.warning(f"SET_H264_PAINTOVER_CRF received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                        except (IndexError, ValueError):
+                            data_logger.warning(f"Malformed SET_H264_PAINTOVER_CRF message: {message}")
+
+                    elif message.startswith("SET_H264_PAINTOVER_BURST_FRAMES,"):
+                        await self.client_settings_received.wait()
+                        try:
+                            new_burst = int(message.split(",")[1])
+                            data_logger.info(f"Received SET_H264_PAINTOVER_BURST_FRAMES: {new_burst}")
+                            current_enc = getattr(self.app, "encoder", None)
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+                            if is_pixelflux_h264:
+                                if self.h264_paintover_burst_frames != new_burst:
+                                    self.h264_paintover_burst_frames = new_burst
+                                    if self.is_x264_striped_capturing:
+                                        data_logger.info(f"Restarting {current_enc} pipeline for H264_PAINTOVER_BURST_FRAMES change to {self.h264_paintover_burst_frames}")
+                                        await self._stop_x264_striped_pipeline()
+                                        await self._start_x264_striped_pipeline()
+                                else:
+                                    data_logger.info(f"SET_H264_PAINTOVER_BURST_FRAMES: Value {new_burst} is already set.")
+                            else:
+                                data_logger.warning(f"SET_H264_PAINTOVER_BURST_FRAMES received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                        except (IndexError, ValueError):
+                            data_logger.warning(f"Malformed SET_H264_PAINTOVER_BURST_FRAMES message: {message}")
 
                     elif message.startswith("SET_USE_CPU,"):
                         await self.client_settings_received.wait()

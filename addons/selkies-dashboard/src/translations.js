@@ -33,6 +33,8 @@ const en = {
         h264StreamingModeEnableTitle: "Enable Turbo",
         useCpuEnableTitle: "Enable Force CPU Encoding (Overrides nvenc/vaapi)",
         useCpuDisableTitle: "Disable Force CPU Encoding (Overrides nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Enable Paint-Overs (Cleans up static portions of the screen)",
+        usePaintOverQualityDisableTitle: "Disable Paint-Overs (Cleans up static portions of the screen)",
     },
     sections: {
         video: {
@@ -49,6 +51,8 @@ const en = {
             useCpuLabel: "CPU Encoding",
             jpegQualityLabel: "Base Quality: {jpegQuality}",
             paintOverJpegQualityLabel: "Paintover Quality: {paintOverJpegQuality}",
+            paintoverCrfLabel: "Paint-Overs CRF ({crf}):",
+            usePaintOverQualityLabel: "Use Paint-Overs",
         },
         audio: {
             title: "Audio Settings",
@@ -208,6 +212,8 @@ const es = {
         h264StreamingModeEnableTitle: "Activar Turbo",
         useCpuEnableTitle: "Activar Codificación Forzada por CPU (Sobrescribe nvenc/vaapi)",
         useCpuDisableTitle: "Desactivar Codificación Forzada por CPU (Sobrescribe nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Activar Mejora de Estáticos (Limpia porciones estáticas de la pantalla)",
+        usePaintOverQualityDisableTitle: "Desactivar Mejora de Estáticos (Limpia porciones estáticas de la pantalla)",
     },
     sections: {
         video: {
@@ -224,6 +230,8 @@ const es = {
             useCpuLabel: "Codificación por CPU",
             jpegQualityLabel: "Calidad Base: {jpegQuality}",
             paintOverJpegQualityLabel: "Calidad de Sobrepintado: {paintOverJpegQuality}",
+            paintoverCrfLabel: "CRF de Mejora de Estáticos ({crf}):",
+            usePaintOverQualityLabel: "Usar Mejora de Estáticos",
         },
         audio: {
              title: "Configuración de Audio",
@@ -383,6 +391,8 @@ const zh = {
         h264StreamingModeEnableTitle: "启用 Turbo",
         useCpuEnableTitle: "启用强制 CPU 编码 (覆盖 nvenc/vaapi)",
         useCpuDisableTitle: "禁用强制 CPU 编码 (覆盖 nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "启用静态区域优化 (清理屏幕的静态部分)",
+        usePaintOverQualityDisableTitle: "禁用静态区域优化 (清理屏幕的静态部分)",
     },
     sections: {
         video: {
@@ -399,6 +409,8 @@ const zh = {
             useCpuLabel: "CPU 编码",
             jpegQualityLabel: "基础质量: {jpegQuality}",
             paintOverJpegQualityLabel: "覆盖图质量: {paintOverJpegQuality}",
+            paintoverCrfLabel: "静态区域优化 CRF ({crf}):",
+            usePaintOverQualityLabel: "使用静态区域优化",
         },
         audio: {
             title: "音频设置",
@@ -558,6 +570,8 @@ const hi = {
         h264StreamingModeEnableTitle: "टर्बो सक्षम करें",
         useCpuEnableTitle: "फोर्स सीपीयू एन्कोडिंग सक्षम करें (nvenc/vaapi को ओवरराइड करता है)",
         useCpuDisableTitle: "फोर्स सीपीयू एन्कोडिंग अक्षम करें (nvenc/vaapi को ओवरराइड करता है)",
+        usePaintOverQualityEnableTitle: "स्थिर छवि सुधार सक्षम करें (स्क्रीन के स्थिर हिस्सों को साफ करता है)",
+        usePaintOverQualityDisableTitle: "स्थिर छवि सुधार अक्षम करें (स्क्रीन के स्थिर हिस्सों को साफ करता है)",
     },
     sections: {
         video: {
@@ -574,6 +588,8 @@ const hi = {
             useCpuLabel: "सीपीयू एन्कोडिंग",
             jpegQualityLabel: "आधार गुणवत्ता: {jpegQuality}",
             paintOverJpegQualityLabel: "पेंटओवर गुणवत्ता: {paintOverJpegQuality}",
+            paintoverCrfLabel: "स्थिर छवि सुधार CRF ({crf}):",
+            usePaintOverQualityLabel: "स्थिर छवि सुधार का उपयोग करें",
         },
         audio: {
             title: "ऑडियो सेटिंग्स",
@@ -733,6 +749,8 @@ const pt = {
         h264StreamingModeEnableTitle: "Ativar Turbo",
         useCpuEnableTitle: "Ativar Codificação Forçada por CPU (Substitui nvenc/vaapi)",
         useCpuDisableTitle: "Desativar Codificação Forçada por CPU (Substitui nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Ativar Melhoria de Estáticos (Limpa porções estáticas da tela)",
+        usePaintOverQualityDisableTitle: "Desativar Melhoria de Estáticos (Limpa porções estáticas da tela)",
     },
     sections: {
         video: {
@@ -749,6 +767,8 @@ const pt = {
             useCpuLabel: "Codificação por CPU",
             jpegQualityLabel: "Qualidade Base: {jpegQuality}",
             paintOverJpegQualityLabel: "Qualidade de Sobreposição: {paintOverJpegQuality}",
+            paintoverCrfLabel: "CRF de Melhoria de Estáticos ({crf}):",
+            usePaintOverQualityLabel: "Usar Melhoria de Estáticos",
         },
         audio: {
             title: "Configurações de Áudio",
@@ -908,6 +928,8 @@ const fr = {
         h264StreamingModeEnableTitle: "Activer le mode Turbo",
         useCpuEnableTitle: "Activer l'encodage forcé par CPU (Remplace nvenc/vaapi)",
         useCpuDisableTitle: "Désactiver l'encodage forcé par CPU (Remplace nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Activer le raffinage statique (Nettoie les parties statiques de l'écran)",
+        usePaintOverQualityDisableTitle: "Désactiver le raffinage statique (Nettoie les parties statiques de l'écran)",
     },
     sections: {
         video: {
@@ -924,6 +946,8 @@ const fr = {
             useCpuLabel: "Encodage CPU",
             jpegQualityLabel: "Qualité de base : {jpegQuality}",
             paintOverJpegQualityLabel: "Qualité de la surimpression : {paintOverJpegQuality}",
+            paintoverCrfLabel: "CRF du raffinage statique ({crf}):",
+            usePaintOverQualityLabel: "Utiliser le raffinage statique",
         },
         audio: {
             title: "Paramètres audio",
@@ -1083,6 +1107,8 @@ const ru = {
         h264StreamingModeEnableTitle: "Включить Турбо",
         useCpuEnableTitle: "Включить принудительное кодирование ЦП (Переопределяет nvenc/vaapi)",
         useCpuDisableTitle: "Отключить принудительное кодирование ЦП (Переопределяет nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Включить улучшение статики (Очищает статичные части экрана)",
+        usePaintOverQualityDisableTitle: "Отключить улучшение статики (Очищает статичные части экрана)",
     },
     sections: {
         video: {
@@ -1099,6 +1125,8 @@ const ru = {
             useCpuLabel: "Кодирование ЦП",
             jpegQualityLabel: "Базовое качество: {jpegQuality}",
             paintOverJpegQualityLabel: "Качество дорисовки: {paintOverJpegQuality}",
+            paintoverCrfLabel: "CRF улучшения статики ({crf}):",
+            usePaintOverQualityLabel: "Использовать улучшение статики",
         },
         audio: {
             title: "Настройки аудио",
@@ -1258,6 +1286,8 @@ const de = {
         h264StreamingModeEnableTitle: "Turbo aktivieren",
         useCpuEnableTitle: "Erzwungene CPU-Kodierung aktivieren (Überschreibt nvenc/vaapi)",
         useCpuDisableTitle: "Erzwungene CPU-Kodierung deaktivieren (Überschreibt nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Statische Bildverbesserung aktivieren (Bereinigt statische Bereiche des Bildschirms)",
+        usePaintOverQualityDisableTitle: "Statische Bildverbesserung deaktivieren (Bereinigt statische Bereiche des Bildschirms)",
     },
     sections: {
         video: {
@@ -1274,6 +1304,8 @@ const de = {
             useCpuLabel: "CPU-Kodierung",
             jpegQualityLabel: "Basisqualität: {jpegQuality}",
             paintOverJpegQualityLabel: "Übermalungsqualität: {paintOverJpegQuality}",
+            paintoverCrfLabel: "CRF für Bildverbesserung ({crf}):",
+            usePaintOverQualityLabel: "Statische Bildverbesserung nutzen",
         },
         audio: {
             title: "Audioeinstellungen",
@@ -1433,6 +1465,8 @@ const tr = {
         h264StreamingModeEnableTitle: "Turbo'yu Etkinleştir",
         useCpuEnableTitle: "CPU Kodlamasını Zorla Etkinleştir (nvenc/vaapi'yi geçersiz kılar)",
         useCpuDisableTitle: "CPU Kodlamasını Zorla Devre Dışı Bırak (nvenc/vaapi'yi geçersiz kılar)",
+        usePaintOverQualityEnableTitle: "Statik İyileştirmeyi Etkinleştir (Ekranın statik kısımlarını temizler)",
+        usePaintOverQualityDisableTitle: "Statik İyileştirmeyi Devre Dışı Bırak (Ekranın statik kısımlarını temizler)",
     },
     sections: {
         video: {
@@ -1449,6 +1483,8 @@ const tr = {
             useCpuLabel: "CPU Kodlaması",
             jpegQualityLabel: "Temel Kalite: {jpegQuality}",
             paintOverJpegQualityLabel: "Üzerine Boyama Kalitesi: {paintOverJpegQuality}",
+            paintoverCrfLabel: "Statik İyileştirme CRF ({crf}):",
+            usePaintOverQualityLabel: "Statik İyileştirme Kullan",
         },
         audio: {
             title: "Ses Ayarları",
@@ -1608,6 +1644,8 @@ const it = {
         h264StreamingModeEnableTitle: "Abilita Turbo",
         useCpuEnableTitle: "Abilita Codifica CPU Forzata (Sovrascrive nvenc/vaapi)",
         useCpuDisableTitle: "Disabilita Codifica CPU Forzata (Sovrascrive nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Abilita Miglioramento Statico (Pulisce le porzioni statiche dello schermo)",
+        usePaintOverQualityDisableTitle: "Disabilita Miglioramento Statico (Pulisce le porzioni statiche dello schermo)",
     },
     sections: {
         video: {
@@ -1624,6 +1662,8 @@ const it = {
             useCpuLabel: "Codifica CPU",
             jpegQualityLabel: "Qualità di Base: {jpegQuality}",
             paintOverJpegQualityLabel: "Qualità Sovrapposizione: {paintOverJpegQuality}",
+            paintoverCrfLabel: "CRF Miglioramento Statico ({crf}):",
+            usePaintOverQualityLabel: "Usa Miglioramento Statico",
         },
         audio: {
             title: "Impostazioni Audio",
@@ -1783,6 +1823,8 @@ const nl = {
         h264StreamingModeEnableTitle: "Turbo inschakelen",
         useCpuEnableTitle: "Forceer CPU-codering inschakelen (Overschrijft nvenc/vaapi)",
         useCpuDisableTitle: "Forceer CPU-codering uitschakelen (Overschrijft nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Statische Verbetering inschakelen (Ruimt statische delen van het scherm op)",
+        usePaintOverQualityDisableTitle: "Statische Verbetering uitschakelen (Ruimt statische delen van het scherm op)",
     },
     sections: {
         video: {
@@ -1799,6 +1841,8 @@ const nl = {
             useCpuLabel: "CPU-codering",
             jpegQualityLabel: "Basiskwaliteit: {jpegQuality}",
             paintOverJpegQualityLabel: "Overschilderkwaliteit: {paintOverJpegQuality}",
+            paintoverCrfLabel: "Statische Verbetering CRF ({crf}):",
+            usePaintOverQualityLabel: "Gebruik Statische Verbetering",
         },
         audio: {
             title: "Audio-instellingen",
@@ -1958,6 +2002,8 @@ const ar = {
         h264StreamingModeEnableTitle: "تمكين وضع التوربو",
         useCpuEnableTitle: "تمكين فرض ترميز CPU (يتجاوز nvenc/vaapi)",
         useCpuDisableTitle: "تعطيل فرض ترميز CPU (يتجاوز nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "تمكين تحسين الصورة الثابتة (ينظف الأجزاء الثابتة من الشاشة)",
+        usePaintOverQualityDisableTitle: "تعطيل تحسين الصورة الثابتة (ينظف الأجزاء الثابتة من الشاشة)",
     },
     sections: {
         video: {
@@ -1974,6 +2020,8 @@ const ar = {
             useCpuLabel: "ترميز CPU",
             jpegQualityLabel: "الجودة الأساسية: {jpegQuality}",
             paintOverJpegQualityLabel: "جودة الرسم فوق الصورة: {paintOverJpegQuality}",
+            paintoverCrfLabel: "CRF تحسين الصورة الثابتة ({crf}):",
+            usePaintOverQualityLabel: "استخدام تحسين الصورة الثابتة",
         },
         audio: {
             title: "إعدادات الصوت",
@@ -2133,6 +2181,8 @@ const ko = {
         h264StreamingModeEnableTitle: "터보 활성화",
         useCpuEnableTitle: "강제 CPU 인코딩 활성화 (nvenc/vaapi 재정의)",
         useCpuDisableTitle: "강제 CPU 인코딩 비활성화 (nvenc/vaapi 재정의)",
+        usePaintOverQualityEnableTitle: "정적 영역 개선 활성화 (화면의 정적 부분을 정리합니다)",
+        usePaintOverQualityDisableTitle: "정적 영역 개선 비활성화 (화면의 정적 부분을 정리합니다)",
     },
     sections: {
         video: {
@@ -2149,6 +2199,8 @@ const ko = {
             useCpuLabel: "CPU 인코딩",
             jpegQualityLabel: "기본 품질: {jpegQuality}",
             paintOverJpegQualityLabel: "덧칠 품질: {paintOverJpegQuality}",
+            paintoverCrfLabel: "정적 영역 개선 CRF ({crf}):",
+            usePaintOverQualityLabel: "정적 영역 개선 사용",
         },
         audio: {
             title: "오디오 설정",
@@ -2308,6 +2360,8 @@ const ja = {
         h264StreamingModeEnableTitle: "ターボを有効にする",
         useCpuEnableTitle: "強制 CPU エンコーディングを有効にする (nvenc/vaapi を上書き)",
         useCpuDisableTitle: "強制 CPU エンコーディングを無効にする (nvenc/vaapi を上書き)",
+        usePaintOverQualityEnableTitle: "静止領域の補正を有効にする (画面の静的な部分をクリーンアップします)",
+        usePaintOverQualityDisableTitle: "静止領域の補正を無効にする (画面の静的な部分をクリーンアップします)",
     },
     sections: {
         video: {
@@ -2324,6 +2378,8 @@ const ja = {
             useCpuLabel: "CPU エンコーディング",
             jpegQualityLabel: "基本品質: {jpegQuality}",
             paintOverJpegQualityLabel: "ペイントオーバー品質: {paintOverJpegQuality}",
+            paintoverCrfLabel: "静止領域補正 CRF ({crf}):",
+            usePaintOverQualityLabel: "静止領域の補正を使用",
         },
         audio: {
             title: "オーディオ設定",
@@ -2483,6 +2539,8 @@ const vi = {
         h264StreamingModeEnableTitle: "Bật chế độ Turbo",
         useCpuEnableTitle: "Bật Mã hóa CPU Bắt buộc (Ghi đè nvenc/vaapi)",
         useCpuDisableTitle: "Tắt Mã hóa CPU Bắt buộc (Ghi đè nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Bật Cải thiện vùng tĩnh (Dọn dẹp các phần tĩnh của màn hình)",
+        usePaintOverQualityDisableTitle: "Tắt Cải thiện vùng tĩnh (Dọn dẹp các phần tĩnh của màn hình)",
     },
     sections: {
         video: {
@@ -2499,6 +2557,8 @@ const vi = {
             useCpuLabel: "Mã hóa CPU",
             jpegQualityLabel: "Chất lượng Cơ bản: {jpegQuality}",
             paintOverJpegQualityLabel: "Chất lượng Vẽ đè: {paintOverJpegQuality}",
+            paintoverCrfLabel: "CRF Cải thiện vùng tĩnh ({crf}):",
+            usePaintOverQualityLabel: "Sử dụng Cải thiện vùng tĩnh",
         },
         audio: {
             title: "Cài đặt Âm thanh",
@@ -2658,6 +2718,8 @@ const th = {
         h264StreamingModeEnableTitle: "เปิดใช้งานเทอร์โบ",
         useCpuEnableTitle: "เปิดใช้งานการเข้ารหัส CPU แบบบังคับ (เขียนทับ nvenc/vaapi)",
         useCpuDisableTitle: "ปิดใช้งานการเข้ารหัส CPU แบบบังคับ (เขียนทับ nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "เปิดใช้งานการปรับปรุงพื้นที่นิ่ง (ทำความสะอาดส่วนที่หยุดนิ่งของหน้าจอ)",
+        usePaintOverQualityDisableTitle: "ปิดใช้งานการปรับปรุงพื้นที่นิ่ง (ทำความสะอาดส่วนที่หยุดนิ่งของหน้าจอ)",
     },
     sections: {
         video: {
@@ -2674,6 +2736,8 @@ const th = {
             useCpuLabel: "การเข้ารหัส CPU",
             jpegQualityLabel: "คุณภาพพื้นฐาน: {jpegQuality}",
             paintOverJpegQualityLabel: "คุณภาพการวาดทับ: {paintOverJpegQuality}",
+            paintoverCrfLabel: "CRF การปรับปรุงพื้นที่นิ่ง ({crf}):",
+            usePaintOverQualityLabel: "ใช้การปรับปรุงพื้นที่นิ่ง",
         },
         audio: {
             title: "การตั้งค่าเสียง",
@@ -2833,6 +2897,8 @@ const fil = {
         h264StreamingModeEnableTitle: "Paganahin ang Turbo",
         useCpuEnableTitle: "Paganahin ang Puwersahang CPU Encoding (Pinapalitan ang nvenc/vaapi)",
         useCpuDisableTitle: "Huwag paganahin ang Puwersahang CPU Encoding (Pinapalitan ang nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Paganahin ang Paglilinis ng Static (Nililinis ang mga static na bahagi ng screen)",
+        usePaintOverQualityDisableTitle: "Huwag paganahin ang Paglilinis ng Static (Nililinis ang mga static na bahagi ng screen)",
     },
     sections: {
         video: {
@@ -2849,6 +2915,8 @@ const fil = {
             useCpuLabel: "CPU Encoding",
             jpegQualityLabel: "Batayang Kalidad: {jpegQuality}",
             paintOverJpegQualityLabel: "Kalidad ng Paintover: {paintOverJpegQuality}",
+            paintoverCrfLabel: "CRF sa Paglilinis ng Static ({crf}):",
+            usePaintOverQualityLabel: "Gamitin ang Paglilinis ng Static",
         },
         audio: {
             title: "Mga Setting ng Audio",
@@ -3008,6 +3076,8 @@ const da = {
         h264StreamingModeEnableTitle: "Aktiver Turbo",
         useCpuEnableTitle: "Aktiver Tvungen CPU-kodning (Tilsidesætter nvenc/vaapi)",
         useCpuDisableTitle: "Deaktiver Tvungen CPU-kodning (Tilsidesætter nvenc/vaapi)",
+        usePaintOverQualityEnableTitle: "Aktiver Statisk Forbedring (Rydder op i statiske dele af skærmen)",
+        usePaintOverQualityDisableTitle: "Deaktiver Statisk Forbedring (Rydder op i statiske dele af skærmen)",
     },
     sections: {
         video: {
@@ -3024,6 +3094,8 @@ const da = {
             useCpuLabel: "CPU-kodning",
             jpegQualityLabel: "Grundkvalitet: {jpegQuality}",
             paintOverJpegQualityLabel: "Overmalingskvalitet: {paintOverJpegQuality}",
+            paintoverCrfLabel: "Statisk Forbedring CRF ({crf}):",
+            usePaintOverQualityLabel: "Brug Statisk Forbedring",
         },
         audio: {
             title: "Lydindstillinger",
