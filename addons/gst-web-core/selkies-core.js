@@ -41,7 +41,9 @@ let micWorkletNode = null;
 let preferredInputDeviceId = null;
 let preferredOutputDeviceId = null;
 let metricsIntervalId = null;
+let backpressureIntervalId = null;
 const METRICS_INTERVAL_MS = 500;
+const BACKPRESSURE_INTERVAL_MS = 50;
 const UPLOAD_CHUNK_SIZE = (1024 * 1024) - 1;
 const FILE_UPLOAD_THROTTLE_MS = 200;
 let fileUploadProgressLastSent = {};
@@ -2508,6 +2510,18 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
   websocket = new WebSocket(websocketEndpointURL.href);
   websocket.binaryType = 'arraybuffer';
 
+  const sendBackpressureAck = () => {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      try {
+        if (lastReceivedVideoFrameId !== -1) {
+          websocket.send(`CLIENT_FRAME_ACK ${lastReceivedVideoFrameId}`);
+        }
+      } catch (error) {
+        console.error('[Backpressure] Error sending frame ACK:', error);
+      }
+    }
+  };
+
   const sendClientMetrics = () => {
     if (isSharedMode) return; // Shared mode does not have client-side FPS display in this context
 
@@ -2546,21 +2560,6 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
         audioWorkletProcessorPort.postMessage({
           type: 'getBufferSize'
         });
-      }
-    }
-
-    if (websocket && websocket.readyState === WebSocket.OPEN) {
-      if (audioWorkletProcessorPort) {
-        audioWorkletProcessorPort.postMessage({
-          type: 'getBufferSize'
-        });
-      }
-      try {
-        if (lastReceivedVideoFrameId !== -1) {
-          websocket.send(`CLIENT_FRAME_ACK ${lastReceivedVideoFrameId}`);
-        }
-      } catch (error) {
-        console.error('[websockets] Error sending client metrics (ACK):', error);
       }
     }
   };
@@ -2701,6 +2700,10 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
         if (metricsIntervalId === null) {
           metricsIntervalId = setInterval(sendClientMetrics, METRICS_INTERVAL_MS);
           console.log(`[websockets] Started sending client metrics every ${METRICS_INTERVAL_MS}ms.`);
+        }
+        if (backpressureIntervalId === null) {
+          backpressureIntervalId = setInterval(sendBackpressureAck, BACKPRESSURE_INTERVAL_MS);
+          console.log(`[websockets] Started sending backpressure ACKs every ${BACKPRESSURE_INTERVAL_MS}ms.`);
         }
     }
   };
@@ -3258,6 +3261,10 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
       clearInterval(metricsIntervalId);
       metricsIntervalId = null;
     }
+    if (backpressureIntervalId) {
+      clearInterval(backpressureIntervalId);
+      backpressureIntervalId = null;
+    }
     releaseWakeLock();
     if (isSharedMode) {
         console.error("Shared mode: WebSocket error. Resetting shared state to 'error'.");
@@ -3275,6 +3282,10 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
     if (metricsIntervalId) {
       clearInterval(metricsIntervalId);
       metricsIntervalId = null;
+    }
+    if (backpressureIntervalId) {
+      clearInterval(backpressureIntervalId);
+      backpressureIntervalId = null;
     }
     releaseWakeLock();
     cleanupVideoBuffer();
@@ -3590,6 +3601,10 @@ function cleanup() {
   if (metricsIntervalId) {
     clearInterval(metricsIntervalId);
     metricsIntervalId = null;
+  }
+  if (backpressureIntervalId) {
+    clearInterval(backpressureIntervalId);
+    backpressureIntervalId = null;
   }
   releaseWakeLock();
   if (window.isCleaningUp) return;
