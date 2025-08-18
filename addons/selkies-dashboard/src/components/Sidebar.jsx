@@ -521,6 +521,7 @@ function Sidebar({ isOpen }) {
   useEffect(() => {
     window.postMessage({ type: 'sidebarVisibilityChanged', isOpen }, window.location.origin);
   }, [isOpen]);
+  const [currentDeviceDpi, setCurrentDeviceDpi] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
   const [isTrackpadModeActive, setIsTrackpadModeActive] = useState(false);
   const [hasDetectedTouch, setHasDetectedTouch] = useState(false);
@@ -541,6 +542,20 @@ function Sidebar({ isOpen }) {
     );
     setLangCode(primaryLang);
     setTranslator(getTranslator(primaryLang));
+  }, []);
+
+  useEffect(() => {
+    const dpr = window.devicePixelRatio || 1;
+    const targetDpi = dpr * 96;
+
+    if (dpiScalingOptions && dpiScalingOptions.length > 0) {
+      const closestOption = dpiScalingOptions.reduce((prev, curr) => {
+        return Math.abs(curr.value - targetDpi) < Math.abs(prev.value - targetDpi)
+          ? curr
+          : prev;
+      });
+      setCurrentDeviceDpi(closestOption.value);
+    }
   }, []);
 
   useEffect(() => {
@@ -2340,7 +2355,9 @@ function Sidebar({ isOpen }) {
                 >
                   {dpiScalingOptions.map((option) => (
                     <option key={option.value} value={option.value}>
-                      {option.label}
+                      {option.value === currentDeviceDpi
+                        ? `${option.label} *`
+                        : option.label}
                     </option>
                   ))}
                 </select>
