@@ -890,7 +890,7 @@ function Sidebar({ isOpen }) {
     const title = t("notifications.scalingTitle", "Scaling Updated: Action Required");
     const message = t(
       "notifications.scalingMessage", 
-      "New scaling applied. To see changes, restart: the container, your desktop session by logging out, or the running application."
+      "New scaling applied. Some applications or desktop environments might require a restart."
     );
 
     setNotifications(prev => {

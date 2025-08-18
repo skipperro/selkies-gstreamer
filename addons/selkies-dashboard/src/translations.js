@@ -175,7 +175,7 @@ const en = {
         copyFailedTitle: "Copy Failed: {label}",
         copyFailedError: "Could not copy link to clipboard.",
         scalingTitle: "Scaling Updated: Action Required",
-        scalingMessage: "New scaling applied. To see changes, restart: the container, your desktop session by logging out, or the running application.",
+        scalingMessage: "New scaling applied. Some applications or desktop environments might require a restart.",
     },
     alerts: {
         invalidResolution: "Please enter valid positive integers for Width and Height.",
@@ -354,7 +354,7 @@ const es = {
         copyFailedTitle: "Error al Copiar: {label}",
         copyFailedError: "No se pudo copiar el enlace al portapapeles.",
         scalingTitle: "Escalado Actualizado: Acción Requerida",
-        scalingMessage: "Nuevo escalado aplicado. Para ver los cambios, reinicie: el contenedor, su sesión de escritorio cerrando sesión, o la aplicación en ejecución.",
+        scalingMessage: "Nuevo escalado aplicado. Algunas aplicaciones o entornos de escritorio pueden requerir un reinicio.",
     },
     alerts: {
         invalidResolution: "Por favor, introduzca números enteros positivos válidos para Ancho y Alto.",
@@ -533,7 +533,7 @@ const zh = {
         copyFailedTitle: "复制失败: {label}",
         copyFailedError: "无法将链接复制到剪贴板。",
         scalingTitle: "缩放已更新：需要操作",
-        scalingMessage: "新的缩放已应用。要查看更改，请重启：容器、通过注销重启您的桌面会话，或重启正在运行的应用程序。",
+        scalingMessage: "新的缩放已应用。某些应用程序或桌面环境可能需要重启。",
     },
     alerts: {
         invalidResolution: "请输入有效的正整数作为宽度和高度。",
@@ -712,7 +712,7 @@ const hi = {
         copyFailedTitle: "कॉपी करने में विफल: {label}",
         copyFailedError: "लिंक क्लिपबोर्ड पर कॉपी नहीं किया जा सका।",
         scalingTitle: "स्केलिंग अपडेट किया गया: कार्रवाई आवश्यक है",
-        scalingMessage: "नई स्केलिंग लागू की गई है। परिवर्तन देखने के लिए, पुनरारंभ करें: कंटेनर, लॉग आउट करके अपना डेस्कटॉप सत्र, या चल रहा एप्लिकेशन।",
+        scalingMessage: "नई स्केलिंग लागू की गई है। कुछ एप्लिकेशन या डेस्कटॉप वातावरण को पुनरारंभ करने की आवश्यकता हो सकती है।",
     },
     alerts: {
         invalidResolution: "कृपया चौड़ाई और ऊंचाई के लिए मान्य धनात्मक पूर्णांक दर्ज करें।",
@@ -891,7 +891,7 @@ const pt = {
         copyFailedTitle: "Falha ao Copiar: {label}",
         copyFailedError: "Não foi possível copiar o link para a área de transferência.",
         scalingTitle: "Escala Atualizada: Ação Necessária",
-        scalingMessage: "Nova escala aplicada. Para ver as alterações, reinicie: o contêiner, sua sessão de desktop fazendo logout, ou o aplicativo em execução.",
+        scalingMessage: "Nova escala aplicada. Algumas aplicações ou ambientes de trabalho podem exigir um reinício.",
     },
     alerts: {
         invalidResolution: "Por favor, insira inteiros positivos válidos para Largura e Altura.",
@@ -1070,7 +1070,7 @@ const fr = {
         copyFailedTitle: "Échec de la copie : {label}",
         copyFailedError: "Impossible de copier le lien dans le presse-papiers.",
         scalingTitle: "Mise à l'échelle mise à jour : Action requise",
-        scalingMessage: "Nouvelle mise à l'échelle appliquée. Pour voir les changements, redémarrez : le conteneur, votre session de bureau en vous déconnectant, ou l'application en cours d'exécution.",
+        scalingMessage: "Nouvelle mise à l'échelle appliquée. Certaines applications ou certains environnements de bureau могут nécessiter un redémarrage.",
     },
     alerts: {
         invalidResolution: "Veuillez entrer des entiers positifs valides pour la Largeur et la Hauteur.",
@@ -1249,7 +1249,7 @@ const ru = {
         copyFailedTitle: "Ошибка копирования: {label}",
         copyFailedError: "Не удалось скопировать ссылку в буфер обмена.",
         scalingTitle: "Масштабирование обновлено: Требуется действие",
-        scalingMessage: "Новое масштабирование применено. Чтобы увидеть изменения, перезапустите: контейнер, ваш сеанс рабочего стола путем выхода из системы, или запущенное приложение.",
+        scalingMessage: "Новое масштабирование применено. Некоторые приложения или среды рабочего стола могут потребовать перезапуска.",
     },
     alerts: {
         invalidResolution: "Пожалуйста, введите действительные положительные целые числа для Ширины и Высоты.",
@@ -1428,7 +1428,7 @@ const de = {
         copyFailedTitle: "Kopieren fehlgeschlagen: {label}",
         copyFailedError: "Link konnte nicht in die Zwischenablage kopiert werden.",
         scalingTitle: "Skalierung aktualisiert: Aktion erforderlich",
-        scalingMessage: "Neue Skalierung angewendet. Um Änderungen zu sehen, starten Sie neu: den Container, Ihre Desktop-Sitzung durch Abmelden oder die laufende Anwendung.",
+        scalingMessage: "Neue Skalierung angewendet. Einige Anwendungen oder Desktop-Umgebungen erfordern möglicherweise einen Neustart.",
     },
     alerts: {
         invalidResolution: "Bitte geben Sie gültige positive ganze Zahlen für Breite und Höhe ein.",
@@ -1607,7 +1607,7 @@ const tr = {
         copyFailedTitle: "Kopyalama Başarısız: {label}",
         copyFailedError: "Bağlantı panoya kopyalanamadı.",
         scalingTitle: "Ölçekleme Güncellendi: Eylem Gerekli",
-        scalingMessage: "Yeni ölçekleme uygulandı. Değişiklikleri görmek için yeniden başlatın: kapsayıcıyı, oturumu kapatarak masaüstü oturumunuzu veya çalışan uygulamayı.",
+        scalingMessage: "Yeni ölçekleme uygulandı. Bazı uygulamalar veya masaüstü ortamları yeniden başlatma gerektirebilir.",
     },
     alerts: {
         invalidResolution: "Lütfen Genişlik ve Yükseklik için geçerli pozitif tam sayılar girin.",
@@ -1786,7 +1786,7 @@ const it = {
         copyFailedTitle: "Copia Fallita: {label}",
         copyFailedError: "Impossibile copiare il link negli appunti.",
         scalingTitle: "Scalabilità Aggiornata: Azione Richiesta",
-        scalingMessage: "Nuova scalabilità applicata. Per visualizzare le modifiche, riavviare: il contenitore, la sessione del desktop disconnettendosi, o l'applicazione in esecuzione.",
+        scalingMessage: "Nuova scalabilità applicata. Alcune applicazioni o ambienti desktop potrebbero richiedere un riavvio.",
     },
     alerts: {
         invalidResolution: "Inserisci numeri interi positivi validi per Larghezza e Altezza.",
@@ -1965,7 +1965,7 @@ const nl = {
         copyFailedTitle: "Kopiëren Mislukt: {label}",
         copyFailedError: "Kon link niet naar klembord kopiëren.",
         scalingTitle: "Schalen bijgewerkt: Actie vereist",
-        scalingMessage: "Nieuwe schaling toegepast. Om wijzigingen te zien, herstart: de container, uw bureaubladsessie door uit te loggen, of de actieve applicatie.",
+        scalingMessage: "Nieuwe schaling toegepast. Sommige applicaties of desktopomgevingen moeten mogelijk opnieuw worden opgestart.",
     },
     alerts: {
         invalidResolution: "Voer geldige positieve gehele getallen in voor Breedte en Hoogte.",
@@ -2144,7 +2144,7 @@ const ar = {
         copyFailedTitle: "فشل النسخ: {label}",
         copyFailedError: "تعذر نسخ الرابط إلى الحافظة.",
         scalingTitle: "تم تحديث القياس: الإجراء مطلوب",
-        scalingMessage: "تم تطبيق القياس الجديد. لرؤية التغييرات، أعد تشغيل: الحاوية، أو جلسة سطح المكتب الخاصة بك عن طريق تسجيل الخروج، أو التطبيق قيد التشغيل.",
+        scalingMessage: "تم تطبيق القياس الجديد. قد تتطلب بعض التطبيقات أو بيئات سطح المكتب إعادة التشغيل.",
     },
     alerts: {
         invalidResolution: "الرجاء إدخال أعداد صحيحة موجبة صالحة للعرض والارتفاع.",
@@ -2323,7 +2323,7 @@ const ko = {
         copyFailedTitle: "복사 실패: {label}",
         copyFailedError: "링크를 클립보드에 복사할 수 없습니다.",
         scalingTitle: "확장/축소 업데이트됨: 작업 필요",
-        scalingMessage: "새로운 확장이 적용되었습니다. 변경 사항을 보려면 다음을 다시 시작하십시오: 컨테이너, 로그아웃하여 데스크톱 세션, 또는 실행 중인 애플리케이션.",
+        scalingMessage: "새로운 스케일링이 적용되었습니다. 일부 응용 프로그램이나 데스크톱 환경은 재시작이 필요할 수 있습니다.",
     },
     alerts: {
         invalidResolution: "너비와 높이에 유효한 양의 정수를 입력하십시오.",
@@ -2502,7 +2502,7 @@ const ja = {
         copyFailedTitle: "コピーに失敗しました: {label}",
         copyFailedError: "リンクをクリップボードにコピーできませんでした。",
         scalingTitle: "スケーリング更新：アクションが必要です",
-        scalingMessage: "新しいスケーリングが適用されました。変更を確認するには、コンテナ、ログアウトによるデスクトップセッション、または実行中のアプリケーションを再起動してください。",
+        scalingMessage: "新しいスケーリングが適用されました。一部のアプリケーションまたはデスクトップ環境では、再起動が必要な場合があります。",
     },
     alerts: {
         invalidResolution: "幅と高さに有効な正の整数を入力してください。",
@@ -2681,7 +2681,7 @@ const vi = {
         copyFailedTitle: "Sao chép Thất bại: {label}",
         copyFailedError: "Không thể sao chép liên kết vào bộ nhớ tạm.",
         scalingTitle: "Đã cập nhật tỷ lệ: Cần hành động",
-        scalingMessage: "Đã áp dụng tỷ lệ mới. Để xem các thay đổi, vui lòng khởi động lại: container, phiên làm việc máy tính của bạn bằng cách đăng xuất, hoặc ứng dụng đang chạy.",
+        scalingMessage: "Đã áp dụng tỷ lệ mới. Một số ứng dụng hoặc môi trường máy tính để bàn có thể yêu cầu khởi động lại.",
     },
     alerts: {
         invalidResolution: "Vui lòng nhập số nguyên dương hợp lệ cho Chiều rộng và Chiều cao.",
@@ -2860,7 +2860,7 @@ const th = {
         copyFailedTitle: "การคัดลอกล้มเหลว: {label}",
         copyFailedError: "ไม่สามารถคัดลอกลิงก์ไปยังคลิปบอร์ดได้",
         scalingTitle: "ปรับขนาดแล้ว: ต้องการการดำเนินการ",
-        scalingMessage: "ใช้การปรับขนาดใหม่แล้ว หากต้องการดูการเปลี่ยนแปลง โปรดรีสตาร์ท: คอนเทนเนอร์, เซสชันเดสก์ท็อปของคุณโดยการออกจากระบบ, หรือแอปพลิเคชันที่กำลังทำงานอยู่",
+        scalingMessage: "ใช้การปรับขนาดใหม่แล้ว แอปพลิเคชันหรือสภาพแวดล้อมเดสก์ท็อปบางอย่างอาจต้องรีสตาร์ท",
     },
     alerts: {
         invalidResolution: "โปรดป้อนจำนวนเต็มบวกที่ถูกต้องสำหรับความกว้างและความสูง",
@@ -3039,7 +3039,7 @@ const fil = {
         copyFailedTitle: "Nabigo ang Pagkopya: {label}",
         copyFailedError: "Hindi makopya ang link sa clipboard.",
         scalingTitle: "Na-update ang Pag-scale: Kinakailangan ang Aksyon",
-        scalingMessage: "Inilapat ang bagong pag-scale. Upang makita ang mga pagbabago, i-restart ang: container, iyong desktop session sa pamamagitan ng pag-log out, o ang tumatakbong application.",
+        scalingMessage: "Inilapat ang bagong pag-scale. Maaaring kailanganin ng ilang application o desktop environment na mag-restart.",
     },
     alerts: {
         invalidResolution: "Mangyaring maglagay ng mga wastong positibong integer para sa Lapad at Taas.",
@@ -3218,7 +3218,7 @@ const da = {
         copyFailedTitle: "Kopiering Mislykkedes: {label}",
         copyFailedError: "Kunne ikke kopiere link til udklipsholder.",
         scalingTitle: "Skalering Opdateret: Handling Påkrævet",
-        scalingMessage: "Ny skalering anvendt. For at se ændringer, genstart: containeren, din skrivebordssession ved at logge ud, eller den kørende applikation.",
+        scalingMessage: "Ny skalering anvendt. Nogle applikationer eller skrivebordsmiljøer kræver muligvis en genstart.",
     },
     alerts: {
         invalidResolution: "Indtast venligst gyldige positive heltal for Bredde og Højde.",
