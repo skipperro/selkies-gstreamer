@@ -17,7 +17,6 @@ TARGET_FRAMERATE = 60
 TARGET_VIDEO_BITRATE_KBPS = 16000
 MIN_VIDEO_BITRATE_KBPS = 500
 
-DATA_WEBSOCKET_PORT = 8082
 UINPUT_MOUSE_SOCKET = ""
 JS_SOCKET_PATH = "/tmp"
 ENABLE_CLIPBOARD = True
@@ -3268,6 +3267,12 @@ async def main():
         type=int,
         help="Watermark location enum (0-6). Defaults to 4 (Bottom Right) if path is set and this is not specified or invalid.",
     )
+    parser.add_argument(
+        "--port",
+        default=os.environ.get("CUSTOM_WS_PORT", "8082"),
+        type=int,
+        help="The port for the data websocket server. Overrides the CUSTOM_WS_PORT environment variable.",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args, unknown = parser.parse_known_args()
     global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
@@ -3304,7 +3309,7 @@ async def main():
     )
 
     data_server = DataStreamingServer(
-        port=DATA_WEBSOCKET_PORT,
+        port=args.port,
         app=app,
         uinput_mouse_socket=UINPUT_MOUSE_SOCKET,
         js_socket_path=JS_SOCKET_PATH,
