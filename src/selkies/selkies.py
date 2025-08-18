@@ -1584,6 +1584,7 @@ class DataStreamingServer:
         parsed["h264_paintover_crf"] = get_int("pixelflux_h264_paintover_crf", self.h264_paintover_crf)
         parsed["h264_paintover_burst_frames"] = get_int("pixelflux_h264_paintover_burst_frames", self.h264_paintover_burst_frames)
         parsed["use_paint_over_quality"] = get_bool("pixelflux_use_paint_over_quality", self.use_paint_over_quality)
+        parsed["scaling_dpi"] = get_int("webrtc_SCALING_DPI", 96)
         data_logger.debug(f"Parsed client settings: {parsed}")
         return parsed
 
@@ -1694,6 +1695,23 @@ class DataStreamingServer:
         if "audioBitRate" in settings:
             if self.app.audio_bitrate != settings["audioBitRate"]:
                  self.app.audio_bitrate = settings["audioBitRate"]
+
+        if "scaling_dpi" in settings:
+            dpi_value = settings["scaling_dpi"]
+            data_logger.info(f"Applying SCALING_DPI from initial settings: {dpi_value}")
+            if await set_dpi(dpi_value):
+                data_logger.info(f"Successfully set DPI to {dpi_value} from initial settings.")
+            else:
+                data_logger.error(f"Failed to set DPI to {dpi_value} from initial settings.")
+
+            if CURSOR_SIZE > 0:
+                calculated_cursor_size = int(round(dpi_value / 96.0 * CURSOR_SIZE))
+                new_cursor_size = max(1, calculated_cursor_size)
+                data_logger.info(f"Attempting to set cursor size to {new_cursor_size} based on initial DPI.")
+                if await set_cursor_size(new_cursor_size):
+                    data_logger.info(f"Successfully set cursor size to {new_cursor_size}.")
+                else:
+                    data_logger.error(f"Failed to set cursor size to {new_cursor_size}.")
 
         if "videoBufferSize" in settings:
             setattr(self.app, "video_buffer_size", settings["videoBufferSize"])

@@ -58,6 +58,7 @@ let wakeLockSentinel = null;
 let currentEncoderMode = 'x264enc-stiped';
 let useCssScaling = false;
 let trackpadMode = false;
+let scalingDPI = 96;
 function setRealViewportHeight() {
   const vh = window.innerHeight * 0.01;
   document.documentElement.style.setProperty('--vh', `${vh}px`);
@@ -267,6 +268,8 @@ useCssScaling = getBoolParam('useCssScaling', false);
 setBoolParam('useCssScaling', useCssScaling);
 trackpadMode = getBoolParam('trackpadMode', false);
 setBoolParam('trackpadMode', trackpadMode);
+scalingDPI = getIntParam('SCALING_DPI', 96);
+setIntParam('SCALING_DPI', scalingDPI);
 
 if (isSharedMode) {
     manualWidth = 1280;
@@ -1897,6 +1900,8 @@ function handleSettingsMessage(settings) {
   if (settings.SCALING_DPI !== undefined) {
     const dpi = parseInt(settings.SCALING_DPI, 10);
     if (!isNaN(dpi)) {
+      scalingDPI = dpi;
+      setIntParam('SCALING_DPI', scalingDPI);
       console.log(`Applied SCALING_DPI setting: ${dpi}.`);
       if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
         const message = `s,${dpi}`;
@@ -2597,6 +2602,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
           else if (unprefixedKey === 'h264_paintover_crf') serverExpectedKey = 'pixelflux_h264_paintover_crf';
           else if (unprefixedKey === 'h264_paintover_burst_frames') serverExpectedKey = 'pixelflux_h264_paintover_burst_frames';
           else if (unprefixedKey === 'use_paint_over_quality') serverExpectedKey = 'pixelflux_use_paint_over_quality';
+          else if (unprefixedKey === 'SCALING_DPI') serverExpectedKey = 'webrtc_SCALING_DPI';
 
           if (serverExpectedKey) {
             let value = localStorage.getItem(key);
@@ -2618,6 +2624,7 @@ function handleDecodedFrame(frame) { // frame.codedWidth/Height are physical pix
               'pixelflux_paint_over_jpeg_quality',
               'pixelflux_h264_paintover_crf',
               'pixelflux_h264_paintover_burst_frames',
+              'webrtc_SCALING_DPI',
             ];
             if (booleanSettingKeys.includes(serverExpectedKey)) {
               value = (value === 'true');

@@ -694,7 +694,7 @@ function Sidebar({ isOpen }) {
     localStorage.getItem(getPrefixedKey("h264_streaming_mode")) === "true"
   );
   const [selectedDpi, setSelectedDpi] = useState(
-    parseInt(localStorage.getItem("scalingDPI"), 10) || DEFAULT_SCALING_DPI
+    parseInt(localStorage.getItem(getPrefixedKey("SCALING_DPI")), 10) || DEFAULT_SCALING_DPI
   );
   const [manualWidth, setManualWidth] = useState(localStorage.getItem(getPrefixedKey("manualWidth")) || "");
   const [manualHeight, setManualHeight] = useState(localStorage.getItem(getPrefixedKey("manualHeight")) || "");
