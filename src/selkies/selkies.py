@@ -450,13 +450,13 @@ def parse_dri_node_to_index(node_path: str) -> int:
         return -1
 
 async def _run_xrdb(dpi_value, logger):
-    """Helper function to apply DPI via xrdb."""
+    """Helper function to apply DPI via xrdb and xsettingsd."""
     if not which("xrdb"):
         logger.debug("xrdb not found. Skipping Xresources DPI setting.")
         return False
-    
+        
     xresources_path_str = os.path.expanduser("~/.Xresources")
-    try:
+    try:    
         with open(xresources_path_str, "w") as f:
             f.write(f"Xft.dpi:   {dpi_value}\n")
         logger.info(f"Wrote 'Xft.dpi:   {dpi_value}' to {xresources_path_str}.")
@@ -468,14 +468,58 @@ async def _run_xrdb(dpi_value, logger):
             stderr=subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
-        if process.returncode == 0:
+        
+        xrdb_success = process.returncode == 0
+        if xrdb_success:
             logger.info(f"Successfully loaded {xresources_path_str} using xrdb.")
-            return True
         else:
             logger.warning(f"Failed to load {xresources_path_str} using xrdb. RC: {process.returncode}, Error: {stderr.decode().strip()}")
-            return False
+
+        xsettingsd_config_path = os.path.expanduser("~/.xsettingsd")
+        xsettings_dpi = dpi_value * 1024
+        
+        config_content = (
+            "Xft/Antialias 1\n"
+            "Xft/Hinting 1\n"
+            "Xft/HintStyle \"hintfull\"\n"
+            "Xft/RGBA \"rgb\"\n"
+            f"Xft/DPI {xsettings_dpi}\n"
+        )
+        
+        with open(xsettingsd_config_path, "w") as f:
+            f.write(config_content)
+        logger.info(f"Wrote font and DPI settings to {xsettingsd_config_path}.")
+
+        if not which("pgrep") or not which("kill"):
+            logger.debug("pgrep or kill not found. Skipping xsettingsd reload.")
+        else:
+            pgrep_proc = await subprocess.create_subprocess_exec(
+                "pgrep", "xsettingsd",
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            pgrep_stdout, _ = await pgrep_proc.communicate()
+
+            if pgrep_proc.returncode == 0:
+                pid_output = pgrep_stdout.decode().strip()
+                if pid_output:
+                    pid = pid_output.splitlines()[0]
+                    logger.info(f"Found xsettingsd process with PID: {pid}.")
+                    kill_proc = await subprocess.create_subprocess_exec(
+                        "kill", "-1", pid,
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                    )
+                    _, kill_stderr = await kill_proc.communicate()
+                    if kill_proc.returncode == 0:
+                        logger.info(f"Sent SIGHUP to xsettingsd process {pid} to reload config.")
+                    else:
+                        logger.warning(f"Failed to send SIGHUP to xsettingsd process {pid}. Error: {kill_stderr.decode().strip()}")
+            else:
+                logger.info("xsettingsd process not found. Skipping reload.")
+        
+        return xrdb_success
+
     except Exception as e:
-        logger.error(f"Error updating or loading Xresources: {e}")
+        logger.error(f"Error updating or loading DPI settings: {e}")
         return False
 
 async def _run_xfconf(dpi_value, logger):
