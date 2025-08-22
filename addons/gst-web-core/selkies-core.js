@@ -59,6 +59,7 @@ let currentEncoderMode = 'x264enc-stiped';
 let useCssScaling = false;
 let trackpadMode = false;
 let scalingDPI = 96;
+let antiAliasingEnabled = true;
 function setRealViewportHeight() {
   const vh = window.innerHeight * 0.01;
   document.documentElement.style.setProperty('--vh', `${vh}px`);
@@ -270,6 +271,8 @@ trackpadMode = getBoolParam('trackpadMode', false);
 setBoolParam('trackpadMode', trackpadMode);
 scalingDPI = getIntParam('SCALING_DPI', 96);
 setIntParam('SCALING_DPI', scalingDPI);
+antiAliasingEnabled = getBoolParam('antiAliasingEnabled', true);
+setBoolParam('antiAliasingEnabled', antiAliasingEnabled);
 
 if (isSharedMode) {
     manualWidth = 1280;
@@ -325,18 +328,27 @@ const roundDownToEven = (num) => {
 
 const updateCanvasImageRendering = () => {
   if (!canvas) return;
-  const dpr = window.devicePixelRatio || 1;
-  const isOneToOne = !useCssScaling || (useCssScaling && dpr <= 1);
-  if (isOneToOne) {
+  if (!antiAliasingEnabled) {
     if (canvas.style.imageRendering !== 'pixelated') {
-      console.log("Setting canvas rendering to 'pixelated' for 1:1 display.");
+      console.log("Anti-aliasing disabled by setting. Forcing 'pixelated' rendering.");
       canvas.style.imageRendering = 'pixelated';
       canvas.style.setProperty('image-rendering', 'crisp-edges', '');
     }
-  } else {
+    return;
+  }
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const isStretched = Math.round(rect.width * dpr) !== canvas.width || Math.round(rect.height * dpr) !== canvas.height;
+  if (isStretched) {
     if (canvas.style.imageRendering !== 'auto') {
-      console.log("Setting canvas rendering to 'auto' for smooth upscaling.");
+      console.log(`Canvas is scaled (${canvas.width}x${canvas.height} buffer -> ${rect.width.toFixed(0)}x${rect.height.toFixed(0)} display). Setting rendering to 'auto'.`);
       canvas.style.imageRendering = 'auto';
+    }
+  } else {
+    if (canvas.style.imageRendering !== 'pixelated') {
+      console.log("Canvas is 1:1. Setting rendering to 'pixelated'.");
+      canvas.style.imageRendering = 'pixelated';
+      canvas.style.setProperty('image-rendering', 'crisp-edges', '');
     }
   }
 };
@@ -1321,6 +1333,19 @@ function receiveMessage(event) {
         }
       } else {
         console.warn("Invalid value received for setUseCssScaling:", message.value);
+      }
+      break;
+    case 'setAntiAliasing':
+      if (typeof message.value === 'boolean') {
+        const changed = antiAliasingEnabled !== message.value;
+        antiAliasingEnabled = message.value;
+        setBoolParam('antiAliasingEnabled', antiAliasingEnabled);
+        console.log(`Set antiAliasingEnabled to ${antiAliasingEnabled} and persisted.`);
+        if (changed) {
+          updateCanvasImageRendering();
+        }
+      } else {
+        console.warn("Invalid value received for setAntiAliasing:", message.value);
       }
       break;
     case 'setManualResolution':

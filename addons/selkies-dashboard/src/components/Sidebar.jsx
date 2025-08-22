@@ -721,6 +721,10 @@ function Sidebar({ isOpen }) {
     const saved = localStorage.getItem(getPrefixedKey("useCssScaling"));
     return saved !== "true";
   });
+  const [antiAliasing, setAntiAliasing] = useState(() => {
+    const saved = localStorage.getItem(getPrefixedKey("antiAliasingEnabled"));
+    return saved !== null ? saved === "true" : true;
+  });
   const [presetValue, setPresetValue] = useState("");
   const [clientFps, setClientFps] = useState(0);
   const [audioBuffer, setAudioBuffer] = useState(0);
@@ -1299,6 +1303,14 @@ function Sidebar({ isOpen }) {
     setHidpiEnabled(newHidpiState);
     window.postMessage(
       { type: "setUseCssScaling", value: !newHidpiState },
+      window.location.origin
+    );
+  };
+  const handleAntiAliasingToggle = () => {
+    const newState = !antiAliasing;
+    setAntiAliasing(newState);
+    window.postMessage(
+      { type: "setAntiAliasing", value: newState },
       window.location.origin
     );
   };
@@ -2340,6 +2352,21 @@ function Sidebar({ isOpen }) {
                   aria-pressed={hidpiEnabled}
                   title={t(hidpiEnabled ? "sections.screen.hidpiDisableTitle" : "sections.screen.hidpiEnableTitle",
                              hidpiEnabled ? "Disable HiDPI (Use CSS Scaling)" : "Enable HiDPI (Pixel Perfect)")}
+                >
+                  <span className="toggle-button-sidebar-knob"></span>
+                </button>
+              </div>
+              <div className="dev-setting-item toggle-item">
+                <label htmlFor="antiAliasingToggle">
+                  {t("sections.screen.antiAliasingLabel", "Anti-aliasing")}
+                </label>
+                <button
+                  id="antiAliasingToggle"
+                  className={`toggle-button-sidebar ${antiAliasing ? "active" : ""}`}
+                  onClick={handleAntiAliasingToggle}
+                  aria-pressed={antiAliasing}
+                  title={t(antiAliasing ? "sections.screen.antiAliasingDisableTitle" : "sections.screen.antiAliasingEnableTitle",
+                             antiAliasing ? "Disable anti-aliasing (force pixelated)" : "Enable anti-aliasing (smooth on scaling)")}
                 >
                   <span className="toggle-button-sidebar-knob"></span>
                 </button>

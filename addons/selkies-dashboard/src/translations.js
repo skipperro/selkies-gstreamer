@@ -85,6 +85,9 @@ const en = {
             hidpiLabel: "HiDPI (Pixel Perfect)",
             hidpiEnableTitle: "Enable HiDPI (Pixel Perfect)",
             hidpiDisableTitle: "Disable HiDPI (Use CSS Scaling)",
+            antiAliasingLabel: "Anti-aliasing",
+            antiAliasingEnableTitle: "Enable anti-aliasing (smooth on scaling)",
+            antiAliasingDisableTitle: "Disable anti-aliasing (force pixelated)",
         },
         stats: {
             title: "Stats",
@@ -264,6 +267,9 @@ const es = {
              hidpiLabel: "HiDPI (Píxel Perfecto)",
              hidpiEnableTitle: "Activar HiDPI (Píxel Perfecto)",
              hidpiDisableTitle: "Desactivar HiDPI (Usar escalado CSS)",
+             antiAliasingLabel: "Anti-aliasing",
+             antiAliasingEnableTitle: "Activar anti-aliasing (suavizar al escalar)",
+             antiAliasingDisableTitle: "Desactivar anti-aliasing (forzar pixelado)",
         },
         stats: {
              title: "Estadísticas",
@@ -443,6 +449,9 @@ const zh = {
             hidpiLabel: "HiDPI (像素完美)",
             hidpiEnableTitle: "启用 HiDPI (像素完美)",
             hidpiDisableTitle: "禁用 HiDPI (使用 CSS 缩放)",
+            antiAliasingLabel: "抗锯齿",
+            antiAliasingEnableTitle: "启用抗锯齿 (缩放时平滑)",
+            antiAliasingDisableTitle: "禁用抗锯齿 (强制像素化)",
         },
         stats: {
             title: "统计信息",
@@ -622,6 +631,9 @@ const hi = {
             hidpiLabel: "HiDPI (पिक्सेल परफेक्ट)",
             hidpiEnableTitle: "HiDPI सक्षम करें (पिक्सेल परफेक्ट)",
             hidpiDisableTitle: "HiDPI अक्षम करें (CSS स्केलिंग का उपयोग करें)",
+            antiAliasingLabel: "एंटी-अलियासिंग",
+            antiAliasingEnableTitle: "एंटी-अलियासिंग सक्षम करें (स्केलिंग पर स्मूथ)",
+            antiAliasingDisableTitle: "एंटी-अलियासिंग अक्षम करें (पिक्सेलयुक्त करने के लिए बाध्य करें)",
         },
         stats: {
             title: "आँकड़े",
@@ -801,6 +813,9 @@ const pt = {
             hidpiLabel: "HiDPI (Pixel Perfeito)",
             hidpiEnableTitle: "Ativar HiDPI (Pixel Perfeito)",
             hidpiDisableTitle: "Desativar HiDPI (Usar dimensionamento CSS)",
+            antiAliasingLabel: "Anti-aliasing",
+            antiAliasingEnableTitle: "Ativar anti-aliasing (suavizar ao escalar)",
+            antiAliasingDisableTitle: "Desativar anti-aliasing (forçar pixelização)",
         },
         stats: {
             title: "Estatísticas",
@@ -980,6 +995,9 @@ const fr = {
             hidpiLabel: "HiDPI (Pixel Perfect)",
             hidpiEnableTitle: "Activer HiDPI (Pixel Perfect)",
             hidpiDisableTitle: "Désactiver HiDPI (Utiliser la mise à l'échelle CSS)",
+            antiAliasingLabel: "Anticrénelage",
+            antiAliasingEnableTitle: "Activer l'anticrénelage (lisser à la mise à l'échelle)",
+            antiAliasingDisableTitle: "Désactiver l'anticrénelage (forcer la pixellisation)",
         },
         stats: {
             title: "Statistiques",
@@ -1159,6 +1177,9 @@ const ru = {
             hidpiLabel: "HiDPI (Пиксельная точность)",
             hidpiEnableTitle: "Включить HiDPI (Пиксельная точность)",
             hidpiDisableTitle: "Отключить HiDPI (Использовать масштабирование CSS)",
+            antiAliasingLabel: "Сглаживание",
+            antiAliasingEnableTitle: "Включить сглаживание (плавно при масштабировании)",
+            antiAliasingDisableTitle: "Отключить сглаживание (принудительно пикселизировать)",
         },
         stats: {
             title: "Статистика",
@@ -1338,6 +1359,9 @@ const de = {
             hidpiLabel: "HiDPI (Pixelgenau)",
             hidpiEnableTitle: "HiDPI aktivieren (Pixelgenau)",
             hidpiDisableTitle: "HiDPI deaktivieren (CSS-Skalierung verwenden)",
+            antiAliasingLabel: "Kantenglättung",
+            antiAliasingEnableTitle: "Kantenglättung aktivieren (Glättung bei Skalierung)",
+            antiAliasingDisableTitle: "Kantenglättung deaktivieren (Verpixelung erzwingen)",
         },
         stats: {
             title: "Statistiken",
@@ -1517,6 +1541,9 @@ const tr = {
             hidpiLabel: "HiDPI (Piksel Mükemmelliği)",
             hidpiEnableTitle: "HiDPI'yi Etkinleştir (Piksel Mükemmelliği)",
             hidpiDisableTitle: "HiDPI'yi Devre Dışı Bırak (CSS Ölçeklendirme Kullan)",
+            antiAliasingLabel: "Kenar Yumuşatma",
+            antiAliasingEnableTitle: "Kenar yumuşatmayı etkinleştir (ölçeklemede pürüzsüzleştir)",
+            antiAliasingDisableTitle: "Kenar yumuşatmayı devre dışı bırak (pikselli olmaya zorla)",
         },
         stats: {
             title: "İstatistikler",
@@ -1696,6 +1723,9 @@ const it = {
             hidpiLabel: "HiDPI (Pixel Perfect)",
             hidpiEnableTitle: "Abilita HiDPI (Pixel Perfect)",
             hidpiDisableTitle: "Disabilita HiDPI (Usa ridimensionamento CSS)",
+            antiAliasingLabel: "Anti-aliasing",
+            antiAliasingEnableTitle: "Abilita anti-aliasing (smussa durante il ridimensionamento)",
+            antiAliasingDisableTitle: "Disabilita anti-aliasing (forza la pixelatura)",
         },
         stats: {
             title: "Statistiche",
@@ -1875,6 +1905,9 @@ const nl = {
             hidpiLabel: "HiDPI (Pixel Perfect)",
             hidpiEnableTitle: "HiDPI inschakelen (Pixel Perfect)",
             hidpiDisableTitle: "HiDPI uitschakelen (CSS-schaling gebruiken)",
+            antiAliasingLabel: "Randverzachting",
+            antiAliasingEnableTitle: "Randverzachting inschakelen (vloeiend bij schalen)",
+            antiAliasingDisableTitle: "Randverzachting uitschakelen (gepixeleerd forceren)",
         },
         stats: {
             title: "Statistieken",
@@ -2054,6 +2087,9 @@ const ar = {
             hidpiLabel: "HiDPI (دقة بكسل مثالية)",
             hidpiEnableTitle: "تمكين HiDPI (دقة بكسل مثالية)",
             hidpiDisableTitle: "تعطيل HiDPI (استخدام تحجيم CSS)",
+            antiAliasingLabel: "تنعيم الحواف",
+            antiAliasingEnableTitle: "تمكين تنعيم الحواف (سلس عند التكبير)",
+            antiAliasingDisableTitle: "تعطيل تنعيم الحواف (فرض البيكسلات)",
         },
         stats: {
             title: "الإحصائيات",
@@ -2233,6 +2269,9 @@ const ko = {
             hidpiLabel: "HiDPI (픽셀 퍼펙트)",
             hidpiEnableTitle: "HiDPI 활성화 (픽셀 퍼펙트)",
             hidpiDisableTitle: "HiDPI 비활성화 (CSS 스케일링 사용)",
+            antiAliasingLabel: "안티에일리어싱",
+            antiAliasingEnableTitle: "안티에일리어싱 활성화 (확대/축소 시 부드럽게)",
+            antiAliasingDisableTitle: "안티에일리어싱 비활성화 (픽셀화 강제)",
         },
         stats: {
             title: "통계",
@@ -2412,6 +2451,9 @@ const ja = {
             hidpiLabel: "HiDPI (ピクセルパーフェクト)",
             hidpiEnableTitle: "HiDPI を有効にする (ピクセルパーフェクト)",
             hidpiDisableTitle: "HiDPI を無効にする (CSS スケーリングを使用)",
+            antiAliasingLabel: "アンチエイリアシング",
+            antiAliasingEnableTitle: "アンチエイリアシングを有効にする (スケーリング時に滑らかに)",
+            antiAliasingDisableTitle: "アンチエイリアシングを無効にする (ピクセル化を強制)",
         },
         stats: {
             title: "統計",
@@ -2591,6 +2633,9 @@ const vi = {
             hidpiLabel: "HiDPI (Hoàn hảo đến từng Pixel)",
             hidpiEnableTitle: "Bật HiDPI (Hoàn hảo đến từng Pixel)",
             hidpiDisableTitle: "Tắt HiDPI (Sử dụng CSS Scaling)",
+            antiAliasingLabel: "Khử răng cưa",
+            antiAliasingEnableTitle: "Bật khử răng cưa (làm mịn khi co giãn)",
+            antiAliasingDisableTitle: "Tắt khử răng cưa (buộc hiển thị pixel)",
         },
         stats: {
             title: "Thống kê",
@@ -2770,6 +2815,9 @@ const th = {
             hidpiLabel: "HiDPI (ความคมชัดระดับพิกเซล)",
             hidpiEnableTitle: "เปิดใช้งาน HiDPI (ความคมชัดระดับพิกเซล)",
             hidpiDisableTitle: "ปิดใช้งาน HiDPI (ใช้การปรับขนาด CSS)",
+            antiAliasingLabel: "การลบรอยหยัก",
+            antiAliasingEnableTitle: "เปิดใช้งานการลบรอยหยัก (ปรับให้เรียบเมื่อปรับขนาด)",
+            antiAliasingDisableTitle: "ปิดใช้งานการลบรอยหยัก (บังคับให้เป็นพิกเซล)",
         },
         stats: {
             title: "สถิติ",
@@ -2949,6 +2997,9 @@ const fil = {
             hidpiLabel: "HiDPI (Pixel Perfect)",
             hidpiEnableTitle: "Paganahin ang HiDPI (Pixel Perfect)",
             hidpiDisableTitle: "Huwag paganahin ang HiDPI (Gamitin ang CSS Scaling)",
+            antiAliasingLabel: "Anti-aliasing (Pagpapakinis)",
+            antiAliasingEnableTitle: "Paganahin ang anti-aliasing (makinis kapag nag-scale)",
+            antiAliasingDisableTitle: "Huwag paganahin ang anti-aliasing (puwersahing maging pixelated)",
         },
         stats: {
             title: "Stats",
@@ -3128,6 +3179,9 @@ const da = {
             hidpiLabel: "HiDPI (Pixel Perfekt)",
             hidpiEnableTitle: "Aktivér HiDPI (Pixel Perfekt)",
             hidpiDisableTitle: "Deaktivér HiDPI (Brug CSS-skalering)",
+            antiAliasingLabel: "Kantudjævning",
+            antiAliasingEnableTitle: "Aktiver kantudjævning (glat ved skalering)",
+            antiAliasingDisableTitle: "Deaktiver kantudjævning (tving pixeleret)",
         },
         stats: {
             title: "Statistik",
