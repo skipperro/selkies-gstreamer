@@ -1526,10 +1526,23 @@ export class Input {
             return;
         }
         for (let i = 0; i < text.length; i++) {
-            const keysym = Keysyms.lookup(text.charCodeAt(i));
-            if (keysym) {
-                this.send("kd," + keysym);
-                this.send("ku," + keysym);
+            const char = text[i];
+            const isUpperCase = char >= 'A' && char <= 'Z';
+            if (isUpperCase) {
+                this.send("kd," + KeyTable.XK_Shift_L);
+                const lowerChar = char.toLowerCase();
+                const letterKeysym = Keysyms.lookup(lowerChar.charCodeAt(0));
+                if (letterKeysym) {
+                    this.send("kd," + letterKeysym);
+                    this.send("ku," + letterKeysym);
+                }
+                this.send("ku," + KeyTable.XK_Shift_L);
+            } else {
+                const keysym = Keysyms.lookup(char.charCodeAt(0));
+                if (keysym) {
+                    this.send("kd," + keysym);
+                    this.send("ku," + keysym);
+                }
             }
         }
         event.target.value = '';
