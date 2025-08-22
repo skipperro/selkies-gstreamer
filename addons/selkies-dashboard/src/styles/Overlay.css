@@ -91,9 +91,8 @@
   width: 280px;
   height: calc(var(--vh, 1vh) * 100);
   background-color: var(--sidebar-bg);
-  box-shadow: 2px 0 5px var(--sidebar-shadow);
   transform: translateX(-100%);
-  transition: transform 0.3s ease-in-out, background-color 0.3s ease, color 0.3s ease;
+  transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out, background-color 0.3s ease, color 0.3s ease;
   z-index: 1010;
   padding: 20px;
   box-sizing: border-box;
@@ -106,6 +105,7 @@
 /* State when the sidebar is open. */
 .sidebar.is-open {
   transform: translateX(0);
+  box-shadow: 2px 0 5px var(--sidebar-shadow);
 }
 
 /* --- Sidebar Header --- */

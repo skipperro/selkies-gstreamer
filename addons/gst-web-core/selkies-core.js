@@ -336,17 +336,15 @@ const updateCanvasImageRendering = () => {
     }
     return;
   }
-  const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  const isStretched = Math.round(rect.width * dpr) !== canvas.width || Math.round(rect.height * dpr) !== canvas.height;
-  if (isStretched) {
+  if (window.isManualResolutionMode || (useCssScaling && dpr > 1)) {
     if (canvas.style.imageRendering !== 'auto') {
-      console.log(`Canvas is scaled (${canvas.width}x${canvas.height} buffer -> ${rect.width.toFixed(0)}x${rect.height.toFixed(0)} display). Setting rendering to 'auto'.`);
+      console.log("Smoothing enabled for manual resolution or high-DPR scaling.");
       canvas.style.imageRendering = 'auto';
     }
   } else {
     if (canvas.style.imageRendering !== 'pixelated') {
-      console.log("Canvas is 1:1. Setting rendering to 'pixelated'.");
+      console.log("Setting canvas rendering to 'pixelated' for 1:1 display.");
       canvas.style.imageRendering = 'pixelated';
       canvas.style.setProperty('image-rendering', 'crisp-edges', '');
     }
