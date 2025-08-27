@@ -1863,7 +1863,7 @@ class DataStreamingServer:
 
         # Define virtual source details
         virtual_source_name = "SelkiesVirtualMic"
-        master_monitor = "output.monitor"
+        master_monitor = "input.monitor"
 
         if not self.input_handler:
             logger.error(
@@ -2022,7 +2022,7 @@ class DataStreamingServer:
                                     for source_obj_default in current_source_list:
                                         if (
                                             source_obj_default.name
-                                            == virtual_source_name
+                                            == self.audio_device_name
                                         ):
                                             source_to_set_default = source_obj_default
                                             break
@@ -2034,15 +2034,15 @@ class DataStreamingServer:
                                         ):
                                             pulse.default_set(source_to_set_default)
                                             data_logger.info(
-                                                f"Set default PulseAudio source to '{virtual_source_name}'."
+                                                f"Set default PulseAudio source to '{source_to_set_default}'."
                                             )
                                         else:
                                             data_logger.info(
-                                                f"Default PulseAudio source is already '{virtual_source_name}'."
+                                                f"Default PulseAudio source is already '{source_to_set_default}'."
                                             )
                                     else:
                                         data_logger.error(
-                                            f"Could not find source '{virtual_source_name}' to set as default after setup."
+                                            f"Could not find source '{source_to_set_default}' to set as default after setup."
                                         )
 
                             except Exception as e_pa_setup:
@@ -3234,8 +3234,8 @@ async def main():
     )
     parser.add_argument(
         "--audio_device_name",
-        default=os.environ.get("SELKIES_AUDIO_DEVICE", ""),
-        help="Audio device name for pcmflux (e.g., a PulseAudio .monitor source). Defaults to system default input.",
+        default=os.environ.get("SELKIES_AUDIO_DEVICE", "output.monitor"),
+        help="Audio device name for pcmflux (e.g., a PulseAudio .monitor source). Defaults to output.monitor.",
     )
     parser.add_argument(
         "--h264_crf",
