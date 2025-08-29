@@ -725,6 +725,10 @@ function Sidebar({ isOpen }) {
     const saved = localStorage.getItem(getPrefixedKey("antiAliasingEnabled"));
     return saved !== null ? saved === "true" : true;
   });
+  const [useBrowserCursors, setUseBrowserCursors] = useState(() => {
+    const saved = localStorage.getItem(getPrefixedKey("useBrowserCursors"));
+    return saved !== null ? saved === "true" : false;
+  });
   const [presetValue, setPresetValue] = useState("");
   const [clientFps, setClientFps] = useState(0);
   const [audioBuffer, setAudioBuffer] = useState(0);
@@ -1311,6 +1315,14 @@ function Sidebar({ isOpen }) {
     setAntiAliasing(newState);
     window.postMessage(
       { type: "setAntiAliasing", value: newState },
+      window.location.origin
+    );
+  };
+  const handleUseBrowserCursorsToggle = () => {
+    const newState = !useBrowserCursors;
+    setUseBrowserCursors(newState);
+    window.postMessage(
+      { type: "setUseBrowserCursors", value: newState },
       window.location.origin
     );
   };
@@ -2367,6 +2379,21 @@ function Sidebar({ isOpen }) {
                   aria-pressed={antiAliasing}
                   title={t(antiAliasing ? "sections.screen.antiAliasingDisableTitle" : "sections.screen.antiAliasingEnableTitle",
                              antiAliasing ? "Disable anti-aliasing (force pixelated)" : "Enable anti-aliasing (smooth on scaling)")}
+                >
+                  <span className="toggle-button-sidebar-knob"></span>
+                </button>
+              </div>
+              <div className="dev-setting-item toggle-item">
+                <label htmlFor="useBrowserCursorsToggle">
+                  {t("sections.screen.useNativeCursorStylesLabel", "Use browser cursors")}
+                </label>
+                <button
+                  id="useBrowserCursorsToggle"
+                  className={`toggle-button-sidebar ${useBrowserCursors ? "active" : ""}`}
+                  onClick={handleUseBrowserCursorsToggle}
+                  aria-pressed={useBrowserCursors}
+                  title={t(useBrowserCursors ? "sections.screen.useNativeCursorStylesDisableTitle" : "sections.screen.useNativeCursorStylesEnableTitle",
+                             useBrowserCursors ? "Use custom cursor rendering (Canvas-based)" : "Use browser cursor rendering (CSS-based)")}
                 >
                   <span className="toggle-button-sidebar-knob"></span>
                 </button>

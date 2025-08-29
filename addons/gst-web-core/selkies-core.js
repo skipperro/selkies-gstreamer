@@ -60,6 +60,7 @@ let useCssScaling = false;
 let trackpadMode = false;
 let scalingDPI = 96;
 let antiAliasingEnabled = true;
+let useBrowserCursors = false;
 function setRealViewportHeight() {
   const vh = window.innerHeight * 0.01;
   document.documentElement.style.setProperty('--vh', `${vh}px`);
@@ -273,6 +274,8 @@ scalingDPI = getIntParam('SCALING_DPI', 96);
 setIntParam('SCALING_DPI', scalingDPI);
 antiAliasingEnabled = getBoolParam('antiAliasingEnabled', true);
 setBoolParam('antiAliasingEnabled', antiAliasingEnabled);
+useBrowserCursors = getBoolParam('useBrowserCursors', false);
+setBoolParam('useBrowserCursors', useBrowserCursors);
 
 if (isSharedMode) {
     manualWidth = 1280;
@@ -1066,6 +1069,8 @@ const initializeInput = () => {
 
   inputInstance.attach();
 
+  inputInstance.setUseBrowserCursors(useBrowserCursors);
+
   if (overlayInput) {
     const handlePointerDown = (e) => {
       requestWakeLock();
@@ -1344,6 +1349,18 @@ function receiveMessage(event) {
         }
       } else {
         console.warn("Invalid value received for setAntiAliasing:", message.value);
+      }
+      break;
+    case 'setUseBrowserCursors':
+      if (typeof message.value === 'boolean') {
+        useBrowserCursors = message.value;
+        setBoolParam('useBrowserCursors', useBrowserCursors);
+        console.log(`Set useBrowserCursors to ${useBrowserCursors} and persisted.`);
+        if (window.webrtcInput && typeof window.webrtcInput.setUseBrowserCursors === 'function') {
+          window.webrtcInput.setUseBrowserCursors(useBrowserCursors);
+        }
+      } else {
+        console.warn("Invalid value received for setUseBrowserCursors:", message.value);
       }
       break;
     case 'setManualResolution':

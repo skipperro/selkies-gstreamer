@@ -88,6 +88,9 @@ const en = {
             antiAliasingLabel: "Anti-aliasing",
             antiAliasingEnableTitle: "Enable anti-aliasing (smooth on scaling)",
             antiAliasingDisableTitle: "Disable anti-aliasing (force pixelated)",
+            useNativeCursorStylesLabel: "Use browser cursors",
+            useNativeCursorStylesEnableTitle: "Use browser cursor rendering (CSS-based)",
+            useNativeCursorStylesDisableTitle: "Use custom cursor rendering (Canvas-based)",
         },
         stats: {
             title: "Stats",
@@ -270,6 +273,9 @@ const es = {
              antiAliasingLabel: "Anti-aliasing",
              antiAliasingEnableTitle: "Activar anti-aliasing (suavizar al escalar)",
              antiAliasingDisableTitle: "Desactivar anti-aliasing (forzar pixelado)",
+             useNativeCursorStylesLabel: "Usar cursores del navegador",
+             useNativeCursorStylesEnableTitle: "Usar renderizado de cursor del navegador (basado en CSS)",
+             useNativeCursorStylesDisableTitle: "Usar renderizado de cursor personalizado (basado en Canvas)",
         },
         stats: {
              title: "Estadísticas",
@@ -452,6 +458,9 @@ const zh = {
             antiAliasingLabel: "抗锯齿",
             antiAliasingEnableTitle: "启用抗锯齿 (缩放时平滑)",
             antiAliasingDisableTitle: "禁用抗锯齿 (强制像素化)",
+            useNativeCursorStylesLabel: "使用浏览器光标",
+            useNativeCursorStylesEnableTitle: "使用浏览器光标渲染 (基于CSS)",
+            useNativeCursorStylesDisableTitle: "使用自定义光标渲染 (基于Canvas)",
         },
         stats: {
             title: "统计信息",
@@ -631,9 +640,12 @@ const hi = {
             hidpiLabel: "HiDPI (पिक्सेल परफेक्ट)",
             hidpiEnableTitle: "HiDPI सक्षम करें (पिक्सेल परफेक्ट)",
             hidpiDisableTitle: "HiDPI अक्षम करें (CSS स्केलिंग का उपयोग करें)",
-            antiAliasingLabel: "एंटी-अलियासिंग",
+            antiAliasingLabel: "सुरक्षा",
             antiAliasingEnableTitle: "एंटी-अलियासिंग सक्षम करें (स्केलिंग पर स्मूथ)",
             antiAliasingDisableTitle: "एंटी-अलियासिंग अक्षम करें (पिक्सेलयुक्त करने के लिए बाध्य करें)",
+            useNativeCursorStylesLabel: "ब्राउज़र कर्सर का उपयोग करें",
+            useNativeCursorStylesEnableTitle: "ब्राउज़र कर्सर रेंडरिंग का उपयोग करें (CSS-आधारित)",
+            useNativeCursorStylesDisableTitle: "कस्टम कर्सर रेंडरिंग का उपयोग करें (Canvas-आधारित)",
         },
         stats: {
             title: "आँकड़े",
@@ -816,6 +828,9 @@ const pt = {
             antiAliasingLabel: "Anti-aliasing",
             antiAliasingEnableTitle: "Ativar anti-aliasing (suavizar ao escalar)",
             antiAliasingDisableTitle: "Desativar anti-aliasing (forçar pixelização)",
+            useNativeCursorStylesLabel: "Usar cursores do navegador",
+            useNativeCursorStylesEnableTitle: "Usar renderização de cursor do navegador (baseada em CSS)",
+            useNativeCursorStylesDisableTitle: "Usar renderização de cursor personalizada (baseada em Canvas)",
         },
         stats: {
             title: "Estatísticas",
@@ -998,6 +1013,9 @@ const fr = {
             antiAliasingLabel: "Anticrénelage",
             antiAliasingEnableTitle: "Activer l'anticrénelage (lisser à la mise à l'échelle)",
             antiAliasingDisableTitle: "Désactiver l'anticrénelage (forcer la pixellisation)",
+            useNativeCursorStylesLabel: "Utiliser les curseurs du navigateur",
+            useNativeCursorStylesEnableTitle: "Utiliser le rendu de curseur du navigateur (basé sur CSS)",
+            useNativeCursorStylesDisableTitle: "Utiliser le rendu de curseur personnalisé (basé sur Canvas)",
         },
         stats: {
             title: "Statistiques",
@@ -1180,6 +1198,9 @@ const ru = {
             antiAliasingLabel: "Сглаживание",
             antiAliasingEnableTitle: "Включить сглаживание (плавно при масштабировании)",
             antiAliasingDisableTitle: "Отключить сглаживание (принудительно пикселизировать)",
+            useNativeCursorStylesLabel: "Использовать курсоры браузера",
+            useNativeCursorStylesEnableTitle: "Использовать рендеринг курсора браузера (на основе CSS)",
+            useNativeCursorStylesDisableTitle: "Использовать пользовательский рендеринг курсора (на основе Canvas)",
         },
         stats: {
             title: "Статистика",
@@ -1362,6 +1383,9 @@ const de = {
             antiAliasingLabel: "Kantenglättung",
             antiAliasingEnableTitle: "Kantenglättung aktivieren (Glättung bei Skalierung)",
             antiAliasingDisableTitle: "Kantenglättung deaktivieren (Verpixelung erzwingen)",
+            useNativeCursorStylesLabel: "Native Cursor-Stile verwenden",
+            useNativeCursorStylesEnableTitle: "Native CSS-Cursor-Stile anstelle von Canvas-Rendering aktivieren",
+            useNativeCursorStylesDisableTitle: "Native CSS-Cursor-Stile deaktivieren (Canvas-Rendering verwenden)",
         },
         stats: {
             title: "Statistiken",
@@ -2272,6 +2296,9 @@ const ko = {
             antiAliasingLabel: "안티에일리어싱",
             antiAliasingEnableTitle: "안티에일리어싱 활성화 (확대/축소 시 부드럽게)",
             antiAliasingDisableTitle: "안티에일리어싱 비활성화 (픽셀화 강제)",
+            useNativeCursorStylesLabel: "네이티브 커서 스타일 사용",
+            useNativeCursorStylesEnableTitle: "캔버스 렌더링 대신 네이티브 CSS 커서 스타일 활성화",
+            useNativeCursorStylesDisableTitle: "네이티브 CSS 커서 스타일 비활성화 (캔버스 렌더링 사용)",
         },
         stats: {
             title: "통계",
@@ -2454,6 +2481,9 @@ const ja = {
             antiAliasingLabel: "アンチエイリアシング",
             antiAliasingEnableTitle: "アンチエイリアシングを有効にする (スケーリング時に滑らかに)",
             antiAliasingDisableTitle: "アンチエイリアシングを無効にする (ピクセル化を強制)",
+            useNativeCursorStylesLabel: "ネイティブカーソルスタイルを使用",
+            useNativeCursorStylesEnableTitle: "キャンバスレンダリングの代わりにネイティブCSSカーソルスタイルを有効にする",
+            useNativeCursorStylesDisableTitle: "ネイティブCSSカーソルスタイルを無効にする (キャンバスレンダリングを使用)",
         },
         stats: {
             title: "統計",
