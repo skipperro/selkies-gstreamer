@@ -1860,7 +1860,11 @@ class DataStreamingServer:
         pa_module_index = None  # Stores the index of the loaded module-virtual-source
         pa_stream = None  # For pasimple playback
         pulse = None  # pulsectl.Pulse client instance
-
+        
+        # Audio buffer management
+        audio_buffer = []
+        buffer_max_size = 24000 * 2 * 2  # 2 seconds at 24kHz, 16-bit mono
+        
         # Define virtual source details
         virtual_source_name = "SelkiesVirtualMic"
         master_monitor = "input.monitor"
@@ -2116,8 +2120,19 @@ class DataStreamingServer:
                                     "MicStream",
                                     device_name="input",  # Play to system's default input (which should be our virtual mic)
                                 )
-                            if pa_stream:
-                                pa_stream.write(payload)
+                            
+                            audio_buffer.extend(payload)
+                            
+                            if len(audio_buffer) > buffer_max_size:
+                                audio_buffer = audio_buffer[len(audio_buffer)//2:]
+                                data_logger.warning("Audio buffer overflow, dropping old audio to prevent drift")
+                            
+                            if pa_stream and len(audio_buffer) >= len(payload):
+                                chunk_size = len(payload)
+                                data_to_write = bytes(audio_buffer[:chunk_size])
+                                audio_buffer[:chunk_size] = []
+                                pa_stream.write(data_to_write)
+                                    
                         except Exception as e_pa_write:
                             data_logger.error(
                                 f"PulseAudio stream write error: {e_pa_write}",
@@ -2128,7 +2143,7 @@ class DataStreamingServer:
                                     pa_stream.close()
                                 except:
                                     pass
-                            pa_stream = None  # Force re-open on next packet
+                            audio_buffer.clear()
 
                 elif isinstance(message, str):
                     if message.startswith("FILE_UPLOAD_START:"):
