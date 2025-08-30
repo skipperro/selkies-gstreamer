@@ -1860,7 +1860,11 @@ class DataStreamingServer:
         pa_module_index = None  # Stores the index of the loaded module-virtual-source
         pa_stream = None  # For pasimple playback
         pulse = None  # pulsectl.Pulse client instance
-
+        
+        # Audio buffer management
+        audio_buffer = []
+        buffer_max_size = 24000 * 2 * 2  # 2 seconds at 24kHz, 16-bit mono
+        
         # Define virtual source details
         virtual_source_name = "SelkiesVirtualMic"
         master_monitor = "input.monitor"
@@ -2014,36 +2018,64 @@ class DataStreamingServer:
                                             pa_module_index = None  # Reset on failure to unload or if it was problematic
 
                                 if mic_setup_done:
-                                    # Set as default source
-                                    source_to_set_default = None
                                     current_source_list = (
                                         pulse.source_list()
-                                    )  # Re-fetch list
-                                    for source_obj_default in current_source_list:
-                                        if (
-                                            source_obj_default.name
-                                            == self.audio_device_name
-                                        ):
-                                            source_to_set_default = source_obj_default
-                                            break
-
-                                    if source_to_set_default:
-                                        if (
-                                            pulse.server_info().default_source_name
-                                            != source_to_set_default.name
-                                        ):
-                                            pulse.default_set(source_to_set_default)
-                                            data_logger.info(
-                                                f"Set default PulseAudio source to '{source_to_set_default}'."
-                                            )
-                                        else:
-                                            data_logger.info(
-                                                f"Default PulseAudio source is already '{source_to_set_default}'."
-                                            )
-                                    else:
-                                        data_logger.error(
-                                            f"Could not find source '{source_to_set_default}' to set as default after setup."
-                                        )
+                                    )
+                                    # Mic is automatically set to the source for recording (pcmflux) and input
+                                    # Set pcmflux back to the input source
+                                    if self.is_pcmflux_capturing:
+                                        try:
+                                            # Get all source outputs to find pcmflux
+                                            source_outputs = pulse.source_output_list()
+                                            pcmflux_output = None
+                                            
+                                            for output in source_outputs:
+                                                if hasattr(output, 'proplist') and output.proplist.get('application.name') == 'pcmflux':
+                                                    pcmflux_output = output
+                                                    break
+                                            
+                                            if pcmflux_output:
+                                                # Get the source pcmflux is connected to
+                                                connected_source = None
+                                                for source in current_source_list:
+                                                    if source.index == pcmflux_output.source:
+                                                        connected_source = source
+                                                        break
+                                                
+                                                # Check if it's connected to the wrong source
+                                                if connected_source and connected_source.name != self.audio_device_name:
+                                                    data_logger.warning(
+                                                        f"pcmflux connected to wrong source '{connected_source.name}', moving to '{self.audio_device_name}'"
+                                                    )
+                                                    
+                                                    # Find the correct source to move to
+                                                    correct_source = None
+                                                    for source in current_source_list:
+                                                        if source.name == self.audio_device_name:
+                                                            correct_source = source
+                                                            break
+                                                    
+                                                    if correct_source:
+                                                        # Move pcmflux to the correct source
+                                                        pulse.source_output_move(pcmflux_output.index, correct_source.index)
+                                                        data_logger.info(
+                                                            f"Successfully moved pcmflux from '{connected_source.name}' to '{self.audio_device_name}'"
+                                                        )
+                                                    else:
+                                                        data_logger.error(
+                                                            f"Could not find source '{self.audio_device_name}' to move pcmflux to"
+                                                        )
+                                                elif connected_source:
+                                                    data_logger.info(f"pcmflux correctly connected to '{connected_source.name}'")
+                                            else:
+                                                data_logger.debug("Could not find pcmflux in source outputs")
+                                                
+                                        except Exception as e:
+                                            data_logger.error(f"Error checking/fixing pcmflux source: {e}")
+                                    
+                                    data_logger.info(
+                                        f"Virtual microphone '{virtual_source_name}' is ready for microphone forwarding."
+                                    )
 
                             except Exception as e_pa_setup:
                                 data_logger.error(
@@ -2088,8 +2120,19 @@ class DataStreamingServer:
                                     "MicStream",
                                     device_name="input",  # Play to system's default input (which should be our virtual mic)
                                 )
-                            if pa_stream:
-                                pa_stream.write(payload)
+                            
+                            audio_buffer.extend(payload)
+                            
+                            if len(audio_buffer) > buffer_max_size:
+                                audio_buffer = audio_buffer[len(audio_buffer)//2:]
+                                data_logger.warning("Audio buffer overflow, dropping old audio to prevent drift")
+                            
+                            if pa_stream and len(audio_buffer) >= len(payload):
+                                chunk_size = len(payload)
+                                data_to_write = bytes(audio_buffer[:chunk_size])
+                                audio_buffer[:chunk_size] = []
+                                pa_stream.write(data_to_write)
+                                    
                         except Exception as e_pa_write:
                             data_logger.error(
                                 f"PulseAudio stream write error: {e_pa_write}",
@@ -2100,7 +2143,7 @@ class DataStreamingServer:
                                     pa_stream.close()
                                 except:
                                     pass
-                            pa_stream = None  # Force re-open on next packet
+                            audio_buffer.clear()
 
                 elif isinstance(message, str):
                     if message.startswith("FILE_UPLOAD_START:"):

@@ -3495,13 +3495,28 @@ const audioDecoderWorkerCode = `
 
 const micWorkletProcessorCode = `
 class MicWorkletProcessor extends AudioWorkletProcessor {
-  constructor() { super(); }
+  constructor() {
+    super();
+    this.SILENCE_THRESHOLD_CHUNKS = 300;
+    this.silentChunkCounter = 0;
+    this.isSending = true;
+  }
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     if (input && input[0]) {
       const inputChannelData = input[0];
       const int16Array = Int16Array.from(inputChannelData, x => x * 32767);
-      if (! int16Array.every(item => item === 0)) {
+      const isCurrentChunkSilent = int16Array.every(item => item === 0);
+      if (!isCurrentChunkSilent) {
+        this.isSending = true;
+        this.silentChunkCounter = 0;
+      } else {
+        this.silentChunkCounter++;
+      }
+      if (this.silentChunkCounter >= this.SILENCE_THRESHOLD_CHUNKS) {
+        this.isSending = false;
+      }
+      if (this.isSending) {
         this.port.postMessage(int16Array.buffer, [int16Array.buffer]);
       }
     }
