@@ -2385,7 +2385,7 @@ function Sidebar({ isOpen }) {
               </div>
               <div className="dev-setting-item toggle-item">
                 <label htmlFor="useBrowserCursorsToggle">
-                  {t("sections.screen.useNativeCursorStylesLabel", "Use browser cursors")}
+                  {t("sections.screen.useNativeCursorStylesLabel", "Use CSS cursors")}
                 </label>
                 <button
                   id="useBrowserCursorsToggle"
@@ -2393,7 +2393,7 @@ function Sidebar({ isOpen }) {
                   onClick={handleUseBrowserCursorsToggle}
                   aria-pressed={useBrowserCursors}
                   title={t(useBrowserCursors ? "sections.screen.useNativeCursorStylesDisableTitle" : "sections.screen.useNativeCursorStylesEnableTitle",
-                             useBrowserCursors ? "Use custom cursor rendering (Canvas-based)" : "Use browser cursor rendering (CSS-based)")}
+                             useBrowserCursors ? "Use canvas cursor rendering (Paint to canvas)" : "Use CSS cursor rendering (Replace system cursors)")}
                 >
                   <span className="toggle-button-sidebar-knob"></span>
                 </button>
