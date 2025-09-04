@@ -474,11 +474,22 @@ function sendResolutionToServer(width, height) {
     console.log("Shared mode: Resolution sending to server is blocked.");
     return;
   }
-  const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
-  const realWidth = roundDownToEven(width * dpr);
-  const realHeight = roundDownToEven(height * dpr);
+
+  let realWidth, realHeight;
+  let dprUsed = 1;
+
+  if (window.isManualResolutionMode) {
+    realWidth = roundDownToEven(width);
+    realHeight = roundDownToEven(height);
+  } else {
+    dprUsed = useCssScaling ? 1 : (window.devicePixelRatio || 1);
+    realWidth = roundDownToEven(width * dprUsed);
+    realHeight = roundDownToEven(height * dprUsed);
+  }
+
   const resString = `${realWidth}x${realHeight}`;
-  console.log(`Sending resolution to server: ${resString}, Pixel Ratio Used: ${dpr}, useCssScaling: ${useCssScaling}`);
+  console.log(`Sending resolution to server: ${resString}, Manual Mode: ${window.isManualResolutionMode}, Pixel Ratio Used: ${dprUsed}, useCssScaling: ${useCssScaling}`);
+
   if (websocket && websocket.readyState === WebSocket.OPEN) {
     websocket.send(`r,${resString}`);
   } else {
