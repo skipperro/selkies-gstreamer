@@ -521,36 +521,105 @@ async def _run_xrdb(dpi_value, logger):
         logger.error(f"Error updating or loading DPI settings: {e}")
         return False
 
+async def _get_xfce_session_env(logger):
+    """
+    Finds the running xfce4-session process and extracts its environment variables.
+    This is necessary to communicate with the correct D-Bus session.
+    """
+    try:
+        proc_pid = await subprocess.create_subprocess_exec(
+            "pgrep", "-o", "-x", "xfce4-session",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout_pid, stderr_pid = await proc_pid.communicate()
+
+        if proc_pid.returncode != 0:
+            logger.debug(f"Could not find running xfce4-session: {stderr_pid.decode().strip()}")
+            return None
+        
+        pid = stdout_pid.decode().strip()
+        
+        env_path = f"/proc/{pid}/environ"
+        if not os.path.exists(env_path):
+            logger.debug(f"Could not read environment for PID {pid}. Path {env_path} does not exist.")
+            return None
+
+        with open(env_path, "r") as f:
+            environ_data = f.read()
+        
+        env = {}
+        for line in environ_data.split('\x00'):
+            if '=' in line:
+                key, value = line.split('=', 1)
+                env[key] = value
+        
+        if "DBUS_SESSION_BUS_ADDRESS" not in env:
+            logger.debug(f"Found xfce4-session (PID {pid}), but DBUS_SESSION_BUS_ADDRESS was not in its environment.")
+            return None
+
+        return env
+
+    except Exception as e:
+        logger.warning(f"Failed to get XFCE session environment, will proceed with default environment: {e}")
+        return None
+
 async def _run_xfconf(dpi_value, logger):
     """Helper function to apply DPI via xfconf-query for XFCE."""
     if not which("xfconf-query"):
         logger.debug("xfconf-query not found. Skipping XFCE DPI setting via xfconf-query.")
         return False
 
-    cmd_xfconf = [
-        "xfconf-query",
-        "-c", "xsettings",
-        "-p", "/Xft/DPI",
-        "-s", str(dpi_value),
-        "--create",
-        "-t", "int",
-    ]
-    try:
-        process = await subprocess.create_subprocess_exec(
-            *cmd_xfconf,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        if process.returncode == 0:
-            logger.info(f"Successfully set XFCE DPI to {dpi_value} using xfconf-query.")
-            return True
-        else:
-            logger.warning(f"Failed to set XFCE DPI using xfconf-query. RC: {process.returncode}, Error: {stderr.decode().strip()}")
+    session_env = await _get_xfce_session_env(logger)
+    if session_env:
+        logger.info("Found active XFCE session environment. Commands will be executed within this context.")
+    else:
+        logger.warning("Could not obtain XFCE session environment. Falling back to direct execution.")
+
+    async def run_command(cmd, success_msg, failure_msg):
+        try:
+            process = await subprocess.create_subprocess_exec(
+                *cmd,
+                env=session_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            _stdout, stderr = await process.communicate()
+            if process.returncode == 0:
+                logger.info(success_msg)
+                return True
+            else:
+                logger.warning(f"{failure_msg}. RC: {process.returncode}, Error: {stderr.decode().strip()}")
+                return False
+        except Exception as e:
+            logger.error(f"Error running command '{' '.join(cmd)}': {e}")
             return False
-    except Exception as e:
-        logger.error(f"Error running xfconf-query: {e}")
+
+    cmd_dpi = [
+        "xfconf-query", "-c", "xsettings", "-p", "/Xft/DPI",
+        "-s", str(dpi_value), "--create", "-t", "int"
+    ]
+    if not await run_command(
+        cmd_dpi,
+        f"Successfully set XFCE DPI to {dpi_value} using xfconf-query.",
+        "Failed to set XFCE DPI using xfconf-query"
+    ):
         return False
+
+    cursor_size = int(round(dpi_value / 96 * 32))
+    logger.info(f"Attempting to set cursor size to: {cursor_size} (based on DPI {dpi_value})")
+    cmd_cursor = [
+        "xfconf-query", "-c", "xsettings", "-p", "/Gtk/CursorThemeSize",
+        "-s", str(cursor_size), "--create", "-t", "int"
+    ]
+    if not await run_command(
+        cmd_cursor,
+        f"Successfully set cursor size to {cursor_size}",
+        "Failed to set cursor size using xfconf-query"
+    ):
+        return False
+
+    return True
 
 async def _run_mate_gsettings(dpi_value, logger):
     """Helper function to apply DPI via gsettings for MATE."""

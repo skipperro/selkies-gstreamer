@@ -908,27 +908,6 @@ function Sidebar({ isOpen }) {
       { type: "settings", settings: { SCALING_DPI: newDpi } },
       window.location.origin
     );
-
-    const notificationId = `scaling-action-required-${Date.now()}`;
-    const title = t("notifications.scalingTitle", "Scaling Updated: Action Required");
-    const message = t(
-      "notifications.scalingMessage", 
-      "New scaling applied. Some applications or desktop environments might require a restart."
-    );
-
-    setNotifications(prev => {
-      const newNotifs = [...prev, {
-        id: notificationId,
-        fileName: title,
-        status: 'end',
-        message: message,
-        timestamp: Date.now(),
-        fadingOut: false,
-      }];
-      return newNotifs.slice(-MAX_NOTIFICATIONS);
-    });
-
-    scheduleNotificationRemoval(notificationId, NOTIFICATION_TIMEOUT_ERROR); 
   };
 
   const DRAG_THRESHOLD = 10;
