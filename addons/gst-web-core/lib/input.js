@@ -2261,9 +2261,11 @@ export class Input {
     _pointerLock() {
         if (document.pointerLockElement === this.element) {
             this.send("p,1");
+            this.send("SET_NATIVE_CURSOR_RENDERING,1");
         } else {
             this.send("p,0");
-            this.resetKeyboard(); // Release keys when pointer lock is lost
+            this.send("SET_NATIVE_CURSOR_RENDERING,0");
+            this.resetKeyboard();
         }
     }
 
