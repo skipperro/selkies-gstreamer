@@ -67,6 +67,7 @@ const DEFAULT_VIDEO_BUFFER_SIZE = 0;
 const DEFAULT_ENCODER = encoderOptions[0];
 const DEFAULT_VIDEO_CRF = 25;
 const DEFAULT_SCALE_LOCALLY = true;
+const DEFAULT_ENABLE_BINARY_CLIPBOARD = false;
 const REPO_BASE_URL =
   "https://raw.githubusercontent.com/linuxserver/proot-apps/master/metadata/";
 const METADATA_URL = `${REPO_BASE_URL}metadata.yml`;
@@ -729,6 +730,10 @@ function Sidebar({ isOpen }) {
     const saved = localStorage.getItem(getPrefixedKey("useBrowserCursors"));
     return saved !== null ? saved === "true" : false;
   });
+  const [enableBinaryClipboard, setEnableBinaryClipboard] = useState(() => {
+    const saved = localStorage.getItem(getPrefixedKey("enableBinaryClipboard"));
+    return saved !== null ? saved === 'true' : DEFAULT_ENABLE_BINARY_CLIPBOARD;
+  });
   const [presetValue, setPresetValue] = useState("");
   const [clientFps, setClientFps] = useState(0);
   const [audioBuffer, setAudioBuffer] = useState(0);
@@ -895,6 +900,16 @@ function Sidebar({ isOpen }) {
     debounce((newUseCpu) => {
       window.postMessage(
         { type: "settings", settings: { useCpu: newUseCpu } },
+        window.location.origin
+      );
+    }, DEBOUNCE_DELAY),
+    []
+  );
+
+  const debouncedUpdateEnableBinaryClipboardSettings = useCallback(
+    debounce((newVal) => {
+      window.postMessage(
+        { type: "settings", settings: { enableBinaryClipboard: newVal } },
         window.location.origin
       );
     }, DEBOUNCE_DELAY),
@@ -1305,6 +1320,11 @@ function Sidebar({ isOpen }) {
       window.location.origin
     );
   };
+  const handleEnableBinaryClipboardToggle = () => {
+    const newState = !enableBinaryClipboard;
+    setEnableBinaryClipboard(newState);
+    debouncedUpdateEnableBinaryClipboardSettings(newState);
+  };
   const handleSetManualResolution = () => {
     const width = parseInt(manualWidth.trim(), 10),
       height = parseInt(manualHeight.trim(), 10);
@@ -1705,6 +1725,10 @@ function Sidebar({ isOpen }) {
                 ? message.encoders
                 : encoderOptions;
             setDynamicEncoderOptions(newEncoderOptions);
+          }
+          if (typeof message.enableBinaryClipboard === 'boolean') {
+            setEnableBinaryClipboard(message.enableBinaryClipboard);
+            console.log("Dashboard: Received enableBinaryClipboard setting from server:", message.enableBinaryClipboard);
           }
         } else if (message.type === "trackpadModeUpdate") {
           if (typeof message.enabled === 'boolean') {
@@ -2956,7 +2980,24 @@ function Sidebar({ isOpen }) {
           </div>
           {sectionsOpen.clipboard && (
             <div className="sidebar-section-content" id="clipboard-content">
-              {" "}
+              <div className="dev-setting-item toggle-item">
+                <label 
+                  htmlFor="enableBinaryClipboardToggle"
+                  title={t("sections.clipboard.binaryModeDetails", "Allows copying and pasting images (e.g., PNG) to and from the remote session. May cause issues if a very large file is in the clipboard.")}
+                >
+                  {t("sections.clipboard.binaryModeLabel", "Image Support")}
+                </label>
+                <button
+                  id="enableBinaryClipboardToggle"
+                  className={`toggle-button-sidebar ${enableBinaryClipboard ? "active" : ""}`}
+                  onClick={handleEnableBinaryClipboardToggle}
+                  aria-pressed={enableBinaryClipboard}
+                  title={t(enableBinaryClipboard ? "buttons.binaryClipboardDisableTitle" : "buttons.binaryClipboardEnableTitle",
+                             enableBinaryClipboard ? "Disable Image Clipboard" : "Enable Image Clipboard")}
+                >
+                  <span className="toggle-button-sidebar-knob"></span>
+                </button>
+              </div>
               <div className="dashboard-clipboard-item">
                 {" "}
                 <label htmlFor="dashboardClipboardTextarea">

@@ -35,6 +35,8 @@ const en = {
         useCpuDisableTitle: "Disable Force CPU Encoding (Overrides nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Enable Paint-Overs (Cleans up static portions of the screen)",
         usePaintOverQualityDisableTitle: "Disable Paint-Overs (Cleans up static portions of the screen)",
+        binaryClipboardEnableTitle: "Enable Image Clipboard",
+        binaryClipboardDisableTitle: "Disable Image Clipboard",
     },
     sections: {
         video: {
@@ -116,6 +118,8 @@ const en = {
             title: "Clipboard",
             label: "Server Clipboard:",
             placeholder: "Clipboard content from server...",
+            binaryModeLabel: "Image Support",
+            binaryModeDetails: "Allows copying and pasting images to and from the remote session.",
         },
         files: {
             title: "Files",
@@ -220,6 +224,8 @@ const es = {
         useCpuDisableTitle: "Desactivar Codificación Forzada por CPU (Sobrescribe nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Activar Mejora de Estáticos (Limpia porciones estáticas de la pantalla)",
         usePaintOverQualityDisableTitle: "Desactivar Mejora de Estáticos (Limpia porciones estáticas de la pantalla)",
+        binaryClipboardEnableTitle: "Activar Portapapeles de Imágenes",
+        binaryClipboardDisableTitle: "Desactivar Portapapeles de Imágenes",
     },
     sections: {
         video: {
@@ -301,6 +307,8 @@ const es = {
              title: "Portapapeles",
              label: "Portapapeles del Servidor:",
              placeholder: "Contenido del portapapeles del servidor...",
+             binaryModeLabel: "Soporte de Imágenes",
+             binaryModeDetails: "Permite copiar y pegar imágenes desde y hacia la sesión remota.",
         },
         files: {
              title: "Archivos",
@@ -405,6 +413,8 @@ const zh = {
         useCpuDisableTitle: "禁用强制 CPU 编码 (覆盖 nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "启用静态区域优化 (清理屏幕的静态部分)",
         usePaintOverQualityDisableTitle: "禁用静态区域优化 (清理屏幕的静态部分)",
+        binaryClipboardEnableTitle: "启用图像剪贴板",
+        binaryClipboardDisableTitle: "禁用图像剪贴板",
     },
     sections: {
         video: {
@@ -486,6 +496,8 @@ const zh = {
             title: "剪贴板",
             label: "服务器剪贴板:",
             placeholder: "来自服务器的剪贴板内容...",
+            binaryModeLabel: "图像支持",
+            binaryModeDetails: "允许在远程会话中复制和粘贴图像。",
         },
         files: {
             title: "文件",
@@ -590,6 +602,8 @@ const hi = {
         useCpuDisableTitle: "फोर्स सीपीयू एन्कोडिंग अक्षम करें (nvenc/vaapi को ओवरराइड करता है)",
         usePaintOverQualityEnableTitle: "स्थिर छवि सुधार सक्षम करें (स्क्रीन के स्थिर हिस्सों को साफ करता है)",
         usePaintOverQualityDisableTitle: "स्थिर छवि सुधार अक्षम करें (स्क्रीन के स्थिर हिस्सों को साफ करता है)",
+        binaryClipboardEnableTitle: "छवि क्लिपबोर्ड सक्षम करें",
+        binaryClipboardDisableTitle: "छवि क्लिपबोर्ड अक्षम करें",
     },
     sections: {
         video: {
@@ -671,6 +685,8 @@ const hi = {
             title: "क्लिपबोर्ड",
             label: "सर्वर क्लिपबोर्ड:",
             placeholder: "सर्वर से क्लिपबोर्ड सामग्री...",
+            binaryModeLabel: "छवि समर्थन",
+            binaryModeDetails: "रिमोट सत्र से और उसमें छवियों को कॉपी और पेस्ट करने की अनुमति देता है।",
         },
         files: {
             title: "फ़ाइलें",
@@ -775,6 +791,8 @@ const pt = {
         useCpuDisableTitle: "Desativar Codificação Forçada por CPU (Substitui nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Ativar Melhoria de Estáticos (Limpa porções estáticas da tela)",
         usePaintOverQualityDisableTitle: "Desativar Melhoria de Estáticos (Limpa porções estáticas da tela)",
+        binaryClipboardEnableTitle: "Ativar Área de Transferência de Imagens",
+        binaryClipboardDisableTitle: "Desativar Área de Transferência de Imagens",
     },
     sections: {
         video: {
@@ -856,6 +874,8 @@ const pt = {
             title: "Área de Transferência",
             label: "Área de Transferência do Servidor:",
             placeholder: "Conteúdo da área de transferência do servidor...",
+            binaryModeLabel: "Suporte a Imagens",
+            binaryModeDetails: "Permite copiar e colar imagens de e para a sessão remota.",
         },
         files: {
             title: "Arquivos",
@@ -960,6 +980,8 @@ const fr = {
         useCpuDisableTitle: "Désactiver l'encodage forcé par CPU (Remplace nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Activer le raffinage statique (Nettoie les parties statiques de l'écran)",
         usePaintOverQualityDisableTitle: "Désactiver le raffinage statique (Nettoie les parties statiques de l'écran)",
+        binaryClipboardEnableTitle: "Activer le presse-papiers d'images",
+        binaryClipboardDisableTitle: "Désactiver le presse-papiers d'images",
     },
     sections: {
         video: {
@@ -1041,6 +1063,8 @@ const fr = {
             title: "Presse-papiers",
             label: "Presse-papiers du serveur :",
             placeholder: "Contenu du presse-papiers depuis le serveur...",
+            binaryModeLabel: "Support d'images",
+            binaryModeDetails: "Permet de copier et coller des images depuis et vers la session distante.",
         },
         files: {
             title: "Fichiers",
@@ -1145,6 +1169,8 @@ const ru = {
         useCpuDisableTitle: "Отключить принудительное кодирование ЦП (Переопределяет nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Включить улучшение статики (Очищает статичные части экрана)",
         usePaintOverQualityDisableTitle: "Отключить улучшение статики (Очищает статичные части экрана)",
+        binaryClipboardEnableTitle: "Включить буфер обмена изображений",
+        binaryClipboardDisableTitle: "Отключить буфер обмена изображений",
     },
     sections: {
         video: {
@@ -1226,6 +1252,8 @@ const ru = {
             title: "Буфер обмена",
             label: "Буфер обмена сервера:",
             placeholder: "Содержимое буфера обмена с сервера...",
+            binaryModeLabel: "Поддержка изображений",
+            binaryModeDetails: "Позволяет копировать и вставлять изображения в удаленную сессию и из нее.",
         },
         files: {
             title: "Файлы",
@@ -1330,6 +1358,8 @@ const de = {
         useCpuDisableTitle: "Erzwungene CPU-Kodierung deaktivieren (Überschreibt nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Statische Bildverbesserung aktivieren (Bereinigt statische Bereiche des Bildschirms)",
         usePaintOverQualityDisableTitle: "Statische Bildverbesserung deaktivieren (Bereinigt statische Bereiche des Bildschirms)",
+        binaryClipboardEnableTitle: "Bild-Zwischenablage aktivieren",
+        binaryClipboardDisableTitle: "Bild-Zwischenablage deaktivieren",
     },
     sections: {
         video: {
@@ -1411,6 +1441,8 @@ const de = {
             title: "Zwischenablage",
             label: "Server-Zwischenablage:",
             placeholder: "Inhalt der Zwischenablage vom Server...",
+            binaryModeLabel: "Bildunterstützung",
+            binaryModeDetails: "Ermöglicht das Kopieren und Einfügen von Bildern in die und aus der Remote-Sitzung.",
         },
         files: {
             title: "Dateien",
@@ -1515,6 +1547,8 @@ const tr = {
         useCpuDisableTitle: "CPU Kodlamasını Zorla Devre Dışı Bırak (nvenc/vaapi'yi geçersiz kılar)",
         usePaintOverQualityEnableTitle: "Statik İyileştirmeyi Etkinleştir (Ekranın statik kısımlarını temizler)",
         usePaintOverQualityDisableTitle: "Statik İyileştirmeyi Devre Dışı Bırak (Ekranın statik kısımlarını temizler)",
+        binaryClipboardEnableTitle: "Resim Panosunu Etkinleştir",
+        binaryClipboardDisableTitle: "Resim Panosunu Devre Dışı Bırak",
     },
     sections: {
         video: {
@@ -1596,6 +1630,8 @@ const tr = {
             title: "Pano",
             label: "Sunucu Panosu:",
             placeholder: "Sunucudan pano içeriği...",
+            binaryModeLabel: "Resim Desteği",
+            binaryModeDetails: "Uzak oturuma ve oturumdan resim kopyalayıp yapıştırmaya izin verir.",
         },
         files: {
             title: "Dosyalar",
@@ -1700,6 +1736,8 @@ const it = {
         useCpuDisableTitle: "Disabilita Codifica CPU Forzata (Sovrascrive nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Abilita Miglioramento Statico (Pulisce le porzioni statiche dello schermo)",
         usePaintOverQualityDisableTitle: "Disabilita Miglioramento Statico (Pulisce le porzioni statiche dello schermo)",
+        binaryClipboardEnableTitle: "Abilita Appunti Immagine",
+        binaryClipboardDisableTitle: "Disabilita Appunti Immagine",
     },
     sections: {
         video: {
@@ -1781,6 +1819,8 @@ const it = {
             title: "Appunti",
             label: "Appunti del Server:",
             placeholder: "Contenuto degli appunti dal server...",
+            binaryModeLabel: "Supporto Immagini",
+            binaryModeDetails: "Consente di copiare e incollare immagini da e verso la sessione remota.",
         },
         files: {
             title: "File",
@@ -1885,6 +1925,8 @@ const nl = {
         useCpuDisableTitle: "Forceer CPU-codering uitschakelen (Overschrijft nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Statische Verbetering inschakelen (Ruimt statische delen van het scherm op)",
         usePaintOverQualityDisableTitle: "Statische Verbetering uitschakelen (Ruimt statische delen van het scherm op)",
+        binaryClipboardEnableTitle: "Afbeeldingenklembord inschakelen",
+        binaryClipboardDisableTitle: "Afbeeldingenklembord uitschakelen",
     },
     sections: {
         video: {
@@ -1966,6 +2008,8 @@ const nl = {
             title: "Klembord",
             label: "Server Klembord:",
             placeholder: "Klembord inhoud van server...",
+            binaryModeLabel: "Afbeeldingsondersteuning",
+            binaryModeDetails: "Staat het kopiëren en plakken van afbeeldingen van en naar de externe sessie toe.",
         },
         files: {
             title: "Bestanden",
@@ -2070,6 +2114,8 @@ const ar = {
         useCpuDisableTitle: "تعطيل فرض ترميز CPU (يتجاوز nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "تمكين تحسين الصورة الثابتة (ينظف الأجزاء الثابتة من الشاشة)",
         usePaintOverQualityDisableTitle: "تعطيل تحسين الصورة الثابتة (ينظف الأجزاء الثابتة من الشاشة)",
+        binaryClipboardEnableTitle: "تمكين حافظة الصور",
+        binaryClipboardDisableTitle: "تعطيل حافظة الصور",
     },
     sections: {
         video: {
@@ -2151,6 +2197,8 @@ const ar = {
             title: "الحافظة",
             label: "حافظة الخادم:",
             placeholder: "محتوى الحافظة من الخادم...",
+            binaryModeLabel: "دعم الصور",
+            binaryModeDetails: "يسمح بنسخ ولصق الصور من وإلى الجلسة البعيدة.",
         },
         files: {
             title: "الملفات",
@@ -2255,6 +2303,8 @@ const ko = {
         useCpuDisableTitle: "강제 CPU 인코딩 비활성화 (nvenc/vaapi 재정의)",
         usePaintOverQualityEnableTitle: "정적 영역 개선 활성화 (화면의 정적 부분을 정리합니다)",
         usePaintOverQualityDisableTitle: "정적 영역 개선 비활성화 (화면의 정적 부분을 정리합니다)",
+        binaryClipboardEnableTitle: "이미지 클립보드 활성화",
+        binaryClipboardDisableTitle: "이미지 클립보드 비활성화",
     },
     sections: {
         video: {
@@ -2336,6 +2386,8 @@ const ko = {
             title: "클립보드",
             label: "서버 클립보드:",
             placeholder: "서버의 클립보드 내용...",
+            binaryModeLabel: "이미지 지원",
+            binaryModeDetails: "원격 세션에서 이미지를 복사하고 붙여넣을 수 있습니다.",
         },
         files: {
             title: "파일",
@@ -2440,6 +2492,8 @@ const ja = {
         useCpuDisableTitle: "強制 CPU エンコーディングを無効にする (nvenc/vaapi を上書き)",
         usePaintOverQualityEnableTitle: "静止領域の補正を有効にする (画面の静的な部分をクリーンアップします)",
         usePaintOverQualityDisableTitle: "静止領域の補正を無効にする (画面の静的な部分をクリーンアップします)",
+        binaryClipboardEnableTitle: "画像クリップボードを有効にする",
+        binaryClipboardDisableTitle: "画像クリップボードを無効にする",
     },
     sections: {
         video: {
@@ -2521,6 +2575,8 @@ const ja = {
             title: "クリップボード",
             label: "サーバークリップボード:",
             placeholder: "サーバーからのクリップボードの内容...",
+            binaryModeLabel: "画像サポート",
+            binaryModeDetails: "リモートセッションとの間で画像をコピー＆ペーストできます。",
         },
         files: {
             title: "ファイル",
@@ -2625,6 +2681,8 @@ const vi = {
         useCpuDisableTitle: "Tắt Mã hóa CPU Bắt buộc (Ghi đè nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Bật Cải thiện vùng tĩnh (Dọn dẹp các phần tĩnh của màn hình)",
         usePaintOverQualityDisableTitle: "Tắt Cải thiện vùng tĩnh (Dọn dẹp các phần tĩnh của màn hình)",
+        binaryClipboardEnableTitle: "Bật Bộ nhớ tạm cho Hình ảnh",
+        binaryClipboardDisableTitle: "Tắt Bộ nhớ tạm cho Hình ảnh",
     },
     sections: {
         video: {
@@ -2706,6 +2764,8 @@ const vi = {
             title: "Bộ nhớ tạm",
             label: "Bộ nhớ tạm Máy chủ:",
             placeholder: "Nội dung bộ nhớ tạm từ máy chủ...",
+            binaryModeLabel: "Hỗ trợ Hình ảnh",
+            binaryModeDetails: "Cho phép sao chép và dán hình ảnh đến và từ phiên làm việc từ xa.",
         },
         files: {
             title: "Tệp",
@@ -2810,6 +2870,8 @@ const th = {
         useCpuDisableTitle: "ปิดใช้งานการเข้ารหัส CPU แบบบังคับ (เขียนทับ nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "เปิดใช้งานการปรับปรุงพื้นที่นิ่ง (ทำความสะอาดส่วนที่หยุดนิ่งของหน้าจอ)",
         usePaintOverQualityDisableTitle: "ปิดใช้งานการปรับปรุงพื้นที่นิ่ง (ทำความสะอาดส่วนที่หยุดนิ่งของหน้าจอ)",
+        binaryClipboardEnableTitle: "เปิดใช้งานคลิปบอร์ดรูปภาพ",
+        binaryClipboardDisableTitle: "ปิดใช้งานคลิปบอร์ดรูปภาพ",
     },
     sections: {
         video: {
@@ -2891,6 +2953,8 @@ const th = {
             title: "คลิปบอร์ด",
             label: "คลิปบอร์ดเซิร์ฟเวอร์:",
             placeholder: "เนื้อหาคลิปบอร์ดจากเซิร์ฟเวอร์...",
+            binaryModeLabel: "รองรับรูปภาพ",
+            binaryModeDetails: "อนุญาตให้คัดลอกและวางรูปภาพไปยังและจากเซสชันระยะไกล",
         },
         files: {
             title: "ไฟล์",
@@ -2995,6 +3059,8 @@ const fil = {
         useCpuDisableTitle: "Huwag paganahin ang Puwersahang CPU Encoding (Pinapalitan ang nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Paganahin ang Paglilinis ng Static (Nililinis ang mga static na bahagi ng screen)",
         usePaintOverQualityDisableTitle: "Huwag paganahin ang Paglilinis ng Static (Nililinis ang mga static na bahagi ng screen)",
+        binaryClipboardEnableTitle: "Paganahin ang Clipboard ng Imahe",
+        binaryClipboardDisableTitle: "Huwag paganahin ang Clipboard ng Imahe",
     },
     sections: {
         video: {
@@ -3076,6 +3142,8 @@ const fil = {
             title: "Clipboard",
             label: "Server Clipboard:",
             placeholder: "Nilalaman ng clipboard mula sa server...",
+            binaryModeLabel: "Suporta sa Imahe",
+            binaryModeDetails: "Pinapayagan ang pag-copy at pag-paste ng mga imahe papunta at mula sa remote session.",
         },
         files: {
             title: "Mga File",
@@ -3180,6 +3248,8 @@ const da = {
         useCpuDisableTitle: "Deaktiver Tvungen CPU-kodning (Tilsidesætter nvenc/vaapi)",
         usePaintOverQualityEnableTitle: "Aktiver Statisk Forbedring (Rydder op i statiske dele af skærmen)",
         usePaintOverQualityDisableTitle: "Deaktiver Statisk Forbedring (Rydder op i statiske dele af skærmen)",
+        binaryClipboardEnableTitle: "Aktiver billedudklipsholder",
+        binaryClipboardDisableTitle: "Deaktiver billedudklipsholder",
     },
     sections: {
         video: {
@@ -3261,6 +3331,8 @@ const da = {
             title: "Udklipsholder",
             label: "Server Udklipsholder:",
             placeholder: "Indhold fra serverens udklipsholder...",
+            binaryModeLabel: "Billedstøtte",
+            binaryModeDetails: "Tillader kopiering og indsættelse af billeder til og fra den eksterne session.",
         },
         files: {
             title: "Filer",

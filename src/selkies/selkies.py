@@ -20,6 +20,7 @@ MIN_VIDEO_BITRATE_KBPS = 500
 UINPUT_MOUSE_SOCKET = ""
 JS_SOCKET_PATH = "/tmp"
 ENABLE_CLIPBOARD = True
+ENABLE_BINARY_CLIPBOARD = False
 ENABLE_CURSORS = True
 CURSOR_SIZE = 32
 DEBUG_CURSORS = False
@@ -148,30 +149,46 @@ class SelkiesStreamingApp:
         self._ws_fps_last_calc_time = time.monotonic()
         self._fps_interval_sec = 2.0
 
-    def send_ws_clipboard_data(
-        self, data
-    ):
-        if (
-            self.data_streaming_server
-            and hasattr(self.data_streaming_server, "clients")
-            and self.data_streaming_server.clients
-            and self.async_event_loop
-            and self.async_event_loop.is_running()
-        ):
-
-            msg_to_broadcast = f"clipboard,{base64.b64encode(data.encode()).decode()}"
-            clients_ref = self.data_streaming_server.clients
-
-            async def _broadcast_clipboard_helper():
-                websockets.broadcast(clients_ref, msg_to_broadcast)
-
-            asyncio.run_coroutine_threadsafe(
-                _broadcast_clipboard_helper(), self.async_event_loop
-            )
-        else:
-            data_logger.warning(
-                "Cannot broadcast clipboard data: no clients connected or server not ready."
-            )
+    async def send_ws_clipboard_data(self, data, mime_type="text/plain"):
+        """
+        Asynchronously sends clipboard data to all clients, handling multipart for large data.
+        """
+        if not (self.data_streaming_server and self.data_streaming_server.clients):
+            data_logger.warning("Cannot send clipboard: no clients or server not ready.")
+            return
+        try:
+            is_binary = mime_type != "text/plain"
+            if is_binary and not self.data_streaming_server.enable_binary_clipboard:
+                data_logger.warning(
+                    f"Attempted to send binary clipboard data ({mime_type}) but feature is disabled on server."
+                )
+                return
+            data_bytes = data.encode('utf-8') if not is_binary and isinstance(data, str) else data
+            total_size = len(data_bytes)
+            from .input_handler import CLIPBOARD_CHUNK_SIZE
+            if total_size < CLIPBOARD_CHUNK_SIZE:
+                encoded_data = base64.b64encode(data_bytes).decode('ascii')
+                if is_binary:
+                    message = f"clipboard_binary,{mime_type},{encoded_data}"
+                else:
+                    message = f"clipboard,{encoded_data}"
+                websockets.broadcast(self.data_streaming_server.clients, message)
+            else:
+                data_logger.info(f"Sending large clipboard data ({mime_type}, {total_size} bytes) via multipart.")
+                start_message = f"clipboard_start,{mime_type},{total_size}"
+                websockets.broadcast(self.data_streaming_server.clients, start_message)
+                offset = 0
+                while offset < total_size:
+                    chunk = data_bytes[offset:offset + CLIPBOARD_CHUNK_SIZE]
+                    encoded_chunk = base64.b64encode(chunk).decode('ascii')
+                    data_message = f"clipboard_data,{encoded_chunk}"
+                    websockets.broadcast(self.data_streaming_server.clients, data_message)
+                    offset += len(chunk)
+                    await asyncio.sleep(0)
+                websockets.broadcast(self.data_streaming_server.clients, "clipboard_finish")
+                data_logger.info("Finished sending multi-part clipboard data.")
+        except Exception as e:
+            data_logger.error(f"Failed to send clipboard data: {e}", exc_info=True)
 
     def send_ws_cursor_data(self, data):
         self.last_cursor_sent = data
@@ -873,6 +890,7 @@ class DataStreamingServer:
         self.uinput_mouse_socket = uinput_mouse_socket
         self.js_socket_path = js_socket_path
         self.enable_clipboard = enable_clipboard
+        self.enable_binary_clipboard = False
         self.enable_cursors = enable_cursors
         self.cursor_size = cursor_size
         self.cursor_scale = cursor_scale
@@ -1653,6 +1671,7 @@ class DataStreamingServer:
         parsed["h264_paintover_burst_frames"] = get_int("pixelflux_h264_paintover_burst_frames", self.h264_paintover_burst_frames)
         parsed["use_paint_over_quality"] = get_bool("pixelflux_use_paint_over_quality", self.use_paint_over_quality)
         parsed["scaling_dpi"] = get_int("webrtc_SCALING_DPI", 96)
+        parsed["enableBinaryClipboard"] = get_bool("enableBinaryClipboard", self.enable_binary_clipboard)
         data_logger.debug(f"Parsed client settings: {parsed}")
         return parsed
 
@@ -1708,6 +1727,11 @@ class DataStreamingServer:
             setattr(self.app, "client_manual_width", settings.get("manualWidth", getattr(self.app, "client_manual_width", old_display_width)))
             setattr(self.app, "client_manual_height", settings.get("manualHeight", getattr(self.app, "client_manual_height", old_display_height)))
         setattr(self.app, "client_preferred_resize_enabled", settings.get("resizeRemote", getattr(self.app, "client_preferred_resize_enabled", True)))
+        if "enableBinaryClipboard" in settings:
+            new_binary_clipboard_state = settings["enableBinaryClipboard"]
+            self.enable_binary_clipboard = new_binary_clipboard_state
+            if self.input_handler:
+                await self.input_handler.update_binary_clipboard_setting(new_binary_clipboard_state)
 
         encoder_actually_changed = False
         requested_new_encoder = settings.get("encoder")
@@ -3440,6 +3464,7 @@ async def main():
         UINPUT_MOUSE_SOCKET,
         JS_SOCKET_PATH,
         str(ENABLE_CLIPBOARD).lower(),
+        str(ENABLE_BINARY_CLIPBOARD).lower(),
         ENABLE_CURSORS,
         CURSOR_SIZE,
         1.0,
@@ -3471,9 +3496,8 @@ async def main():
             asyncio.create_task(input_handler.connect(), name="InputConnect")
         )
     if hasattr(input_handler, "start_clipboard"):
-        tasks_to_run.append(
-            asyncio.create_task(input_handler.start_clipboard(), name="ClipboardMon")
-        )
+        input_handler.clipboard_monitor_task = asyncio.create_task(input_handler.start_clipboard(), name="ClipboardMon")
+        tasks_to_run.append(input_handler.clipboard_monitor_task)
     if hasattr(input_handler, "start_cursor_monitor"):
         tasks_to_run.append(
             asyncio.create_task(input_handler.start_cursor_monitor(), name="CursorMon")
