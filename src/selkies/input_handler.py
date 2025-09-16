@@ -815,6 +815,8 @@ class WebRTCInput:
         self.mouse = None
         self.xdisplay = None
         self.button_mask = 0
+        self.last_x = -1
+        self.last_y = -1
         self.ping_start = None
         self.on_video_encoder_bit_rate = lambda bitrate: logger_webrtc_input.warning("unhandled on_video_encoder_bit_rate")
         self.on_audio_encoder_bit_rate = lambda bitrate: logger_webrtc_input.warning("unhandled on_audio_encoder_bit_rate")
@@ -1197,10 +1199,13 @@ class WebRTCInput:
             pass
 
     async def send_x11_mouse(self, x, y, button_mask, scroll_magnitude, relative=False):
+        position_changed = (x != self.last_x or y != self.last_y)
         if relative:
             self.send_mouse(MOUSE_MOVE, (x, y))
-        else:
+        elif position_changed:
             self.send_mouse(MOUSE_POSITION, (x, y))
+        self.last_x = x
+        self.last_y = y
 
         if button_mask != self.button_mask:
             for bit_index in range(8): # Check bits 0 through 7
