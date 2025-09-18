@@ -108,7 +108,7 @@ KEYSYM_RIGHT_ARROW = 0xFF53# Right Arrow keysym
 try:
     from .server_keysym_map import X11_KEYSYM_MAP
 except ImportError:
-    logger_webrtc_input = logging.getLogger("webrtc_input_fallback_map_import") # Or use your existing logger
+    logger_webrtc_input = logging.getLogger("webrtc_input_fallback_map_import")
     logger_webrtc_input.warning(
         "server_keysym_map.py not found or X11_KEYSYM_MAP not defined. "
         "Keysym mapping will rely entirely on fallback."
@@ -774,6 +774,7 @@ class WebRTCInput:
         cursor_scale=1.0,
         cursor_debug=False,
         max_cursor_size=32,
+        data_server_instance=None,
     ):
         self.active_shortcut_modifiers = set()
         self.SHORTCUT_MODIFIER_XKEY_NAMES = {
@@ -836,6 +837,7 @@ class WebRTCInput:
         self.multipart_clipboard_mime_type = "text/plain"
         self.multipart_clipboard_total_size = 0
         self.multipart_clipboard_in_progress = False
+        self.data_server_instance = data_server_instance
 
     async def _on_clipboard_read(self, data, mime_type="text/plain"):
         await self.send_clipboard_data(data, mime_type)
@@ -1198,14 +1200,25 @@ class WebRTCInput:
         except (FileNotFoundError, asyncio.TimeoutError, Exception):
             pass
 
-    async def send_x11_mouse(self, x, y, button_mask, scroll_magnitude, relative=False):
-        position_changed = (x != self.last_x or y != self.last_y)
+    async def send_x11_mouse(self, x, y, button_mask, scroll_magnitude, relative=False, display_id='primary'):
+        offset_x = 0
+        offset_y = 0
+        if not relative and self.data_server_instance and hasattr(self.data_server_instance, 'display_layouts'):
+            layout = self.data_server_instance.display_layouts.get(display_id)
+            if layout:
+                offset_x = layout.get('x', 0)
+                offset_y = layout.get('y', 0)
+                logger_webrtc_input.debug(f"Applying offset_x={offset_x}, offset_y={offset_y} for display '{display_id}'. Original coords={x},{y}")
+        final_x = x + offset_x
+        final_y = y + offset_y
+        position_changed = (final_x != self.last_x or final_y != self.last_y)
+
         if relative:
             self.send_mouse(MOUSE_MOVE, (x, y))
         elif position_changed:
-            self.send_mouse(MOUSE_POSITION, (x, y))
-        self.last_x = x
-        self.last_y = y
+            self.send_mouse(MOUSE_POSITION, (final_x, final_y))
+        self.last_x = final_x
+        self.last_y = final_y
 
         if button_mask != self.button_mask:
             for bit_index in range(8): # Check bits 0 through 7
@@ -1492,7 +1505,7 @@ class WebRTCInput:
         logger_webrtc_input.info("Stopping all gamepad instances.")
         await self.__gamepad_disconnect()
 
-    async def on_message(self, msg):
+    async def on_message(self, msg, display_id='primary'):
         toks = msg.split(",")
         msg_type = toks[0]
 
@@ -1532,8 +1545,8 @@ class WebRTCInput:
         elif msg_type in ["m", "m2"]:
             relative = msg_type == "m2"
             try: x, y, button_mask, scroll_magnitude = [int(i) for i in toks[1:]]
-            except: x,y,button_mask,scroll_magnitude = 0,0,self.button_mask,0; relative=False 
-            try: await self.send_x11_mouse(x, y, button_mask, scroll_magnitude, relative)
+            except: x,y,button_mask,scroll_magnitude = 0,0,self.button_mask,0; relative=False
+            try: await self.send_x11_mouse(x, y, button_mask, scroll_magnitude, relative, display_id=display_id)
             except Exception as e: logger_webrtc_input.warning(f"Failed to set mouse cursor: {e}")
         elif msg_type == "p": self.on_mouse_pointer_visible(bool(int(toks[1])))
         elif msg_type == "vb": self.on_video_encoder_bit_rate(int(toks[1]))
@@ -1668,15 +1681,12 @@ class WebRTCInput:
                 logger_webrtc_input.info(f"Attempting to execute command: '{command_to_run}'")
                 home_directory = os.path.expanduser("~")
                 try:
-                    # Use asyncio subprocess for fire-and-forget execution
-                    # stdout and stderr are redirected to DEVNULL to ignore output.
                     process = await subprocess.create_subprocess_shell(
                         command_to_run,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                         cwd=home_directory
                     )
-                    # Don't wait for completion - fire and forget
                     logger_webrtc_input.info(f"Successfully launched command: '{command_to_run}'")
                 except Exception as e:
                     logger_webrtc_input.error(f"Failed to launch command '{command_to_run}': {e}")
@@ -1715,7 +1725,7 @@ class WebRTCInput:
             logger_webrtc_input.info(f"Unknown data channel message: {msg[:100]}") 
 
 
-# MOUSE_POSITION etc. constants need to be defined if not already
+# MOUSE_POSITION
 MOUSE_POSITION = 10
 MOUSE_MOVE = 11
 MOUSE_SCROLL_UP = 20

@@ -1571,6 +1571,9 @@ export class Input {
     }
 
     _mouseButtonMovement(event) {
+        if (this.buttonMask === 0 && event.target !== this.element) {
+            return;
+        }
         if (!this.useBrowserCursors) {
             this.cursorDiv.style.display = 'block';
             this.element.style.cursor = 'none';
@@ -2292,7 +2295,7 @@ export class Input {
         const elementRelativeX = clientX - this.m.elementClientX;
         const viewportRelativeX = elementRelativeX - this.m.mouseOffsetX;
         let serverX = viewportRelativeX * this.m.mouseMultiX;
-        return Math.max(0, Math.min(this.m.frameW, Math.round(serverX)));
+        return Math.round(serverX);
     }
 
     _clientToServerY(clientY) {
@@ -2300,7 +2303,7 @@ export class Input {
         const elementRelativeY = clientY - this.m.elementClientY;
         const viewportRelativeY = elementRelativeY - this.m.mouseOffsetY;
         let serverY = viewportRelativeY * this.m.mouseMultiY;
-        return Math.max(0, Math.min(this.m.frameH, Math.round(serverY)));
+        return Math.round(serverY);
     }
 
     _gamepadConnected(event) {
@@ -2414,9 +2417,9 @@ export class Input {
             this.listeners_context.push(addListener(this.element, 'touchmove', this._handleTouchEvent, this, false));
             this.listeners_context.push(addListener(this.element, 'touchcancel', this._handleTouchEvent, this, false));
         }
-        this.listeners_context.push(addListener(this.element, 'mousemove', this._mouseButtonMovement, this));
         this.listeners_context.push(addListener(this.element, 'mousedown', this._mouseButtonMovement, this));
-        this.listeners_context.push(addListener(this.element, 'mouseup', this._mouseButtonMovement, this));
+        this.listeners_context.push(addListener(window, 'mousemove', this._mouseButtonMovement, this));
+        this.listeners_context.push(addListener(window, 'mouseup', this._mouseButtonMovement, this));
 
         if (document.fullscreenElement === this.element.parentElement) {
              if (document.pointerLockElement !== this.element) {

@@ -215,6 +215,8 @@ class SelkiesStreamingApp:
 
     async def stop_pipeline(self):
         logger_gst_app.info("Stopping pipelines (generic call)...")
+        if self.data_streaming_server:
+            await self.data_streaming_server.reconfigure_displays()
         self.pipeline_running = False
         logger_gst_app.info("Pipelines stop signal processed.")
 
@@ -345,7 +347,6 @@ async def resize_display(res_str):  # e.g., res_str is "2560x1280"
             return False
         logger_gst_app_resize.info(f"Successfully ran: {' '.join(cmd_new)}")
 
-        # Use res_str (e.g., "2560x1280") as the mode name for --addmode
         cmd_add = ["xrandr", "--addmode", screen_name, res_str]
         add_mode_proc = await subprocess.create_subprocess_exec(
             *cmd_add,
@@ -370,7 +371,7 @@ async def resize_display(res_str):  # e.g., res_str is "2560x1280"
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            await rmmode_proc.communicate()
+            await rmmmode_proc.communicate()
             return False
         logger_gst_app_resize.info(f"Successfully ran: {' '.join(cmd_add)}")
 
@@ -848,9 +849,9 @@ class DataStreamingServer:
         self.server = None
         self.stop_server = None
         self.data_ws = (
-            None  # Represents the specific connection in a ws_handler context
+            None
         )
-        self.clients = set()  # Set of all active client WebSocket connections
+        self.clients = set()
         self.app = app
         self.cli_args = cli_args
         self._latest_client_render_fps = 0.0
@@ -897,17 +898,13 @@ class DataStreamingServer:
         self.cursor_debug = cursor_debug
         self.input_handler = None
         self._last_adjustment_timestamp = 0.0
-        self.jpeg_capture_module = None
-        self.is_jpeg_capturing = False
-        self.jpeg_capture_loop = None
-        self.x264_striped_capture_module = None
-        self.is_x264_striped_capturing = False
         self.client_settings_received = None
         self._initial_target_bitrate_kbps = (
             self.app.video_bitrate if self.app else TARGET_VIDEO_BITRATE_KBPS
         )
         self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
-        self._pipeline_lock = asyncio.Lock()
+        self._reconfigure_lock = asyncio.Lock()
+        self._is_reconfiguring = False
         self._bytes_sent_in_interval = 0
         self._last_bandwidth_calc_time = time.monotonic()
         # Frame-based backpressure settings
@@ -916,6 +913,11 @@ class DataStreamingServer:
         self.backpressure_check_interval_s = BACKPRESSURE_CHECK_INTERVAL_S
         self._backpressure_send_frames_enabled = True
         self._last_client_frame_id_report_time = 0.0
+        self.capture_loop = None
+
+        self.display_clients = {}
+        self.video_chunk_queues = {}
+        self.capture_instances = {}
 
         # pcmflux audio capture state
         self.audio_device_name = audio_device_name
@@ -926,6 +928,26 @@ class DataStreamingServer:
         self.pcmflux_audio_queue = None
         self.pcmflux_send_task = None
         self.pcmflux_capture_loop = None
+
+        # State for window manager swapping
+        self._last_display_count = 0
+        self._default_wm_replace_cmd = None
+        self._is_wm_swapped = False
+
+    async def broadcast_display_config(self):
+        """Broadcasts the current display configuration to all clients."""
+        if not self.clients:
+            return
+        
+        connected_displays = list(self.display_clients.keys())
+        payload = {
+            "type": "display_config_update",
+            "displays": connected_displays
+        }
+        message_str = f"DISPLAY_CONFIG_UPDATE,{json.dumps(payload)}"
+        
+        data_logger.info(f"Broadcasting display config update: {message_str}")
+        websockets.broadcast(self.clients, message_str)
 
     def _pcmflux_audio_callback(self, result_ptr, user_data):
         """
@@ -980,7 +1002,7 @@ class DataStreamingServer:
             data_logger.error("Cannot start pcmflux: self.app (SelkiesStreamingApp instance) is not available.")
             return False
         
-        self.pcmflux_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
+        self.pcmflux_capture_loop = self.capture_loop or asyncio.get_running_loop()
         if not self.pcmflux_capture_loop:
             data_logger.error("Cannot start pcmflux: asyncio event loop not found.")
             return False
@@ -1060,291 +1082,195 @@ class DataStreamingServer:
         This should be the ONLY way pipelines are programmatically stopped.
         """
         logger.info("Initiating unified pipeline shutdown...")
-        self.is_jpeg_capturing = False
-        self.is_x264_striped_capturing = False
-        self.is_pcmflux_capturing = False
-        await asyncio.sleep(0.01)
-        stop_tasks = []
-        loop = asyncio.get_running_loop()
-        if self.jpeg_capture_module:
-            logger.info("Queueing JPEG capture stop.")
-            stop_tasks.append(
-                loop.run_in_executor(None, self.jpeg_capture_module.stop_capture)
-            )
-        
-        if self.x264_striped_capture_module:
-            logger.info("Queueing x264-striped capture stop.")
-            stop_tasks.append(
-                loop.run_in_executor(None, self.x264_striped_capture_module.stop_capture)
-            )
-
-        if self.pcmflux_module:
-            logger.info("Queueing pcmflux audio capture stop.")
-            stop_tasks.append(
-                loop.run_in_executor(None, self.pcmflux_module.stop_capture)
-            )
-        if stop_tasks:
-            logger.info(f"Waiting for {len(stop_tasks)} capture module(s) to stop...")
-            await asyncio.gather(*stop_tasks, return_exceptions=True)
-            logger.info("All C++ capture modules have stopped.")
-        if self.jpeg_capture_module:
-            del self.jpeg_capture_module
-            self.jpeg_capture_module = None
-        if self.x264_striped_capture_module:
-            del self.x264_striped_capture_module
-            self.x264_striped_capture_module = None
-        if self.pcmflux_module:
-            del self.pcmflux_module
-            self.pcmflux_module = None
-        await self._ensure_backpressure_task_is_stopped()
+        await self.reconfigure_displays()
+        await self._stop_pcmflux_pipeline()
+        if self.display_clients:
+            stop_bp_tasks = [
+                self._ensure_backpressure_task_is_stopped(disp_id)
+                for disp_id in self.display_clients.keys()
+            ]
+            await asyncio.gather(*stop_bp_tasks, return_exceptions=True)
         if self.pcmflux_send_task and not self.pcmflux_send_task.done():
             self.pcmflux_send_task.cancel()
             try:
                 await self.pcmflux_send_task
             except asyncio.CancelledError:
                 pass
-        
         logger.info("Unified pipeline shutdown complete.")
 
-    async def _ensure_backpressure_task_is_stopped(self):
-        """
-        Safely cancels and cleans up the _frame_backpressure_task.
-        If the task was running before being stopped, it calls _reset_frame_ids_and_notify.
-        _reset_frame_ids_and_notify will then check for active clients before broadcasting.
-        Sets _backpressure_send_frames_enabled to True by default.
-        """
-        task_was_actually_running_and_cancelled = False
-        if self._frame_backpressure_task and not self._frame_backpressure_task.done():
-            data_logger.debug("Ensuring frame backpressure task is stopped.")
-            self._frame_backpressure_task.cancel()
+    async def _ensure_backpressure_task_is_stopped(self, display_id: str):
+        """Safely cancels and cleans up the backpressure task for a specific display."""
+        display_state = self.display_clients.get(display_id)
+        if not display_state:
+            return
+
+        task_was_running = False
+        task = display_state.get('backpressure_task')
+        if task and not task.done():
+            data_logger.debug(f"Ensuring frame backpressure task for '{display_id}' is stopped.")
+            task.cancel()
             try:
-                await self._frame_backpressure_task
-                task_was_actually_running_and_cancelled = True 
+                await task
+                task_was_running = True
             except asyncio.CancelledError:
-                data_logger.debug("Frame backpressure task cancelled successfully.")
-                task_was_actually_running_and_cancelled = True 
+                data_logger.debug(f"Backpressure task for '{display_id}' cancelled successfully.")
+                task_was_running = True
             except Exception as e_cancel:
-                data_logger.error(f"Error awaiting backpressure task cancellation: {e_cancel}")
-            self._frame_backpressure_task = None
+                data_logger.error(f"Error awaiting cancellation for '{display_id}' backpressure task: {e_cancel}")
+            display_state['backpressure_task'] = None
         
-        self._backpressure_send_frames_enabled = True 
+        display_state['backpressure_enabled'] = True
 
-        if task_was_actually_running_and_cancelled:
-            data_logger.info("Backpressure task was stopped. Calling _reset_frame_ids_and_notify.")
-            await self._reset_frame_ids_and_notify()
+        if task_was_running:
+            data_logger.info(f"Backpressure task for '{display_id}' was stopped. Resetting its frame IDs.")
+            await self._reset_frame_ids_and_notify(display_id)
 
-    async def _reset_frame_ids_and_notify(self):
-        data_logger.info("Resetting frame IDs.")
-        self._active_pipeline_last_sent_frame_id = 0
-        self._client_acknowledged_frame_id = -1
+    async def _reset_frame_ids_and_notify(self, display_id: str):
+        """
+        Resets frame IDs for a display. If it's the primary display,
+        it broadcasts the reset to ALL clients.
+        """
+        display_state = self.display_clients.get(display_id)
+        if not display_state:
+            return
+
+        data_logger.info(f"Resetting frame IDs for display '{display_id}'.")
+        display_state['last_sent_frame_id'] = 0
+        display_state['acknowledged_frame_id'] = -1
         
-        if self.clients:
-            data_logger.info(f"Broadcasting PIPELINE_RESETTING to {len(self.clients)} client(s).")
-            websockets.broadcast(self.clients, "PIPELINE_RESETTING 0")
+        message = f"PIPELINE_RESETTING {display_id}"
+        
+        if display_id == 'primary' and self.clients:
+            data_logger.info(f"Broadcasting primary pipeline reset to all {len(self.clients)} clients: {message}")
+            websockets.broadcast(self.clients, message)
         else:
-            data_logger.info("Frame IDs reset, but no clients to notify.")
-            
-        self._backpressure_send_frames_enabled = True
-        self._last_client_acknowledged_frame_id_update_time = (
-            time.monotonic()
-        )
+            websocket = display_state.get('ws')
+            if websocket:
+                try:
+                    await websocket.send(message)
+                except websockets.ConnectionClosed:
+                    data_logger.warning(f"Could not notify client for '{display_id}' of reset; connection closed.")
+        
+        display_state['backpressure_enabled'] = True
+        display_state['last_ack_update_time'] = time.monotonic()
 
-    async def _start_backpressure_task_if_needed(self):
-        """
-        Starts the _frame_backpressure_task if a video pipeline is active
-        and client settings have been received.
-        Ensures any old task is stopped first (without client notification from *this specific call*,
-        as pipeline start/restart logic handles its own notifications).
-        """
-        await self._ensure_backpressure_task_is_stopped()
+    async def _start_backpressure_task_if_needed(self, display_id: str):
+        """Starts the backpressure task for a specific display if not already running."""
+        display_state = self.display_clients.get(display_id)
+        if not display_state:
+            data_logger.error(f"Cannot start backpressure task: display '{display_id}' not found.")
+            return
 
-        if not self.client_settings_received or not self.client_settings_received.is_set():
-            data_logger.warning(
-                "Attempting to start backpressure task, but client_settings_received event is not set or None. "
-                "The task will wait for this event. Ensure it's set when initial client settings are processed."
-            )
-            if hasattr(self, 'client_settings_received') and \
-               self.client_settings_received and \
-               isinstance(self.client_settings_received, asyncio.Event) and \
-               not self.client_settings_received.is_set():
-                 data_logger.info("Trying to ensure client_settings_received is set for backpressure task start.")
-                 self.client_settings_received.set()
+        await self._ensure_backpressure_task_is_stopped(display_id)
 
-        if not self._frame_backpressure_task or self._frame_backpressure_task.done():
-            self._frame_backpressure_task = asyncio.create_task(
-                self._run_frame_backpressure_logic()
-            )
-            data_logger.info(f"New frame backpressure task started (current encoder: '{self.app.encoder if self.app else 'N/A'}').")
+        task = display_state.get('backpressure_task')
+        if not task or task.done():
+            new_task = asyncio.create_task(self._run_frame_backpressure_logic(display_id))
+            display_state['backpressure_task'] = new_task
+            data_logger.info(f"New frame backpressure task started for display '{display_id}'.")
         else:
-            data_logger.warning("Frame backpressure task was already running or not properly cleaned up when trying to start. Not starting a new one.")
+            data_logger.warning(f"Backpressure task for '{display_id}' was already running. Not starting a new one.")
 
-
-    def is_video_pipeline_active(self):
-        """Checks if any of the possible video pipelines are currently running."""
-        if not self.app:
-            return False
-
-        jpeg_running = self.is_jpeg_capturing
-        x264_running = self.is_x264_striped_capturing
-
-        return jpeg_running or x264_running
-
-
-    async def _run_frame_backpressure_logic(self):
-        data_logger.info("Frame-based backpressure logic task started.")
+    async def _run_frame_backpressure_logic(self, display_id: str):
+        """The core backpressure and latency calculation loop for a single display."""
+        data_logger.info(f"Frame-based backpressure logic task started for display '{display_id}'.")
         try:
-            await self.client_settings_received.wait() # Ensure initial settings are processed
-            data_logger.info("Client settings received, proceeding with backpressure loop.")
+            if self.client_settings_received:
+                await self.client_settings_received.wait()
+            data_logger.info(f"Client settings received, proceeding with backpressure loop for '{display_id}'.")
 
             while True:
                 await asyncio.sleep(self.backpressure_check_interval_s)
-                if not self.is_video_pipeline_active:
-                    if not self._backpressure_send_frames_enabled:
-                        data_logger.info("Backpressure LIFTED (video pipeline is not active).")
-                    self._backpressure_send_frames_enabled = True
-                    continue 
-                if not self.clients: # No clients connected
-                    self._backpressure_send_frames_enabled = True # Default to sending if no clients
+
+                display_state = self.display_clients.get(display_id)
+                if not display_state:
+                    data_logger.warning(f"Backpressure task for '{display_id}' exiting: display no longer exists.")
+                    break
+                
+                if display_id not in self.capture_instances:
+                    if not display_state.get('backpressure_enabled', True):
+                        data_logger.info(f"Backpressure LIFTED for '{display_id}' (video pipeline is not active).")
+                    display_state['backpressure_enabled'] = True
                     continue
 
-                current_server_frame_id = self._active_pipeline_last_sent_frame_id
-                last_client_acked_frame_id = self._client_acknowledged_frame_id
+                current_server_frame_id = display_state.get('last_sent_frame_id', 0)
+                last_client_acked_frame_id = display_state.get('acknowledged_frame_id', -1)
 
-                # Condition 1: Client hasn't ACKed anything yet after a server reset (ideal state)
                 if last_client_acked_frame_id == -1:
-                    if not self._backpressure_send_frames_enabled:
-                         data_logger.info("Backpressure LIFTED (client ACK is -1). Enabling frame sending.")
-                    self._backpressure_send_frames_enabled = True
-                    self._last_client_acknowledged_frame_id_update_time = time.monotonic() # Reset stall detection with any ACK
+                    if not display_state.get('backpressure_enabled', True):
+                         data_logger.info(f"Backpressure LIFTED for '{display_id}' (client ACK is -1).")
+                    display_state['backpressure_enabled'] = True
+                    display_state['last_ack_update_time'] = time.monotonic()
                     continue
 
-                # Condition 2: Client FPS is unknown or zero, cannot reliably calculate frame-based desync
-                client_fps = self._latest_client_render_fps
-                if client_fps <= 0 and self.app: 
-                    client_fps = self.app.framerate
-                if client_fps <= 0: 
-                    if not self._backpressure_send_frames_enabled:
-                        data_logger.info("Backpressure LIFTED (client FPS is 0 or unknown). Enabling frame sending.")
-                    self._backpressure_send_frames_enabled = True 
-                    continue
-                
-                server_id = current_server_frame_id
-                client_id = last_client_acked_frame_id
+                client_fps = display_state.get('latest_client_fps', 0.0)
+                if client_fps <= 0: client_fps = self.app.framerate
 
-                # Condition 3: Special handling for server just reset (S:0) and client ACKing small positive ID (C:>0)
-                if server_id == 0 and client_id > 0 and client_id < FRAME_ID_SUSPICIOUS_GAP_THRESHOLD : # check client_id is not a huge number from a wrap
-                    data_logger.debug(
-                        f"Post-reset S:0, C:{client_id} scenario. Allowing frames to flow to resolve."
-                    )
-                    if not self._backpressure_send_frames_enabled:
-                        data_logger.info("Backpressure LIFTED (Post-reset S:0, C:>0 scenario).")
-                    self._backpressure_send_frames_enabled = True
-                    self._last_client_acknowledged_frame_id_update_time = time.monotonic() # Reset stall detection
-                    continue
+                server_id, client_id = current_server_frame_id, last_client_acked_frame_id
 
-                # Condition 4: Handle suspected frame ID wrap-around or very large actual desyncs
                 if abs(server_id - client_id) > FRAME_ID_SUSPICIOUS_GAP_THRESHOLD:
-                    data_logger.debug(
-                        f"Frame ID wrap-around suspected or large gap (S:{server_id}, C:{client_id}). "
-                        f"Skipping backpressure decision, ensuring frames flow."
-                    )
-                    if not self._backpressure_send_frames_enabled:
-                        data_logger.info("Backpressure LIFTED due to suspected frame ID wrap/large gap.")
-                    self._backpressure_send_frames_enabled = True
-                    self._last_client_acknowledged_frame_id_update_time = time.monotonic() 
+                    display_state['backpressure_enabled'] = True
+                    display_state['last_ack_update_time'] = time.monotonic()
                     continue
-
-                # --- Normal Desync Calculation ---
-                # Never calculate on init 
-                if server_id == 0:
-                    return
-                # Normal calculations
-                if server_id >= client_id:
-                    frame_desync = server_id - client_id
-                else:
-                    frame_desync = (MAX_UINT16_FRAME_ID - client_id) + server_id + 1
                 
-                if frame_desync < 0: 
-                    frame_desync = 0
+                if server_id == 0: continue
 
+                frame_desync = (server_id - client_id) if server_id >= client_id else ((MAX_UINT16_FRAME_ID - client_id) + server_id + 1)
                 allowed_desync_frames = (self.allowed_desync_ms / 1000.0) * client_fps
-                current_rtt_ms = self._smoothed_rtt_ms
-                latency_adjustment_frames = 0
-                if current_rtt_ms > self.latency_threshold_for_adjustment_ms:
-                    latency_adjustment_frames = (current_rtt_ms / 1000.0) * client_fps
+                current_rtt_ms = display_state.get('smoothed_rtt', 0.0)
+                latency_adjustment_frames = (current_rtt_ms / 1000.0) * client_fps if current_rtt_ms > self.latency_threshold_for_adjustment_ms else 0
                 effective_desync_frames = frame_desync - latency_adjustment_frames
 
-                time_since_last_ack = time.monotonic() - self._last_client_acknowledged_frame_id_update_time
-                client_stalled = time_since_last_ack > STALLED_CLIENT_TIMEOUT_SECONDS
-
-                if client_stalled:
-                    if self._backpressure_send_frames_enabled:
-                        data_logger.warning(
-                            f"Client stall detected: No ACK update in {time_since_last_ack:.1f}s. "
-                            f"Last ACK ID: {last_client_acked_frame_id}. Forcing backpressure."
-                        )
-                    self._backpressure_send_frames_enabled = False
+                time_since_last_ack = time.monotonic() - display_state.get('last_ack_update_time', time.monotonic())
+                
+                if time_since_last_ack > STALLED_CLIENT_TIMEOUT_SECONDS:
+                    if display_state.get('backpressure_enabled', True):
+                        data_logger.warning(f"Client stall for '{display_id}': No ACK in {time_since_last_ack:.1f}s. Forcing backpressure.")
+                    display_state['backpressure_enabled'] = False
                 elif effective_desync_frames > allowed_desync_frames:
-                    if frame_desync > 10000:
-                      return
-                    if self._backpressure_send_frames_enabled: 
-                        data_logger.warning(
-                            f"Backpressure TRIGGERED. S:{server_id}, C:{client_id} (Desync:{frame_desync:.0f}f, "
-                            f"EffDesync:{effective_desync_frames:.1f}f > Allowed:{allowed_desync_frames:.1f}f). "
-                            f"FPS:{client_fps:.1f}, RTT:{current_rtt_ms:.1f}ms. Disabling frame sending."
-                        )
-                    self._backpressure_send_frames_enabled = False
-                else: 
-                    if not self._backpressure_send_frames_enabled: 
-                        data_logger.info(
-                            f"Backpressure LIFTED. S:{server_id}, C:{client_id} (Desync:{frame_desync:.0f}f, "
-                            f"EffDesync:{effective_desync_frames:.1f}f <= Allowed:{allowed_desync_frames:.1f}f). "
-                            f"Enabling frame sending."
-                        )
-                    self._backpressure_send_frames_enabled = True
+                    if display_state.get('backpressure_enabled', True):
+                        data_logger.warning(f"Backpressure TRIGGERED for '{display_id}'. S:{server_id}, C:{client_id} (EffDesync:{effective_desync_frames:.1f}f > Allowed:{allowed_desync_frames:.1f}f).")
+                    display_state['backpressure_enabled'] = False
+                else:
+                    if not display_state.get('backpressure_enabled', True):
+                        data_logger.info(f"Backpressure LIFTED for '{display_id}'. S:{server_id}, C:{client_id} (EffDesync:{effective_desync_frames:.1f}f <= Allowed:{allowed_desync_frames:.1f}f).")
+                    display_state['backpressure_enabled'] = True
 
         except asyncio.CancelledError:
-            data_logger.info("Frame-based backpressure logic task cancelled.")
-        except Exception as e:
-            data_logger.error(f"Error in frame-based backpressure logic: {e}", exc_info=True)
-            self._backpressure_send_frames_enabled = True 
+            data_logger.info(f"Backpressure logic task for '{display_id}' cancelled.")
         finally:
-            data_logger.info("Frame-based backpressure logic task finished.")
-            self._backpressure_send_frames_enabled = True
+            if 'display_state' in locals() and display_state:
+                display_state['backpressure_enabled'] = True
+            data_logger.info(f"Backpressure logic task for '{display_id}' finished.")
 
     async def broadcast_stream_resolution(self):
-        if (
-            self.app
-            and hasattr(self.app, "display_width")
-            and hasattr(self.app, "display_height")
-        ):
-            # Ensure resolution is valid before broadcasting
-            if self.app.display_width > 0 and self.app.display_height > 0:
-                message = {
-                    "type": "stream_resolution",
-                    "width": self.app.display_width,
-                    "height": self.app.display_height,
-                }
-                message_str = json.dumps(message)
-                data_logger.info(f"Broadcasting stream resolution: {message_str}")
-                if self.clients:
-                    websockets.broadcast(self.clients, message_str)
-            else:
-                data_logger.warning(
-                    f"Skipping stream resolution broadcast due to invalid dimensions: "
-                    f"{self.app.display_width}x{self.app.display_height}"
-                )
-        else:
-            data_logger.warning(
-                "Cannot broadcast stream resolution: SelkiesStreamingApp instance or its display dimensions not available."
-            )
+        """
+        Broadcasts the primary display's resolution to ALL connected clients.
+        """
+        primary_client = self.display_clients.get('primary')
+        if not primary_client:
+            data_logger.warning("Cannot broadcast stream resolution: No primary client found.")
+            return
+
+        width = primary_client.get('width', 0)
+        height = primary_client.get('height', 0)
+
+        if width > 0 and height > 0 and self.clients:
+            message = {
+                "type": "stream_resolution",
+                "width": width,
+                "height": height,
+            }
+            message_str = json.dumps(message)
+            data_logger.info(f"Broadcasting primary stream resolution to all clients: {message_str}")
+            websockets.broadcast(self.clients, message_str)
 
     def _x264_striped_stripe_callback(self, result_ptr, user_data):
         current_async_loop = (
-            self.jpeg_capture_loop
-        )  # This is the loop for DataStreamingServer
+            self.capture_loop
+        )
         if (
-            not self.is_x264_striped_capturing
+            not self.capture_instances
             or not current_async_loop
             or not self.clients 
             or not result_ptr
@@ -1362,7 +1288,7 @@ class DataStreamingServer:
             async def _broadcast_x264_data_and_update_frame_id():
                 self.update_last_sent_frame_id(
                     frame_id_ref
-                )  # Update server's knowledge of sent frame ID
+                )
                 if not self._backpressure_send_frames_enabled:
                     return
                 if clients_ref:
@@ -1374,125 +1300,23 @@ class DataStreamingServer:
                 )
         except Exception as e:
             data_logger.error(f"X264-Striped callback error: {e}", exc_info=True)
+
     async def _start_x264_striped_pipeline(self):
-        if not X11_CAPTURE_AVAILABLE:
-            data_logger.error("Cannot start x264-striped/x264enc: pixelflux library not available.")
-            return False
-        if self.is_x264_striped_capturing:
-            data_logger.info(f"{self.app.encoder} pipeline is already capturing.")
-            return True
-        if not self.app:
-            data_logger.error(f"Cannot start {self.app.encoder}: self.app (SelkiesStreamingApp instance) is not available.")
-            return False
-        
-        self.jpeg_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
-        if not self.jpeg_capture_loop:
-            data_logger.error(f"Cannot start {self.app.encoder}: asyncio event loop not found for executor.")
-            return False
-
-        width = getattr(self.app, "display_width", 1024)
-        height = getattr(self.app, "display_height", 768)
-        fps = float(getattr(self.app, "framerate", TARGET_FRAMERATE))
-        
-        crf = self.h264_crf 
-
-        # Determine if fullframe should be enabled based on the specific encoder string
-        enable_fullframe = False
-        if self.app.encoder == "x264enc": # The new default pixelflux mode
-            enable_fullframe = True
-        # For "x264enc-striped", fullframe remains False by default here.
-
-        data_logger.info(
-            f"Starting {self.app.encoder}: {width}x{height} @ {fps}fps, CRF: {crf}, FullFrame: {enable_fullframe}"
-        )
-        try:
-            cs = CaptureSettings()
-            cs.capture_width = width
-            cs.capture_height = height
-            cs.target_fps = fps
-            cs.output_mode = 1
-            cs.h264_crf = crf
-
-            cs.use_paint_over_quality = self.use_paint_over_quality
-            cs.h264_paintover_crf = self.h264_paintover_crf
-            cs.h264_paintover_burst_frames = self.h264_paintover_burst_frames
-            cs.paint_over_trigger_frames = 5
-            cs.damage_block_threshold = 10
-            cs.damage_block_duration = 20
-            cs.h264_fullcolor = self.h264_fullcolor
-            cs.h264_fullframe = enable_fullframe
-            cs.h264_streaming_mode = self.h264_streaming_mode 
-            cs.capture_cursor = self.capture_cursor
-            cs.use_cpu = self.use_cpu
-            if self.cli_args.dri_node:
-                cs.vaapi_render_node_index = parse_dri_node_to_index(self.cli_args.dri_node)
-            else:
-                cs.vaapi_render_node_index = -1
- 
-            cs.capture_x = 0
-            cs.capture_y = 0
-
-            watermark_path_str = self.cli_args.watermark_path
-            if watermark_path_str and os.path.exists(watermark_path_str):
-                cs.watermark_path = watermark_path_str.encode('utf-8')
-                watermark_location = self.cli_args.watermark_location
-                if watermark_location < 0 or watermark_location > 6:
-                    cs.watermark_location_enum = 4
-                else:
-                    cs.watermark_location_enum = watermark_location
-                data_logger.info(f"Applying watermark to {self.app.encoder}: {watermark_path_str} at location {cs.watermark_location_enum}")
-            elif watermark_path_str:
-                data_logger.warning(f"Watermark path specified for {self.app.encoder} but file not found: {watermark_path_str}")
-
-            data_logger.debug(f"{self.app.encoder} CaptureSettings: w={cs.capture_width}, h={cs.capture_height}, fps={cs.target_fps}, "
-                              f"crf={cs.h264_crf}, use_paint_over={cs.use_paint_over_quality}, "
-                              f"trigger_frames={cs.paint_over_trigger_frames}, "
-                              f"dmg_thresh={cs.damage_block_threshold}, dmg_dur={cs.damage_block_duration}, "
-                              f"fullframe={cs.h264_fullframe}, fullcolor={cs.h264_fullcolor}")
-
-            # Ensure module is fresh if it existed
-            if self.x264_striped_capture_module:
-                del self.x264_striped_capture_module
-            self.x264_striped_capture_module = ScreenCapture()
-            
-            await self.jpeg_capture_loop.run_in_executor(
-               None, self.x264_striped_capture_module.start_capture, cs, self._x264_striped_stripe_callback
-            )
-            self.is_x264_striped_capturing = True
-            await self._start_backpressure_task_if_needed()
-            data_logger.info(f"{self.app.encoder} capture started successfully.")
-            return True
-        except Exception as e:
-            data_logger.error(f"Failed to start {self.app.encoder}: {e}", exc_info=True)
-            self.is_x264_striped_capturing = False
-            if self.x264_striped_capture_module:
-                del self.x264_striped_capture_module
-                self.x264_striped_capture_module = None
-            return False
+        data_logger.warning("_start_x264_striped_pipeline called directly. This is deprecated. Triggering reconfigure_displays instead.")
+        await self.reconfigure_displays()
+        return True
 
     async def _stop_x264_striped_pipeline(self):
-        if not self.is_x264_striped_capturing or not self.x264_striped_capture_module:
-            return True
-        self.is_x264_striped_capturing = False
-        data_logger.info("Stopping X11 x264-striped capture...")
-        try:
-            if self.jpeg_capture_loop and self.x264_striped_capture_module:
-                await self.jpeg_capture_loop.run_in_executor(
-                    None, self.x264_striped_capture_module.stop_capture
-                )
-        finally:
-            if self.x264_striped_capture_module:
-                del self.x264_striped_capture_module
-                self.x264_striped_capture_module = None
-            await self._ensure_backpressure_task_is_stopped()
+        data_logger.warning("_stop_x264_striped_pipeline called directly. This is deprecated. Triggering reconfigure_displays instead.")
+        await self.reconfigure_displays()
         return True
 
     def _jpeg_stripe_callback(self, result_ptr, user_data):
         current_async_loop = (
-            self.jpeg_capture_loop
-        )  # This is the loop for DataStreamingServer
+            self.capture_loop
+        )
         if (
-            not self.is_jpeg_capturing
+            not self.capture_instances
             or not current_async_loop
             or not self.clients
             or not result_ptr
@@ -1507,10 +1331,9 @@ class DataStreamingServer:
             prefixed_jpeg_data = b"\x03\x00" + jpeg_buffer
             frame_id_ref = result.frame_id
             async def _broadcast_jpeg_data_and_update_frame_id():
-                # self here refers to DataStreamingServer instance
                 self.update_last_sent_frame_id(
                     frame_id_ref
-                )  # Update server's knowledge of sent frame ID
+                )
                 if not self._backpressure_send_frames_enabled:
                     return
                 if clients_ref:
@@ -1522,86 +1345,6 @@ class DataStreamingServer:
                 )
         except Exception as e:
             data_logger.error(f"JPEG callback error: {e}", exc_info=True)
-
-    async def _start_jpeg_pipeline(self):
-        if not X11_CAPTURE_AVAILABLE:
-            return False
-        if self.is_jpeg_capturing:
-            return True
-        if not self.app:
-            return False
-        self.jpeg_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
-        if not self.jpeg_capture_loop:
-            return False
-
-        width = getattr(self.app, "display_width", 1024)
-        height = getattr(self.app, "display_height", 768)
-        fps = float(getattr(self.app, "framerate", TARGET_FRAMERATE))
-
-        data_logger.info(f"Starting JPEG: {width}x{height} @ {fps}fps, Q: {self.jpeg_quality}")
-        try:
-            cs = CaptureSettings()
-            cs.capture_width = width
-            cs.capture_height = height
-            cs.capture_x = 0
-            cs.capture_y = 0
-            cs.target_fps = fps
-            cs.output_mode = 0
-            cs.capture_cursor = self.capture_cursor
-            cs.jpeg_quality = self.jpeg_quality
-            cs.paint_over_jpeg_quality = self.paint_over_jpeg_quality
-            cs.use_paint_over_quality = self.use_paint_over_quality
-            cs.paint_over_trigger_frames = 15
-            cs.damage_block_threshold = 10
-            cs.damage_block_duration = 20
-
-            watermark_path_str = self.cli_args.watermark_path
-            if watermark_path_str and os.path.exists(watermark_path_str):
-                cs.watermark_path = watermark_path_str.encode('utf-8')
-                watermark_location = self.cli_args.watermark_location
-                if watermark_location < 0 or watermark_location > 6:
-                    cs.watermark_location_enum = 4
-                else:
-                    cs.watermark_location_enum = watermark_location
-                data_logger.info(f"Applying watermark to JPEG: {watermark_path_str} at location {cs.watermark_location_enum}")
-            elif watermark_path_str:
-                data_logger.warning(f"Watermark path specified for JPEG but file not found: {watermark_path_str}")
-
-            if self.jpeg_capture_module:
-                del self.jpeg_capture_module
-            self.jpeg_capture_module = ScreenCapture()
-
-            await self.jpeg_capture_loop.run_in_executor(
-                None, self.jpeg_capture_module.start_capture, cs, self._jpeg_stripe_callback
-            )
-            self.is_jpeg_capturing = True
-            data_logger.info("X11 JPEG capture started with detailed settings.")
-            await self._start_backpressure_task_if_needed()
-            return True
-        except Exception as e:
-            data_logger.error(f"Failed to start JPEG: {e}", exc_info=True)
-            self.is_jpeg_capturing = False
-            if self.jpeg_capture_module:
-                del self.jpeg_capture_module
-                self.jpeg_capture_module = None
-            return False
-
-    async def _stop_jpeg_pipeline(self):
-        if not self.is_jpeg_capturing or not self.jpeg_capture_module:
-            return True
-        self.is_jpeg_capturing = False
-        data_logger.info("Stopping X11 JPEG capture...")
-        try:
-            if self.jpeg_capture_loop and self.jpeg_capture_module:
-                await self.jpeg_capture_loop.run_in_executor(
-                    None, self.jpeg_capture_module.stop_capture
-                )
-        finally:
-            if self.jpeg_capture_module:
-                del self.jpeg_capture_module
-                self.jpeg_capture_module = None
-            await self._ensure_backpressure_task_is_stopped()
-        return True
 
     def update_last_sent_frame_id(self, frame_id: int):
         self._active_pipeline_last_sent_frame_id = frame_id
@@ -1672,228 +1415,133 @@ class DataStreamingServer:
         parsed["use_paint_over_quality"] = get_bool("pixelflux_use_paint_over_quality", self.use_paint_over_quality)
         parsed["scaling_dpi"] = get_int("webrtc_SCALING_DPI", 96)
         parsed["enableBinaryClipboard"] = get_bool("enableBinaryClipboard", self.enable_binary_clipboard)
+        parsed["displayId"] = get_str("displayId", "primary")
+        parsed["displayPosition"] = get_str("displayPosition", "right")
         data_logger.debug(f"Parsed client settings: {parsed}")
         return parsed
 
     async def _apply_client_settings(
         self, websocket_obj, settings: dict, is_initial_settings: bool
     ):
+        display_id = settings.get("displayId", "primary")
+        if display_id not in self.display_clients:
+            data_logger.error(f"Cannot apply settings for unknown display_id '{display_id}'")
+            return
+
+        display_state = self.display_clients[display_id]
         data_logger.info(
-            f"Applying client settings (initial={is_initial_settings}): {settings}"
+            f"Applying client settings for '{display_id}' (initial={is_initial_settings}): {settings}"
         )
-        old_encoder = self.app.encoder
-        old_video_bitrate_kbps = self.app.video_bitrate
-        old_framerate = self.app.framerate
-        old_h264_crf = self.h264_crf
-        old_h264_fullcolor = self.h264_fullcolor
-        old_h264_streaming_mode = self.h264_streaming_mode
-        old_audio_bitrate_bps = self.app.audio_bitrate
-        old_display_width = self.app.display_width
-        old_display_height = self.app.display_height
-        old_jpeg_quality = self.jpeg_quality
-        old_paint_over_jpeg_quality = self.paint_over_jpeg_quality
-        old_use_cpu = self.use_cpu
-        old_h264_paintover_crf = self.h264_paintover_crf
-        old_h264_paintover_burst_frames = self.h264_paintover_burst_frames
-        old_use_paint_over_quality = self.use_paint_over_quality
 
-        is_manual_res_mode_from_settings = settings.get(
-            "isManualResolutionMode",
-            getattr(self.app, "client_is_manual_resolution_mode", False),
-        )
-        target_w_for_app, target_h_for_app = old_display_width, old_display_height
+        old_settings = display_state.copy()
+        old_display_width = display_state.get("width", 0)
+        old_display_height = display_state.get("height", 0)
+        old_position = display_state.get('position', 'right')
+        new_position = settings.get("displayPosition", "right")
+
+        is_manual_res_mode_from_settings = settings.get("isManualResolutionMode", False)
+        target_w, target_h = old_display_width, old_display_height
+
         if is_manual_res_mode_from_settings:
-            target_w_for_app = settings.get("manualWidth", old_display_width)
-            target_h_for_app = settings.get("manualHeight", old_display_height)
+            target_w = settings.get("manualWidth", old_display_width)
+            target_h = settings.get("manualHeight", old_display_height)
         elif is_initial_settings:
-            target_w_for_app = settings.get("initialClientWidth", old_display_width)
-            target_h_for_app = settings.get("initialClientHeight", old_display_height)
+            target_w = settings.get("initialClientWidth", old_display_width)
+            target_h = settings.get("initialClientHeight", old_display_height)
 
-        if target_w_for_app <= 0: target_w_for_app = old_display_width
-        if target_h_for_app <= 0: target_h_for_app = old_display_height
-        if target_w_for_app % 2 != 0: target_w_for_app -= 1
-        if target_h_for_app % 2 != 0: target_h_for_app -= 1
-        if target_w_for_app <= 0: target_w_for_app = old_display_width
-        if target_h_for_app <= 0: target_h_for_app = old_display_height
+        if target_w <= 0: target_w = old_display_width if old_display_width > 0 else 1024
+        if target_h <= 0: target_h = old_display_height if old_display_height > 0 else 768
+        if target_w % 2 != 0: target_w -= 1
+        if target_h % 2 != 0: target_h -= 1
 
-        if (target_w_for_app != old_display_width or target_h_for_app != old_display_height):
-            self.app.display_width = target_w_for_app
-            self.app.display_height = target_h_for_app
-            effective_resize_enabled = ENABLE_RESIZE and settings.get("resizeRemote", True)
-            if effective_resize_enabled:
-                await on_resize_handler(f"{self.app.display_width}x{self.app.display_height}", self.app, self)
-        setattr(self.app, "client_is_manual_resolution_mode", is_manual_res_mode_from_settings)
-        if is_manual_res_mode_from_settings:
-            setattr(self.app, "client_manual_width", settings.get("manualWidth", getattr(self.app, "client_manual_width", old_display_width)))
-            setattr(self.app, "client_manual_height", settings.get("manualHeight", getattr(self.app, "client_manual_height", old_display_height)))
-        setattr(self.app, "client_preferred_resize_enabled", settings.get("resizeRemote", getattr(self.app, "client_preferred_resize_enabled", True)))
-        if "enableBinaryClipboard" in settings:
-            new_binary_clipboard_state = settings["enableBinaryClipboard"]
-            self.enable_binary_clipboard = new_binary_clipboard_state
-            if self.input_handler:
-                await self.input_handler.update_binary_clipboard_setting(new_binary_clipboard_state)
+        resolution_actually_changed = (target_w != old_display_width or target_h != old_display_height)
+        position_actually_changed = (new_position != old_position)
+        
+        if resolution_actually_changed or position_actually_changed:
+            display_state['width'] = target_w
+            display_state['height'] = target_h
+            display_state['position'] = new_position
+            if display_id == 'primary':
+                self.app.display_width = target_w
+                self.app.display_height = target_h
 
-        encoder_actually_changed = False
         requested_new_encoder = settings.get("encoder")
-        if requested_new_encoder and requested_new_encoder != old_encoder:
-            if requested_new_encoder in PIXELFLUX_VIDEO_ENCODERS and X11_CAPTURE_AVAILABLE:
-                self.app.encoder = requested_new_encoder
-                encoder_actually_changed = True
-                data_logger.info(f"Encoder changed from '{old_encoder}' to '{self.app.encoder}'.")
-            else:
-                data_logger.warning(f"Requested encoder '{requested_new_encoder}' is not available or not supported. Keeping '{old_encoder}'.")
-
-        if "videoBitRate" in settings:
-            new_bitrate_kbps = settings["videoBitRate"] // 1000
-            if self.app.video_bitrate != new_bitrate_kbps:
-                self.app.video_bitrate = new_bitrate_kbps
-
-        if "videoFramerate" in settings:
-            if self.app.framerate != settings["videoFramerate"]:
-                self.app.framerate = settings["videoFramerate"]
-
-        is_pixelflux_h264 = self.app.encoder in PIXELFLUX_VIDEO_ENCODERS and self.app.encoder != "jpeg"
-        if "videoCRF" in settings and is_pixelflux_h264:
-            if self.h264_crf != settings["videoCRF"]:
-                self.h264_crf = settings["videoCRF"]
-
-        if "h264_fullcolor" in settings and is_pixelflux_h264:
-            if self.h264_fullcolor != settings["h264_fullcolor"]:
-                self.h264_fullcolor = settings["h264_fullcolor"]
-
-        if "h264_streaming_mode" in settings and is_pixelflux_h264:
-            if self.h264_streaming_mode != settings["h264_streaming_mode"]:
-                self.h264_streaming_mode = settings["h264_streaming_mode"]
-
-        is_jpeg = self.app.encoder == "jpeg"
-        if "jpeg_quality" in settings and is_jpeg:
-            self.jpeg_quality = settings["jpeg_quality"]
-
-        if "paint_over_jpeg_quality" in settings and is_jpeg:
-            self.paint_over_jpeg_quality = settings["paint_over_jpeg_quality"]
-
-        if "use_paint_over_quality" in settings:
-            self.use_paint_over_quality = settings["use_paint_over_quality"]
-
-        if "h264_paintover_crf" in settings and is_pixelflux_h264:
-            self.h264_paintover_crf = settings["h264_paintover_crf"]
-
-        if "h264_paintover_burst_frames" in settings and is_pixelflux_h264:
-            self.h264_paintover_burst_frames = settings["h264_paintover_burst_frames"]
-
-        if "use_cpu" in settings and is_pixelflux_h264:
-            self.use_cpu = settings["use_cpu"]
- 
-        if "audioBitRate" in settings:
-            if self.app.audio_bitrate != settings["audioBitRate"]:
-                 self.app.audio_bitrate = settings["audioBitRate"]
-
-        if "scaling_dpi" in settings:
-            dpi_value = settings["scaling_dpi"]
-            data_logger.info(f"Applying SCALING_DPI from initial settings: {dpi_value}")
-            if await set_dpi(dpi_value):
-                data_logger.info(f"Successfully set DPI to {dpi_value} from initial settings.")
-            else:
-                data_logger.error(f"Failed to set DPI to {dpi_value} from initial settings.")
-
+        if requested_new_encoder and requested_new_encoder in PIXELFLUX_VIDEO_ENCODERS and X11_CAPTURE_AVAILABLE:
+            display_state["encoder"] = requested_new_encoder
+        
+        if "videoFramerate" in settings: display_state["framerate"] = settings["videoFramerate"]
+        if "videoCRF" in settings: display_state["h264_crf"] = settings["videoCRF"]
+        if "h264_fullcolor" in settings: display_state["h264_fullcolor"] = settings["h264_fullcolor"]
+        if "h264_streaming_mode" in settings: display_state["h264_streaming_mode"] = settings["h264_streaming_mode"]
+        if "jpeg_quality" in settings: display_state["jpeg_quality"] = settings["jpeg_quality"]
+        if "paint_over_jpeg_quality" in settings: display_state["paint_over_jpeg_quality"] = settings["paint_over_jpeg_quality"]
+        if "use_paint_over_quality" in settings: display_state["use_paint_over_quality"] = settings["use_paint_over_quality"]
+        if "h264_paintover_crf" in settings: display_state["h264_paintover_crf"] = settings["h264_paintover_crf"]
+        if "h264_paintover_burst_frames" in settings: display_state["h264_paintover_burst_frames"] = settings["h264_paintover_burst_frames"]
+        if "use_cpu" in settings: display_state["use_cpu"] = settings["use_cpu"]
+        
+        if "audioBitRate" in settings: self.app.audio_bitrate = settings["audioBitRate"]
+        if "enableBinaryClipboard" in settings and self.input_handler:
+            self.enable_binary_clipboard = settings["enableBinaryClipboard"]
+            await self.input_handler.update_binary_clipboard_setting(self.enable_binary_clipboard)
+        
+        if is_initial_settings and "scaling_dpi" in settings:
+            await set_dpi(settings["scaling_dpi"])
             if CURSOR_SIZE > 0:
-                calculated_cursor_size = int(round(dpi_value / 96.0 * CURSOR_SIZE))
-                new_cursor_size = max(1, calculated_cursor_size)
-                data_logger.info(f"Attempting to set cursor size to {new_cursor_size} based on initial DPI.")
-                if await set_cursor_size(new_cursor_size):
-                    data_logger.info(f"Successfully set cursor size to {new_cursor_size}.")
-                else:
-                    data_logger.error(f"Failed to set cursor size to {new_cursor_size}.")
+                new_cursor_size = max(1, int(round(settings["scaling_dpi"] / 96.0 * CURSOR_SIZE)))
+                await set_cursor_size(new_cursor_size)
 
-        if "videoBufferSize" in settings:
-            setattr(self.app, "video_buffer_size", settings["videoBufferSize"])
-        async with self._pipeline_lock:
-            resolution_actually_changed_on_server = (
-                self.app.display_width != old_display_width
-                or self.app.display_height != old_display_height
+        async with self._reconfigure_lock:
+            params_changed = any(
+                display_state.get(key) != old_settings.get(key)
+                for key in [
+                    'encoder', 'framerate', 'h264_crf', 'h264_fullcolor', 'h264_streaming_mode',
+                    'jpeg_quality', 'paint_over_jpeg_quality', 'use_cpu', 'h264_paintover_crf',
+                    'h264_paintover_burst_frames', 'use_paint_over_quality'
+                ]
             )
-            framerate_param_changed = self.app.framerate != old_framerate
-            crf_param_changed = is_pixelflux_h264 and self.h264_crf != old_h264_crf
-            h264_fullcolor_param_changed = is_pixelflux_h264 and self.h264_fullcolor != old_h264_fullcolor
-            h264_streaming_mode_param_changed = is_pixelflux_h264 and self.h264_streaming_mode != old_h264_streaming_mode
-            jpeg_quality_param_changed = is_jpeg and self.jpeg_quality != old_jpeg_quality
-            paint_over_jpeg_quality_param_changed = (
-                is_jpeg and self.paint_over_jpeg_quality != old_paint_over_jpeg_quality
-            )
-            use_cpu_param_changed = is_pixelflux_h264 and self.use_cpu != old_use_cpu
-            h264_paintover_crf_param_changed = is_pixelflux_h264 and self.h264_paintover_crf != old_h264_paintover_crf
-            h264_paintover_burst_frames_param_changed = is_pixelflux_h264 and self.h264_paintover_burst_frames != old_h264_paintover_burst_frames
-            use_paint_over_quality_param_changed = self.use_paint_over_quality != old_use_paint_over_quality
-            audio_bitrate_param_changed = self.app.audio_bitrate != old_audio_bitrate_bps
-            restart_video_pipeline = False
-            if encoder_actually_changed or resolution_actually_changed_on_server:
-                restart_video_pipeline = True
-            elif self.app.encoder in PIXELFLUX_VIDEO_ENCODERS:
-                if framerate_param_changed:
-                    restart_video_pipeline = True
-                if is_pixelflux_h264 and (
-                    crf_param_changed
-                    or h264_fullcolor_param_changed
-                    or h264_streaming_mode_param_changed
-                    or use_cpu_param_changed
-                    or h264_paintover_crf_param_changed
-                    or h264_paintover_burst_frames_param_changed
-                    or use_paint_over_quality_param_changed
-                ):
-                    restart_video_pipeline = True
-                if is_jpeg and (
-                    jpeg_quality_param_changed 
-                    or paint_over_jpeg_quality_param_changed
-                    or use_paint_over_quality_param_changed
-                ):
-                    restart_video_pipeline = True
-            video_is_currently_active = self.is_jpeg_capturing or self.is_x264_striped_capturing
-            if is_initial_settings and not video_is_currently_active:
-                data_logger.warning(
-                    "Pipeline is inactive for the initial client. Forcing a start."
-                )
-                restart_video_pipeline = True
-            restart_audio_pipeline = audio_bitrate_param_changed
-            if restart_video_pipeline:
-                if self.is_jpeg_capturing or self.is_x264_striped_capturing:
-                    data_logger.info(
-                        f"Restarting video pipeline (was {old_encoder}, now {self.app.encoder}) due to settings change or inactive state."
-                    )
-                    if old_encoder == "jpeg": await self._stop_jpeg_pipeline()
-                    elif old_encoder in PIXELFLUX_VIDEO_ENCODERS and old_encoder != "jpeg": await self._stop_x264_striped_pipeline()
-                else:
-                    data_logger.info(f"Video pipeline for {self.app.encoder} needs to start (was not active or forced).")
-                if self.app.encoder == "jpeg": await self._start_jpeg_pipeline()
-                elif self.app.encoder in PIXELFLUX_VIDEO_ENCODERS and self.app.encoder != "jpeg": await self._start_x264_striped_pipeline()
-            if restart_audio_pipeline:
-                if self.is_pcmflux_capturing:
-                    data_logger.info("Restarting audio pipeline due to settings update.")
-                    await self._stop_pcmflux_pipeline()
-                    await self._start_pcmflux_pipeline()
+
+            should_restart_video = resolution_actually_changed or position_actually_changed or params_changed
+            if is_initial_settings and not self.capture_instances:
+                data_logger.warning("Pipeline is inactive for the initial client. Forcing a start.")
+                should_restart_video = True
+
+            if should_restart_video:
+                data_logger.info(f"Client settings for '{display_id}' or resolution changed, triggering full display reconfiguration.")
+                await self.reconfigure_displays()
+
+            if self.app.audio_bitrate != old_settings.get('audio_bitrate', self.app.audio_bitrate) and self.is_pcmflux_capturing:
+                data_logger.info("Restarting audio pipeline due to settings update.")
+                await self._stop_pcmflux_pipeline()
+                await self._start_pcmflux_pipeline()
+
         if is_initial_settings and self.client_settings_received and not self.client_settings_received.is_set():
             self.client_settings_received.set()
-            data_logger.info("Initial client settings processed and event set by _apply_client_settings.")
 
     async def ws_handler(self, websocket):
         global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
         raddr = websocket.remote_address
         data_logger.info(f"Data WebSocket connected from {raddr}")
         self.clients.add(websocket)
+        if len(self.clients) > 1 and 'primary' in self.display_clients:
+            data_logger.info(f"New client {raddr} connected. Triggering reconfiguration for stream sync.")
+            asyncio.create_task(self.reconfigure_displays())
         self.data_ws = (
-            websocket  # self.data_ws is specific to this handler instance/connection
+            websocket 
         )
-        self.jpeg_capture_loop = self.jpeg_capture_loop or asyncio.get_running_loop()
+        self.capture_loop = self.capture_loop or asyncio.get_running_loop()
         self.client_settings_received = asyncio.Event()
         initial_settings_processed = False
         self._sent_frame_timestamps.clear()
         self._rtt_samples.clear()
         self._smoothed_rtt_ms = 0.0
 
+        client_display_id = None
+
         try:
             await websocket.send(f"MODE {self.mode}")
-            await self.broadcast_stream_resolution()
         except websockets.exceptions.ConnectionClosed:
-            self.clients.discard(websocket)  # Ensure removal on early exit
+            self.clients.discard(websocket)
             if self.data_ws is websocket:
                 self.data_ws = None
             return
@@ -1919,7 +1567,7 @@ class DataStreamingServer:
         try:
             await websocket.send(json.dumps(server_settings_payload))
         except websockets.exceptions.ConnectionClosed:
-            self.clients.discard(websocket)  # Ensure removal on early exit
+            self.clients.discard(websocket)
             if self.data_ws is websocket:
                 self.data_ws = None
             return
@@ -1950,9 +1598,9 @@ class DataStreamingServer:
         upload_dir_valid = upload_dir_path is not None
         
         mic_setup_done = False 
-        pa_module_index = None  # Stores the index of the loaded module-virtual-source
-        pa_stream = None  # For pasimple playback
-        pulse = None  # pulsectl.Pulse client instance
+        pa_module_index = None
+        pa_stream = None
+        pulse = None
         
         # Audio buffer management
         audio_buffer = []
@@ -1979,7 +1627,7 @@ class DataStreamingServer:
         self._stats_sender_task_ws = asyncio.create_task(
             _send_stats_periodically_ws(
                 websocket, self._shared_stats_ws
-            )  # Stats are per-client
+            )
         )
         self._network_monitor_task_ws = asyncio.create_task(
             _collect_network_stats_ws(self._shared_stats_ws, self)
@@ -1996,12 +1644,12 @@ class DataStreamingServer:
                         f"Initial PulseAudio connection failed: {e_pa_conn}",
                         exc_info=True,
                     )
-                    pulse = None  # Ensure pulse is None if connection fails
+                    pulse = None
 
             async for message in websocket:
                 if isinstance(message, bytes):
                     msg_type, payload = message[0], message[1:]
-                    if msg_type == 0x01:  # File data
+                    if msg_type == 0x01:
                         if (
                             active_upload_target_path_conn
                             and active_upload_target_path_conn
@@ -2033,7 +1681,7 @@ class DataStreamingServer:
                                     "PulseAudio library not available. Skipping microphone data."
                                 )
                             continue
-                        if pulse is None:  # Check if PulseAudio client object exists
+                        if pulse is None:
                             if len(payload) > 0:
                                 data_logger.warning(
                                     "PulseAudio client not connected. Skipping microphone data."
@@ -2069,7 +1717,7 @@ class DataStreamingServer:
                                         )
                                     pa_module_index = (
                                         existing_source_info.owner_module
-                                    )  # Get module index if it exists
+                                    )
                                     mic_setup_done = True
                                 else:
                                     data_logger.info(
@@ -2083,7 +1731,6 @@ class DataStreamingServer:
                                         f"Loaded module-virtual-source with index {pa_module_index} for '{virtual_source_name}'."
                                     )
 
-                                    # Verify creation
                                     new_source_info = None
                                     source_list_after_load = pulse.source_list()
                                     for source_obj_after in source_list_after_load:
@@ -2101,24 +1748,21 @@ class DataStreamingServer:
                                         )
                                         if (
                                             pa_module_index is not None
-                                        ):  # Check if it's not None before trying to unload
+                                        ):
                                             try:
                                                 pulse.module_unload(pa_module_index)
                                             except Exception as unload_err:
                                                 data_logger.error(
                                                     f"Failed to unload module {pa_module_index}: {unload_err}"
                                                 )
-                                            pa_module_index = None  # Reset on failure to unload or if it was problematic
+                                            pa_module_index = None
 
                                 if mic_setup_done:
                                     current_source_list = (
                                         pulse.source_list()
                                     )
-                                    # Mic is automatically set to the source for recording (pcmflux) and input
-                                    # Set pcmflux back to the input source
                                     if self.is_pcmflux_capturing:
                                         try:
-                                            # Get all source outputs to find pcmflux
                                             source_outputs = pulse.source_output_list()
                                             pcmflux_output = None
                                             
@@ -2128,28 +1772,21 @@ class DataStreamingServer:
                                                     break
                                             
                                             if pcmflux_output:
-                                                # Get the source pcmflux is connected to
                                                 connected_source = None
                                                 for source in current_source_list:
                                                     if source.index == pcmflux_output.source:
                                                         connected_source = source
                                                         break
-                                                
-                                                # Check if it's connected to the wrong source
                                                 if connected_source and connected_source.name != self.audio_device_name:
                                                     data_logger.warning(
                                                         f"pcmflux connected to wrong source '{connected_source.name}', moving to '{self.audio_device_name}'"
                                                     )
-                                                    
-                                                    # Find the correct source to move to
                                                     correct_source = None
                                                     for source in current_source_list:
                                                         if source.name == self.audio_device_name:
                                                             correct_source = source
                                                             break
-                                                    
                                                     if correct_source:
-                                                        # Move pcmflux to the correct source
                                                         pulse.source_output_move(pcmflux_output.index, correct_source.index)
                                                         data_logger.info(
                                                             f"Successfully moved pcmflux from '{connected_source.name}' to '{self.audio_device_name}'"
@@ -2175,10 +1812,7 @@ class DataStreamingServer:
                                     f"PulseAudio mic setup error: {e_pa_setup}",
                                     exc_info=True,
                                 )
-                                # No need to close pulse here, as it's managed by the outer try/finally
-                                # Reset mic_setup_done to false on any error during setup
                                 mic_setup_done = False
-                                # If pa_module_index was set from a failed load, try to unload it.
                                 if pa_module_index is not None:
                                     try:
                                         data_logger.info(
@@ -2189,8 +1823,8 @@ class DataStreamingServer:
                                         data_logger.error(
                                             f"Error unloading module {pa_module_index} after setup failure: {e_unload_err}"
                                         )
-                                    pa_module_index = None  # Reset after attempt
-                                continue  # Skip processing this mic packet if setup failed
+                                    pa_module_index = None
+                                continue
 
                         if not mic_setup_done or not payload:
                             if not mic_setup_done and len(payload) > 0:
@@ -2211,7 +1845,7 @@ class DataStreamingServer:
                                     24000,
                                     "SelkiesClientMic",
                                     "MicStream",
-                                    device_name="input",  # Play to system's default input (which should be our virtual mic)
+                                    device_name="input",
                                 )
                             
                             audio_buffer.extend(payload)
@@ -2350,23 +1984,101 @@ class DataStreamingServer:
                         try:
                             _, payload_str = message.split(",", 1)
                             parsed_settings = self._parse_settings_payload(payload_str)
+                            
+                            display_id = parsed_settings.get("displayId", "primary")
+                            client_display_id = display_id
+                            if display_id in ['primary', 'display2']:
+                                existing_client_info = self.display_clients.get(display_id)
+                                if existing_client_info:
+                                    old_ws = existing_client_info.get('ws')
+                                    if old_ws and old_ws is not websocket and old_ws.state == websockets.protocol.State.OPEN:
+                                        kill_reason = f"a new {display_id} client connected connection killed"
+                                        data_logger.warning(
+                                            f"Killing old client for '{display_id}' at {old_ws.remote_address}. Reason: {kill_reason}"
+                                        )
+                                        try:
+                                            await old_ws.send(f"KILL {kill_reason}")
+                                            await old_ws.close(code=1000, reason="Superseded by new client")
+                                        except websockets.ConnectionClosed:
+                                            data_logger.info(f"Old client for '{display_id}' was already disconnected.")
+                                        except Exception as e:
+                                            data_logger.error(f"Error while killing old client for '{display_id}': {e}")
+                            if display_id != 'primary':
+                                old_secondary_id = None
+                                for existing_id, client_data in self.display_clients.items():
+                                    if existing_id != 'primary' and client_data.get('ws') is not websocket:
+                                        old_secondary_id = existing_id
+                                        break
+                                
+                                if old_secondary_id:
+                                    data_logger.warning(
+                                        f"New secondary display '{display_id}' connected. "
+                                        f"Deactivating old secondary '{old_secondary_id}'."
+                                    )
+                                    old_secondary_client = self.display_clients.get(old_secondary_id)
+                                    if old_secondary_client:
+                                        await self._stop_capture_for_display(old_secondary_id)
+                                        old_secondary_client['video_active'] = False
+                                        old_ws = old_secondary_client.get('ws')
+                                        if old_ws:
+                                            try:
+                                                await old_ws.send("VIDEO_STOPPED")
+                                            except websockets.ConnectionClosed:
+                                                pass
+                            if display_id not in self.display_clients:
+                                data_logger.info(f"Registering new client for display: {display_id}")
+                                self.display_clients[display_id] = {
+                                    'ws': websocket, 
+                                    'width': 0, 'height': 0, 'position': 'right',
+                                    'acknowledged_frame_id': -1,
+                                    'last_sent_frame_id': 0,
+                                    'sent_timestamps': OrderedDict(),
+                                    'rtt_samples': deque(maxlen=RTT_SMOOTHING_SAMPLES),
+                                    'smoothed_rtt': 0.0,
+                                    'backpressure_enabled': True,
+                                    'backpressure_task': None,
+                                    'last_ack_update_time': time.monotonic(),
+                                    'latest_client_fps': 0.0,
+                                    'video_active': True,
+                                    'encoder': self.app.encoder,
+                                    'framerate': self.app.framerate,
+                                    'h264_crf': self.cli_args.h264_crf,
+                                    'h264_fullcolor': self.cli_args.h264_fullcolor,
+                                    'h264_streaming_mode': self.cli_args.h264_streaming_mode,
+                                    'jpeg_quality': 60,
+                                    'paint_over_jpeg_quality': 90,
+                                    'use_cpu': False,
+                                    'h264_paintover_crf': 18,
+                                    'h264_paintover_burst_frames': 5,
+                                    'use_paint_over_quality': True,
+                                }
+                            else:
+                                data_logger.info(f"Client is taking over existing display '{display_id}'. Updating state for new connection.")
+                                display_state = self.display_clients[display_id]
+                                display_state['ws'] = websocket
+                                display_state['video_active'] = True
+                                display_state['acknowledged_frame_id'] = -1
+                                display_state['last_ack_update_time'] = time.monotonic()
+                                display_state['sent_timestamps'].clear()
+                                display_state['rtt_samples'].clear()
+                                display_state['smoothed_rtt'] = 0.0
+ 
                             await self._apply_client_settings(
                                 websocket,
                                 parsed_settings,
                                 not initial_settings_processed,
                             )
-                            if not initial_settings_processed: # ws_handler's local flag
+                            if not initial_settings_processed:
                                 initial_settings_processed = True
                                 data_logger.info("Initial client settings message processed by ws_handler.")
-                                current_encoder = getattr(self.app, "encoder", None)
-                                video_is_active = (self.is_jpeg_capturing or self.is_x264_striped_capturing)
-                                if not video_is_active and current_encoder:
-                                    data_logger.warning(f"Initial setup: Video pipeline for '{current_encoder}' was expected to be started by _apply_client_settings but is not. This might indicate an issue or a no-op change.")
+                                video_is_active = len(self.capture_instances) > 0
+                                if not video_is_active:
+                                    data_logger.warning(f"Initial setup: Video pipeline was expected to be started but is not.")
                                 
-                                async with self._pipeline_lock:
+                                async with self._reconfigure_lock:
                                     audio_is_active = self.is_pcmflux_capturing
-                                    if not audio_is_active and PCMFLUX_AVAILABLE:
-                                        data_logger.info("Initial setup: Audio pipeline not yet active, attempting start.")
+                                    if not audio_is_active and PCMFLUX_AVAILABLE and display_id == 'primary':
+                                        data_logger.info("Initial setup: Primary client connected, audio not active, attempting start.")
                                         await self._start_pcmflux_pipeline()
                                     elif not PCMFLUX_AVAILABLE and not audio_is_active:
                                          data_logger.warning("Initial setup: Audio pipeline (server-to-client) cannot be started (pcmflux not available).")
@@ -2378,29 +2090,35 @@ class DataStreamingServer:
                                 f"Error processing SETTINGS: {e_set}", exc_info=True
                             )
 
-
                     elif message.startswith("CLIENT_FRAME_ACK"):
                         try:
-                            acked_frame_id = int(message.split(" ", 1)[1])
-                            self._client_acknowledged_frame_id = acked_frame_id
-                            self._last_client_acknowledged_frame_id_update_time = (
-                                time.monotonic()
-                            )
-                            if acked_frame_id in self._sent_frame_timestamps:
-                                send_time = self._sent_frame_timestamps.pop(
-                                    acked_frame_id
-                                )
-                                rtt_sample_ms = (time.monotonic() - send_time) * 1000.0
-                                if rtt_sample_ms >= 0:
-                                    self._rtt_samples.append(rtt_sample_ms)
-                                if self._rtt_samples:
-                                    self._smoothed_rtt_ms = sum(
-                                        self._rtt_samples
-                                    ) / len(self._rtt_samples)
+                            parts = message.split(" ", 2)
+                            acked_frame_id = -1
+                            target_display_id = client_display_id
+                            if not target_display_id:
+                                continue
+                            if len(parts) >= 2:
+                                acked_frame_id = int(parts[-1])
+                            else:
+                                raise ValueError("ACK message has too few parts.")
+
+                            display_state = self.display_clients.get(target_display_id)
+                            if display_state:
+                                display_state['acknowledged_frame_id'] = acked_frame_id
+                                display_state['last_ack_update_time'] = time.monotonic()
+                                
+                                sent_ts = display_state.get('sent_timestamps')
+                                if sent_ts and acked_frame_id in sent_ts:
+                                    send_time = sent_ts.pop(acked_frame_id)
+                                    rtt_sample_ms = (time.monotonic() - send_time) * 1000.0
+                                    if rtt_sample_ms >= 0:
+                                        rtt_samples = display_state.get('rtt_samples')
+                                        if rtt_samples is not None:
+                                            rtt_samples.append(rtt_sample_ms)
+                                            if rtt_samples:
+                                                display_state['smoothed_rtt'] = sum(rtt_samples) / len(rtt_samples)
                         except (IndexError, ValueError):
-                            data_logger.warning(
-                                f"Malformed CLIENT_FRAME_ACK: {message}"
-                            )
+                            data_logger.warning(f"Malformed CLIENT_FRAME_ACK from {raddr}: {message}")
 
                     elif message.startswith("FILE_UPLOAD_END:"):
                         if (
@@ -2439,36 +2157,37 @@ class DataStreamingServer:
                         active_upload_target_path_conn = None
 
                     elif message == "START_VIDEO":
-                        async with self._pipeline_lock:
-                            current_encoder = getattr(self.app, "encoder", None)
-                            data_logger.info(f"Received START_VIDEO for encoder: {current_encoder}")
-                            started_successfully = False
-
-                            if current_encoder == "jpeg":
-                                started_successfully = await self._start_jpeg_pipeline()
-                            elif current_encoder in PIXELFLUX_VIDEO_ENCODERS and current_encoder != "jpeg":
-                                started_successfully = await self._start_x264_striped_pipeline()
-                        
-                            if started_successfully:
-                                websockets.broadcast(self.clients, "VIDEO_STARTED")
-                            elif not started_successfully:
-                                data_logger.warning(f"START_VIDEO: Failed to start pipeline for encoder '{current_encoder}'.")
+                        if client_display_id and client_display_id in self.display_clients:
+                            data_logger.info(f"Received START_VIDEO for '{client_display_id}'. Starting stream without reconfiguring layout.")
+                            self.display_clients[client_display_id]['video_active'] = True
+                            
+                            layout = self.display_layouts.get(client_display_id)
+                            if layout:
+                                await self._start_capture_for_display(
+                                    display_id=client_display_id,
+                                    width=layout['w'], height=layout['h'],
+                                    x_offset=layout['x'], y_offset=layout['y']
+                                )
+                                await self._start_backpressure_task_if_needed(client_display_id)
+                                await websocket.send("VIDEO_STARTED")
+                            else:
+                                data_logger.warning(f"No layout found for '{client_display_id}'. Triggering a full reconfigure to recover state.")
+                                async with self._reconfigure_lock:
+                                    await self.reconfigure_displays()
 
                     elif message == "STOP_VIDEO":
-                        async with self._pipeline_lock:
-                            data_logger.info("Received STOP_VIDEO")
-                            current_encoder = getattr(self.app, "encoder", None) 
-
-                            if self.is_jpeg_capturing and current_encoder == "jpeg":
-                                await self._stop_jpeg_pipeline()
-                            elif self.is_x264_striped_capturing and (current_encoder in PIXELFLUX_VIDEO_ENCODERS and current_encoder != "jpeg"):
-                                await self._stop_x264_striped_pipeline()
-                        
-                            if self.clients:
-                                websockets.broadcast(self.clients, "VIDEO_STOPPED")
+                        if client_display_id and client_display_id in self.display_clients:
+                            data_logger.info(f"Received STOP_VIDEO for '{client_display_id}'. Stopping stream without reconfiguring layout.")
+                            self.display_clients[client_display_id]['video_active'] = False
+                            
+                            await self._stop_capture_for_display(client_display_id)
+                            try:
+                                await websocket.send("VIDEO_STOPPED")
+                            except websockets.ConnectionClosed:
+                                pass
 
                     elif message == "START_AUDIO":
-                        async with self._pipeline_lock:
+                        async with self._reconfigure_lock:
                             await self.client_settings_received.wait()
                             data_logger.info(
                                 "Received START_AUDIO command from client for server-to-client audio."
@@ -2484,7 +2203,7 @@ class DataStreamingServer:
                             websockets.broadcast(self.clients, "AUDIO_STARTED")
 
                     elif message == "STOP_AUDIO":
-                        async with self._pipeline_lock:
+                        async with self._reconfigure_lock:
                             data_logger.info("Received STOP_AUDIO")
                             if self.is_pcmflux_capturing:
                                 await self._stop_pcmflux_pipeline()
@@ -2494,130 +2213,123 @@ class DataStreamingServer:
                     elif message.startswith("r,"):
                         await self.client_settings_received.wait() 
                         raddr = websocket.remote_address
-                        target_res_str = message[2:]
-                        current_res_str = f"{self.app.display_width}x{self.app.display_height}"
-                        if target_res_str == current_res_str:
-                            data_logger.info(f"Received redundant resize request for {target_res_str}. No action taken.")
-                            continue
-                        data_logger.info(f"Received resize request: {target_res_str} from {raddr}")
-
-                        video_was_running = False
-                        encoder_at_resize_start = str(self.app.encoder)
-                        if self.is_jpeg_capturing and encoder_at_resize_start == "jpeg":
-                            data_logger.info("Resize handler: Stopping JPEG pipeline.")
-                            await self._stop_jpeg_pipeline()
-                            video_was_running = True
-                        elif self.is_x264_striped_capturing and (encoder_at_resize_start in PIXELFLUX_VIDEO_ENCODERS and encoder_at_resize_start != "jpeg"):
-                            data_logger.info(f"Resize handler: Stopping {encoder_at_resize_start} (Pixelflux H264) pipeline.")
-                            await self._stop_x264_striped_pipeline()
-                            video_was_running = True
                         
-                        await on_resize_handler(target_res_str, self.app, self)
+                        parts = message.split(',')
+                        if len(parts) != 3:
+                            data_logger.warning(f"Malformed resize request from {raddr}: {message}")
+                            continue
+                        
+                        target_res_str = parts[1]
+                        display_id = parts[2]
 
-                        if getattr(self.app, "last_resize_success", False) and video_was_running:
-                            data_logger.info(f"Resize handler: Restarting video ({encoder_at_resize_start}) after successful resize to {self.app.display_width}x{self.app.display_height}")
-                            if encoder_at_resize_start == "jpeg":
-                                await self._start_jpeg_pipeline()
-                            elif encoder_at_resize_start in PIXELFLUX_VIDEO_ENCODERS and encoder_at_resize_start != "jpeg":
-                                await self._start_x264_striped_pipeline()
+                        client_info = self.display_clients.get(display_id)
+                        if not client_info:
+                            data_logger.warning(f"Resize request for unknown display_id '{display_id}' from {raddr}. Ignoring.")
+                            continue
+                        
+                        current_res_str = f"{client_info.get('width', 0)}x{client_info.get('height', 0)}"
+
+                        if target_res_str == current_res_str:
+                            data_logger.info(f"Received redundant resize request for {display_id} ({target_res_str}). No action taken.")
+                            continue
+                        data_logger.info(f"Received resize request for {display_id}: {target_res_str} from {raddr}")
+
+                        await on_resize_handler(target_res_str, self.app, self, display_id)
 
                     elif message.startswith("SET_ENCODER,"):
                         await self.client_settings_received.wait()
-                        new_encoder_cmd = message.split(",")[1].strip().lower()
-                        data_logger.info(f"Received SET_ENCODER: {new_encoder_cmd}")
-                        
-                        is_valid_new_encoder = False
-                        if new_encoder_cmd in PIXELFLUX_VIDEO_ENCODERS and X11_CAPTURE_AVAILABLE:
-                            is_valid_new_encoder = True
-                        
-                        if not is_valid_new_encoder:
-                            data_logger.warning(f"SET_ENCODER: '{new_encoder_cmd}' is not valid or available. No change.")
-                            continue
-
-                        if new_encoder_cmd != self.app.encoder:
-                            old_encoder_for_stop = str(self.app.encoder)
+                        try:
+                            new_encoder_cmd = message.split(",")[1].strip().lower()
+                            data_logger.info(f"Received SET_ENCODER for '{client_display_id}': {new_encoder_cmd}")
                             
-                            if self.is_jpeg_capturing and old_encoder_for_stop == "jpeg":
-                                await self._stop_jpeg_pipeline()
-                            elif self.is_x264_striped_capturing and (old_encoder_for_stop in PIXELFLUX_VIDEO_ENCODERS and old_encoder_for_stop != "jpeg"):
-                                await self._stop_x264_striped_pipeline()
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set encoder, display '{client_display_id}' not registered.")
+                                continue
 
-                            self.app.encoder = new_encoder_cmd
+                            if not (new_encoder_cmd in PIXELFLUX_VIDEO_ENCODERS and X11_CAPTURE_AVAILABLE):
+                                data_logger.warning(f"SET_ENCODER: '{new_encoder_cmd}' is not valid or available. No change.")
+                                continue
 
-                            # Start new pipeline
-                            if new_encoder_cmd == "jpeg":
-                                await self._start_jpeg_pipeline()
-                            elif new_encoder_cmd in PIXELFLUX_VIDEO_ENCODERS and new_encoder_cmd != "jpeg":
-                                await self._start_x264_striped_pipeline()
-                            else: 
-                                data_logger.warning(f"SET_ENCODER: No start method or support for validated new encoder {new_encoder_cmd}")
-                        else:
-                            data_logger.info(f"SET_ENCODER: Encoder '{new_encoder_cmd}' is already active.")
+                            display_state = self.display_clients[client_display_id]
+                            if new_encoder_cmd != display_state.get('encoder'):
+                                display_state['encoder'] = new_encoder_cmd
+                                data_logger.info(f"Encoder for '{client_display_id}' changed to {new_encoder_cmd}, triggering display reconfiguration.")
+                                await self.reconfigure_displays()
+                            else:
+                                data_logger.info(f"SET_ENCODER: Encoder '{new_encoder_cmd}' is already active for '{client_display_id}'.")
+                        except (IndexError, ValueError) as e:
+                            data_logger.warning(f"Malformed SET_ENCODER message: {message}, error: {e}")
 
                     elif message.startswith("SET_FRAMERATE,"):
                         await self.client_settings_received.wait()
-                        new_fps_cmd = int(message.split(",")[1])
-                        data_logger.info(f"Received SET_FRAMERATE: {new_fps_cmd}")
-                        
-                        if self.app.framerate == new_fps_cmd:
-                            data_logger.info(f"SET_FRAMERATE: Framerate {new_fps_cmd} is already set.")
-                            continue
+                        try:
+                            new_fps_cmd = int(message.split(",")[1])
+                            data_logger.info(f"Received SET_FRAMERATE for '{client_display_id}': {new_fps_cmd}")
 
-                        self.app.set_framerate(new_fps_cmd)
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set framerate, display '{client_display_id}' not registered.")
+                                continue
 
-                        current_enc = getattr(self.app, "encoder", None)
-                        is_pixelflux_h264_active = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg" and self.is_x264_striped_capturing)
-                        is_jpeg_active = (current_enc == "jpeg" and self.is_jpeg_capturing)
-
-                        if is_jpeg_active or is_pixelflux_h264_active:
-                            data_logger.info(f"Restarting {current_enc} pipeline for new framerate {new_fps_cmd}")
-                            if is_jpeg_active: await self._stop_jpeg_pipeline()
-                            if is_pixelflux_h264_active: await self._stop_x264_striped_pipeline()
-                            
-                            if is_jpeg_active: await self._start_jpeg_pipeline()
-                            if is_pixelflux_h264_active: await self._start_x264_striped_pipeline()
+                            display_state = self.display_clients[client_display_id]
+                            if display_state.get('framerate') != new_fps_cmd:
+                                display_state['framerate'] = new_fps_cmd
+                                data_logger.info(f"Framerate for '{client_display_id}' changed, triggering display reconfiguration.")
+                                await self.reconfigure_displays()
+                            else:
+                                data_logger.info(f"SET_FRAMERATE: Framerate {new_fps_cmd} is already set for '{client_display_id}'.")
+                        except (IndexError, ValueError) as e:
+                            data_logger.warning(f"Malformed SET_FRAMERATE message: {message}, error: {e}")
 
                     elif message.startswith("SET_CRF,"):
                         await self.client_settings_received.wait()
-                        new_crf_cmd = int(message.split(",")[1])
-                        data_logger.info(f"Received SET_CRF: {new_crf_cmd}")
+                        try:
+                            new_crf_cmd = int(message.split(",")[1])
+                            data_logger.info(f"Received SET_CRF for '{client_display_id}': {new_crf_cmd}")
 
-                        current_enc = getattr(self.app, "encoder", None)
-                        is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set CRF, display '{client_display_id}' not registered.")
+                                continue
 
-                        if is_pixelflux_h264:
-                            if self.h264_crf != new_crf_cmd:
-                                self.h264_crf = new_crf_cmd 
-                                if self.is_x264_striped_capturing:
-                                    data_logger.info(f"Restarting {current_enc} pipeline for CRF change to {self.h264_crf}")
-                                    await self._stop_x264_striped_pipeline()
-                                    await self._start_x264_striped_pipeline()
+                            display_state = self.display_clients[client_display_id]
+                            current_enc = display_state.get('encoder')
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
+
+                            if is_pixelflux_h264:
+                                if display_state.get('h264_crf') != new_crf_cmd:
+                                    display_state['h264_crf'] = new_crf_cmd
+                                    data_logger.info(f"CRF for '{client_display_id}' changed, triggering display reconfiguration.")
+                                    await self.reconfigure_displays()
+                                else:
+                                    data_logger.info(f"SET_CRF: Value {new_crf_cmd} is already set for '{client_display_id}'.")
                             else:
-                                data_logger.info(f"SET_CRF: Value {new_crf_cmd} is already set.")
-                        else:
-                            data_logger.warning(f"SET_CRF received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                                data_logger.warning(f"SET_CRF received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                        except (IndexError, ValueError) as e:
+                            data_logger.warning(f"Malformed SET_CRF message: {message}, error: {e}")
 
                     elif message.startswith("SET_H264_FULLCOLOR,"):
                         await self.client_settings_received.wait()
                         try:
                             new_fullcolor_cmd_str = message.split(",")[1].strip().lower()
                             new_fullcolor_cmd = new_fullcolor_cmd_str == "true"
-                            data_logger.info(f"Received SET_H264_FULLCOLOR: {new_fullcolor_cmd}")
+                            data_logger.info(f"Received SET_H264_FULLCOLOR for '{client_display_id}': {new_fullcolor_cmd}")
 
-                            current_enc = getattr(self.app, "encoder", None)
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set H264_FULLCOLOR, display '{client_display_id}' not registered.")
+                                continue
+
+                            display_state = self.display_clients[client_display_id]
+                            current_enc = display_state.get('encoder')
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
 
                             if is_pixelflux_h264:
-                                if self.h264_fullcolor != new_fullcolor_cmd:
-                                    self.h264_fullcolor = new_fullcolor_cmd
-                                    if self.is_x264_striped_capturing:
-                                        data_logger.info(f"Restarting {current_enc} pipeline for H264_FULLCOLOR change to {self.h264_fullcolor}")
-                                        await self._stop_x264_striped_pipeline()
-                                        await self._start_x264_striped_pipeline()
+                                if display_state.get('h264_fullcolor') != new_fullcolor_cmd:
+                                    display_state['h264_fullcolor'] = new_fullcolor_cmd
+                                    data_logger.info(f"H.264 Full Color for '{client_display_id}' changed, triggering display reconfiguration.")
+                                    await self.reconfigure_displays()
                                 else:
-                                    data_logger.info(f"SET_H264_FULLCOLOR: Value {new_fullcolor_cmd} is already set.")
+                                    data_logger.info(f"SET_H264_FULLCOLOR: Value {new_fullcolor_cmd} is already set for '{client_display_id}'.")
                             else:
-                                data_logger.warning(f"SET_H264_FULLCOLOR received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                                data_logger.warning(f"SET_H264_FULLCOLOR received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
                         except IndexError:
                             data_logger.warning(f"Malformed SET_H264_FULLCOLOR message: {message}")
 
@@ -2626,22 +2338,25 @@ class DataStreamingServer:
                         try:
                             new_streaming_mode_str = message.split(",")[1].strip().lower()
                             new_streaming_mode = new_streaming_mode_str == "true"
-                            data_logger.info(f"Received SET_H264_STREAMING_MODE: {new_streaming_mode}")
+                            data_logger.info(f"Received SET_H264_STREAMING_MODE for '{client_display_id}': {new_streaming_mode}")
 
-                            current_enc = getattr(self.app, "encoder", None)
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set H264_STREAMING_MODE, display '{client_display_id}' not registered.")
+                                continue
+                            
+                            display_state = self.display_clients[client_display_id]
+                            current_enc = display_state.get('encoder')
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
 
                             if is_pixelflux_h264:
-                                if self.h264_streaming_mode != new_streaming_mode:
-                                    self.h264_streaming_mode = new_streaming_mode
-                                    if self.is_x264_striped_capturing:
-                                        data_logger.info(f"Restarting {current_enc} pipeline for H264_STREAMING_MODE change to {self.h264_streaming_mode}")
-                                        await self._stop_x264_striped_pipeline()
-                                        await self._start_x264_striped_pipeline()
+                                if display_state.get('h264_streaming_mode') != new_streaming_mode:
+                                    display_state['h264_streaming_mode'] = new_streaming_mode
+                                    data_logger.info(f"H.264 Streaming Mode for '{client_display_id}' changed, triggering display reconfiguration.")
+                                    await self.reconfigure_displays()
                                 else:
-                                    data_logger.info(f"SET_H264_STREAMING_MODE: Value {new_streaming_mode} is already set.")
+                                    data_logger.info(f"SET_H264_STREAMING_MODE: Value {new_streaming_mode} is already set for '{client_display_id}'.")
                             else:
-                                data_logger.warning(f"SET_H264_STREAMING_MODE received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                                data_logger.warning(f"SET_H264_STREAMING_MODE received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
                         except IndexError:
                             data_logger.warning(f"Malformed SET_H264_STREAMING_MODE message: {message}")
 
@@ -2649,20 +2364,22 @@ class DataStreamingServer:
                         await self.client_settings_received.wait()
                         try:
                             new_quality = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_JPEG_QUALITY: {new_quality}")
+                            data_logger.info(f"Received SET_JPEG_QUALITY for '{client_display_id}': {new_quality}")
 
-                            current_enc = getattr(self.app, "encoder", None)
-                            if current_enc == "jpeg":
-                                if self.jpeg_quality != new_quality:
-                                    self.jpeg_quality = new_quality
-                                    if self.is_jpeg_capturing:
-                                        data_logger.info(f"Restarting jpeg pipeline for JPEG_QUALITY change to {self.jpeg_quality}")
-                                        await self._stop_jpeg_pipeline()
-                                        await self._start_jpeg_pipeline()
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set JPEG_QUALITY, display '{client_display_id}' not registered.")
+                                continue
+
+                            display_state = self.display_clients[client_display_id]
+                            if display_state.get('encoder') == "jpeg":
+                                if display_state.get('jpeg_quality') != new_quality:
+                                    display_state['jpeg_quality'] = new_quality
+                                    data_logger.info(f"JPEG Quality for '{client_display_id}' changed, triggering display reconfiguration.")
+                                    await self.reconfigure_displays()
                                 else:
-                                    data_logger.info(f"SET_JPEG_QUALITY: Value {new_quality} is already set.")
+                                    data_logger.info(f"SET_JPEG_QUALITY: Value {new_quality} is already set for '{client_display_id}'.")
                             else:
-                                data_logger.warning(f"SET_JPEG_QUALITY received but current encoder is '{current_enc}', not 'jpeg'.")
+                                data_logger.warning(f"SET_JPEG_QUALITY received for '{client_display_id}' but its current encoder is '{display_state.get('encoder')}', not 'jpeg'.")
                         except (IndexError, ValueError):
                             data_logger.warning(f"Malformed SET_JPEG_QUALITY message: {message}")
 
@@ -2670,20 +2387,22 @@ class DataStreamingServer:
                         await self.client_settings_received.wait()
                         try:
                             new_quality = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_PAINT_OVER_JPEG_QUALITY: {new_quality}")
+                            data_logger.info(f"Received SET_PAINT_OVER_JPEG_QUALITY for '{client_display_id}': {new_quality}")
 
-                            current_enc = getattr(self.app, "encoder", None)
-                            if current_enc == "jpeg":
-                                if self.paint_over_jpeg_quality != new_quality:
-                                    self.paint_over_jpeg_quality = new_quality
-                                    if self.is_jpeg_capturing:
-                                        data_logger.info(f"Restarting jpeg pipeline for PAINT_OVER_JPEG_QUALITY change to {self.paint_over_jpeg_quality}")
-                                        await self._stop_jpeg_pipeline()
-                                        await self._start_jpeg_pipeline()
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set PAINT_OVER_JPEG_QUALITY, display '{client_display_id}' not registered.")
+                                continue
+
+                            display_state = self.display_clients[client_display_id]
+                            if display_state.get('encoder') == "jpeg":
+                                if display_state.get('paint_over_jpeg_quality') != new_quality:
+                                    display_state['paint_over_jpeg_quality'] = new_quality
+                                    data_logger.info(f"Paint-Over JPEG Quality for '{client_display_id}' changed, triggering display reconfiguration.")
+                                    await self.reconfigure_displays()
                                 else:
-                                    data_logger.info(f"SET_PAINT_OVER_JPEG_QUALITY: Value {new_quality} is already set.")
+                                    data_logger.info(f"SET_PAINT_OVER_JPEG_QUALITY: Value {new_quality} is already set for '{client_display_id}'.")
                             else:
-                                data_logger.warning(f"SET_PAINT_OVER_JPEG_QUALITY received but current encoder is '{current_enc}', not 'jpeg'.")
+                                data_logger.warning(f"SET_PAINT_OVER_JPEG_QUALITY received for '{client_display_id}' but its current encoder is '{display_state.get('encoder')}', not 'jpeg'.")
                         except (IndexError, ValueError):
                             data_logger.warning(f"Malformed SET_PAINT_OVER_JPEG_QUALITY message: {message}")
 
@@ -2692,24 +2411,19 @@ class DataStreamingServer:
                         try:
                             new_val_str = message.split(",")[1].strip().lower()
                             new_val = new_val_str == "true"
-                            data_logger.info(f"Received SET_USE_PAINT_OVER_QUALITY: {new_val}")
+                            data_logger.info(f"Received SET_USE_PAINT_OVER_QUALITY for '{client_display_id}': {new_val}")
                             
-                            if self.use_paint_over_quality != new_val:
-                                self.use_paint_over_quality = new_val
-                                current_enc = getattr(self.app, "encoder", None)
-                                is_pixelflux_h264_active = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg" and self.is_x264_striped_capturing)
-                                is_jpeg_active = (current_enc == "jpeg" and self.is_jpeg_capturing)
-                                
-                                if is_jpeg_active or is_pixelflux_h264_active:
-                                    data_logger.info(f"Restarting {current_enc} pipeline for USE_PAINT_OVER_QUALITY change to {self.use_paint_over_quality}")
-                                    if is_jpeg_active:
-                                        await self._stop_jpeg_pipeline()
-                                        await self._start_jpeg_pipeline()
-                                    if is_pixelflux_h264_active:
-                                        await self._stop_x264_striped_pipeline()
-                                        await self._start_x264_striped_pipeline()
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set USE_PAINT_OVER_QUALITY, display '{client_display_id}' not registered.")
+                                continue
+
+                            display_state = self.display_clients[client_display_id]
+                            if display_state.get('use_paint_over_quality') != new_val:
+                                display_state['use_paint_over_quality'] = new_val
+                                data_logger.info(f"Use Paint-Over Quality for '{client_display_id}' changed, triggering display reconfiguration.")
+                                await self.reconfigure_displays()
                             else:
-                                data_logger.info(f"SET_USE_PAINT_OVER_QUALITY: Value {new_val} is already set.")
+                                data_logger.info(f"SET_USE_PAINT_OVER_QUALITY: Value {new_val} is already set for '{client_display_id}'.")
                         except IndexError:
                             data_logger.warning(f"Malformed SET_USE_PAINT_OVER_QUALITY message: {message}")
 
@@ -2717,20 +2431,25 @@ class DataStreamingServer:
                         await self.client_settings_received.wait()
                         try:
                             new_crf = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_H264_PAINTOVER_CRF: {new_crf}")
-                            current_enc = getattr(self.app, "encoder", None)
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+                            data_logger.info(f"Received SET_H264_PAINTOVER_CRF for '{client_display_id}': {new_crf}")
+                            
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set H264_PAINTOVER_CRF, display '{client_display_id}' not registered.")
+                                continue
+                            
+                            display_state = self.display_clients[client_display_id]
+                            current_enc = display_state.get('encoder')
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
+
                             if is_pixelflux_h264:
-                                if self.h264_paintover_crf != new_crf:
-                                    self.h264_paintover_crf = new_crf
-                                    if self.is_x264_striped_capturing:
-                                        data_logger.info(f"Restarting {current_enc} pipeline for H264_PAINTOVER_CRF change to {self.h264_paintover_crf}")
-                                        await self._stop_x264_striped_pipeline()
-                                        await self._start_x264_striped_pipeline()
+                                if display_state.get('h264_paintover_crf') != new_crf:
+                                    display_state['h264_paintover_crf'] = new_crf
+                                    data_logger.info(f"H.264 Paint-Over CRF for '{client_display_id}' changed, triggering display reconfiguration.")
+                                    await self.reconfigure_displays()
                                 else:
-                                    data_logger.info(f"SET_H264_PAINTOVER_CRF: Value {new_crf} is already set.")
+                                    data_logger.info(f"SET_H264_PAINTOVER_CRF: Value {new_crf} is already set for '{client_display_id}'.")
                             else:
-                                data_logger.warning(f"SET_H264_PAINTOVER_CRF received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                                data_logger.warning(f"SET_H264_PAINTOVER_CRF received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
                         except (IndexError, ValueError):
                             data_logger.warning(f"Malformed SET_H264_PAINTOVER_CRF message: {message}")
 
@@ -2738,20 +2457,25 @@ class DataStreamingServer:
                         await self.client_settings_received.wait()
                         try:
                             new_burst = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_H264_PAINTOVER_BURST_FRAMES: {new_burst}")
-                            current_enc = getattr(self.app, "encoder", None)
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+                            data_logger.info(f"Received SET_H264_PAINTOVER_BURST_FRAMES for '{client_display_id}': {new_burst}")
+                            
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set H264_PAINTOVER_BURST_FRAMES, display '{client_display_id}' not registered.")
+                                continue
+
+                            display_state = self.display_clients[client_display_id]
+                            current_enc = display_state.get('encoder')
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
+                            
                             if is_pixelflux_h264:
-                                if self.h264_paintover_burst_frames != new_burst:
-                                    self.h264_paintover_burst_frames = new_burst
-                                    if self.is_x264_striped_capturing:
-                                        data_logger.info(f"Restarting {current_enc} pipeline for H264_PAINTOVER_BURST_FRAMES change to {self.h264_paintover_burst_frames}")
-                                        await self._stop_x264_striped_pipeline()
-                                        await self._start_x264_striped_pipeline()
+                                if display_state.get('h264_paintover_burst_frames') != new_burst:
+                                    display_state['h264_paintover_burst_frames'] = new_burst
+                                    data_logger.info(f"H.264 Paint-Over Burst Frames for '{client_display_id}' changed, triggering display reconfiguration.")
+                                    await self.reconfigure_displays()
                                 else:
-                                    data_logger.info(f"SET_H264_PAINTOVER_BURST_FRAMES: Value {new_burst} is already set.")
+                                    data_logger.info(f"SET_H264_PAINTOVER_BURST_FRAMES: Value {new_burst} is already set for '{client_display_id}'.")
                             else:
-                                data_logger.warning(f"SET_H264_PAINTOVER_BURST_FRAMES received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                                data_logger.warning(f"SET_H264_PAINTOVER_BURST_FRAMES received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
                         except (IndexError, ValueError):
                             data_logger.warning(f"Malformed SET_H264_PAINTOVER_BURST_FRAMES message: {message}")
 
@@ -2760,22 +2484,25 @@ class DataStreamingServer:
                         try:
                             new_use_cpu_str = message.split(",")[1].strip().lower()
                             new_use_cpu = new_use_cpu_str == "true"
-                            data_logger.info(f"Received SET_USE_CPU: {new_use_cpu}")
+                            data_logger.info(f"Received SET_USE_CPU for '{client_display_id}': {new_use_cpu}")
 
-                            current_enc = getattr(self.app, "encoder", None)
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg")
+                            if not client_display_id or client_display_id not in self.display_clients:
+                                data_logger.warning(f"Cannot set USE_CPU, display '{client_display_id}' not registered.")
+                                continue
+
+                            display_state = self.display_clients[client_display_id]
+                            current_enc = display_state.get('encoder')
+                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
 
                             if is_pixelflux_h264:
-                                if self.use_cpu != new_use_cpu:
-                                    self.use_cpu = new_use_cpu
-                                    if self.is_x264_striped_capturing:
-                                        data_logger.info(f"Restarting {current_enc} pipeline for USE_CPU change to {self.use_cpu}")
-                                        await self._stop_x264_striped_pipeline()
-                                        await self._start_x264_striped_pipeline()
+                                if display_state.get('use_cpu') != new_use_cpu:
+                                    display_state['use_cpu'] = new_use_cpu
+                                    data_logger.info(f"Use CPU for '{client_display_id}' changed, triggering display reconfiguration.")
+                                    await self.reconfigure_displays()
                                 else:
-                                    data_logger.info(f"SET_USE_CPU: Value {new_use_cpu} is already set.")
+                                    data_logger.info(f"SET_USE_CPU: Value {new_use_cpu} is already set for '{client_display_id}'.")
                             else:
-                                data_logger.warning(f"SET_USE_CPU received but current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                                data_logger.warning(f"SET_USE_CPU received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
                         except IndexError:
                             data_logger.warning(f"Malformed SET_USE_CPU message: {message}")
 
@@ -2788,42 +2515,32 @@ class DataStreamingServer:
 
                             if self.capture_cursor != new_capture_cursor:
                                 self.capture_cursor = new_capture_cursor
-
-                                current_enc = getattr(self.app, "encoder", None)
-                                is_pixelflux_h264_active = (current_enc in PIXELFLUX_VIDEO_ENCODERS and current_enc != "jpeg" and self.is_x264_striped_capturing)
-                                is_jpeg_active = (current_enc == "jpeg" and self.is_jpeg_capturing)
-
-                                if is_jpeg_active or is_pixelflux_h264_active:
-                                    data_logger.info(f"Restarting {current_enc} pipeline for cursor rendering change to {self.capture_cursor}")
-                                    if is_jpeg_active:
-                                        await self._stop_jpeg_pipeline()
-                                        await self._start_jpeg_pipeline()
-                                    if is_pixelflux_h264_active:
-                                        await self._stop_x264_striped_pipeline()
-                                        await self._start_x264_striped_pipeline()
+                                if len(self.capture_instances) > 0:
+                                    data_logger.info(f"Cursor rendering changed, triggering display reconfiguration.")
+                                    await self.reconfigure_displays()
                             else:
                                 data_logger.info(f"SET_NATIVE_CURSOR_RENDERING: Value {new_capture_cursor} is already set.")
                         except (IndexError, ValueError) as e:
                             data_logger.warning(f"Malformed SET_NATIVE_CURSOR_RENDERING message: {message}, error: {e}")
 
                     elif message.startswith("s,"):
-                        await self.client_settings_received.wait() # Ensure initial settings are processed if needed
+                        await self.client_settings_received.wait()
                         try:
                             dpi_value_str = message.split(",")[1]
                             dpi_value = int(dpi_value_str)
                             data_logger.info(f"Received DPI setting from client: {dpi_value}")
 
-                            if await set_dpi(dpi_value): # set_dpi defined globally
+                            if await set_dpi(dpi_value):
                                 data_logger.info(f"Successfully set DPI to {dpi_value}")
                             else:
                                 data_logger.error(f"Failed to set DPI to {dpi_value}")
 
-                            if CURSOR_SIZE > 0: # Ensure CURSOR_SIZE is positive
+                            if CURSOR_SIZE > 0:
                                 calculated_cursor_size = int(round(dpi_value / 96.0 * CURSOR_SIZE))
-                                new_cursor_size = max(1, calculated_cursor_size) # Ensure at least 1px
+                                new_cursor_size = max(1, calculated_cursor_size)
 
                                 data_logger.info(f"Attempting to set cursor size to: {new_cursor_size} (based on DPI {dpi_value})")
-                                if await set_cursor_size(new_cursor_size): # set_cursor_size defined globally
+                                if await set_cursor_size(new_cursor_size):
                                     data_logger.info(f"Successfully set cursor size to {new_cursor_size}")
                                 else:
                                     data_logger.error(f"Failed to set cursor size to {new_cursor_size}")
@@ -2841,7 +2558,7 @@ class DataStreamingServer:
                         if self.input_handler and hasattr(
                             self.input_handler, "on_message"
                         ):
-                            await self.input_handler.on_message(message)
+                            await self.input_handler.on_message(message, client_display_id)
 
         except websockets.exceptions.ConnectionClosedOK:
             data_logger.info(f"Data WS disconnected gracefully from {raddr}")
@@ -2852,14 +2569,17 @@ class DataStreamingServer:
                 f"Error in Data WS handler for {raddr}: {e_main_loop}", exc_info=True
             )
         finally:
-            data_logger.info(f"Cleaning up Data WS handler for {raddr}...")
+            data_logger.info(f"Cleaning up Data WS handler for {raddr} (Display ID: {client_display_id})...")
 
-            # 1. Remove current client from the central set
             self.clients.discard(websocket)
             if self.data_ws is websocket:
                 self.data_ws = None
+            
+            if client_display_id and client_display_id in self.display_clients:
+                del self.display_clients[client_display_id]
+                data_logger.info(f"Client for {client_display_id} removed. Triggering display reconfiguration.")
+                await self.reconfigure_displays()
 
-            # 2. Cancel tasks created specifically for THIS connection's ws_handler instance
             if "_stats_sender_task_ws" in locals():
                 _task_to_cancel = locals()["_stats_sender_task_ws"]
                 if _task_to_cancel and not _task_to_cancel.done():
@@ -2902,7 +2622,7 @@ class DataStreamingServer:
             ):
                 if (
                     not self.clients
-                ):  # self.clients already had the current websocket removed at this point
+                ):
                     data_logger.info(
                         f"Last client ({raddr}) disconnected. Cancelling frame backpressure task."
                     )
@@ -2911,7 +2631,6 @@ class DataStreamingServer:
                         f"Client {raddr} disconnected, but other clients remain. Frame backpressure task continues."
                     )
 
-            # 3. Clean up resources specific to THIS connection's ws_handler instance
             if "pa_stream" in locals() and locals()["pa_stream"]:
                 try:
                     locals()["pa_stream"].close()
@@ -2958,7 +2677,7 @@ class DataStreamingServer:
                     file_handle = _local_active_uploads.pop(_local_active_path, None)
                     if file_handle:
                         file_handle.close()
-                    os.remove(_local_active_path)  # os is imported globally
+                    os.remove(_local_active_path)
                     data_logger.info(
                         f"Cleaned up incomplete file upload: {_local_active_path} for {raddr}"
                     )
@@ -2971,98 +2690,11 @@ class DataStreamingServer:
                         f"Error cleaning up file upload {_local_active_path} for {raddr}: {e_file_cleanup}"
                     )
 
-            # 4. Decide whether to stop global pipelines based on OTHER clients
-            stop_pipelines_flag = False
-            if not self.clients:  # No other clients were in the set to begin with
-                data_logger.info(
-                    f"No other clients in set after {raddr} disconnected. Marking pipelines for stop."
-                )
-                stop_pipelines_flag = True
-            else:  # Other clients *appear* to remain in the set, check their responsiveness
-                data_logger.info(
-                    f"Client from {raddr} disconnected. Checking responsiveness of remaining {len(self.clients)} client(s)..."
-                )
-                active_clients_found_after_check = False
-                clients_to_remove_as_stale = []
-
-                current_remaining_clients = list(self.clients)  # Snapshot for iteration
-
-                for other_client_ws in current_remaining_clients:
-                    try:
-                        # Attempt to ping. If this fails, the client is considered unresponsive.
-                        pong_waiter = await other_client_ws.ping()
-                        await asyncio.wait_for(
-                            pong_waiter, timeout=3.0
-                        )  # Short timeout for this check
-                        data_logger.info(
-                            f"  Remaining client {other_client_ws.remote_address} is responsive."
-                        )
-                        active_clients_found_after_check = True
-                    except asyncio.TimeoutError:
-                        data_logger.warning(
-                            f"  Remaining client {other_client_ws.remote_address} timed out on ping. Marking as stale."
-                        )
-                        clients_to_remove_as_stale.append(other_client_ws)
-                    except (
-                        websockets.exceptions.ConnectionClosed,
-                        websockets.exceptions.ConnectionClosedError,
-                        websockets.exceptions.ConnectionClosedOK,
-                    ) as e_conn_closed:
-                        data_logger.warning(
-                            f"  Remaining client {other_client_ws.remote_address} connection definitively closed during ping: {type(e_conn_closed).__name__}. Marking as stale."
-                        )
-                        clients_to_remove_as_stale.append(other_client_ws)
-                    except Exception as e_ping:  # Catch any other error during ping, e.g., OS errors if socket is truly gone
-                        data_logger.error(
-                            f"  Error pinging remaining client {other_client_ws.remote_address}: {e_ping}. Marking as stale."
-                        )
-                        clients_to_remove_as_stale.append(other_client_ws)
-
-                # Remove all identified stale clients from the central set
-                if clients_to_remove_as_stale:
-                    for stale_ws in clients_to_remove_as_stale:
-                        self.clients.discard(stale_ws)
-                        # Attempt to close from server-side; websockets library handles if already closed.
-                        try:
-                            await stale_ws.close(
-                                code=1001,
-                                reason="Stale client detected on other client disconnect",
-                            )
-                        except (
-                            websockets.exceptions.ConnectionClosed,
-                            websockets.exceptions.ConnectionClosedError,
-                            websockets.exceptions.ConnectionClosedOK,
-                        ):
-                            pass  # Already closed or closing
-                        except Exception as e_close_stale:
-                            data_logger.debug(
-                                f"Minor error closing stale client {stale_ws.remote_address}: {e_close_stale}"
-                            )  # Best effort
-
-                # Now, re-evaluate if any truly active clients are left OR if self.clients is now empty
-                if not self.clients:  # All "other" clients were stale and removed
-                    data_logger.info(
-                        f"All other clients were stale or disconnected. Marking pipelines for stop after {raddr} disconnect."
-                    )
-                    stop_pipelines_flag = True
-                elif (
-                    not active_clients_found_after_check
-                ):  # No responsive clients were found among the remaining
-                    data_logger.info(
-                        f"No responsive clients remain after check for {raddr}'s disconnect. Marking pipelines for stop."
-                    )
-                    stop_pipelines_flag = True
-                else:
-                    data_logger.info(
-                        f"Client from {raddr} disconnected. Responsive clients ({len(self.clients)}) remain. Global pipelines will NOT be stopped by this handler."
-                    )
-
-            # 5. Stop global pipelines if the flag is set
-            if stop_pipelines_flag:
-                data_logger.info(f"Stopping global pipelines due to last client disconnect ({raddr}).")
-                self.capture_cursor = False
-                async with self._pipeline_lock:  # WRAP HERE
-                    await self.shutdown_pipelines()
+            if not self.clients:
+                 data_logger.info(f"Last client ({raddr}) disconnected. All pipelines should have been stopped by reconfigure_displays.")
+                 self.capture_cursor = False
+                 async with self._reconfigure_lock:
+                     await self.shutdown_pipelines()
 
             data_logger.info(f"Data WS handler for {raddr} finished all cleanup.")
 
@@ -3143,6 +2775,461 @@ class DataStreamingServer:
         await self.shutdown_pipelines()
         data_logger.info(f"Data WS on port {self.port} stop procedure complete.")
 
+    async def _cleanup_client(self, websocket, display_id):
+        """Removes a client and triggers reconfiguration if necessary."""
+        data_logger.info(f"Cleaning up Data WS handler for {websocket.remote_address} (Display ID: {display_id})...")
+        self.display_clients.pop(display_id, None)
+
+        if self._is_reconfiguring:
+            data_logger.warning(f"Client '{display_id}' disconnected DURING a reconfiguration. "
+                                "A new reconfiguration will NOT be triggered to prevent a loop.")
+            return # EXIT EARLY TO BREAK THE LOOP
+
+        data_logger.info(f"Client for {display_id} removed. Triggering display reconfiguration.")
+        async with self._reconfigure_lock:
+            await self.reconfigure_displays()
+
+    async def _run_detached_command(self, cmd_list: list, description: str):
+        """Runs a command via the shell using 'nohup ... &' to detach it from the server process."""
+        import shlex
+        quoted_cmd = ' '.join(shlex.quote(c) for c in cmd_list)
+        shell_command = f"nohup {quoted_cmd} &"
+        data_logger.info(f"Running detached command ({description}): {shell_command}")
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                shell_command,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+        except Exception as e:
+            data_logger.error(f"Failed to run detached command '{shell_command}': {e}")
+
+    async def _run_command(self, cmd, description):
+        """Helper to run a shell command and log its output/errors."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                data_logger.error(
+                    f"Failed ({description}). RC: {proc.returncode}, "
+                    f"Stderr: {stderr.decode().strip()}"
+                )
+                return False
+            return True
+        except Exception as e:
+            data_logger.error(f"Exception during '{description}': {e}", exc_info=True)
+            return False
+
+    async def _get_current_monitors(self):
+        """Parses `xrandr --listmonitors` to get names of existing logical monitors."""
+        monitors = []
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "xrandr", "--listmonitors",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode == 0:
+                output = stdout.decode()
+                for line in output.splitlines()[1:]:
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        monitors.append(parts[1])
+        except Exception as e:
+            data_logger.error(f"Failed to list current monitors: {e}")
+        return monitors
+
+
+    async def _stop_capture_for_display(self, display_id: str):
+        """Stops the capture, sender, and backpressure tasks for a single, specific display."""
+        data_logger.info(f"Stopping all streams for display '{display_id}'...")
+        await self._ensure_backpressure_task_is_stopped(display_id)
+        capture_info = self.capture_instances.pop(display_id, None)
+        if capture_info:
+            capture_module = capture_info.get('module')
+            if capture_module:
+                await self.capture_loop.run_in_executor(None, capture_module.stop_capture)
+            sender_task = capture_info.get('sender_task')
+            if sender_task and not sender_task.done():
+                sender_task.cancel()
+        self.video_chunk_queues.pop(display_id, None)
+
+        data_logger.info(f"Successfully stopped all streams for display '{display_id}'.")
+ 
+    async def reconfigure_displays(self):
+        """
+        Central logic to create a virtual desktop for ALL connected clients.
+        It then starts capture pipelines ONLY for clients with 'video_active' = True.
+        This is called on connect, disconnect, or settings change.
+        """
+        if self._is_reconfiguring:
+            data_logger.warning("Reconfiguration already in progress. Ignoring concurrent request.")
+            return
+
+        self._is_reconfiguring = True
+        try:
+            current_display_count = len(self.display_clients)
+
+            if self._default_wm_replace_cmd is None:
+                if which("xfce4-session"):
+                    self._default_wm_replace_cmd = ["xfwm4", "--replace"]
+                    data_logger.info("Detected XFCE. Default WM is xfwm4.")
+                elif which("startplasma-x11"):
+                    self._default_wm_replace_cmd = ["kwin_x11", "--replace"]
+                    data_logger.info("Detected KDE Plasma. Default WM is kwin_x11.")
+                else:
+                    self._default_wm_replace_cmd = []
+                    data_logger.info("DE is not KDE or XFCE. WM swapping is disabled.")
+
+            if (current_display_count > 1 and self._last_display_count <= 1 and
+                    self._default_wm_replace_cmd and not self._is_wm_swapped):
+                data_logger.info("Multi-monitor setup: switching to Openbox with a minimal config.")
+
+                config_path = "/tmp/openbox_selkies_config.xml"
+                config_content = "<openbox_config></openbox_config>\n"
+                try:
+                    with open(config_path, "w") as f:
+                        f.write(config_content)
+                    data_logger.info(f"Wrote minimal Openbox config to {config_path}")
+                    openbox_cmd = ["openbox", "--config-file", config_path, "--replace"]
+                except IOError as e:
+                    data_logger.error(f"Could not write Openbox config to {config_path}: {e}. Proceeding without custom config.")
+                    openbox_cmd = ["openbox", "--replace"]
+
+                await self._run_detached_command(openbox_cmd, "switch to openbox")
+                self._is_wm_swapped = True
+                if self.input_handler:
+                    await self.input_handler.reconnect_x_display()
+
+            if self.capture_instances or any(d.get('backpressure_task') for d in self.display_clients.values()):
+                data_logger.info("Stopping all existing capture and backpressure tasks...")
+
+                stop_bp_tasks = [self._ensure_backpressure_task_is_stopped(disp_id) for disp_id in self.display_clients.keys()]
+                if stop_bp_tasks:
+                    await asyncio.gather(*stop_bp_tasks, return_exceptions=True)
+
+                stop_capture_tasks = [
+                    self.capture_loop.run_in_executor(None, inst['module'].stop_capture)
+                    for inst in self.capture_instances.values() if inst.get('module')
+                ]
+                if stop_capture_tasks:
+                    await asyncio.gather(*stop_capture_tasks, return_exceptions=True)
+
+                for display_id, inst in self.capture_instances.items():
+                    sender_task = inst.get('sender_task')
+                    if sender_task and not sender_task.done():
+                        sender_task.cancel()
+                self.capture_instances.clear()
+                self.video_chunk_queues.clear()
+                data_logger.info("All capture instances, senders, and backpressure tasks stopped.")
+
+            if not self.display_clients:
+                data_logger.warning("No display clients connected. Video pipelines remain stopped.")
+                _, _, _, _, screen_name = await get_new_res("1x1")
+                if screen_name:
+                    current_monitors = await self._get_current_monitors()
+                    for monitor_name in current_monitors:
+                        await self._run_command(["xrandr", "--delmonitor", monitor_name], f"cleanup monitor {monitor_name}")
+                return
+
+            data_logger.info("Calculating new extended desktop layout from ALL clients...")
+            layouts = {}
+            total_width = 0
+            total_height = 0
+
+            primary_client = self.display_clients.get('primary')
+            secondary_client = None
+            secondary_id = None
+            for display_id, client in self.display_clients.items():
+                if display_id != 'primary':
+                    secondary_client = client
+                    secondary_id = display_id
+                    break
+
+            if primary_client and not secondary_client:
+                p_w, p_h = primary_client.get('width', 0), primary_client.get('height', 0)
+                if p_w > 0 and p_h > 0:
+                    layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
+                    total_width, total_height = p_w, p_h
+            elif primary_client and secondary_client:
+                p_w, p_h = primary_client.get('width', 0), primary_client.get('height', 0)
+                s_w, s_h = secondary_client.get('width', 0), secondary_client.get('height', 0)
+                position = secondary_client.get('position', 'right')
+
+                if p_w > 0 and p_h > 0 and s_w > 0 and s_h > 0:
+                    if position == 'right':
+                        layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
+                        layouts[secondary_id] = {'x': p_w, 'y': 0, 'w': s_w, 'h': s_h}
+                        total_width, total_height = p_w + s_w, max(p_h, s_h)
+                    elif position == 'left':
+                        layouts[secondary_id] = {'x': 0, 'y': 0, 'w': s_w, 'h': s_h}
+                        layouts['primary'] = {'x': s_w, 'y': 0, 'w': p_w, 'h': p_h}
+                        total_width, total_height = p_w + s_w, max(p_h, s_h)
+                    elif position == 'down':
+                        layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
+                        layouts[secondary_id] = {'x': 0, 'y': p_h, 'w': s_w, 'h': s_h}
+                        total_width, total_height = max(p_w, s_w), p_h + s_h
+                    elif position == 'up':
+                        layouts[secondary_id] = {'x': 0, 'y': 0, 'w': s_w, 'h': s_h}
+                        layouts['primary'] = {'x': 0, 'y': s_h, 'w': p_w, 'h': p_h}
+                        total_width, total_height = max(p_w, s_w), p_h + s_h
+
+            if total_width == 0 or total_height == 0:
+                data_logger.error("Calculated total display size is zero. Aborting reconfiguration.")
+                return
+
+            aligned_total_width = (total_width + 7) & ~7
+            if aligned_total_width != total_width:
+                data_logger.info(f"Aligned total width from {total_width} to {aligned_total_width} for xrandr.")
+                total_width = aligned_total_width
+
+            self.display_layouts = layouts
+            data_logger.info(f"Layout calculated: Total Size={total_width}x{total_height}. Layouts: {layouts}")
+
+            _, _, available_resolutions, _, screen_name = await get_new_res("1x1")
+            if not screen_name:
+                data_logger.error("CRITICAL: Could not determine screen name from xrandr. Aborting.")
+                return
+
+            current_monitors = await self._get_current_monitors()
+            for monitor_name in current_monitors:
+                await self._run_command(["xrandr", "--delmonitor", monitor_name], f"delete old monitor {monitor_name}")
+
+            total_mode_str = f"{total_width}x{total_height}"
+            if total_mode_str not in available_resolutions:
+                data_logger.info(f"Mode {total_mode_str} not found. Creating it.")
+                try:
+                    _, modeline_params = await generate_xrandr_gtf_modeline(total_mode_str)
+                    await self._run_command(["xrandr", "--newmode", total_mode_str] + modeline_params.split(), "create new mode")
+                    await self._run_command(["xrandr", "--addmode", screen_name, total_mode_str], "add new mode")
+                except Exception as e:
+                    data_logger.error(f"FATAL: Could not create extended mode {total_mode_str}: {e}. Aborting.")
+                    return
+
+            await self._run_command(["xrandr", "--fb", total_mode_str, "--output", screen_name, "--mode", total_mode_str], "set framebuffer")
+
+            data_logger.info("Defining logical monitors for the window manager...")
+            for display_id, layout in layouts.items():
+                geometry = f"{layout['w']}/0x{layout['h']}/0+{layout['x']}+{layout['y']}"
+                monitor_name = f"selkies-{display_id}"
+                cmd = ["xrandr", "--setmonitor", monitor_name, geometry, screen_name]
+                await self._run_command(cmd, f"set logical monitor {monitor_name}")
+
+            if 'primary' in layouts:
+                await self._run_command(
+                    ["xrandr", "--output", screen_name, "--primary"],
+                    "set primary output"
+                )
+
+            data_logger.info("Starting separate capture instances for each ACTIVE display region...")
+            for display_id, layout in layouts.items():
+                client_data = self.display_clients.get(display_id)
+                if client_data and client_data.get('video_active', False):
+                    data_logger.info(f"Client '{display_id}' is active. Starting its capture.")
+                    await self._start_capture_for_display(
+                        display_id=display_id,
+                        width=layout['w'], height=layout['h'],
+                        x_offset=layout['x'], y_offset=layout['y']
+                    )
+                    await self._start_backpressure_task_if_needed(display_id)
+                else:
+                    data_logger.info(f"Client '{display_id}' is connected but not active. Skipping video start.")
+
+            await self.broadcast_stream_resolution()
+            await self.broadcast_display_config()
+
+        finally:
+            self._last_display_count = len(self.display_clients)
+            self._is_reconfiguring = False
+
+    async def _video_chunk_sender(self, display_id: str):
+        """
+        Pulls data from a specific queue, records send timestamp, and sends to the correct client(s).
+        """
+        data_logger.info(f"Video chunk sender started for display '{display_id}'.")
+        queue = self.video_chunk_queues.get(display_id)
+        if not queue:
+            data_logger.error(f"Cannot start sender for '{display_id}': Queue not found.")
+            return
+
+        try:
+            while True:
+                chunk_info = await queue.get()
+                data_chunk = chunk_info['data']
+                frame_id = chunk_info['frame_id']
+                if display_id == 'primary':
+                    secondary_websockets = {
+                        client_info.get('ws')
+                        for did, client_info in self.display_clients.items()
+                        if did != 'primary' and client_info.get('ws')
+                    }
+                    primary_viewers = self.clients - secondary_websockets
+
+                    if not primary_viewers:
+                        queue.task_done()
+                        continue
+                    now = time.monotonic()
+                    for client_ws in primary_viewers:
+                        for primary_client_info in self.display_clients.values():
+                            if primary_client_info.get('ws') is client_ws:
+                                if primary_client_info.get('backpressure_enabled', True):
+                                    primary_client_info['sent_timestamps'][frame_id] = now
+                                    primary_client_info['last_sent_frame_id'] = frame_id
+                                    if len(primary_client_info['sent_timestamps']) > SENT_FRAME_TIMESTAMP_HISTORY_SIZE:
+                                        primary_client_info['sent_timestamps'].popitem(last=False)
+                                break
+                    try:
+                        websockets.broadcast(primary_viewers, data_chunk)
+                        self._bytes_sent_in_interval += len(data_chunk) * len(primary_viewers)
+                    except Exception as e:
+                        data_logger.error(f"Error during primary broadcast: {e}")
+
+                else:
+                    client_info = self.display_clients.get(display_id)
+                    if not client_info or not client_info.get('ws') or not client_info.get('backpressure_enabled', True):
+                        queue.task_done()
+                        continue
+                    websocket = client_info['ws']
+                    now = time.monotonic()
+                    client_info['sent_timestamps'][frame_id] = now
+                    client_info['last_sent_frame_id'] = frame_id
+                    if len(client_info['sent_timestamps']) > SENT_FRAME_TIMESTAMP_HISTORY_SIZE:
+                        client_info['sent_timestamps'].popitem(last=False)
+                    try:
+                        await websocket.send(data_chunk)
+                        self._bytes_sent_in_interval += len(data_chunk)
+                    except websockets.ConnectionClosed:
+                        data_logger.warning(f"Client for '{display_id}' connection closed during send.")
+                        break
+                queue.task_done()
+        except asyncio.CancelledError:
+            data_logger.info(f"Video chunk sender for '{display_id}' cancelled.")
+        finally:
+            data_logger.info(f"Video chunk sender for '{display_id}' finished.")
+
+    async def _start_capture_for_display(self, display_id: str, width: int, height: int, x_offset: int, y_offset: int):
+        """
+        Starts a capture instance by creating the required CaptureSettings
+        object and providing a callback with the correct signature.
+        """
+        if display_id in self.capture_instances:
+            data_logger.warning(f"Capture instance for '{display_id}' already exists. Skipping start.")
+            return
+
+        data_logger.info(
+            f"Preparing to start capture for display='{display_id}': "
+            f"Res={width}x{height}, Offset={x_offset}x{y_offset}"
+        )
+
+        try:
+            settings = self._get_capture_settings(display_id, width, height, x_offset, y_offset)
+            display_state = self.display_clients.get(display_id, {})
+            encoder_for_this_capture = display_state.get('encoder', self.app.encoder)
+
+            def queue_data_for_display(result_ptr, user_data):
+                """Callback from C++ capture library. Adds necessary header for JPEG."""
+                if not result_ptr:
+                    return
+                try:
+                    result = result_ptr.contents
+                    if result.size > 0:
+                        data_bytes = bytes(result.data[:result.size])
+                        if encoder_for_this_capture == "jpeg":
+                            final_data_to_queue = b"\x03\x00" + data_bytes
+                        else:
+                            final_data_to_queue = data_bytes
+                        
+                        queue = self.video_chunk_queues.get(display_id)
+                        if queue:
+                            item_to_queue = {'data': final_data_to_queue, 'frame_id': result.frame_id}
+                            
+                            def do_put():
+                                try:
+                                    queue.put_nowait(item_to_queue)
+                                except asyncio.QueueFull:
+                                    pass
+                            
+                            self.capture_loop.call_soon_threadsafe(do_put)
+
+                except Exception as e:
+                    data_logger.error(f"Error in capture callback for {display_id}: {e}", exc_info=False)
+
+            queue_size = getattr(self, 'BACKPRESSURE_QUEUE_SIZE', 120)
+            self.video_chunk_queues[display_id] = asyncio.Queue(maxsize=queue_size)
+            sender_task = asyncio.create_task(self._video_chunk_sender(display_id))
+            
+            capture_module = ScreenCapture()
+
+            await self.capture_loop.run_in_executor(
+                None,
+                capture_module.start_capture,
+                settings,
+                StripeCallback(queue_data_for_display)
+            )
+
+            self.capture_instances[display_id] = {
+                'module': capture_module,
+                'sender_task': sender_task
+            }
+            data_logger.info(f"SUCCESS: Capture started for '{display_id}'.")
+
+        except Exception as e:
+            data_logger.error(f"Failed to start capture for '{display_id}': {e}", exc_info=True)
+            if display_id in self.video_chunk_queues:
+                del self.video_chunk_queues[display_id]
+            if 'sender_task' in locals() and not sender_task.done():
+                sender_task.cancel()
+
+    def _get_capture_settings(self, display_id, width, height, x, y):
+        """Helper to create CaptureSettings for a specific display region."""
+        display_state = self.display_clients.get(display_id)
+        if not display_state:
+            raise SelkiesAppError(f"Cannot get capture settings for unknown display_id '{display_id}'")
+
+        cs = CaptureSettings()
+        cs.capture_width = width
+        cs.capture_height = height
+        cs.capture_x = x
+        cs.capture_y = y
+        cs.target_fps = float(display_state.get('framerate', self.app.framerate))
+        cs.capture_cursor = self.capture_cursor
+        
+        encoder = display_state.get('encoder', self.app.encoder)
+        if encoder == "jpeg":
+            cs.output_mode = 0
+            cs.jpeg_quality = display_state.get('jpeg_quality', 60)
+            cs.paint_over_jpeg_quality = display_state.get('paint_over_jpeg_quality', 90)
+        else: # H.264 modes
+            cs.output_mode = 1
+            cs.h264_crf = display_state.get('h264_crf', 25)
+            cs.h264_paintover_crf = display_state.get('h264_paintover_crf', 18)
+            cs.h264_paintover_burst_frames = display_state.get('h264_paintover_burst_frames', 5)
+            cs.h264_fullcolor = display_state.get('h264_fullcolor', False)
+            cs.h264_streaming_mode = display_state.get('h264_streaming_mode', False)
+            cs.h264_fullframe = (encoder == "x264enc")
+
+        cs.use_paint_over_quality = display_state.get('use_paint_over_quality', True)
+        cs.paint_over_trigger_frames = 15
+        cs.damage_block_threshold = 10
+        cs.damage_block_duration = 20
+        cs.use_cpu = display_state.get('use_cpu', False)
+        
+        if self.cli_args.dri_node:
+            cs.vaapi_render_node_index = parse_dri_node_to_index(self.cli_args.dri_node)
+        else:
+            cs.vaapi_render_node_index = -1
+
+        watermark_path_str = self.cli_args.watermark_path
+        if watermark_path_str and os.path.exists(watermark_path_str):
+            cs.watermark_path = watermark_path_str.encode('utf-8')
+            cs.watermark_location_enum = self.cli_args.watermark_location
+        
+        return cs
 
 async def _collect_system_stats_ws(shared_data, interval_seconds=1):
     data_logger.debug(
@@ -3221,7 +3308,10 @@ async def _collect_network_stats_ws(shared_data, server_instance, interval_secon
                 current_mbps = 0.0
             server_instance._bytes_sent_in_interval = 0
             server_instance._last_bandwidth_calc_time = current_time
-            latency_ms = server_instance._smoothed_rtt_ms
+            
+            primary_client = server_instance.display_clients.get('primary')
+            latency_ms = primary_client.get('smoothed_rtt', 0.0) if primary_client else 0.0
+
             shared_data["network"] = {
                 "type": "network_stats",
                 "timestamp": datetime.now().isoformat(),
@@ -3260,78 +3350,46 @@ async def _send_stats_periodically_ws(websocket, shared_data, interval_seconds=5
     except Exception as e:
         data_logger.error(f"Stats sender (WS) error: {e}", exc_info=True)
 
-
-async def on_resize_handler(res_str, current_app_instance, data_server_instance=None):
+async def on_resize_handler(res_str, current_app_instance, data_server_instance=None, display_id='primary'):
     """
-    Handles client resize request. Updates app state and calls xrandr.
+    Handles client resize request. Updates the state for a specific display and triggers a full reconfiguration.
     """
-    logger_gst_app_resize.info(f"on_resize_handler attempting resize for: {res_str}")
+    logger_gst_app_resize.info(f"on_resize_handler for display '{display_id}' with resolution: {res_str}")
     try:
         w_str, h_str = res_str.split("x")
         target_w, target_h = int(w_str), int(h_str)
 
-        # Ensure dimensions are positive
         if target_w <= 0 or target_h <= 0:
-            logger_gst_app_resize.error(
-                f"Invalid target dimensions in resize request: {target_w}x{target_h}. Ignoring."
-            )
-            if current_app_instance:
-                current_app_instance.last_resize_success = False
-            return  # Do not proceed with invalid dimensions
-
-        # Ensure dimensions are even
-        if target_w % 2 != 0:
-            logger_gst_app_resize.debug(
-                f"Adjusting odd width {target_w} to {target_w - 1}"
-            )
-            target_w -= 1
-        if target_h % 2 != 0:
-            logger_gst_app_resize.debug(
-                f"Adjusting odd height {target_h} to {target_h - 1}"
-            )
-            target_h -= 1
-
-        # Re-check positivity after odd adjustment
+            logger_gst_app_resize.error(f"Invalid target dimensions in resize request: {target_w}x{target_h}. Ignoring.")
+            return
+        if target_w % 2 != 0: target_w -= 1
+        if target_h % 2 != 0: target_h -= 1
         if target_w <= 0 or target_h <= 0:
-            logger_gst_app_resize.error(
-                f"Dimensions became invalid ({target_w}x{target_h}) after odd adjustment. Ignoring."
-            )
-            if current_app_instance:
-                current_app_instance.last_resize_success = False
-            return  # Do not proceed
+            logger_gst_app_resize.error(f"Dimensions became invalid ({target_w}x{target_h}) after odd adjustment. Ignoring.")
+            return
 
-        current_app_instance.display_width = target_w
-        current_app_instance.display_height = target_h
-        logger_gst_app_resize.info(
-            f"App dimensions updated to {target_w}x{target_h} before xrandr call."
-        )
+        if data_server_instance and display_id in data_server_instance.display_clients:
+            client_info = data_server_instance.display_clients[display_id]
+            if client_info.get('width') == target_w and client_info.get('height') == target_h:
+                logger_gst_app_resize.info(f"Redundant resize request for {display_id} to {target_w}x{target_h}. No action.")
+                return
 
-        success = await resize_display(f"{target_w}x{target_h}")
+            client_info['width'] = target_w
+            client_info['height'] = target_h
+            
+            if display_id == 'primary':
+                current_app_instance.display_width = target_w
+                current_app_instance.display_height = target_h
 
-        if success:
-            logger_gst_app_resize.info(
-                f"resize_display('{target_w}x{target_h}') reported success."
-            )
-            current_app_instance.last_resize_success = True
-            if data_server_instance:
-                asyncio.create_task(data_server_instance.broadcast_stream_resolution())
+            logger_gst_app_resize.info(f"Display client '{display_id}' dimensions updated to {target_w}x{target_h}. Triggering reconfiguration.")
+            await data_server_instance.reconfigure_displays()
         else:
-            logger_gst_app_resize.error(
-                f"resize_display('{target_w}x{target_h}') reported failure."
-            )
-            current_app_instance.last_resize_success = False
+            logger_gst_app_resize.error(f"Cannot resize: display_id '{display_id}' not found in connected clients.")
 
     except ValueError:
-        logger_gst_app_resize.error(
-            f"Invalid resolution format in resize request: {res_str}"
-        )
-        current_app_instance.last_resize_success = False
+        logger_gst_app_resize.error(f"Invalid resolution format in resize request: {res_str}")
     except Exception as e:
-        logger_gst_app_resize.error(
-            f"Error during resize handling for '{res_str}': {e}", exc_info=True
-        )
-        if current_app_instance:
-            current_app_instance.last_resize_success = False
+        logger_gst_app_resize.error(f"Error during resize handling for '{res_str}': {e}", exc_info=True)
 
 async def main():
     if "DEV_MODE" in os.environ:
@@ -3469,6 +3527,7 @@ async def main():
         CURSOR_SIZE,
         1.0,
         DEBUG_CURSORS,
+        data_server_instance=data_server,
     )
     data_server.input_handler = (
         input_handler 
@@ -3478,11 +3537,12 @@ async def main():
 
     input_handler.on_set_fps = app.set_framerate
     if ENABLE_RESIZE:
-        input_handler.on_resize = lambda res_str: on_resize_handler(
-            res_str, app, data_server
+        # MODIFIED: Lambda now passes display_id, defaulting to 'primary' if not provided by caller.
+        input_handler.on_resize = lambda res_str, display_id='primary': on_resize_handler(
+            res_str, app, data_server, display_id
         )
     else:
-        input_handler.on_resize = lambda res_str: logger.warning("Resize disabled.")
+        input_handler.on_resize = lambda res_str, display_id='primary': logger.warning("Resize disabled.")
         input_handler.on_scaling_ratio = lambda scale_val: logger.warning(
             "Scaling disabled."
         )
@@ -3540,7 +3600,7 @@ async def main():
             logger.info("Stopping SelkiesStreamingApp pipelines...")
             await app.stop_pipeline()
 
-        if input_handler:  # This is the global input_handler instance
+        if input_handler:
             logger.info("Stopping global InputHandler components...")
             if hasattr(input_handler, "stop_clipboard"):
                 input_handler.stop_clipboard()

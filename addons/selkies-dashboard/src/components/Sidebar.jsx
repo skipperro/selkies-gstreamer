@@ -5,6 +5,17 @@ import { getTranslator } from "../translations";
 import yaml from "js-yaml";
 
 // --- Constants ---
+const urlHash = window.location.hash;
+const displayId = urlHash.startsWith('#display2') ? 'display2' : 'primary';
+
+const PER_DISPLAY_SETTINGS = [
+    'videoBitRate', 'videoFramerate', 'videoCRF', 'h264_fullcolor',
+    'h264_streaming_mode', 'jpegQuality', 'paintOverJpegQuality', 'useCpu',
+    'h264_paintover_crf', 'h264_paintover_burst_frames', 'use_paint_over_quality',
+    'resizeRemote', 'isManualResolutionMode', 'manualWidth', 'manualHeight',
+    'encoder', 'scaleLocallyManual'
+];
+
 const encoderOptions = [
   "x264enc",
   "x264enc-striped",
@@ -514,9 +525,17 @@ const getStorageAppName = () => {
   return urlForKey.replace(/[^a-zA-Z0-9.-_]/g, '_');
 };
 const storageAppName = getStorageAppName();
-const getPrefixedKey = (key) => `${storageAppName}_${key}`;
+const getPrefixedKey = (key) => {
+  const prefixedKey = `${storageAppName}_${key}`;
+  // Use the module-level 'displayId' to decide which key to return
+  if (displayId === 'display2' && PER_DISPLAY_SETTINGS.includes(key)) {
+    return `${prefixedKey}_display2`;
+  }
+  return prefixedKey;
+};
 
 function Sidebar({ isOpen }) {
+  const isSecondaryDisplay = displayId === 'display2';
   const [langCode, setLangCode] = useState("en");
   const [translator, setTranslator] = useState(() => getTranslator("en"));
   useEffect(() => {
@@ -534,6 +553,71 @@ function Sidebar({ isOpen }) {
   const [isKeyboardButtonVisible, setIsKeyboardButtonVisible] = useState(true);
   const [isTouchGamepadActive, setIsTouchGamepadActive] = useState(false);
   const [isTouchGamepadSetup, setIsTouchGamepadSetup] = useState(false);
+  const [availablePlacements, setAvailablePlacements] = useState(null);
+
+  const launchWindow = (direction, screen = null) => {
+    const url = `${window.location.href.split('#')[0]}#display2-${direction}`;
+    let features = 'resizable=yes,scrollbars=yes,noopener,noreferrer';
+    if (screen) {
+      features += `,left=${screen.availLeft},top=${screen.availTop},width=${screen.availWidth},height=${screen.availHeight}`;
+    }
+    window.open(url, '_blank', features);
+    setAvailablePlacements(null);
+  };
+
+  const handleAddScreenClick = async () => {
+    if (!('getScreenDetails' in window)) {
+      console.warn("Window Management API not supported. Opening default second screen.");
+      launchWindow('right');
+      return;
+    }
+
+    try {
+      const screenDetails = await window.getScreenDetails();
+      const currentScreen = screenDetails.currentScreen;
+      const otherScreens = screenDetails.screens.filter(s => s !== currentScreen);
+
+      if (otherScreens.length === 0) {
+        console.log("No other screens detected. Opening default second screen.");
+        launchWindow('right');
+        return;
+      }
+
+      const placements = {};
+      for (const s of otherScreens) {
+        if (!placements.right && s.left >= currentScreen.left + currentScreen.width) {
+          placements.right = s;
+        }
+        if (!placements.left && s.left + s.width <= currentScreen.left) {
+          placements.left = s;
+        }
+        if (!placements.down && s.top >= currentScreen.top + currentScreen.height) {
+          placements.down = s;
+        }
+        if (!placements.up && s.top + s.height <= currentScreen.top) {
+          placements.up = s;
+        }
+      }
+      
+      const availableDirections = Object.keys(placements);
+
+      if (availableDirections.length === 1) {
+        const direction = availableDirections[0];
+        const screen = placements[direction];
+        console.log(`Auto-placing single screen to the ${direction}.`);
+        launchWindow(direction, screen);
+      } else if (availableDirections.length > 1) {
+        console.log("Multiple placement options found. Showing arrows.");
+        setAvailablePlacements(placements);
+      } else {
+        console.log("No adjacent screens found in cardinal directions. Opening default.");
+        launchWindow('right');
+      }
+    } catch (err) {
+      console.error("Error with Window Management API or permission denied:", err);
+      launchWindow('right');
+    }
+  };
 
   useEffect(() => {
     const browserLang = navigator.language || navigator.userLanguage || "en";
@@ -1839,6 +1923,58 @@ function Sidebar({ isOpen }) {
 
   return (
     <>
+      {availablePlacements && (() => {
+        const arrowBaseStyle = {
+          position: 'absolute',
+          width: '100px',
+          height: '100px',
+          backgroundColor: 'rgba(97, 218, 251, 0.8)',
+          color: 'var(--sidebar-bg, #20232a)',
+          border: '2px solid var(--sidebar-bg, #20232a)',
+          borderRadius: '15px',
+          fontSize: '48px',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          cursor: 'pointer',
+          pointerEvents: 'all',
+          boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+          transition: 'transform 0.2s ease',
+        };
+
+        const handleArrowClick = (e, direction, screen) => {
+          e.stopPropagation();
+          launchWindow(direction, screen);
+        };
+
+        return (
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              zIndex: 9999,
+              pointerEvents: 'auto'
+            }}
+            onClick={() => setAvailablePlacements(null)}
+          >
+            {availablePlacements.up && (
+              <button style={{...arrowBaseStyle, top: '40px', left: '50%', transform: 'translateX(-50%)'}} onClick={(e) => handleArrowClick(e, 'up', availablePlacements.up)}>▲</button>
+            )}
+            {availablePlacements.down && (
+              <button style={{...arrowBaseStyle, bottom: '40px', left: '50%', transform: 'translateX(-50%)'}} onClick={(e) => handleArrowClick(e, 'down', availablePlacements.down)}>▼</button>
+            )}
+            {availablePlacements.left && (
+              <button style={{...arrowBaseStyle, left: '40px', top: '50%', transform: 'translateY(-50%)'}} onClick={(e) => handleArrowClick(e, 'left', availablePlacements.left)}>◄</button>
+            )}
+            {availablePlacements.right && (
+              <button style={{...arrowBaseStyle, right: '40px', top: '50%', transform: 'translateY(-50%)'}} onClick={(e) => handleArrowClick(e, 'right', availablePlacements.right)}>►</button>
+            )}
+          </div>
+        );
+      })()}
       <div className={sidebarClasses}>
         <div className="sidebar-header">
           <a
@@ -1903,57 +2039,59 @@ function Sidebar({ isOpen }) {
           </div>
         </div>
 
-        <div className="sidebar-action-buttons">
-          <button
-            className={`action-button ${isVideoActive ? "active" : ""}`}
-            onClick={handleVideoToggle}
-            title={t(
-              isVideoActive
-                ? "buttons.videoStreamDisableTitle"
-                : "buttons.videoStreamEnableTitle"
-            )}
-          >
-            {" "}
-            <ScreenIcon />{" "}
-          </button>
-          <button
-            className={`action-button ${isAudioActive ? "active" : ""}`}
-            onClick={handleAudioToggle}
-            title={t(
-              isAudioActive
-                ? "buttons.audioStreamDisableTitle"
-                : "buttons.audioStreamEnableTitle"
-            )}
-          >
-            {" "}
-            <SpeakerIcon />{" "}
-          </button>
-          <button
-            className={`action-button ${isMicrophoneActive ? "active" : ""}`}
-            onClick={handleMicrophoneToggle}
-            title={t(
-              isMicrophoneActive
-                ? "buttons.microphoneDisableTitle"
-                : "buttons.microphoneEnableTitle"
-            )}
-          >
-            {" "}
-            <MicrophoneIcon />{" "}
-          </button>
-          <button
-            className={`action-button ${isGamepadEnabled ? "active" : ""}`}
-            onClick={handleGamepadToggle}
-            title={t(
-              isGamepadEnabled
-                ? "buttons.gamepadDisableTitle"
-                : "buttons.gamepadEnableTitle"
-            )}
-          >
-            {" "}
-            <GamepadIcon />{" "}
-          </button>
-        </div>
-
+        {!isSecondaryDisplay && (
+          <div className="sidebar-action-buttons">
+            <button
+              className={`action-button ${isVideoActive ? "active" : ""}`}
+              onClick={handleVideoToggle}
+              title={t(
+                isVideoActive
+                  ? "buttons.videoStreamDisableTitle"
+                  : "buttons.videoStreamEnableTitle"
+              )}
+            >
+              {" "}
+              <ScreenIcon />{" "}
+            </button>
+            <button
+              className={`action-button ${isAudioActive ? "active" : ""}`}
+              onClick={handleAudioToggle}
+              title={t(
+                isAudioActive
+                  ? "buttons.audioStreamDisableTitle"
+                  : "buttons.audioStreamEnableTitle"
+              )}
+            >
+              {" "}
+              <SpeakerIcon />{" "}
+            </button>
+            <button
+              className={`action-button ${isMicrophoneActive ? "active" : ""}`}
+              onClick={handleMicrophoneToggle}
+              title={t(
+                isMicrophoneActive
+                  ? "buttons.microphoneDisableTitle"
+                  : "buttons.microphoneEnableTitle"
+              )}
+            >
+              {" "}
+              <MicrophoneIcon />{" "}
+            </button>
+            <button
+              className={`action-button ${isGamepadEnabled ? "active" : ""}`}
+              onClick={handleGamepadToggle}
+              title={t(
+                isGamepadEnabled
+                  ? "buttons.gamepadDisableTitle"
+                  : "buttons.gamepadEnableTitle"
+              )}
+            >
+              {" "}
+              <GamepadIcon />{" "}
+            </button>
+          </div>
+        )}
+        
         {(isMobile || hasDetectedTouch) && (
           <>
             <div className="sidebar-section-divider"></div>
@@ -2247,91 +2385,6 @@ function Sidebar({ isOpen }) {
         <div className="sidebar-section">
           <div
             className="sidebar-section-header"
-            onClick={() => toggleSection("audioSettings")}
-            role="button"
-            aria-expanded={sectionsOpen.audioSettings}
-            aria-controls="audio-settings-content"
-            tabIndex="0"
-            onKeyDown={(e) =>
-              (e.key === "Enter" || e.key === " ") &&
-              toggleSection("audioSettings")
-            }
-          >
-            <h3>{t("sections.audio.title")}</h3>{" "}
-            <span className="section-toggle-icon">
-              {isLoadingAudioDevices ? (
-                <SpinnerIcon />
-              ) : sectionsOpen.audioSettings ? (
-                <CaretUpIcon />
-              ) : (
-                <CaretDownIcon />
-              )}
-            </span>
-          </div>
-          {sectionsOpen.audioSettings && (
-            <div
-              className="sidebar-section-content"
-              id="audio-settings-content"
-            >
-              {audioDeviceError && (
-                <div className="error-message">{audioDeviceError}</div>
-              )}
-              <div className="dev-setting-item">
-                {" "}
-                <label htmlFor="audioInputSelect">
-                  {t("sections.audio.inputLabel")}
-                </label>{" "}
-                <select
-                  id="audioInputSelect"
-                  value={selectedInputDeviceId}
-                  onChange={handleAudioInputChange}
-                  disabled={isLoadingAudioDevices || !!audioDeviceError}
-                  className="audio-device-select"
-                >
-                  {" "}
-                  {audioInputDevices.map((d) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {d.label}
-                    </option>
-                  ))}{" "}
-                </select>{" "}
-              </div>
-              {isOutputSelectionSupported && (
-                <div className="dev-setting-item">
-                  {" "}
-                  <label htmlFor="audioOutputSelect">
-                    {t("sections.audio.outputLabel")}
-                  </label>{" "}
-                  <select
-                    id="audioOutputSelect"
-                    value={selectedOutputDeviceId}
-                    onChange={handleAudioOutputChange}
-                    disabled={isLoadingAudioDevices || !!audioDeviceError}
-                    className="audio-device-select"
-                  >
-                    {" "}
-                    {audioOutputDevices.map((d) => (
-                      <option key={d.deviceId} value={d.deviceId}>
-                        {d.label}
-                      </option>
-                    ))}{" "}
-                  </select>{" "}
-                </div>
-              )}
-              {!isOutputSelectionSupported &&
-                !isLoadingAudioDevices &&
-                !audioDeviceError && (
-                  <p className="device-support-notice">
-                    {t("sections.audio.outputNotSupported")}
-                  </p>
-                )}
-            </div>
-          )}
-        </div>
-
-        <div className="sidebar-section">
-          <div
-            className="sidebar-section-header"
             onClick={() => toggleSection("screenSettings")}
             role="button"
             aria-expanded={sectionsOpen.screenSettings}
@@ -2356,69 +2409,81 @@ function Sidebar({ isOpen }) {
               className="sidebar-section-content"
               id="screen-settings-content"
             >
-              <div className="dev-setting-item toggle-item">
-                <label htmlFor="hidpiToggle">
-                  {t("sections.screen.hidpiLabel", "HiDPI (Pixel Perfect)")}
-                </label>
-                <button
-                  id="hidpiToggle"
-                  className={`toggle-button-sidebar ${hidpiEnabled ? "active" : ""}`}
-                  onClick={handleHidpiToggle}
-                  aria-pressed={hidpiEnabled}
-                  title={t(hidpiEnabled ? "sections.screen.hidpiDisableTitle" : "sections.screen.hidpiEnableTitle",
-                             hidpiEnabled ? "Disable HiDPI (Use CSS Scaling)" : "Enable HiDPI (Pixel Perfect)")}
-                >
-                  <span className="toggle-button-sidebar-knob"></span>
-                </button>
-              </div>
-              <div className="dev-setting-item toggle-item">
-                <label htmlFor="antiAliasingToggle">
-                  {t("sections.screen.antiAliasingLabel", "Anti-aliasing")}
-                </label>
-                <button
-                  id="antiAliasingToggle"
-                  className={`toggle-button-sidebar ${antiAliasing ? "active" : ""}`}
-                  onClick={handleAntiAliasingToggle}
-                  aria-pressed={antiAliasing}
-                  title={t(antiAliasing ? "sections.screen.antiAliasingDisableTitle" : "sections.screen.antiAliasingEnableTitle",
-                             antiAliasing ? "Disable anti-aliasing (force pixelated)" : "Enable anti-aliasing (smooth on scaling)")}
-                >
-                  <span className="toggle-button-sidebar-knob"></span>
-                </button>
-              </div>
-              <div className="dev-setting-item toggle-item">
-                <label htmlFor="useBrowserCursorsToggle">
-                  {t("sections.screen.useNativeCursorStylesLabel", "Use CSS cursors")}
-                </label>
-                <button
-                  id="useBrowserCursorsToggle"
-                  className={`toggle-button-sidebar ${useBrowserCursors ? "active" : ""}`}
-                  onClick={handleUseBrowserCursorsToggle}
-                  aria-pressed={useBrowserCursors}
-                  title={t(useBrowserCursors ? "sections.screen.useNativeCursorStylesDisableTitle" : "sections.screen.useNativeCursorStylesEnableTitle",
-                             useBrowserCursors ? "Use canvas cursor rendering (Paint to canvas)" : "Use CSS cursor rendering (Replace system cursors)")}
-                >
-                  <span className="toggle-button-sidebar-knob"></span>
-                </button>
-              </div>
-              <div className="dev-setting-item">
-                <label htmlFor="uiScalingSelect">
-                  {t("sections.screen.uiScalingLabel", "UI Scaling")}
-                </label>
-                <select
-                  id="uiScalingSelect"
-                  value={selectedDpi}
-                  onChange={handleDpiScalingChange}
-                >
-                  {dpiScalingOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.value === currentDeviceDpi
-                        ? `${option.label} *`
-                        : option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {!isSecondaryDisplay && (
+                <>
+                  <button
+                    className="resolution-button toggle-button"
+                    onClick={handleAddScreenClick}
+                    style={{ marginBottom: "10px" }}
+                    title={t("sections.screen.addScreenTitle", "Add a second screen")}
+                  >
+                    {t("sections.screen.addScreenButton", "Add Screen +")}
+                  </button>
+                  <div className="dev-setting-item toggle-item">
+                    <label htmlFor="hidpiToggle">
+                      {t("sections.screen.hidpiLabel", "HiDPI (Pixel Perfect)")}
+                    </label>
+                    <button
+                      id="hidpiToggle"
+                      className={`toggle-button-sidebar ${hidpiEnabled ? "active" : ""}`}
+                      onClick={handleHidpiToggle}
+                      aria-pressed={hidpiEnabled}
+                      title={t(hidpiEnabled ? "sections.screen.hidpiDisableTitle" : "sections.screen.hidpiEnableTitle",
+                                hidpiEnabled ? "Disable HiDPI (Use CSS Scaling)" : "Enable HiDPI (Pixel Perfect)")}
+                    >
+                      <span className="toggle-button-sidebar-knob"></span>
+                    </button>
+                  </div>
+                  <div className="dev-setting-item toggle-item">
+                    <label htmlFor="antiAliasingToggle">
+                      {t("sections.screen.antiAliasingLabel", "Anti-aliasing")}
+                    </label>
+                    <button
+                      id="antiAliasingToggle"
+                      className={`toggle-button-sidebar ${antiAliasing ? "active" : ""}`}
+                      onClick={handleAntiAliasingToggle}
+                      aria-pressed={antiAliasing}
+                      title={t(antiAliasing ? "sections.screen.antiAliasingDisableTitle" : "sections.screen.antiAliasingEnableTitle",
+                                antiAliasing ? "Disable anti-aliasing (force pixelated)" : "Enable anti-aliasing (smooth on scaling)")}
+                    >
+                      <span className="toggle-button-sidebar-knob"></span>
+                    </button>
+                  </div>
+                  <div className="dev-setting-item toggle-item">
+                    <label htmlFor="useBrowserCursorsToggle">
+                      {t("sections.screen.useNativeCursorStylesLabel", "Use CSS cursors")}
+                    </label>
+                    <button
+                      id="useBrowserCursorsToggle"
+                      className={`toggle-button-sidebar ${useBrowserCursors ? "active" : ""}`}
+                      onClick={handleUseBrowserCursorsToggle}
+                      aria-pressed={useBrowserCursors}
+                      title={t(useBrowserCursors ? "sections.screen.useNativeCursorStylesDisableTitle" : "sections.screen.useNativeCursorStylesEnableTitle",
+                                useBrowserCursors ? "Use canvas cursor rendering (Paint to canvas)" : "Use CSS cursor rendering (Replace system cursors)")}
+                    >
+                      <span className="toggle-button-sidebar-knob"></span>
+                    </button>
+                  </div>
+                  <div className="dev-setting-item">
+                    <label htmlFor="uiScalingSelect">
+                      {t("sections.screen.uiScalingLabel", "UI Scaling")}
+                    </label>
+                    <select
+                      id="uiScalingSelect"
+                      value={selectedDpi}
+                      onChange={handleDpiScalingChange}
+                    >
+                      {dpiScalingOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.value === currentDeviceDpi
+                            ? `${option.label} *`
+                            : option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
               <div className="dev-setting-item">
                 {" "}
                 <label htmlFor="resolutionPresetSelect">
@@ -2510,665 +2575,740 @@ function Sidebar({ isOpen }) {
           )}
         </div>
 
-        <div className="sidebar-section">
-          <div
-            className="sidebar-section-header"
-            onClick={() => toggleSection("stats")}
-            role="button"
-            aria-expanded={sectionsOpen.stats}
-            aria-controls="stats-content"
-            tabIndex="0"
-            onKeyDown={(e) =>
-              (e.key === "Enter" || e.key === " ") && toggleSection("stats")
-            }
-          >
-            <h3>{t("sections.stats.title")}</h3>{" "}
-            <span className="section-toggle-icon">
-              {sectionsOpen.stats ? <CaretUpIcon /> : <CaretDownIcon />}
-            </span>
-          </div>
-          {sectionsOpen.stats && (
-            <div className="sidebar-section-content" id="stats-content">
-              <div className="stats-gauges">
-                <div
-                  className="gauge-container"
-                  onMouseEnter={(e) => handleMouseEnter(e, "cpu")}
-                  onMouseLeave={handleMouseLeave}
-                >
-                  {" "}
-                  <svg
-                    width={gaugeSize}
-                    height={gaugeSize}
-                    viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                  >
-                    {" "}
-                    <circle
-                      stroke="var(--item-border)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                    />{" "}
-                    <circle
-                      stroke="var(--sidebar-header-color)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                      transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                      style={{
-                        strokeDasharray: gaugeCircumference,
-                        strokeDashoffset: cpuOffset,
-                        transition: "stroke-dashoffset 0.3s ease-in-out",
-                        strokeLinecap: "round",
-                      }}
-                    />{" "}
-                    <text
-                      x={gaugeCenter}
-                      y={gaugeCenter}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fontSize={`${gaugeSize / 5}px`}
-                      fill="var(--sidebar-text)"
-                      fontWeight="bold"
-                    >
-                      {" "}
-                      {Math.round(
-                        Math.max(0, Math.min(100, cpuPercent || 0))
-                      )}%{" "}
-                    </text>{" "}
-                  </svg>{" "}
-                  <div className="gauge-label">
-                    {t("sections.stats.cpuLabel")}
-                  </div>{" "}
-                </div>
-                <div
-                  className="gauge-container"
-                  onMouseEnter={(e) => handleMouseEnter(e, "sysmem")}
-                  onMouseLeave={handleMouseLeave}
-                >
-                  {" "}
-                  <svg
-                    width={gaugeSize}
-                    height={gaugeSize}
-                    viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                  >
-                    {" "}
-                    <circle
-                      stroke="var(--item-border)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                    />{" "}
-                    <circle
-                      stroke="var(--sidebar-header-color)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                      transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                      style={{
-                        strokeDasharray: gaugeCircumference,
-                        strokeDashoffset: sysMemOffset,
-                        transition: "stroke-dashoffset 0.3s ease-in-out",
-                        strokeLinecap: "round",
-                      }}
-                    />{" "}
-                    <text
-                      x={gaugeCenter}
-                      y={gaugeCenter}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fontSize={`${gaugeSize / 5}px`}
-                      fill="var(--sidebar-text)"
-                      fontWeight="bold"
-                    >
-                      {" "}
-                      {Math.round(
-                        Math.max(0, Math.min(100, sysMemPercent || 0))
-                      )}
-                      %{" "}
-                    </text>{" "}
-                  </svg>{" "}
-                  <div className="gauge-label">
-                    {t("sections.stats.sysMemLabel")}
-                  </div>{" "}
-                </div>
-                {window.gpu_stats && (
-                  <>
-                    <div
-                      className="gauge-container"
-                      onMouseEnter={(e) => handleMouseEnter(e, "gpu")}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                       <svg
-                        width={gaugeSize}
-                        height={gaugeSize}
-                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                      >
-                        <circle
-                          stroke="var(--item-border)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter}
-                        />
-                        <circle
-                          stroke="var(--sidebar-header-color)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter}
-                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                          style={{
-                            strokeDasharray: gaugeCircumference,
-                            strokeDashoffset: gpuOffset,
-                            transition: "stroke-dashoffset 0.3s ease-in-out",
-                            strokeLinecap: "round",
-                          }}
-                        />
-                        <text
-                          x={gaugeCenter}
-                          y={gaugeCenter}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fontSize={`${gaugeSize / 5}px`}
-                          fill="var(--sidebar-text)"
-                          fontWeight="bold"
-                        >
-                          {" "}
-                          {Math.round(
-                            Math.max(0, Math.min(100, gpuPercent || 0))
-                          )}%{" "}
-                        </text>
-                      </svg>
-                      <div className="gauge-label">
-                        {t("sections.stats.gpuLabel")}
-                      </div>
-                    </div>
-                    <div
-                      className="gauge-container"
-                      onMouseEnter={(e) => handleMouseEnter(e, "gpumem")}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                       <svg
-                        width={gaugeSize}
-                        height={gaugeSize}
-                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                      >
-                        <circle
-                          stroke="var(--item-border)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter}
-                        />
-                        <circle
-                          stroke="var(--sidebar-header-color)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter}
-                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                          style={{
-                            strokeDasharray: gaugeCircumference,
-                            strokeDashoffset: gpuMemOffset,
-                            transition: "stroke-dashoffset 0.3s ease-in-out",
-                            strokeLinecap: "round",
-                          }}
-                        />
-                        <text
-                          x={gaugeCenter}
-                          y={gaugeCenter}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fontSize={`${gaugeSize / 5}px`}
-                          fill="var(--sidebar-text)"
-                          fontWeight="bold"
-                        >
-                          {" "}
-                          {Math.round(
-                            Math.max(0, Math.min(100, gpuMemPercent || 0))
-                          )}
-                          %{" "}
-                        </text>
-                      </svg>
-                      <div className="gauge-label">
-                        {t("sections.stats.gpuMemLabel")}
-                      </div>
-                    </div>
-                  </>
-                )}
-                <div
-                  className="gauge-container"
-                  onMouseEnter={(e) => handleMouseEnter(e, "fps")}
-                  onMouseLeave={handleMouseLeave}
-                >
-                  {" "}
-                  <svg
-                    width={gaugeSize}
-                    height={gaugeSize}
-                    viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                  >
-                    {" "}
-                    <circle
-                      stroke="var(--item-border)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                    />{" "}
-                    <circle
-                      stroke="var(--sidebar-header-color)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                      transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                      style={{
-                        strokeDasharray: gaugeCircumference,
-                        strokeDashoffset: fpsOffset,
-                        transition: "stroke-dashoffset 0.3s ease-in-out",
-                        strokeLinecap: "round",
-                      }}
-                    />{" "}
-                    <text
-                      x={gaugeCenter}
-                      y={gaugeCenter}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fontSize={`${gaugeSize / 5}px`}
-                      fill="var(--sidebar-text)"
-                      fontWeight="bold"
-                    >
-                      {" "}
-                      {clientFps}{" "}
-                    </text>{" "}
-                  </svg>{" "}
-                  <div className="gauge-label">
-                    {t("sections.stats.fpsLabel")}
-                  </div>{" "}
-                </div>
-                <div
-                  className="gauge-container"
-                  onMouseEnter={(e) => handleMouseEnter(e, "audio")}
-                  onMouseLeave={handleMouseLeave}
-                >
-                  {" "}
-                  <svg
-                    width={gaugeSize}
-                    height={gaugeSize}
-                    viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                  >
-                    {" "}
-                    <circle
-                      stroke="var(--item-border)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                    />{" "}
-                    <circle
-                      stroke="var(--sidebar-header-color)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                      transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                      style={{
-                        strokeDasharray: gaugeCircumference,
-                        strokeDashoffset: audioBufferOffset,
-                        transition: "stroke-dashoffset 0.3s ease-in-out",
-                        strokeLinecap: "round",
-                      }}
-                    />{" "}
-                    <text
-                      x={gaugeCenter}
-                      y={gaugeCenter}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fontSize={`${gaugeSize / 5}px`}
-                      fill="var(--sidebar-text)"
-                      fontWeight="bold"
-                    >
-                      {" "}
-                      {audioBuffer}{" "}
-                    </text>{" "}
-                  </svg>{" "}
-                  <div className="gauge-label">
-                    {t("sections.stats.audioLabel")}
-                  </div>{" "}
-                </div>
-                <div
-                  className="gauge-container"
-                  onMouseEnter={(e) => handleMouseEnter(e, "bandwidth")}
-                  onMouseLeave={handleMouseLeave}
-                >
-                  {" "}
-                  <svg
-                    width={gaugeSize}
-                    height={gaugeSize}
-                    viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                  >
-                    {" "}
-                    <circle
-                      stroke="var(--item-border)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                    />{" "}
-                    <circle
-                      stroke="var(--sidebar-header-color)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                      transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                      style={{
-                        strokeDasharray: gaugeCircumference,
-                        strokeDashoffset: bandwidthOffset,
-                        transition: "stroke-dashoffset 0.3s ease-in-out",
-                        strokeLinecap: "round",
-                      }}
-                    />{" "}
-                    <text
-                      x={gaugeCenter}
-                      y={gaugeCenter}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fontSize={`${gaugeSize / 5}px`}
-                      fill="var(--sidebar-text)"
-                      fontWeight="bold"
-                    >
-                      {" "}
-                      {Math.round(bandwidthMbps)}{" "}
-                    </text>{" "}
-                  </svg>{" "}
-                  <div className="gauge-label">
-                    {t("sections.stats.bandwidthLabel", "Bandwidth")}
-                  </div>{" "}
-                </div>
-                <div
-                  className="gauge-container"
-                  onMouseEnter={(e) => handleMouseEnter(e, "latency")}
-                  onMouseLeave={handleMouseLeave}
-                >
-                  {" "}
-                  <svg
-                    width={gaugeSize}
-                    height={gaugeSize}
-                    viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                  >
-                    {" "}
-                    <circle
-                      stroke="var(--item-border)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                    />{" "}
-                    <circle
-                      stroke="var(--sidebar-header-color)"
-                      fill="transparent"
-                      strokeWidth={gaugeStrokeWidth}
-                      r={gaugeRadius}
-                      cx={gaugeCenter}
-                      cy={gaugeCenter}
-                      transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                      style={{
-                        strokeDasharray: gaugeCircumference,
-                        strokeDashoffset: latencyOffset,
-                        transition: "stroke-dashoffset 0.3s ease-in-out",
-                        strokeLinecap: "round",
-                      }}
-                    />{" "}
-                    <text
-                      x={gaugeCenter}
-                      y={gaugeCenter}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fontSize={`${gaugeSize / 5}px`}
-                      fill="var(--sidebar-text)"
-                      fontWeight="bold"
-                    >
-                      {" "}
-                      {Math.round(latencyMs)}{" "}
-                    </text>{" "}
-                  </svg>{" "}
-                  <div className="gauge-label">
-                    {t("sections.stats.latencyLabel", "Latency")}
-                  </div>{" "}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="sidebar-section">
-          <div
-            className="sidebar-section-header"
-            onClick={() => toggleSection("clipboard")}
-            role="button"
-            aria-expanded={sectionsOpen.clipboard}
-            aria-controls="clipboard-content"
-            tabIndex="0"
-            onKeyDown={(e) =>
-              (e.key === "Enter" || e.key === " ") && toggleSection("clipboard")
-            }
-          >
-            <h3>{t("sections.clipboard.title")}</h3>{" "}
-            <span className="section-toggle-icon">
-              {sectionsOpen.clipboard ? <CaretUpIcon /> : <CaretDownIcon />}
-            </span>
-          </div>
-          {sectionsOpen.clipboard && (
-            <div className="sidebar-section-content" id="clipboard-content">
-              <div className="dev-setting-item toggle-item">
-                <label 
-                  htmlFor="enableBinaryClipboardToggle"
-                  title={t("sections.clipboard.binaryModeDetails", "Allows copying and pasting images (e.g., PNG) to and from the remote session. May cause issues if a very large file is in the clipboard.")}
-                >
-                  {t("sections.clipboard.binaryModeLabel", "Image Support")}
-                </label>
-                <button
-                  id="enableBinaryClipboardToggle"
-                  className={`toggle-button-sidebar ${enableBinaryClipboard ? "active" : ""}`}
-                  onClick={handleEnableBinaryClipboardToggle}
-                  aria-pressed={enableBinaryClipboard}
-                  title={t(enableBinaryClipboard ? "buttons.binaryClipboardDisableTitle" : "buttons.binaryClipboardEnableTitle",
-                             enableBinaryClipboard ? "Disable Image Clipboard" : "Enable Image Clipboard")}
-                >
-                  <span className="toggle-button-sidebar-knob"></span>
-                </button>
-              </div>
-              <div className="dashboard-clipboard-item">
-                {" "}
-                <label htmlFor="dashboardClipboardTextarea">
-                  {t("sections.clipboard.label")}
-                </label>{" "}
-                <textarea
-                  className="allow-native-input"
-                  id="dashboardClipboardTextarea"
-                  value={dashboardClipboardContent}
-                  onChange={handleClipboardChange}
-                  onBlur={handleClipboardBlur}
-                  rows="5"
-                  placeholder={t("sections.clipboard.placeholder")}
-                />{" "}
-              </div>{" "}
-            </div>
-          )}
-        </div>
-
-        <div className="sidebar-section">
-          <div
-            className="sidebar-section-header"
-            onClick={() => toggleSection("files")}
-            role="button"
-            aria-expanded={sectionsOpen.files}
-            aria-controls="files-content"
-            tabIndex="0"
-            onKeyDown={(e) =>
-              (e.key === "Enter" || e.key === " ") && toggleSection("files")
-            }
-          >
-            <h3>{t("sections.files.title")}</h3>{" "}
-            <span className="section-toggle-icon">
-              {sectionsOpen.files ? <CaretUpIcon /> : <CaretDownIcon />}
-            </span>
-          </div>
-          {sectionsOpen.files && (
-            <div className="sidebar-section-content" id="files-content">
-              {" "}
-              <button
-                className="resolution-button"
-                onClick={handleUploadClick}
-                style={{ marginTop: "5px", marginBottom: "5px" }}
-                title={t("sections.files.uploadButtonTitle")}
-              >
-                {" "}
-                {t("sections.files.uploadButton")}{" "}
-              </button>{" "}
-              <button
-                className="resolution-button"
-                onClick={toggleFilesModal}
-                style={{ marginTop: "5px", marginBottom: "5px" }}
-                title={t(
-                  "sections.files.downloadButtonTitle",
-                  "Download Files"
-                )}
-              >
-                {" "}
-                {t("sections.files.downloadButtonTitle", "Download Files")}{" "}
-              </button>{" "}
-            </div>
-          )}
-        </div>
-
-        <div className="sidebar-section">
-          <div
-            className="sidebar-section-header"
-            onClick={() => toggleSection("apps")}
-            role="button"
-            aria-expanded={sectionsOpen.apps}
-            aria-controls="apps-content"
-            tabIndex="0"
-            onKeyDown={(e) =>
-              (e.key === "Enter" || e.key === " ") && toggleSection("apps")
-            }
-          >
-            <h3>{t("sections.apps.title", "Apps")}</h3>{" "}
-            <span className="section-toggle-icon">
-              {sectionsOpen.apps ? <CaretUpIcon /> : <CaretDownIcon />}
-            </span>
-          </div>
-          {sectionsOpen.apps && (
-            <div className="sidebar-section-content" id="apps-content">
-              {" "}
-              <button
-                className="resolution-button"
-                onClick={toggleAppsModal}
-                style={{ marginTop: "5px", marginBottom: "5px" }}
-                title={t("sections.apps.openButtonTitle", "Manage Apps")}
-              >
-                {" "}
-                <AppsIcon />{" "}
-                <span style={{ marginLeft: "8px" }}>
-                  {t("sections.apps.openButton", "Manage Apps")}
-                </span>{" "}
-              </button>{" "}
-            </div>
-          )}
-        </div>
-
-        <div className="sidebar-section">
-          <div
-            className="sidebar-section-header"
-            onClick={() => toggleSection("sharing")}
-            role="button"
-            aria-expanded={sectionsOpen.sharing}
-            aria-controls="sharing-content"
-            tabIndex="0"
-            onKeyDown={(e) =>
-              (e.key === "Enter" || e.key === " ") && toggleSection("sharing")
-            }
-          >
-            <h3>{t("sections.sharing.title", "Sharing")}</h3>
-            <span className="section-toggle-icon">
-              {sectionsOpen.sharing ? <CaretUpIcon /> : <CaretDownIcon />}
-            </span>
-          </div>
-          {sectionsOpen.sharing && (
-            <div className="sidebar-section-content" id="sharing-content">
-              {sharingLinks.map(link => {
-                const fullUrl = `${baseUrl}${link.hash}`;
-                return (
-                  <div key={link.id} className="sharing-link-item" title={link.tooltip}>
-                    <span className="sharing-link-label">{link.label}</span>
-                    <div className="sharing-link-actions">
-                      <a
-                        href={fullUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="sharing-link"
-                        title={`Open ${link.label} link in new tab`}
-                      >
-                        {fullUrl}
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyLink(fullUrl, link.label)}
-                        className="copy-button"
-                        title={`Copy ${link.label} link`}
-                      >
-                        <CopyIcon />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        {
+        {!isSecondaryDisplay && (
+          <><></>
           <div className="sidebar-section">
             <div
               className="sidebar-section-header"
-              onClick={() => toggleSection("gamepads")}
+              onClick={() => toggleSection("audioSettings")}
               role="button"
-              aria-expanded={sectionsOpen.gamepads}
-              aria-controls="gamepads-content"
+              aria-expanded={sectionsOpen.audioSettings}
+              aria-controls="audio-settings-content"
               tabIndex="0"
-              onKeyDown={(e) =>
-                (e.key === "Enter" || e.key === " ") &&
-                toggleSection("gamepads")
-              }
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") &&
+                toggleSection("audioSettings")}
             >
-              <h3>{t("sections.gamepads.title", "Gamepads")}</h3>
-              <span className="section-toggle-icon" aria-hidden="true">
-                {sectionsOpen.gamepads ? <CaretUpIcon /> : <CaretDownIcon />}
+              <h3>{t("sections.audio.title")}</h3>{" "}
+              <span className="section-toggle-icon">
+                {isLoadingAudioDevices ? (
+                  <SpinnerIcon />
+                ) : sectionsOpen.audioSettings ? (
+                  <CaretUpIcon />
+                ) : (
+                  <CaretDownIcon />
+                )}
               </span>
             </div>
-            {sectionsOpen.gamepads && (
-              <div className="sidebar-section-content" id="gamepads-content">
-                {
+            {sectionsOpen.audioSettings && (
+              <div
+                className="sidebar-section-content"
+                id="audio-settings-content"
+              >
+                {audioDeviceError && (
+                  <div className="error-message">{audioDeviceError}</div>
+                )}
+                <div className="dev-setting-item">
+                  {" "}
+                  <label htmlFor="audioInputSelect">
+                    {t("sections.audio.inputLabel")}
+                  </label>{" "}
+                  <select
+                    id="audioInputSelect"
+                    value={selectedInputDeviceId}
+                    onChange={handleAudioInputChange}
+                    disabled={isLoadingAudioDevices || !!audioDeviceError}
+                    className="audio-device-select"
+                  >
+                    {" "}
+                    {audioInputDevices.map((d) => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {d.label}
+                      </option>
+                    ))}{" "}
+                  </select>{" "}
+                </div>
+                {isOutputSelectionSupported && (
+                  <div className="dev-setting-item">
+                    {" "}
+                    <label htmlFor="audioOutputSelect">
+                      {t("sections.audio.outputLabel")}
+                    </label>{" "}
+                    <select
+                      id="audioOutputSelect"
+                      value={selectedOutputDeviceId}
+                      onChange={handleAudioOutputChange}
+                      disabled={isLoadingAudioDevices || !!audioDeviceError}
+                      className="audio-device-select"
+                    >
+                      {" "}
+                      {audioOutputDevices.map((d) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {d.label}
+                        </option>
+                      ))}{" "}
+                    </select>{" "}
+                  </div>
+                )}
+                {!isOutputSelectionSupported &&
+                  !isLoadingAudioDevices &&
+                  !audioDeviceError && (
+                    <p className="device-support-notice">
+                      {t("sections.audio.outputNotSupported")}
+                    </p>
+                  )}
+              </div>
+            )}
+          </div><div className="sidebar-section">
+              <div
+                className="sidebar-section-header"
+                onClick={() => toggleSection("stats")}
+                role="button"
+                aria-expanded={sectionsOpen.stats}
+                aria-controls="stats-content"
+                tabIndex="0"
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleSection("stats")}
+              >
+                <h3>{t("sections.stats.title")}</h3>{" "}
+                <span className="section-toggle-icon">
+                  {sectionsOpen.stats ? <CaretUpIcon /> : <CaretDownIcon />}
+                </span>
+              </div>
+              {sectionsOpen.stats && (
+                <div className="sidebar-section-content" id="stats-content">
+                  <div className="stats-gauges">
+                    <div
+                      className="gauge-container"
+                      onMouseEnter={(e) => handleMouseEnter(e, "cpu")}
+                      onMouseLeave={handleMouseLeave}
+                    >
+                      {" "}
+                      <svg
+                        width={gaugeSize}
+                        height={gaugeSize}
+                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                      >
+                        {" "}
+                        <circle
+                          stroke="var(--item-border)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter} />{" "}
+                        <circle
+                          stroke="var(--sidebar-header-color)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter}
+                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                          style={{
+                            strokeDasharray: gaugeCircumference,
+                            strokeDashoffset: cpuOffset,
+                            transition: "stroke-dashoffset 0.3s ease-in-out",
+                            strokeLinecap: "round",
+                          }} />{" "}
+                        <text
+                          x={gaugeCenter}
+                          y={gaugeCenter}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={`${gaugeSize / 5}px`}
+                          fill="var(--sidebar-text)"
+                          fontWeight="bold"
+                        >
+                          {" "}
+                          {Math.round(
+                            Math.max(0, Math.min(100, cpuPercent || 0))
+                          )}%{" "}
+                        </text>{" "}
+                      </svg>{" "}
+                      <div className="gauge-label">
+                        {t("sections.stats.cpuLabel")}
+                      </div>{" "}
+                    </div>
+                    <div
+                      className="gauge-container"
+                      onMouseEnter={(e) => handleMouseEnter(e, "sysmem")}
+                      onMouseLeave={handleMouseLeave}
+                    >
+                      {" "}
+                      <svg
+                        width={gaugeSize}
+                        height={gaugeSize}
+                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                      >
+                        {" "}
+                        <circle
+                          stroke="var(--item-border)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter} />{" "}
+                        <circle
+                          stroke="var(--sidebar-header-color)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter}
+                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                          style={{
+                            strokeDasharray: gaugeCircumference,
+                            strokeDashoffset: sysMemOffset,
+                            transition: "stroke-dashoffset 0.3s ease-in-out",
+                            strokeLinecap: "round",
+                          }} />{" "}
+                        <text
+                          x={gaugeCenter}
+                          y={gaugeCenter}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={`${gaugeSize / 5}px`}
+                          fill="var(--sidebar-text)"
+                          fontWeight="bold"
+                        >
+                          {" "}
+                          {Math.round(
+                            Math.max(0, Math.min(100, sysMemPercent || 0))
+                          )}
+                          %{" "}
+                        </text>{" "}
+                      </svg>{" "}
+                      <div className="gauge-label">
+                        {t("sections.stats.sysMemLabel")}
+                      </div>{" "}
+                    </div>
+                    {window.gpu_stats && (
+                      <>
+                        <div
+                          className="gauge-container"
+                          onMouseEnter={(e) => handleMouseEnter(e, "gpu")}
+                          onMouseLeave={handleMouseLeave}
+                        >
+                          <svg
+                            width={gaugeSize}
+                            height={gaugeSize}
+                            viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                          >
+                            <circle
+                              stroke="var(--item-border)"
+                              fill="transparent"
+                              strokeWidth={gaugeStrokeWidth}
+                              r={gaugeRadius}
+                              cx={gaugeCenter}
+                              cy={gaugeCenter} />
+                            <circle
+                              stroke="var(--sidebar-header-color)"
+                              fill="transparent"
+                              strokeWidth={gaugeStrokeWidth}
+                              r={gaugeRadius}
+                              cx={gaugeCenter}
+                              cy={gaugeCenter}
+                              transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                              style={{
+                                strokeDasharray: gaugeCircumference,
+                                strokeDashoffset: gpuOffset,
+                                transition: "stroke-dashoffset 0.3s ease-in-out",
+                                strokeLinecap: "round",
+                              }} />
+                            <text
+                              x={gaugeCenter}
+                              y={gaugeCenter}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fontSize={`${gaugeSize / 5}px`}
+                              fill="var(--sidebar-text)"
+                              fontWeight="bold"
+                            >
+                              {" "}
+                              {Math.round(
+                                Math.max(0, Math.min(100, gpuPercent || 0))
+                              )}%{" "}
+                            </text>
+                          </svg>
+                          <div className="gauge-label">
+                            {t("sections.stats.gpuLabel")}
+                          </div>
+                        </div>
+                        <div
+                          className="gauge-container"
+                          onMouseEnter={(e) => handleMouseEnter(e, "gpumem")}
+                          onMouseLeave={handleMouseLeave}
+                        >
+                          <svg
+                            width={gaugeSize}
+                            height={gaugeSize}
+                            viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                          >
+                            <circle
+                              stroke="var(--item-border)"
+                              fill="transparent"
+                              strokeWidth={gaugeStrokeWidth}
+                              r={gaugeRadius}
+                              cx={gaugeCenter}
+                              cy={gaugeCenter} />
+                            <circle
+                              stroke="var(--sidebar-header-color)"
+                              fill="transparent"
+                              strokeWidth={gaugeStrokeWidth}
+                              r={gaugeRadius}
+                              cx={gaugeCenter}
+                              cy={gaugeCenter}
+                              transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                              style={{
+                                strokeDasharray: gaugeCircumference,
+                                strokeDashoffset: gpuMemOffset,
+                                transition: "stroke-dashoffset 0.3s ease-in-out",
+                                strokeLinecap: "round",
+                              }} />
+                            <text
+                              x={gaugeCenter}
+                              y={gaugeCenter}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fontSize={`${gaugeSize / 5}px`}
+                              fill="var(--sidebar-text)"
+                              fontWeight="bold"
+                            >
+                              {" "}
+                              {Math.round(
+                                Math.max(0, Math.min(100, gpuMemPercent || 0))
+                              )}
+                              %{" "}
+                            </text>
+                          </svg>
+                          <div className="gauge-label">
+                            {t("sections.stats.gpuMemLabel")}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    <div
+                      className="gauge-container"
+                      onMouseEnter={(e) => handleMouseEnter(e, "fps")}
+                      onMouseLeave={handleMouseLeave}
+                    >
+                      {" "}
+                      <svg
+                        width={gaugeSize}
+                        height={gaugeSize}
+                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                      >
+                        {" "}
+                        <circle
+                          stroke="var(--item-border)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter} />{" "}
+                        <circle
+                          stroke="var(--sidebar-header-color)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter}
+                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                          style={{
+                            strokeDasharray: gaugeCircumference,
+                            strokeDashoffset: fpsOffset,
+                            transition: "stroke-dashoffset 0.3s ease-in-out",
+                            strokeLinecap: "round",
+                          }} />{" "}
+                        <text
+                          x={gaugeCenter}
+                          y={gaugeCenter}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={`${gaugeSize / 5}px`}
+                          fill="var(--sidebar-text)"
+                          fontWeight="bold"
+                        >
+                          {" "}
+                          {clientFps}{" "}
+                        </text>{" "}
+                      </svg>{" "}
+                      <div className="gauge-label">
+                        {t("sections.stats.fpsLabel")}
+                      </div>{" "}
+                    </div>
+                    <div
+                      className="gauge-container"
+                      onMouseEnter={(e) => handleMouseEnter(e, "audio")}
+                      onMouseLeave={handleMouseLeave}
+                    >
+                      {" "}
+                      <svg
+                        width={gaugeSize}
+                        height={gaugeSize}
+                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                      >
+                        {" "}
+                        <circle
+                          stroke="var(--item-border)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter} />{" "}
+                        <circle
+                          stroke="var(--sidebar-header-color)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter}
+                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                          style={{
+                            strokeDasharray: gaugeCircumference,
+                            strokeDashoffset: audioBufferOffset,
+                            transition: "stroke-dashoffset 0.3s ease-in-out",
+                            strokeLinecap: "round",
+                          }} />{" "}
+                        <text
+                          x={gaugeCenter}
+                          y={gaugeCenter}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={`${gaugeSize / 5}px`}
+                          fill="var(--sidebar-text)"
+                          fontWeight="bold"
+                        >
+                          {" "}
+                          {audioBuffer}{" "}
+                        </text>{" "}
+                      </svg>{" "}
+                      <div className="gauge-label">
+                        {t("sections.stats.audioLabel")}
+                      </div>{" "}
+                    </div>
+                    <div
+                      className="gauge-container"
+                      onMouseEnter={(e) => handleMouseEnter(e, "bandwidth")}
+                      onMouseLeave={handleMouseLeave}
+                    >
+                      {" "}
+                      <svg
+                        width={gaugeSize}
+                        height={gaugeSize}
+                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                      >
+                        {" "}
+                        <circle
+                          stroke="var(--item-border)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter} />{" "}
+                        <circle
+                          stroke="var(--sidebar-header-color)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter}
+                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                          style={{
+                            strokeDasharray: gaugeCircumference,
+                            strokeDashoffset: bandwidthOffset,
+                            transition: "stroke-dashoffset 0.3s ease-in-out",
+                            strokeLinecap: "round",
+                          }} />{" "}
+                        <text
+                          x={gaugeCenter}
+                          y={gaugeCenter}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={`${gaugeSize / 5}px`}
+                          fill="var(--sidebar-text)"
+                          fontWeight="bold"
+                        >
+                          {" "}
+                          {Math.round(bandwidthMbps)}{" "}
+                        </text>{" "}
+                      </svg>{" "}
+                      <div className="gauge-label">
+                        {t("sections.stats.bandwidthLabel", "Bandwidth")}
+                      </div>{" "}
+                    </div>
+                    <div
+                      className="gauge-container"
+                      onMouseEnter={(e) => handleMouseEnter(e, "latency")}
+                      onMouseLeave={handleMouseLeave}
+                    >
+                      {" "}
+                      <svg
+                        width={gaugeSize}
+                        height={gaugeSize}
+                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                      >
+                        {" "}
+                        <circle
+                          stroke="var(--item-border)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter} />{" "}
+                        <circle
+                          stroke="var(--sidebar-header-color)"
+                          fill="transparent"
+                          strokeWidth={gaugeStrokeWidth}
+                          r={gaugeRadius}
+                          cx={gaugeCenter}
+                          cy={gaugeCenter}
+                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                          style={{
+                            strokeDasharray: gaugeCircumference,
+                            strokeDashoffset: latencyOffset,
+                            transition: "stroke-dashoffset 0.3s ease-in-out",
+                            strokeLinecap: "round",
+                          }} />{" "}
+                        <text
+                          x={gaugeCenter}
+                          y={gaugeCenter}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={`${gaugeSize / 5}px`}
+                          fill="var(--sidebar-text)"
+                          fontWeight="bold"
+                        >
+                          {" "}
+                          {Math.round(latencyMs)}{" "}
+                        </text>{" "}
+                      </svg>{" "}
+                      <div className="gauge-label">
+                        {t("sections.stats.latencyLabel", "Latency")}
+                      </div>{" "}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          <div className="sidebar-section">
+            <div
+              className="sidebar-section-header"
+              onClick={() => toggleSection("clipboard")}
+              role="button"
+              aria-expanded={sectionsOpen.clipboard}
+              aria-controls="clipboard-content"
+              tabIndex="0"
+              onKeyDown={(e) =>
+                (e.key === "Enter" || e.key === " ") && toggleSection("clipboard")
+              }
+            >
+              <h3>{t("sections.clipboard.title")}</h3>{" "}
+              <span className="section-toggle-icon">
+                {sectionsOpen.clipboard ? <CaretUpIcon /> : <CaretDownIcon />}
+              </span>
+            </div>
+            {sectionsOpen.clipboard && (
+              <div className="sidebar-section-content" id="clipboard-content">
+                <div className="dev-setting-item toggle-item">
+                  <label 
+                    htmlFor="enableBinaryClipboardToggle"
+                    title={t("sections.clipboard.binaryModeDetails", "Allows copying and pasting images (e.g., PNG) to and from the remote session. May cause issues if a very large file is in the clipboard.")}
+                  >
+                    {t("sections.clipboard.binaryModeLabel", "Image Support")}
+                  </label>
+                  <button
+                    id="enableBinaryClipboardToggle"
+                    className={`toggle-button-sidebar ${enableBinaryClipboard ? "active" : ""}`}
+                    onClick={handleEnableBinaryClipboardToggle}
+                    aria-pressed={enableBinaryClipboard}
+                    title={t(enableBinaryClipboard ? "buttons.binaryClipboardDisableTitle" : "buttons.binaryClipboardEnableTitle",
+                              enableBinaryClipboard ? "Disable Image Clipboard" : "Enable Image Clipboard")}
+                  >
+                    <span className="toggle-button-sidebar-knob"></span>
+                  </button>
+                </div>
+                <div className="dashboard-clipboard-item">
+                  {" "}
+                  <label htmlFor="dashboardClipboardTextarea">
+                    {t("sections.clipboard.label")}
+                  </label>{" "}
+                  <textarea
+                    className="allow-native-input"
+                    id="dashboardClipboardTextarea"
+                    value={dashboardClipboardContent}
+                    onChange={handleClipboardChange}
+                    onBlur={handleClipboardBlur}
+                    rows="5"
+                    placeholder={t("sections.clipboard.placeholder")}
+                  />{" "}
+                </div>{" "}
+              </div>
+            )}
+          </div>
+          </>
+        )}
+
+        {!isSecondaryDisplay && (
+          <>
+            <div className="sidebar-section">
+              <div
+                className="sidebar-section-header"
+                onClick={() => toggleSection("files")}
+                role="button"
+                aria-expanded={sectionsOpen.files}
+                aria-controls="files-content"
+                tabIndex="0"
+                onKeyDown={(e) =>
+                  (e.key === "Enter" || e.key === " ") && toggleSection("files")
+                }
+              >
+                <h3>{t("sections.files.title")}</h3>{" "}
+                <span className="section-toggle-icon">
+                  {sectionsOpen.files ? <CaretUpIcon /> : <CaretDownIcon />}
+                </span>
+              </div>
+              {sectionsOpen.files && (
+                <div className="sidebar-section-content" id="files-content">
+                  {" "}
+                  <button
+                    className="resolution-button"
+                    onClick={handleUploadClick}
+                    style={{ marginTop: "5px", marginBottom: "5px" }}
+                    title={t("sections.files.uploadButtonTitle")}
+                  >
+                    {" "}
+                    {t("sections.files.uploadButton")}{" "}
+                  </button>{" "}
+                  <button
+                    className="resolution-button"
+                    onClick={toggleFilesModal}
+                    style={{ marginTop: "5px", marginBottom: "5px" }}
+                    title={t(
+                      "sections.files.downloadButtonTitle",
+                      "Download Files"
+                    )}
+                  >
+                    {" "}
+                    {t("sections.files.downloadButtonTitle", "Download Files")}{" "}
+                  </button>{" "}
+                </div>
+              )}
+            </div>
+
+            <div className="sidebar-section">
+              <div
+                className="sidebar-section-header"
+                onClick={() => toggleSection("apps")}
+                role="button"
+                aria-expanded={sectionsOpen.apps}
+                aria-controls="apps-content"
+                tabIndex="0"
+                onKeyDown={(e) =>
+                  (e.key === "Enter" || e.key === " ") && toggleSection("apps")
+                }
+              >
+                <h3>{t("sections.apps.title", "Apps")}</h3>{" "}
+                <span className="section-toggle-icon">
+                  {sectionsOpen.apps ? <CaretUpIcon /> : <CaretDownIcon />}
+                </span>
+              </div>
+              {sectionsOpen.apps && (
+                <div className="sidebar-section-content" id="apps-content">
+                  {" "}
+                  <button
+                    className="resolution-button"
+                    onClick={toggleAppsModal}
+                    style={{ marginTop: "5px", marginBottom: "5px" }}
+                    title={t("sections.apps.openButtonTitle", "Manage Apps")}
+                  >
+                    {" "}
+                    <AppsIcon />{" "}
+                    <span style={{ marginLeft: "8px" }}>
+                      {t("sections.apps.openButton", "Manage Apps")}
+                    </span>{" "}
+                  </button>{" "}
+                </div>
+              )}
+            </div>
+
+            <div className="sidebar-section">
+              <div
+                className="sidebar-section-header"
+                onClick={() => toggleSection("sharing")}
+                role="button"
+                aria-expanded={sectionsOpen.sharing}
+                aria-controls="sharing-content"
+                tabIndex="0"
+                onKeyDown={(e) =>
+                  (e.key === "Enter" || e.key === " ") &&
+                  toggleSection("sharing")
+                }
+              >
+                <h3>{t("sections.sharing.title", "Sharing")}</h3>
+                <span className="section-toggle-icon">
+                  {sectionsOpen.sharing ? <CaretUpIcon /> : <CaretDownIcon />}
+                </span>
+              </div>
+              {sectionsOpen.sharing && (
+                <div className="sidebar-section-content" id="sharing-content">
+                  {sharingLinks.map((link) => {
+                    const fullUrl = `${baseUrl}${link.hash}`;
+                    return (
+                      <div
+                        key={link.id}
+                        className="sharing-link-item"
+                        title={link.tooltip}
+                      >
+                        <span className="sharing-link-label">
+                          {link.label}
+                        </span>
+                        <div className="sharing-link-actions">
+                          <a
+                            href={fullUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="sharing-link"
+                            title={`Open ${link.label} link in new tab`}
+                          >
+                            {fullUrl}
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(fullUrl, link.label)}
+                            className="copy-button"
+                            title={`Copy ${link.label} link`}
+                          >
+                            <CopyIcon />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="sidebar-section">
+              <div
+                className="sidebar-section-header"
+                onClick={() => toggleSection("gamepads")}
+                role="button"
+                aria-expanded={sectionsOpen.gamepads}
+                aria-controls="gamepads-content"
+                tabIndex="0"
+                onKeyDown={(e) =>
+                  (e.key === "Enter" || e.key === " ") &&
+                  toggleSection("gamepads")
+                }
+              >
+                <h3>{t("sections.gamepads.title", "Gamepads")}</h3>
+                <span className="section-toggle-icon" aria-hidden="true">
+                  {sectionsOpen.gamepads ? <CaretUpIcon /> : <CaretDownIcon />}
+                </span>
+              </div>
+              {sectionsOpen.gamepads && (
+                <div className="sidebar-section-content" id="gamepads-content">
                   <div
                     className="dev-setting-item"
                     style={{ marginBottom: "10px" }}
@@ -3200,50 +3340,51 @@ function Sidebar({ isOpen }) {
                       </span>
                     </button>
                   </div>
-                }
 
-                {isMobile && isTouchGamepadActive ? (
-                  <p>
-                    {t(
-                      "sections.gamepads.physicalHiddenForTouch",
-                      "Physical gamepad display is hidden while touch gamepad is active."
-                    )}
-                  </p>
-                ) : (
-                  <>
-                    {Object.keys(gamepadStates).length > 0 ? (
-                      Object.keys(gamepadStates)
-                        .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
-                        .map((gpIndexStr) => {
-                          const gpIndex = parseInt(gpIndexStr, 10);
-                          return (
-                            <GamepadVisualizer
-                              key={gpIndex}
-                              gamepadIndex={gpIndex}
-                              gamepadState={gamepadStates[gpIndex]}
-                            />
-                          );
-                        })
-                    ) : (
-                      <p className="no-gamepads-message">
-                        {isMobile
-                          ? t(
-                              "sections.gamepads.noActivityMobileOrEnableTouch",
-                              "No physical gamepads. Enable touch gamepad or connect a controller."
-                            )
-                          : t(
-                              "sections.gamepads.noActivity",
-                              "No physical gamepad activity detected."
-                            )}
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        }
+                  {isMobile && isTouchGamepadActive ? (
+                    <p>
+                      {t(
+                        "sections.gamepads.physicalHiddenForTouch",
+                        "Physical gamepad display is hidden while touch gamepad is active."
+                      )}
+                    </p>
+                  ) : (
+                    <>
+                      {Object.keys(gamepadStates).length > 0 ? (
+                        Object.keys(gamepadStates)
+                          .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+                          .map((gpIndexStr) => {
+                            const gpIndex = parseInt(gpIndexStr, 10);
+                            return (
+                              <GamepadVisualizer
+                                key={gpIndex}
+                                gamepadIndex={gpIndex}
+                                gamepadState={gamepadStates[gpIndex]}
+                              />
+                            );
+                          })
+                      ) : (
+                        <p className="no-gamepads-message">
+                          {isMobile
+                            ? t(
+                                "sections.gamepads.noActivityMobileOrEnableTouch",
+                                "No physical gamepads. Enable touch gamepad or connect a controller."
+                              )
+                            : t(
+                                "sections.gamepads.noActivity",
+                                "No physical gamepad activity detected."
+                              )}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
+
 
       {hoveredItem && (
         <div
