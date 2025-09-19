@@ -931,8 +931,8 @@ class DataStreamingServer:
 
         # State for window manager swapping
         self._last_display_count = 0
-        self._default_wm_replace_cmd = None
         self._is_wm_swapped = False
+        self._wm_swap_is_supported = None
 
     async def broadcast_display_config(self):
         """Broadcasts the current display configuration to all clients."""
@@ -1523,9 +1523,6 @@ class DataStreamingServer:
         raddr = websocket.remote_address
         data_logger.info(f"Data WebSocket connected from {raddr}")
         self.clients.add(websocket)
-        if len(self.clients) > 1 and 'primary' in self.display_clients:
-            data_logger.info(f"New client {raddr} connected. Triggering reconfiguration for stream sync.")
-            asyncio.create_task(self.reconfigure_displays())
         self.data_ws = (
             websocket 
         )
@@ -2875,19 +2872,13 @@ class DataStreamingServer:
         try:
             current_display_count = len(self.display_clients)
 
-            if self._default_wm_replace_cmd is None:
-                if which("xfce4-session"):
-                    self._default_wm_replace_cmd = ["xfwm4", "--replace"]
-                    data_logger.info("Detected XFCE. Default WM is xfwm4.")
-                elif which("startplasma-x11"):
-                    self._default_wm_replace_cmd = ["kwin_x11", "--replace"]
-                    data_logger.info("Detected KDE Plasma. Default WM is kwin_x11.")
+            if self._wm_swap_is_supported is None:
+                if which("xfce4-session") or which("startplasma-x11"):
+                    self._wm_swap_is_supported = True
                 else:
-                    self._default_wm_replace_cmd = []
-                    data_logger.info("DE is not KDE or XFCE. WM swapping is disabled.")
+                    self._wm_swap_is_supported = False
 
-            if (current_display_count > 1 and self._last_display_count <= 1 and
-                    self._default_wm_replace_cmd and not self._is_wm_swapped):
+            if (current_display_count > 1 and self._wm_swap_is_supported and not self._is_wm_swapped):
                 data_logger.info("Multi-monitor setup: switching to Openbox with a minimal config.")
 
                 config_path = "/tmp/openbox_selkies_config.xml"
