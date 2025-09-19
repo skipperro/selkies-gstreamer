@@ -2894,8 +2894,6 @@ class DataStreamingServer:
 
                 await self._run_detached_command(openbox_cmd, "switch to openbox")
                 self._is_wm_swapped = True
-                if self.input_handler:
-                    await self.input_handler.reconnect_x_display()
 
             if self.capture_instances or any(d.get('backpressure_task') for d in self.display_clients.values()):
                 data_logger.info("Stopping all existing capture and backpressure tasks...")
