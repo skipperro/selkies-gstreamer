@@ -24,7 +24,6 @@ let audioWorkletProcessorPort;
 window.currentAudioBufferSize = 0;
 let videoFrameBuffer = [];
 let jpegStripeRenderQueue = [];
-let videoBufferSize = 0;
 let triggerInitializeDecoder = () => {
   console.error("initializeDecoder function not yet assigned!");
 };
@@ -38,10 +37,10 @@ let initializationComplete = false;
 let displayId = 'primary';
 let displayPosition = 'right';
 const PER_DISPLAY_SETTINGS = [
-    'videoBitRate', 'videoFramerate', 'videoCRF', 'h264_fullcolor',
+    'videoFramerate', 'videoCRF', 'h264_fullcolor',
     'h264_streaming_mode', 'jpegQuality', 'paintOverJpegQuality', 'useCpu',
     'h264_paintover_crf', 'h264_paintover_burst_frames', 'use_paint_over_quality',
-    'resizeRemote', 'isManualResolutionMode', 'manualWidth', 'manualHeight',
+    'isManualResolutionMode', 'manualWidth', 'manualHeight',
     'encoder', 'scaleLocallyManual', 'useBrowserCursors'
 ];
 // Microphone related resources
@@ -160,7 +159,6 @@ fetch('manifest.json')
     // Pass
   });
 
-let videoBitRate = 8000;
 let videoFramerate = 60;
 let videoCRF = 25;
 let h264_fullcolor = false;
@@ -179,24 +177,6 @@ const gamepad = {
   gamepadState: 'disconnected',
   gamepadName: 'none',
 };
-const connectionStat = {
-  connectionStatType: 'unknown',
-  connectionLatency: 0,
-  connectionVideoLatency: 0,
-  connectionAudioLatency: 0,
-  connectionAudioCodecName: 'NA',
-  connectionAudioBitrate: 0,
-  connectionPacketsReceived: 0,
-  connectionPacketsLost: 0,
-  connectionBytesReceived: 0,
-  connectionBytesSent: 0,
-  connectionCodec: 'unknown',
-  connectionVideoDecoder: 'unknown',
-  connectionResolution: '',
-  connectionFrameRate: 0,
-  connectionVideoBitrate: 0,
-  connectionAvailableBandwidth: 0,
-};
 const gpuStat = {
   gpuLoad: 0,
   gpuMemoryTotal: 0,
@@ -211,7 +191,6 @@ const networkStat = {
   bandwidthMbps: 0,
   latencyMs: 0,
 };
-let resizeRemote = true;
 let debug = false;
 let streamStarted = false;
 let inputInitialized = false;
@@ -222,8 +201,6 @@ let uniqueStripedFrameIdsThisPeriod = new Set();
 let lastStripedFpsUpdateTime = performance.now();
 let lastFpsUpdateTime = performance.now();
 let statusDisplayElement;
-let videoElement;
-let audioElement;
 let playButtonElement;
 let overlayInput;
 
@@ -294,8 +271,6 @@ const setStringParam = (key, value) => {
   }
 };
 
-videoBitRate = getIntParam('videoBitRate', videoBitRate);
-setIntParam('videoBitRate', videoBitRate);
 videoFramerate = getIntParam('videoFramerate', videoFramerate);
 setIntParam('videoFramerate', videoFramerate);
 videoCRF = getIntParam('videoCRF', videoCRF);
@@ -318,12 +293,8 @@ use_paint_over_quality = getBoolParam('use_paint_over_quality', use_paint_over_q
 setBoolParam('use_paint_over_quality', use_paint_over_quality);
 audioBitRate = getIntParam('audioBitRate', audioBitRate);
 setIntParam('audioBitRate', audioBitRate);
-resizeRemote = getBoolParam('resizeRemote', resizeRemote);
-setBoolParam('resizeRemote', resizeRemote);
 debug = getBoolParam('debug', debug);
 setBoolParam('debug', debug);
-videoBufferSize = getIntParam('videoBufferSize', 0);
-setIntParam('videoBufferSize', videoBufferSize);
 currentEncoderMode = getStringParam('encoder', 'x264enc');
 setStringParam('encoder', currentEncoderMode);
 scaleLocallyManual = getBoolParam('scaleLocallyManual', true);
@@ -745,11 +716,6 @@ const initializeUI = () => {
   overlayInput.id = 'overlayInput';
   videoContainer.appendChild(overlayInput);
 
-  videoElement = document.createElement('video');
-  videoElement.id = 'stream';
-  videoElement.style.display = 'none';
-  videoContainer.appendChild(videoElement);
-
   canvas = document.getElementById('videoCanvas');
   if (!canvas) {
     canvas = document.createElement('canvas');
@@ -782,11 +748,6 @@ const initializeUI = () => {
   if (!canvasContext) {
     console.error('Failed to get 2D rendering context');
   }
-
-  audioElement = document.createElement('audio');
-  audioElement.id = 'audio_stream';
-  audioElement.style.display = 'none';
-  videoContainer.appendChild(audioElement);
 
   playButtonElement = document.createElement('button');
   playButtonElement.id = 'playButton';
@@ -1767,17 +1728,6 @@ async function sendClipboardData(data, mimeType = 'text/plain') {
 
 function handleSettingsMessage(settings) {
   console.log('Applying settings:', settings);
-  if (settings.videoBitRate !== undefined) {
-    videoBitRate = parseInt(settings.videoBitRate);
-    setIntParam('videoBitRate', videoBitRate);
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
-      const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send video bitrate setting.");
-    }
-  }
   if (settings.videoFramerate !== undefined) {
     videoFramerate = parseInt(settings.videoFramerate);
     setIntParam('videoFramerate', videoFramerate);
@@ -1788,11 +1738,6 @@ function handleSettingsMessage(settings) {
     } else if (!isSharedMode) {
       console.warn("Websocket connection not open, cannot send framerate setting.");
     }
-  }
-  if (settings.resizeRemote !== undefined) {
-    resizeRemote = settings.resizeRemote;
-    setBoolParam('resizeRemote', resizeRemote);
-    console.warn("ResizeRemote setting received; for websockets, server ENABLE_RESIZE and client 'r,' messages control resizing.");
   }
   if (settings.encoder !== undefined) {
     const newEncoderSetting = settings.encoder;
@@ -1878,11 +1823,6 @@ function handleSettingsMessage(settings) {
     } else {
       console.log(`Encoder setting received (${newEncoderSetting}), but it's the same as current (${oldEncoderActual}). No change.`);
     }
-  }
-  if (settings.videoBufferSize !== undefined) {
-    videoBufferSize = parseInt(settings.videoBufferSize);
-    setIntParam('videoBufferSize', videoBufferSize);
-    console.log(`Applied Video buffer size setting: ${videoBufferSize} frames.`);
   }
   if (settings.videoCRF !== undefined) {
     videoCRF = parseInt(settings.videoCRF, 10);
@@ -2107,7 +2047,6 @@ function handleSettingsMessage(settings) {
 
 function sendStatsMessage() {
   const stats = {
-    connection: connectionStat,
     gpu: gpuStat,
     cpu: cpuStat,
     network: networkStat,
@@ -2482,7 +2421,7 @@ function handleDecodedFrame(frame) {
                 (!isSharedMode && currentEncoderMode !== 'jpeg' && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped') ) {
       if (!document.hidden || (isSharedMode && sharedClientState === 'ready')) {
         if ( (isSharedMode && sharedClientState === 'ready') || (!isSharedMode && isVideoPipelineActive) ) {
-           const bufferLimit = (isSharedMode && sharedClientState === 'ready') ? 0 : videoBufferSize;
+           const bufferLimit = 0;
            if (videoFrameBuffer.length > bufferLimit) {
                 const frameToPaint = videoFrameBuffer.shift();
                 if (frameToPaint) {
@@ -2791,14 +2730,11 @@ function handleDecodedFrame(frame) {
             continue;
           }
           let serverExpectedKey = null;
-          if (baseKey === 'videoBitRate') serverExpectedKey = 'webrtc_videoBitRate';
-          else if (baseKey === 'videoFramerate') serverExpectedKey = 'webrtc_videoFramerate';
+          if (baseKey === 'videoFramerate') serverExpectedKey = 'webrtc_videoFramerate';
           else if (baseKey === 'videoCRF') serverExpectedKey = 'webrtc_videoCRF';
           else if (baseKey === 'encoder') serverExpectedKey = 'webrtc_encoder';
-          else if (baseKey === 'resizeRemote') serverExpectedKey = 'webrtc_resizeRemote';
           else if (baseKey === 'isManualResolutionMode') serverExpectedKey = 'webrtc_isManualResolutionMode';
           else if (baseKey === 'audioBitRate') serverExpectedKey = 'webrtc_audioBitRate';
-          else if (baseKey === 'videoBufferSize') serverExpectedKey = 'webrtc_videoBufferSize';
           else if (baseKey === 'h264_fullcolor') serverExpectedKey = 'webrtc_h264_fullcolor';
           else if (baseKey === 'h264_streaming_mode') serverExpectedKey = 'webrtc_h264_streaming_mode';
           else if (baseKey === 'jpegQuality') serverExpectedKey = 'pixelflux_jpeg_quality';
@@ -2815,7 +2751,6 @@ function handleDecodedFrame(frame) {
             }
             let value = localStorage.getItem(key);
             const booleanSettingKeys = [
-              'webrtc_resizeRemote',
               'webrtc_isManualResolutionMode',
               'webrtc_h264_fullcolor',
               'webrtc_h264_streaming_mode',

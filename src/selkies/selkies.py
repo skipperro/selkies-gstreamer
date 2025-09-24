@@ -14,8 +14,6 @@ STALLED_CLIENT_TIMEOUT_SECONDS = 4.0
 RTT_SMOOTHING_SAMPLES = 20
 SENT_FRAME_TIMESTAMP_HISTORY_SIZE = 1000
 TARGET_FRAMERATE = 60
-TARGET_VIDEO_BITRATE_KBPS = 16000
-MIN_VIDEO_BITRATE_KBPS = 500
 
 UINPUT_MOUSE_SOCKET = ""
 JS_SOCKET_PATH = "/tmp"
@@ -28,7 +26,6 @@ ENABLE_RESIZE = True
 AUDIO_CHANNELS_DEFAULT = 2
 AUDIO_BITRATE_DEFAULT = 320000
 GPU_ID_DEFAULT = 0
-KEYFRAME_DISTANCE_DEFAULT = -1.0
 PIXELFLUX_VIDEO_ENCODERS = ["jpeg", "x264enc", "x264enc-striped"]
 
 import logging
@@ -116,7 +113,6 @@ class SelkiesStreamingApp:
         async_event_loop,
         framerate,
         encoder,
-        video_bitrate,
         data_streaming_server=None,
         mode="websockets",
     ):
@@ -129,25 +125,10 @@ class SelkiesStreamingApp:
         self.audio_channels = AUDIO_CHANNELS_DEFAULT
         self.gpu_id = GPU_ID_DEFAULT
         self.audio_bitrate = AUDIO_BITRATE_DEFAULT
-        self.keyframe_distance = KEYFRAME_DISTANCE_DEFAULT
         self.encoder = encoder
         self.framerate = framerate
-        self.video_bitrate = video_bitrate
-        self.min_keyframe_frame_distance = 60
-        self.keyframe_frame_distance = (
-            -1
-            if self.keyframe_distance == -1.0
-            else max(
-                self.min_keyframe_frame_distance,
-                int(self.framerate * self.keyframe_distance),
-            )
-        )
         self.last_cursor_sent = None
         self.data_streaming_server = data_streaming_server
-        self._current_server_fps = 0.0
-        self._ws_frame_count = 0
-        self._ws_fps_last_calc_time = time.monotonic()
-        self._fps_interval_sec = 2.0
 
     async def send_ws_clipboard_data(self, data, mime_type="text/plain"):
         """
@@ -222,19 +203,8 @@ class SelkiesStreamingApp:
 
     stop_ws_pipeline = stop_pipeline
 
-    def get_current_server_fps(self):
-        return self._current_server_fps
-
     def set_framerate(self, framerate):
         self.framerate = int(framerate)
-        self.keyframe_frame_distance = (
-            -1
-            if self.keyframe_distance == -1.0
-            else max(
-                self.min_keyframe_frame_distance,
-                int(self.framerate * self.keyframe_distance),
-            )
-        )
         logger_gst_app.info(
             f"Framerate for {self.encoder} set to {self.framerate}. Restart pipeline if active."
         )
@@ -899,10 +869,6 @@ class DataStreamingServer:
         self.input_handler = None
         self._last_adjustment_timestamp = 0.0
         self.client_settings_received = None
-        self._initial_target_bitrate_kbps = (
-            self.app.video_bitrate if self.app else TARGET_VIDEO_BITRATE_KBPS
-        )
-        self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
         self._reconfigure_lock = asyncio.Lock()
         self._is_reconfiguring = False
         self._bytes_sent_in_interval = 0
@@ -1265,96 +1231,6 @@ class DataStreamingServer:
             data_logger.info(f"Broadcasting primary stream resolution to all clients: {message_str}")
             websockets.broadcast(self.clients, message_str)
 
-    def _x264_striped_stripe_callback(self, result_ptr, user_data):
-        current_async_loop = (
-            self.capture_loop
-        )
-        if (
-            not self.capture_instances
-            or not current_async_loop
-            or not self.clients 
-            or not result_ptr
-        ):
-            return
-        try:
-            result = result_ptr.contents
-            if result.size <= 0:
-                return
-            payload_from_cpp = bytes(result.data[:result.size])
-            clients_ref = self.clients
-            data_to_send_ref = payload_from_cpp
-            frame_id_ref = result.frame_id
-
-            async def _broadcast_x264_data_and_update_frame_id():
-                self.update_last_sent_frame_id(
-                    frame_id_ref
-                )
-                if not self._backpressure_send_frames_enabled:
-                    return
-                if clients_ref:
-                    self._bytes_sent_in_interval += len(data_to_send_ref)
-                    websockets.broadcast(clients_ref, data_to_send_ref)
-            if current_async_loop and current_async_loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    _broadcast_x264_data_and_update_frame_id(), current_async_loop
-                )
-        except Exception as e:
-            data_logger.error(f"X264-Striped callback error: {e}", exc_info=True)
-
-    async def _start_x264_striped_pipeline(self):
-        data_logger.warning("_start_x264_striped_pipeline called directly. This is deprecated. Triggering reconfigure_displays instead.")
-        await self.reconfigure_displays()
-        return True
-
-    async def _stop_x264_striped_pipeline(self):
-        data_logger.warning("_stop_x264_striped_pipeline called directly. This is deprecated. Triggering reconfigure_displays instead.")
-        await self.reconfigure_displays()
-        return True
-
-    def _jpeg_stripe_callback(self, result_ptr, user_data):
-        current_async_loop = (
-            self.capture_loop
-        )
-        if (
-            not self.capture_instances
-            or not current_async_loop
-            or not self.clients
-            or not result_ptr
-        ):
-            return
-        try:
-            result = result_ptr.contents
-            if result.size <= 0:
-                return
-            jpeg_buffer = bytes(result.data[:result.size])
-            clients_ref = self.clients
-            prefixed_jpeg_data = b"\x03\x00" + jpeg_buffer
-            frame_id_ref = result.frame_id
-            async def _broadcast_jpeg_data_and_update_frame_id():
-                self.update_last_sent_frame_id(
-                    frame_id_ref
-                )
-                if not self._backpressure_send_frames_enabled:
-                    return
-                if clients_ref:
-                    self._bytes_sent_in_interval += len(prefixed_jpeg_data)
-                    websockets.broadcast(clients_ref, prefixed_jpeg_data)
-            if current_async_loop and current_async_loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    _broadcast_jpeg_data_and_update_frame_id(), current_async_loop
-                )
-        except Exception as e:
-            data_logger.error(f"JPEG callback error: {e}", exc_info=True)
-
-    def update_last_sent_frame_id(self, frame_id: int):
-        self._active_pipeline_last_sent_frame_id = frame_id
-        now = time.monotonic()
-        self._sent_frame_timestamps[frame_id] = now
-        if len(self._sent_frame_timestamps) > SENT_FRAME_TIMESTAMP_HISTORY_SIZE:
-            self._sent_frame_timestamps.popitem(last=False)
-        if hasattr(self, "_sent_frames_log"):
-            self._sent_frames_log.append((now, frame_id))
-
     def _parse_settings_payload(self, payload_str: str) -> dict:
         settings_data = json.loads(payload_str)
         parsed = {}
@@ -1371,18 +1247,11 @@ class DataStreamingServer:
             v = settings_data.get(k)
             return str(v) if v is not None else d
 
-        parsed["videoBitRate"] = get_int(
-            "webrtc_videoBitRate", self.app.video_bitrate * 1000
-        )
         parsed["videoFramerate"] = get_int("webrtc_videoFramerate", self.app.framerate)
         parsed["videoCRF"] = get_int("webrtc_videoCRF", self.h264_crf)
         parsed["encoder"] = get_str("webrtc_encoder", self.app.encoder)
         parsed["h264_fullcolor"] = get_bool("webrtc_h264_fullcolor", self.h264_fullcolor)
         parsed["h264_streaming_mode"] = get_bool("webrtc_h264_streaming_mode", self.h264_streaming_mode)
-        parsed["resizeRemote"] = get_bool(
-            "webrtc_resizeRemote",
-            getattr(self.app, "client_preferred_resize_enabled", True),
-        )
         parsed["isManualResolutionMode"] = get_bool(
             "webrtc_isManualResolutionMode",
             getattr(self.app, "client_is_manual_resolution_mode", False),
@@ -1396,9 +1265,6 @@ class DataStreamingServer:
             getattr(self.app, "client_manual_height", self.app.display_height),
         )
         parsed["audioBitRate"] = get_int("webrtc_audioBitRate", self.app.audio_bitrate)
-        parsed["videoBufferSize"] = get_int(
-            "webrtc_videoBufferSize", getattr(self.app, "video_buffer_size", 0)
-        )
         parsed["initialClientWidth"] = get_int(
             "webrtc_initialClientWidth", self.app.display_width
         )
@@ -1519,7 +1385,7 @@ class DataStreamingServer:
             self.client_settings_received.set()
 
     async def ws_handler(self, websocket):
-        global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
+        global TARGET_FRAMERATE
         raddr = websocket.remote_address
         data_logger.info(f"Data WebSocket connected from {raddr}")
         self.clients.add(websocket)
@@ -1569,8 +1435,6 @@ class DataStreamingServer:
                 self.data_ws = None
             return
 
-        self._initial_target_bitrate_kbps = self.app.video_bitrate
-        self._current_target_bitrate_kbps = self._initial_target_bitrate_kbps
         self._last_adjustment_time = self._last_time_client_ok = time.monotonic()
         self._active_pipeline_last_sent_frame_id = 0
         self._client_acknowledged_frame_id = -1
@@ -3404,12 +3268,6 @@ async def main():
         help="Target framerate",
     )
     parser.add_argument(
-        "--video_bitrate",
-        default=os.environ.get("SELKIES_VIDEO_BITRATE", "16000"),
-        type=int,
-        help="Target video bitrate in kbps",
-    )
-    parser.add_argument(
         "--dri_node",
         default=os.environ.get("DRI_NODE", ""),
         type=str,
@@ -3458,9 +3316,8 @@ async def main():
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args, unknown = parser.parse_known_args()
-    global TARGET_FRAMERATE, TARGET_VIDEO_BITRATE_KBPS
+    global TARGET_FRAMERATE
     TARGET_FRAMERATE = args.framerate
-    TARGET_VIDEO_BITRATE_KBPS = args.video_bitrate
     initial_encoder = args.encoder.lower()
 
     if args.debug:
@@ -3473,7 +3330,7 @@ async def main():
 
     logger.info(f"Starting Selkies (WebSocket Mode) with args: {args}")
     logger.info(
-        f"Initial Encoder: {initial_encoder}, Framerate: {TARGET_FRAMERATE}, Bitrate: {TARGET_VIDEO_BITRATE_KBPS}kbps"
+        f"Initial Encoder: {initial_encoder}, Framerate: {TARGET_FRAMERATE}"
     )
 
     event_loop = asyncio.get_running_loop()
@@ -3482,7 +3339,6 @@ async def main():
         event_loop,
         framerate=TARGET_FRAMERATE,
         encoder=initial_encoder,
-        video_bitrate=TARGET_VIDEO_BITRATE_KBPS,
         mode="websockets",
     )
     app.server_enable_resize = ENABLE_RESIZE
