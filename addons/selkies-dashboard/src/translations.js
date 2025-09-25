@@ -12,7 +12,6 @@ const simpleInterpolate = (str, variables) => {
 // --- English Translations (Default) ---
 const en = {
     selkiesLogoAlt: "Selkies Logo",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Toggle Theme",
     fullscreenTitle: "Enter Fullscreen",
     gamingModeTitle: "Gaming Mode",
@@ -203,7 +202,6 @@ const en = {
 // --- Spanish Translations (Complete) ---
 const es = {
     selkiesLogoAlt: "Logo de Selkies",
-    selkiesTitle: "Selkies", // Proper noun
     toggleThemeTitle: "Cambiar Tema",
     fullscreenTitle: "Entrar en Pantalla Completa",
     gamingModeTitle: "Modo Juego",
@@ -394,7 +392,6 @@ const es = {
 // --- Chinese (Simplified) Translations ---
 const zh = {
     selkiesLogoAlt: "Selkies 徽标",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "切换主题",
     fullscreenTitle: "进入全屏",
     gamingModeTitle: "游戏模式",
@@ -585,7 +582,6 @@ const zh = {
 // --- Hindi Translations ---
 const hi = {
     selkiesLogoAlt: "सेल्कीस लोगो",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "थीम बदलें",
     fullscreenTitle: "फुलस्क्रीन दर्ज करें",
     gamingModeTitle: "गेमिंग मोड",
@@ -776,7 +772,6 @@ const hi = {
 // --- Portuguese Translations ---
 const pt = {
     selkiesLogoAlt: "Logo Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Alternar Tema",
     fullscreenTitle: "Entrar em Tela Cheia",
     gamingModeTitle: "Modo de Jogo",
@@ -967,7 +962,6 @@ const pt = {
 // --- French Translations ---
 const fr = {
     selkiesLogoAlt: "Logo Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Changer de thème",
     fullscreenTitle: "Passer en plein écran",
     gamingModeTitle: "Mode Jeu",
@@ -1158,7 +1152,6 @@ const fr = {
 // --- Russian Translations ---
 const ru = {
     selkiesLogoAlt: "Логотип Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Переключить тему",
     fullscreenTitle: "Войти в полноэкранный режим",
     gamingModeTitle: "Игровой режим",
@@ -1349,7 +1342,6 @@ const ru = {
 // --- German Translations ---
 const de = {
     selkiesLogoAlt: "Selkies Logo",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Theme wechseln",
     fullscreenTitle: "Vollbildmodus aktivieren",
     gamingModeTitle: "Gaming-Modus",
@@ -1540,7 +1532,6 @@ const de = {
 // --- Turkish Translations ---
 const tr = {
     selkiesLogoAlt: "Selkies Logosu",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Temayı Değiştir",
     fullscreenTitle: "Tam Ekrana Gir",
     gamingModeTitle: "Oyun Modu",
@@ -1731,7 +1722,6 @@ const tr = {
 // --- Italian Translations ---
 const it = {
     selkiesLogoAlt: "Logo Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Cambia Tema",
     fullscreenTitle: "Entra in Schermo Intero",
     gamingModeTitle: "Modalità Gioco",
@@ -1922,7 +1912,6 @@ const it = {
 // --- Dutch Translations ---
 const nl = {
     selkiesLogoAlt: "Selkies Logo",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Thema wisselen",
     fullscreenTitle: "Volledig scherm openen",
     gamingModeTitle: "Gaming Modus",
@@ -2113,7 +2102,6 @@ const nl = {
 // --- Arabic Translations ---
 const ar = {
     selkiesLogoAlt: "شعار Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "تبديل السمة",
     fullscreenTitle: "الدخول في وضع ملء الشاشة",
     gamingModeTitle: "وضع الألعاب",
@@ -2304,7 +2292,6 @@ const ar = {
 // --- Korean Translations ---
 const ko = {
     selkiesLogoAlt: "Selkies 로고",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "테마 전환",
     fullscreenTitle: "전체 화면 시작",
     gamingModeTitle: "게임 모드",
@@ -2495,7 +2482,6 @@ const ko = {
 // --- Japanese Translations ---
 const ja = {
     selkiesLogoAlt: "Selkies ロゴ",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "テーマを切り替え",
     fullscreenTitle: "フルスクリーンに入る",
     gamingModeTitle: "ゲームモード",
@@ -2686,7 +2672,6 @@ const ja = {
 // --- Vietnamese Translations ---
 const vi = {
     selkiesLogoAlt: "Logo Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Chuyển đổi Chủ đề",
     fullscreenTitle: "Vào Toàn màn hình",
     gamingModeTitle: "Chế độ Chơi game",
@@ -2877,7 +2862,6 @@ const vi = {
 // --- Thai Translations ---
 const th = {
     selkiesLogoAlt: "โลโก้ Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "สลับธีม",
     fullscreenTitle: "เข้าสู่โหมดเต็มหน้าจอ",
     gamingModeTitle: "โหมดเกมมิ่ง",
@@ -3068,7 +3052,6 @@ const th = {
 // --- Filipino Translations ---
 const fil = {
     selkiesLogoAlt: "Logo ng Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "I-toggle ang Tema",
     fullscreenTitle: "Pumasok sa Fullscreen",
     gamingModeTitle: "Gaming Mode",
@@ -3259,7 +3242,6 @@ const fil = {
 // --- Danish Translations ---
 const da = {
     selkiesLogoAlt: "Selkies Logo",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Skift tema",
     fullscreenTitle: "Start Fuldskærm",
     gamingModeTitle: "Spiltilstand",

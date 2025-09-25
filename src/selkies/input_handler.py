@@ -1208,7 +1208,6 @@ class WebRTCInput:
             if layout:
                 offset_x = layout.get('x', 0)
                 offset_y = layout.get('y', 0)
-                logger_webrtc_input.debug(f"Applying offset_x={offset_x}, offset_y={offset_y} for display '{display_id}'. Original coords={x},{y}")
         final_x = x + offset_x
         final_y = y + offset_y
         position_changed = (final_x != self.last_x or final_y != self.last_y)
@@ -1389,7 +1388,7 @@ class WebRTCInput:
                     curr_data_bytes = curr_data.encode('utf-8') if isinstance(curr_data, str) else curr_data
                 if curr_data_bytes is not None and curr_data_bytes != last_data_bytes:
                     log_data = curr_data if isinstance(curr_data, str) else f"<{len(curr_data)} bytes>"
-                    logger_webrtc_input.info(f"Clipboard changed. Sending content ({curr_mime}), data: {log_data[:80]}")
+                    logger_webrtc_input.info(f"Clipboard changed. Sending content ({curr_mime})")
                     await self.on_clipboard_read(curr_data, curr_mime)
                     last_data_bytes = curr_data_bytes
                 await asyncio.sleep(0.5)
@@ -1675,23 +1674,6 @@ class WebRTCInput:
             scale = toks[1]
             if re.fullmatch(r"^\d+(\.\d+)?$", scale): self.on_scaling_ratio(float(scale))
             else: logger_webrtc_input.warning(f"Rejecting scaling change, invalid: {scale}")
-        elif msg_type == "cmd":
-            if len(toks) > 1:
-                command_to_run = ",".join(toks[1:]) # Reconstruct command string if it contained commas
-                logger_webrtc_input.info(f"Attempting to execute command: '{command_to_run}'")
-                home_directory = os.path.expanduser("~")
-                try:
-                    process = await subprocess.create_subprocess_shell(
-                        command_to_run,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        cwd=home_directory
-                    )
-                    logger_webrtc_input.info(f"Successfully launched command: '{command_to_run}'")
-                except Exception as e:
-                    logger_webrtc_input.error(f"Failed to launch command '{command_to_run}': {e}")
-            else:
-                logger_webrtc_input.warning("Received 'cmd' message without a command string.")
         elif msg_type == "_arg_fps": self.on_set_fps(int(toks[1]))
         elif msg_type == "_arg_resize":
             if len(toks) == 3:

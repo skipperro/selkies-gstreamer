@@ -60,3 +60,129 @@ This server provides the backend infrastructure for establishing and managing in
     *   WebRTC (SDP, ICE, SRTP, Data Channels) for P2P mode.
     *   WebSockets for signaling (WebRTC mode) and as a direct media transport (WebSockets streaming mode with custom protocols).
     *   HTTP/HTTPS for asset delivery and signaling endpoint.
+
+Of course. Here is a complete markdown section for your `README.md` based on the provided settings file. It explains the precedence, setting methods, special value types, and includes a comprehensive table of all available settings.
+
+Of course. Here is the updated introductory text for your "Server Settings" section with the requested additions.
+
+## Server Settings
+
+The server's behavior can be extensively customized through command-line arguments or environment variables. This section details how to configure these settings.
+
+### How Settings Work
+
+#### Precedence Order
+Settings are applied in the following order of precedence, with the first value found being used:
+1.  **Command-Line (CLI) Arguments**: The highest precedence (e.g., `--port 9000`).
+2.  **Standard Environment Variables**: The primary method for containerized environments (e.g., `export SELKIES_PORT=9000`).
+3.  **Legacy Environment Variables**: Used as a fallback if a standard variable is not set (e.g., `export CUSTOM_WS_PORT=8888`). These are noted in the table where applicable.
+4.  **Default Values**: The hardcoded default in the server code is used if no other value is provided.
+
+#### Naming Convention
+Settings are automatically named based on their variable name (e.g., `audio_enabled`):
+*   **CLI Flag**: The name is converted to kebab-case: `--audio-enabled`
+*   **Standard Environment Variable**: The name is prefixed with `SELKIES_` and converted to uppercase: `SELKIES_AUDIO_ENABLED`
+
+### Setting Types and UI Customization
+
+Certain setting types have special syntax for advanced control over the client-side UI and available options. A key concept is that **any setting that is locked to a single value will not be rendered in the UI**, giving the user no option to change it. This, combined with the various `ui_` visibility settings, allows administrators to completely customize the client interface.
+
+#### Booleans and Locking
+Boolean settings accept `true` or `false`. You can also prevent the user from changing a boolean setting in the UI by appending `|locked`. The UI toggle for this setting will be hidden.
+
+*   **Example**: To force CPU encoding on and prevent the user from disabling it:
+    ```bash
+    export SELKIES_USE_CPU="true|locked"
+    ```
+
+#### Enums and Lists
+These settings accept a comma-separated list of values. Their behavior depends on the number of items provided:
+
+*   **Multiple Values**: The first item in the list becomes the default selection, and all items in the list become the available options in the UI dropdown.
+*   **Single Value**: The provided value becomes the default, and the UI dropdown is hidden because the choice is locked.
+
+*   **Example**: Force the encoder to be `jpeg` with no other options available to the user:
+    ```bash
+    export SELKIES_ENCODER="jpeg"
+    ```
+
+#### Ranges
+Range settings define a minimum and maximum for a value (e.g., framerate).
+
+*   **To set a range**: Use a hyphen-separated `min-max` format. The UI will show a slider.
+*   **To set a fixed value**: Provide a single number. This will lock the value and hide the UI slider.
+
+*   **Example**: Lock the framerate to exactly 60 FPS.
+    ```bash
+    export SELKIES_FRAMERATE="60"
+    ```
+
+#### Manual Resolution Mode
+The server can be forced to use a single, fixed resolution for all connecting clients. This mode is automatically activated if `manual_width`, `manual_height`, or `is_manual_resolution_mode` is set.
+
+*   If `manual_width` and/or `manual_height` are set, the resolution is locked to those values.
+*   If `is_manual_resolution_mode` is set to `true` without specifying width or height, the resolution defaults to **1024x768**.
+*   When this mode is active, the client UI for changing resolution is disabled.
+
+### Available Settings
+
+The table below lists all available server settings.
+
+| Environment Variable | CLI Flag | Description |
+| -------------------- | -------- | ----------- |
+| `SELKIES_UI_TITLE` | `--ui-title` | Title in top left corner of sidebar. |
+| `SELKIES_UI_SHOW_LOGO` | `--ui-show-logo` | Show the Selkies logo in the sidebar. |
+| `SELKIES_UI_SHOW_SIDEBAR` | `--ui-show-sidebar` | Show the main sidebar UI. |
+| `SELKIES_UI_SHOW_CORE_BUTTONS` | `--ui-show-core-buttons` | Show the core components buttons display, audio, microphone, and gamepad. |
+| `SELKIES_UI_SIDEBAR_SHOW_VIDEO_SETTINGS` | `--ui-sidebar-show-video-settings` | Show the video settings section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_SCREEN_SETTINGS` | `--ui-sidebar-show-screen-settings` | Show the screen settings section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_AUDIO_SETTINGS` | `--ui-sidebar-show-audio-settings` | Show the audio settings section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_STATS` | `--ui-sidebar-show-stats` | Show the stats section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_CLIPBOARD` | `--ui-sidebar-show-clipboard` | Show the clipboard section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_FILES` | `--ui-sidebar-show-files` | Show the file transfer section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_APPS` | `--ui-sidebar-show-apps` | Show the applications section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_SHARING` | `--ui-sidebar-show-sharing` | Show the sharing section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_GAMEPADS` | `--ui-sidebar-show-gamepads` | Show the gamepads section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_FULLSCREEN` | `--ui-sidebar-show-fullscreen` | Show the fullscreen button in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_GAMING_MODE` | `--ui-sidebar-show-gaming-mode` | Show the gaming mode button in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_TRACKPAD` | `--ui-sidebar-show-trackpad` | Show the virtual trackpad button in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_KEYBOARD_BUTTON` | `--ui-sidebar-show-keyboard-button` | Show the on-screen keyboard button in the display area. |
+| `SELKIES_UI_SIDEBAR_SHOW_SOFT_BUTTONS` | `--ui-sidebar-show-soft-buttons` | Show the soft buttons section in the sidebar. |
+| `SELKIES_AUDIO_ENABLED` | `--audio-enabled` | Enable server-to-client audio streaming. |
+| `SELKIES_MICROPHONE_ENABLED` | `--microphone-enabled` | Enable client-to-server microphone forwarding. |
+| `SELKIES_GAMEPAD_ENABLED` | `--gamepad-enabled` | Enable gamepad support. |
+| `SELKIES_CLIPBOARD_ENABLED` | `--clipboard-enabled` | Enable clipboard synchronization. |
+| `SELKIES_COMMAND_ENABLED` | `--command-enabled` | Enable parsing of command websocket messages. |
+| `SELKIES_FILE_TRANSFERS` | `--file-transfers` | Allowed file transfer directions (comma-separated: "upload,download"). Set to "" or "none" to disable. |
+| `SELKIES_ENCODER` | `--encoder` | The default video encoder. |
+| `SELKIES_FRAMERATE` | `--framerate` | Allowed framerate range (e.g., "8-165") or a fixed value (e.g., "60"). |
+| `SELKIES_H264_CRF` | `--h264-crf` | Allowed H.264 CRF range (e.g., "5-50") or a fixed value. |
+| `SELKIES_JPEG_QUALITY` | `--jpeg-quality` | Allowed JPEG quality range (e.g., "1-100") or a fixed value. |
+| `SELKIES_H264_FULLCOLOR` | `--h264-fullcolor` | Enable H.264 full color range for pixelflux encoders. |
+| `SELKIES_H264_STREAMING_MODE` | `--h264-streaming-mode` | Enable H.264 streaming mode for pixelflux encoders. |
+| `SELKIES_USE_CPU` | `--use-cpu` | Force CPU-based encoding for pixelflux. |
+| `SELKIES_USE_PAINT_OVER_QUALITY` | `--use-paint-over-quality` | Enable high-quality paint-over for static scenes. |
+| `SELKIES_PAINT_OVER_JPEG_QUALITY` | `--paint-over-jpeg-quality` | Allowed JPEG paint-over quality range or a fixed value. |
+| `SELKIES_H264_PAINTOVER_CRF` | `--h264-paintover-crf` | Allowed H.264 paint-over CRF range or a fixed value. |
+| `SELKIES_H264_PAINTOVER_BURST_FRAMES` | `--h264-paintover-burst-frames` | Allowed H.264 paint-over burst frames range or a fixed value. |
+| `SELKIES_SECOND_SCREEN` | `--second-screen` | Enable support for a second monitor/display. |
+| `SELKIES_AUDIO_BITRATE` | `--audio-bitrate` | The default audio bitrate. |
+| `SELKIES_IS_MANUAL_RESOLUTION_MODE` | `--is-manual-resolution-mode` | Lock the resolution to the manual width/height values. |
+| `SELKIES_MANUAL_WIDTH` | `--manual-width` | Lock width to a fixed value. Setting this forces manual resolution mode. |
+| `SELKIES_MANUAL_HEIGHT` | `--manual-height` | Lock height to a fixed value. Setting this forces manual resolution mode. |
+| `SELKIES_SCALING_DPI` | `--scaling-dpi` | The default DPI for UI scaling. |
+| `SELKIES_ENABLE_BINARY_CLIPBOARD` | `--enable-binary-clipboard` | Allow binary data (e.g., images) on the clipboard. |
+| `SELKIES_USE_BROWSER_CURSORS` | `--use-browser-cursors` | Use browser CSS cursors instead of rendering to canvas. |
+| `SELKIES_USE_CSS_SCALING` | `--use-css-scaling` | HiDPI when false, if true a lower resolution is sent from the client and the canvas is stretched. |
+| `SELKIES_PORT` (or `CUSTOM_WS_PORT`) | `--port` | Port for the data websocket server. |
+| `SELKIES_DRI_NODE` (or `DRI_NODE`) | `--dri-node` | Path to the DRI render node for VA-API. |
+| `SELKIES_AUDIO_DEVICE_NAME` | `--audio-device-name` | Audio device name for pcmflux capture. |
+| `SELKIES_WATERMARK_PATH` (or `WATERMARK_PNG`) | `--watermark-path` | Absolute path to the watermark PNG file. |
+| `SELKIES_WATERMARK_LOCATION` (or `WATERMARK_LOCATION`) | `--watermark-location` | Watermark location enum (0-6). |
+| `SELKIES_DEBUG` | `--debug` | Enable debug logging. |
+| `SELKIES_ENABLE_SHARING` | `--enable-sharing` | Master toggle for all sharing features. |
+| `SELKIES_ENABLE_COLLAB` | `--enable-collab` | Enable collaborative (read-write) sharing link. |
+| `SELKIES_ENABLE_SHARED` | `--enable-shared` | Enable view-only sharing links. |
+| `SELKIES_ENABLE_PLAYER2` | `--enable-player2` | Enable sharing link for gamepad player 2. |
+| `SELKIES_ENABLE_PLAYER3` | `--enable-player3` | Enable sharing link for gamepad player 3. |
+| `SELKIES_ENABLE_PLAYER4` | `--enable-player4` | Enable sharing link for gamepad player 4. |

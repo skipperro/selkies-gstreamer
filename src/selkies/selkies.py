@@ -59,6 +59,7 @@ from collections import OrderedDict, deque
 from datetime import datetime
 from shutil import which
 from signal import SIGINT, signal
+from .settings import settings, SETTING_DEFINITIONS
 
 try:
     from pcmflux import AudioCapture, AudioCaptureSettings, AudioChunkCallback
@@ -861,7 +862,7 @@ class DataStreamingServer:
         self.uinput_mouse_socket = uinput_mouse_socket
         self.js_socket_path = js_socket_path
         self.enable_clipboard = enable_clipboard
-        self.enable_binary_clipboard = False
+        self.enable_binary_clipboard = self.cli_args.enable_binary_clipboard[0]
         self.enable_cursors = enable_cursors
         self.cursor_size = cursor_size
         self.cursor_scale = cursor_scale
@@ -958,6 +959,9 @@ class DataStreamingServer:
             data_logger.info("pcmflux audio chunk broadcasting task finished.")
 
     async def _start_pcmflux_pipeline(self):
+        if not settings.audio_enabled[0]:
+            data_logger.info("Server-to-client audio is disabled by server settings. Not starting pipeline.")
+            return False
         if not PCMFLUX_AVAILABLE:
             data_logger.error("Cannot start audio pipeline: pcmflux library not available.")
             return False
@@ -975,22 +979,19 @@ class DataStreamingServer:
 
         data_logger.info("Starting pcmflux audio pipeline...")
         try:
-            settings = AudioCaptureSettings()
-            # To capture desktop audio on Linux with PulseAudio, find the ".monitor" source name.
-            # Use `pactl list sources` in a terminal.
-            # Set to None or empty string to use the system's default microphone.
+            capture_settings = AudioCaptureSettings()
             device_name_bytes = self.audio_device_name.encode('utf-8') if self.audio_device_name else None
-            settings.device_name = device_name_bytes
-            settings.sample_rate = 48000
-            settings.channels = self.app.audio_channels
-            settings.opus_bitrate = self.app.audio_bitrate
-            settings.frame_duration_ms = 20
-            settings.use_vbr = True
-            settings.use_silence_gate = False
-            self.pcmflux_settings = settings
+            capture_settings.device_name = device_name_bytes
+            capture_settings.sample_rate = 48000
+            capture_settings.channels = self.app.audio_channels
+            capture_settings.opus_bitrate = int(self.app.audio_bitrate)
+            capture_settings.frame_duration_ms = 20
+            capture_settings.use_vbr = True
+            capture_settings.use_silence_gate = False
+            self.pcmflux_settings = capture_settings
 
             data_logger.info(f"pcmflux settings: device='{self.audio_device_name}', "
-                             f"bitrate={settings.opus_bitrate}, channels={settings.channels}")
+                             f"bitrate={capture_settings.opus_bitrate}, channels={capture_settings.channels}")
 
             self.pcmflux_callback = AudioChunkCallback(self._pcmflux_audio_callback)
             self.pcmflux_module = AudioCapture()
@@ -1170,7 +1171,8 @@ class DataStreamingServer:
                     continue
 
                 client_fps = display_state.get('latest_client_fps', 0.0)
-                if client_fps <= 0: client_fps = self.app.framerate
+                if client_fps <= 0:
+                    client_fps = display_state.get('framerate', 60)
 
                 server_id, client_id = current_server_frame_id, last_client_acked_frame_id
 
@@ -1247,40 +1249,40 @@ class DataStreamingServer:
             v = settings_data.get(k)
             return str(v) if v is not None else d
 
-        parsed["videoFramerate"] = get_int("webrtc_videoFramerate", self.app.framerate)
-        parsed["videoCRF"] = get_int("webrtc_videoCRF", self.h264_crf)
-        parsed["encoder"] = get_str("webrtc_encoder", self.app.encoder)
-        parsed["h264_fullcolor"] = get_bool("webrtc_h264_fullcolor", self.h264_fullcolor)
-        parsed["h264_streaming_mode"] = get_bool("webrtc_h264_streaming_mode", self.h264_streaming_mode)
-        parsed["isManualResolutionMode"] = get_bool(
-            "webrtc_isManualResolutionMode",
+        parsed["framerate"] = get_int("framerate", self.app.framerate)
+        parsed["h264_crf"] = get_int("h264_crf", self.h264_crf)
+        parsed["encoder"] = get_str("encoder", self.app.encoder)
+        parsed["h264_fullcolor"] = get_bool("h264_fullcolor", self.h264_fullcolor)
+        parsed["h264_streaming_mode"] = get_bool("h264_streaming_mode", self.h264_streaming_mode)
+        parsed["is_manual_resolution_mode"] = get_bool(
+            "is_manual_resolution_mode",
             getattr(self.app, "client_is_manual_resolution_mode", False),
         )
-        parsed["manualWidth"] = get_int(
-            "webrtc_manualWidth",
+        parsed["manual_width"] = get_int(
+            "manual_width",
             getattr(self.app, "client_manual_width", self.app.display_width),
         )
-        parsed["manualHeight"] = get_int(
-            "webrtc_manualHeight",
+        parsed["manual_height"] = get_int(
+            "manual_height",
             getattr(self.app, "client_manual_height", self.app.display_height),
         )
-        parsed["audioBitRate"] = get_int("webrtc_audioBitRate", self.app.audio_bitrate)
+        parsed["audio_bitrate"] = get_int("audio_bitrate", self.app.audio_bitrate)
         parsed["initialClientWidth"] = get_int(
-            "webrtc_initialClientWidth", self.app.display_width
+            "initialClientWidth", self.app.display_width
         )
         parsed["initialClientHeight"] = get_int(
-            "webrtc_initialClientHeight", self.app.display_height
+            "initialClientHeight", self.app.display_height
         )
-        parsed["jpeg_quality"] = get_int("pixelflux_jpeg_quality", self.jpeg_quality)
+        parsed["jpeg_quality"] = get_int("jpeg_quality", self.jpeg_quality)
         parsed["paint_over_jpeg_quality"] = get_int(
-            "pixelflux_paint_over_jpeg_quality", self.paint_over_jpeg_quality
+            "paint_over_jpeg_quality", self.paint_over_jpeg_quality
         )
-        parsed["use_cpu"] = get_bool("pixelflux_use_cpu", self.use_cpu)
-        parsed["h264_paintover_crf"] = get_int("pixelflux_h264_paintover_crf", self.h264_paintover_crf)
-        parsed["h264_paintover_burst_frames"] = get_int("pixelflux_h264_paintover_burst_frames", self.h264_paintover_burst_frames)
-        parsed["use_paint_over_quality"] = get_bool("pixelflux_use_paint_over_quality", self.use_paint_over_quality)
-        parsed["scaling_dpi"] = get_int("webrtc_SCALING_DPI", 96)
-        parsed["enableBinaryClipboard"] = get_bool("enableBinaryClipboard", self.enable_binary_clipboard)
+        parsed["use_cpu"] = get_bool("use_cpu", self.use_cpu)
+        parsed["h264_paintover_crf"] = get_int("h264_paintover_crf", self.h264_paintover_crf)
+        parsed["h264_paintover_burst_frames"] = get_int("h264_paintover_burst_frames", self.h264_paintover_burst_frames)
+        parsed["use_paint_over_quality"] = get_bool("use_paint_over_quality", self.use_paint_over_quality)
+        parsed["scaling_dpi"] = get_int("scaling_dpi", 96)
+        parsed["enable_binary_clipboard"] = get_bool("enable_binary_clipboard", self.enable_binary_clipboard)
         parsed["displayId"] = get_str("displayId", "primary")
         parsed["displayPosition"] = get_str("displayPosition", "right")
         data_logger.debug(f"Parsed client settings: {parsed}")
@@ -1296,8 +1298,40 @@ class DataStreamingServer:
 
         display_state = self.display_clients[display_id]
         data_logger.info(
-            f"Applying client settings for '{display_id}' (initial={is_initial_settings}): {settings}"
+            f"Applying and sanitizing client settings for '{display_id}' (initial={is_initial_settings})"
         )
+
+        def sanitize_value(name, client_value):
+            """Clamps ranges, validates enums, and enforces bools against server limits."""
+            setting_def = next((s for s in SETTING_DEFINITIONS if s['name'] == name), None)
+            if not setting_def:
+                return None
+            server_limit = getattr(self.cli_args, name)
+            try:
+                if setting_def['type'] == 'range':
+                    min_val, max_val = server_limit
+                    sanitized = max(min_val, min(int(client_value), max_val))
+                    if sanitized != int(client_value):
+                        data_logger.warning(f"Client value for '{name}' ({client_value}) was clamped to {sanitized} (server range: {min_val}-{max_val}).")
+                    return sanitized
+                elif setting_def['type'] == 'enum':
+                    if str(client_value) in setting_def['meta']['allowed']:
+                        return client_value
+                    data_logger.warning(f"Client value for '{name}' ({client_value}) is not allowed. Using server default '{setting_def['default']}'.")
+                    return setting_def['default']
+                elif setting_def['type'] == 'bool':
+                    server_val, is_locked = server_limit
+                    if is_locked:
+                        if bool(client_value) != server_val:
+                            data_logger.warning(f"Client tried to change locked setting '{name}'. Request ignored.")
+                        return server_val
+                    if not server_val and client_value:
+                        data_logger.warning(f"Client tried to enable '{name}', but it is disabled by server settings.")
+                        return False
+                    return bool(client_value)
+            except (ValueError, TypeError):
+                return setting_def.get('meta', {}).get('default_value', setting_def['default'])
+            return client_value
 
         old_settings = display_state.copy()
         old_display_width = display_state.get("width", 0)
@@ -1305,15 +1339,21 @@ class DataStreamingServer:
         old_position = display_state.get('position', 'right')
         new_position = settings.get("displayPosition", "right")
 
-        is_manual_res_mode_from_settings = settings.get("isManualResolutionMode", False)
+        server_is_manual, _ = self.cli_args.is_manual_resolution_mode
         target_w, target_h = old_display_width, old_display_height
 
-        if is_manual_res_mode_from_settings:
-            target_w = settings.get("manualWidth", old_display_width)
-            target_h = settings.get("manualHeight", old_display_height)
-        elif is_initial_settings:
-            target_w = settings.get("initialClientWidth", old_display_width)
-            target_h = settings.get("initialClientHeight", old_display_height)
+        if server_is_manual:
+            data_logger.info(f"Server is configured for manual resolution mode for display '{display_id}'.")
+            target_w = self.cli_args.manual_width
+            target_h = self.cli_args.manual_height
+        else:
+            client_wants_manual = sanitize_value("is_manual_resolution_mode", settings.get("isManualResolutionMode", False))
+            if client_wants_manual:
+                target_w = sanitize_value("manual_width", settings.get("manualWidth", old_display_width))
+                target_h = sanitize_value("manual_height", settings.get("manualHeight", old_display_height))
+            elif is_initial_settings:
+                target_w = settings.get("initialClientWidth", old_display_width)
+                target_h = settings.get("initialClientHeight", old_display_height)
 
         if target_w <= 0: target_w = old_display_width if old_display_width > 0 else 1024
         if target_h <= 0: target_h = old_display_height if old_display_height > 0 else 768
@@ -1331,30 +1371,29 @@ class DataStreamingServer:
                 self.app.display_width = target_w
                 self.app.display_height = target_h
 
-        requested_new_encoder = settings.get("encoder")
-        if requested_new_encoder and requested_new_encoder in PIXELFLUX_VIDEO_ENCODERS and X11_CAPTURE_AVAILABLE:
-            display_state["encoder"] = requested_new_encoder
+        display_state["encoder"] = sanitize_value("encoder", settings.get("encoder"))
+        display_state["framerate"] = sanitize_value("framerate", settings.get("videoFramerate"))
+        display_state["h264_crf"] = sanitize_value("h264_crf", settings.get("videoCRF"))
+        display_state["h264_fullcolor"] = sanitize_value("h264_fullcolor", settings.get("h264_fullcolor"))
+        display_state["h264_streaming_mode"] = sanitize_value("h264_streaming_mode", settings.get("h264_streaming_mode"))
+        display_state["jpeg_quality"] = sanitize_value("jpeg_quality", settings.get("jpeg_quality"))
+        display_state["paint_over_jpeg_quality"] = sanitize_value("paint_over_jpeg_quality", settings.get("paint_over_jpeg_quality"))
+        display_state["use_paint_over_quality"] = sanitize_value("use_paint_over_quality", settings.get("use_paint_over_quality"))
+        display_state["h264_paintover_crf"] = sanitize_value("h264_paintover_crf", settings.get("h264_paintover_crf"))
+        display_state["h264_paintover_burst_frames"] = sanitize_value("h264_paintover_burst_frames", settings.get("h264_paintover_burst_frames"))
+        display_state["use_cpu"] = sanitize_value("use_cpu", settings.get("use_cpu"))
         
-        if "videoFramerate" in settings: display_state["framerate"] = settings["videoFramerate"]
-        if "videoCRF" in settings: display_state["h264_crf"] = settings["videoCRF"]
-        if "h264_fullcolor" in settings: display_state["h264_fullcolor"] = settings["h264_fullcolor"]
-        if "h264_streaming_mode" in settings: display_state["h264_streaming_mode"] = settings["h264_streaming_mode"]
-        if "jpeg_quality" in settings: display_state["jpeg_quality"] = settings["jpeg_quality"]
-        if "paint_over_jpeg_quality" in settings: display_state["paint_over_jpeg_quality"] = settings["paint_over_jpeg_quality"]
-        if "use_paint_over_quality" in settings: display_state["use_paint_over_quality"] = settings["use_paint_over_quality"]
-        if "h264_paintover_crf" in settings: display_state["h264_paintover_crf"] = settings["h264_paintover_crf"]
-        if "h264_paintover_burst_frames" in settings: display_state["h264_paintover_burst_frames"] = settings["h264_paintover_burst_frames"]
-        if "use_cpu" in settings: display_state["use_cpu"] = settings["use_cpu"]
+        self.app.audio_bitrate = sanitize_value("audio_bitrate", settings.get("audio_bitrate"))
         
-        if "audioBitRate" in settings: self.app.audio_bitrate = settings["audioBitRate"]
-        if "enableBinaryClipboard" in settings and self.input_handler:
-            self.enable_binary_clipboard = settings["enableBinaryClipboard"]
+        if self.input_handler:
+            self.enable_binary_clipboard = sanitize_value("enable_binary_clipboard", settings.get("enable_binary_clipboard"))
             await self.input_handler.update_binary_clipboard_setting(self.enable_binary_clipboard)
         
         if is_initial_settings and "scaling_dpi" in settings:
-            await set_dpi(settings["scaling_dpi"])
+            dpi = sanitize_value("scaling_dpi", settings.get("scaling_dpi"))
+            await set_dpi(dpi)
             if CURSOR_SIZE > 0:
-                new_cursor_size = max(1, int(round(settings["scaling_dpi"] / 96.0 * CURSOR_SIZE)))
+                new_cursor_size = max(1, int(round(int(dpi) / 96.0 * CURSOR_SIZE)))
                 await set_cursor_size(new_cursor_size)
 
         async with self._reconfigure_lock:
@@ -1417,16 +1456,26 @@ class DataStreamingServer:
             except Exception as e:
                 data_logger.warning(f"Failed to send initial cursor to new client {raddr}: {e}")
 
-        available_encoders = []
-        if X11_CAPTURE_AVAILABLE:
-            available_encoders.append("x264enc")
-            available_encoders.append("x264enc-striped")
-            available_encoders.append("jpeg")
+        server_settings_payload = {"type": "server_settings", "settings": {}}
+        for setting_def in SETTING_DEFINITIONS:
+            name = setting_def['name']
+            if name in ['port', 'dri_node', 'debug', 'audio_device_name', 'watermark_path']:
+                continue
+            value = getattr(settings, name)
+            if setting_def['type'] == 'bool':
+                bool_val, is_locked = value
+                payload_entry = {'value': bool_val, 'locked': is_locked}
+            else:
+                payload_entry = {'value': value}
 
-        server_settings_payload = {
-            "type": "server_settings",
-            "encoders": available_encoders,
-        }
+            if setting_def['type'] == 'range':
+                payload_entry['min'], payload_entry['max'] = value
+                if 'meta' in setting_def and 'default_value' in setting_def['meta']:
+                    payload_entry['default'] = setting_def['meta']['default_value']
+            elif setting_def['type'] in ['enum', 'list']:
+                if 'meta' in setting_def and 'allowed' in setting_def['meta']:
+                    payload_entry['allowed'] = setting_def['meta']['allowed']
+            server_settings_payload["settings"][name] = payload_entry
         try:
             await websocket.send(json.dumps(server_settings_payload))
         except websockets.exceptions.ConnectionClosed:
@@ -1536,6 +1585,8 @@ class DataStreamingServer:
                                 ]
                                 active_upload_target_path_conn = None
                     elif msg_type == 0x02:  # Mic data
+                        if not settings.microphone_enabled[0]:
+                            continue
                         if not PULSEAUDIO_AVAILABLE:
                             if len(payload) > 0:
                                 data_logger.warning(
@@ -1735,6 +1786,9 @@ class DataStreamingServer:
 
                 elif isinstance(message, str):
                     if message.startswith("FILE_UPLOAD_START:"):
+                        if 'upload' not in settings.file_transfers:
+                            data_logger.warning("Client tried to upload a file, but uploads are disabled by server settings.")
+                            continue
                         if not upload_dir_valid:
                             data_logger.error("Upload dir invalid, skipping upload.")
                             continue
@@ -1845,8 +1899,22 @@ class DataStreamingServer:
                         try:
                             _, payload_str = message.split(",", 1)
                             parsed_settings = self._parse_settings_payload(payload_str)
-                            
                             display_id = parsed_settings.get("displayId", "primary")
+
+                            if display_id != 'primary':
+                                second_screen_enabled, _ = self.cli_args.second_screen
+                                if not second_screen_enabled:
+                                    data_logger.warning(
+                                        f"Client from {websocket.remote_address} attempted to connect as secondary display ('{display_id}'), "
+                                        "but second screens are disabled by server settings. Rejecting connection."
+                                    )
+                                    try:
+                                        await websocket.send("KILL Second screens are disabled on this server.")
+                                        await websocket.close(code=1008, reason="Second screens disabled")
+                                    except websockets.ConnectionClosed:
+                                        pass
+                                    return
+ 
                             client_display_id = display_id
                             if display_id in ['primary', 'display2']:
                                 existing_client_info = self.display_clients.get(display_id)
@@ -2414,6 +2482,29 @@ class DataStreamingServer:
                             data_logger.error(f"Malformed DPI message: {message}")
                         except Exception as e_dpi:
                             data_logger.error(f"Error processing DPI message '{message}': {e_dpi}", exc_info=True)
+
+                    elif message.startswith("cmd,"):
+                        if not settings.command_enabled[0]:
+                            data_logger.warning("Received 'cmd' message, but command execution is disabled by server settings.")
+                            continue
+
+                        toks = message.split(',')
+                        if len(toks) > 1:
+                            command_to_run = ",".join(toks[1:])
+                            data_logger.info(f"Attempting to execute command: '{command_to_run}'")
+                            home_directory = os.path.expanduser("~")
+                            try:
+                                process = await subprocess.create_subprocess_shell(
+                                    command_to_run,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    cwd=home_directory
+                                )
+                                data_logger.info(f"Successfully launched command: '{command_to_run}' with PID {process.pid}")
+                            except Exception as e:
+                                data_logger.error(f"Failed to launch command '{command_to_run}': {e}")
+                        else:
+                            data_logger.warning("Received 'cmd' message without a command string.")
 
                     else:
                         if self.input_handler and hasattr(
@@ -3255,80 +3346,14 @@ async def main():
         except OSError:
             pass
 
-    parser = argparse.ArgumentParser(description="Selkies WebSocket Streaming Server")
-    parser.add_argument(
-        "--encoder",
-        default=os.environ.get("SELKIES_ENCODER", "x264enc"),
-        help="Video encoder (e.g., x264enc, jpeg, x264enc-striped)",
-    )
-    parser.add_argument(
-        "--framerate",
-        default=os.environ.get("SELKIES_FRAMERATE", "60"),
-        type=int,
-        help="Target framerate",
-    )
-    parser.add_argument(
-        "--dri_node",
-        default=os.environ.get("DRI_NODE", ""),
-        type=str,
-        help="Path to the DRI render node (e.g., /dev/dri/renderD128) for VA-API.",
-    )
-    parser.add_argument(
-        "--audio_device_name",
-        default=os.environ.get("SELKIES_AUDIO_DEVICE", "output.monitor"),
-        help="Audio device name for pcmflux (e.g., a PulseAudio .monitor source). Defaults to output.monitor.",
-    )
-    parser.add_argument(
-        "--h264_crf",
-        default=os.environ.get("SELKIES_H264_CRF", "25"),
-        type=int,
-        help="H.264 CRF for x264enc-striped (0-51)",
-    )
-    parser.add_argument(
-        "--h264_fullcolor",
-        default=os.environ.get("SELKIES_H264_FULLCOLOR", "False").lower() == "true",
-        type=lambda x: (str(x).lower() == 'true'),
-        help="Enable H.264 full color range for x264enc-striped (default: False)",
-    )
-    parser.add_argument(
-        "--h264_streaming_mode",
-        default=os.environ.get("SELKIES_H264_STREAMING_MODE", "False").lower() == "true",
-        type=lambda x: (str(x).lower() == 'true'),
-        help="Enable H.264 streaming mode for pixelflux encoders (default: False).",
-    )
-    parser.add_argument(
-        "--watermark_path",
-        default=os.environ.get("WATERMARK_PNG", ""),
-        type=str,
-        help="Absolute path to the watermark PNG file for pixelflux.",
-    )
-    parser.add_argument(
-        "--watermark_location",
-        default=os.environ.get("WATERMARK_LOCATION", "-1"),
-        type=int,
-        help="Watermark location enum (0-6). Defaults to 4 (Bottom Right) if path is set and this is not specified or invalid.",
-    )
-    parser.add_argument(
-        "--port",
-        default=os.environ.get("CUSTOM_WS_PORT", "8082"),
-        type=int,
-        help="The port for the data websocket server. Overrides the CUSTOM_WS_PORT environment variable.",
-    )
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-    args, unknown = parser.parse_known_args()
     global TARGET_FRAMERATE
-    TARGET_FRAMERATE = args.framerate
-    initial_encoder = args.encoder.lower()
+    TARGET_FRAMERATE = settings.framerate
+    initial_encoder = settings.encoder
 
-    if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-    else:
-        logging.getLogger().setLevel(logging.INFO)
-        logging.getLogger("websockets").setLevel(logging.WARNING)
-    if not args.debug and PULSEAUDIO_AVAILABLE:
+    if not settings.debug[0] and PULSEAUDIO_AVAILABLE:
         logging.getLogger("pulsectl").setLevel(logging.WARNING)
 
-    logger.info(f"Starting Selkies (WebSocket Mode) with args: {args}")
+    logger.info(f"Starting Selkies (WebSocket Mode) with settings: {vars(settings)}")
     logger.info(
         f"Initial Encoder: {initial_encoder}, Framerate: {TARGET_FRAMERATE}"
     )
@@ -3348,17 +3373,17 @@ async def main():
     )
 
     data_server = DataStreamingServer(
-        port=args.port,
+        port=settings.port,
         app=app,
         uinput_mouse_socket=UINPUT_MOUSE_SOCKET,
         js_socket_path=JS_SOCKET_PATH,
-        enable_clipboard=ENABLE_CLIPBOARD,
+        enable_clipboard=settings.clipboard_enabled,
         enable_cursors=ENABLE_CURSORS,
         cursor_size=CURSOR_SIZE,
         cursor_scale=1.0,
         cursor_debug=DEBUG_CURSORS,
-        audio_device_name=args.audio_device_name,
-        cli_args=args,
+        audio_device_name=settings.audio_device_name,
+        cli_args=settings,
     )
     app.data_streaming_server = data_server
 
@@ -3366,8 +3391,8 @@ async def main():
         app,
         UINPUT_MOUSE_SOCKET,
         JS_SOCKET_PATH,
-        str(ENABLE_CLIPBOARD).lower(),
-        str(ENABLE_BINARY_CLIPBOARD).lower(),
+        str(settings.clipboard_enabled[0]).lower(),
+        str(settings.enable_binary_clipboard[0]).lower(),
         ENABLE_CURSORS,
         CURSOR_SIZE,
         1.0,
@@ -3375,14 +3400,13 @@ async def main():
         data_server_instance=data_server,
     )
     data_server.input_handler = (
-        input_handler 
+        input_handler
     )
 
     input_handler.on_clipboard_read = app.send_ws_clipboard_data
 
     input_handler.on_set_fps = app.set_framerate
     if ENABLE_RESIZE:
-        # MODIFIED: Lambda now passes display_id, defaulting to 'primary' if not provided by caller.
         input_handler.on_resize = lambda res_str, display_id='primary': on_resize_handler(
             res_str, app, data_server, display_id
         )
@@ -3396,7 +3420,7 @@ async def main():
     data_server_task = asyncio.create_task(data_server.run_server(), name="DataServer")
     tasks_to_run.append(data_server_task)
 
-    if hasattr(input_handler, "connect"):  # This refers to the global input_handler
+    if hasattr(input_handler, "connect"):
         tasks_to_run.append(
             asyncio.create_task(input_handler.connect(), name="InputConnect")
         )
@@ -3459,7 +3483,6 @@ async def main():
                 input_handler.disconnect
             ):
                 await input_handler.disconnect()
-
         if (
             data_server
             and hasattr(data_server, "stop")
@@ -3467,9 +3490,7 @@ async def main():
         ):
             logger.info("Ensuring DataStreamingServer resources are released...")
             await data_server.stop()
-
         logger.info("Cleanup complete. Exiting.")
-
 
 def ws_entrypoint():
     try:

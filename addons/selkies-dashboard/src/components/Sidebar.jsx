@@ -534,12 +534,16 @@ const getPrefixedKey = (key) => {
   return prefixedKey;
 };
 
-function Sidebar({ isOpen }) {
+function Sidebar() {
+  const [isOpen, setIsOpen] = useState(false);
+  const toggleSidebar = () => {
+    setIsOpen(!isOpen);
+  };
   const isSecondaryDisplay = displayId === 'display2';
   const [langCode, setLangCode] = useState("en");
   const [translator, setTranslator] = useState(() => getTranslator("en"));
   useEffect(() => {
-    window.postMessage({ type: 'sidebarVisibilityChanged', isOpen }, window.location.origin);
+    window.postMessage({ type: 'sidebarVisibilityChanged', isOpen: isOpen }, window.location.origin);
   }, [isOpen]);
   const [currentDeviceDpi, setCurrentDeviceDpi] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -554,6 +558,92 @@ function Sidebar({ isOpen }) {
   const [isTouchGamepadActive, setIsTouchGamepadActive] = useState(false);
   const [isTouchGamepadSetup, setIsTouchGamepadSetup] = useState(false);
   const [availablePlacements, setAvailablePlacements] = useState(null);
+  const [serverSettings, setServerSettings] = useState(null);
+  const [renderableSettings, setRenderableSettings] = useState({});
+  const [uiTitle, setUiTitle] = useState('Selkies');
+  const [uiShowLogo, setUiShowLogo] = useState(true);
+
+  useEffect(() => {
+    const handleMessage = (event) => {
+      if (
+        event.origin === window.location.origin &&
+        event.data?.type === "serverSettings"
+      ) {
+        console.log("Dashboard received server settings:", event.data.payload);
+        setServerSettings(event.data.payload);
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!serverSettings) return;
+
+    const newRenderable = {};
+    const s = serverSettings; // The fix is here: use serverSettings directly
+
+    const isRenderable = (key) => {
+        const setting = s[key];
+        if (!setting) return true; 
+        if (setting.locked === true) return false;
+        if (setting.allowed && setting.allowed.length <= 1) return false;
+        if (setting.min !== undefined && setting.max !== undefined && setting.min === setting.max) return false;
+        return true;
+    };
+
+    newRenderable.videoSettings = s.ui_sidebar_show_video_settings?.value ?? true;
+    newRenderable.screenSettings = s.ui_sidebar_show_screen_settings?.value ?? true;
+    newRenderable.audioSettings = s.ui_sidebar_show_audio_settings?.value ?? true;
+    newRenderable.stats = s.ui_sidebar_show_stats?.value ?? true;
+    newRenderable.clipboard = s.ui_sidebar_show_clipboard?.value ?? true;
+    newRenderable.files = s.ui_sidebar_show_files?.value ?? true;
+    newRenderable.apps = s.ui_sidebar_show_apps?.value ?? true;
+    newRenderable.sharing = s.ui_sidebar_show_sharing?.value ?? true;
+    newRenderable.gamepads = s.ui_sidebar_show_gamepads?.value ?? true;
+    newRenderable.fullscreen = s.ui_sidebar_show_fullscreen?.value ?? true;
+    newRenderable.gamingMode = s.ui_sidebar_show_gaming_mode?.value ?? true;
+    newRenderable.trackpad = s.ui_sidebar_show_trackpad?.value ?? true;
+    newRenderable.keyboardButton = s.ui_sidebar_show_keyboard_button?.value ?? true;
+    newRenderable.softButtons = s.ui_sidebar_show_soft_buttons?.value ?? true;
+    newRenderable.coreButtons = s.ui_show_core_buttons?.value ?? true;
+
+    newRenderable.encoder = isRenderable('encoder');
+    newRenderable.framerate = isRenderable('framerate');
+    newRenderable.jpegQuality = isRenderable('jpeg_quality');
+    newRenderable.paintOverJpegQuality = isRenderable('paint_over_jpeg_quality');
+    newRenderable.videoCRF = isRenderable('h264_crf');
+    newRenderable.h264PaintoverCRF = isRenderable('h264_paintover_crf');
+    newRenderable.usePaintOverQuality = isRenderable('use_paint_over_quality');
+    newRenderable.h264StreamingMode = isRenderable('h264_streaming_mode');
+    newRenderable.h264FullColor = isRenderable('h264_fullcolor');
+    newRenderable.useCpu = isRenderable('use_cpu');
+    newRenderable.uiScaling = isRenderable('scaling_dpi');
+    newRenderable.binaryClipboard = isRenderable('enable_binary_clipboard');
+    newRenderable.useBrowserCursors = isRenderable('use_browser_cursors');
+    
+    const hypotheticalHidpi = s.hidpi_enabled || { value: true, locked: false };
+    newRenderable.hidpi = hypotheticalHidpi.locked !== true;
+
+    newRenderable.enableSharing = s.enable_sharing?.value ?? true;
+    newRenderable.enableShared = s.enable_shared?.value ?? true;
+    newRenderable.enablePlayer2 = s.enable_player2?.value ?? true;
+    newRenderable.enablePlayer3 = s.enable_player3?.value ?? true;
+    newRenderable.enablePlayer4 = s.enable_player4?.value ?? true;
+
+    newRenderable.videoToggle = isRenderable('video_enabled');
+    newRenderable.audioToggle = isRenderable('audio_enabled');
+    newRenderable.microphoneToggle = isRenderable('microphone_enabled');
+    newRenderable.gamepadToggle = isRenderable('gamepad_enabled');
+
+    const ftSetting = s.file_transfers;
+    newRenderable.fileUpload = ftSetting ? ftSetting.value.includes('upload') : true;
+    newRenderable.fileDownload = ftSetting ? ftSetting.value.includes('download') : true;
+
+    setRenderableSettings(newRenderable);
+  }, [serverSettings]);
 
   const launchWindow = (direction, screen = null) => {
     const url = `${window.location.href.split('#')[0]}#display2-${direction}`;
@@ -701,6 +791,123 @@ function Sidebar({ isOpen }) {
       window.removeEventListener('orientationchange', setRealViewportHeight);
     };
   }, []);
+
+  useEffect(() => {
+    if (!serverSettings) return;
+    const getStoredInt = (key) => parseInt(localStorage.getItem(getPrefixedKey(key)), 10);
+    const getStoredBool = (key) => localStorage.getItem(getPrefixedKey(key)) === 'true';
+    const s_encoder = serverSettings.encoder;
+    if (s_encoder) {
+      const stored = localStorage.getItem(getPrefixedKey("encoder"));
+      const final = s_encoder.allowed.includes(stored) ? stored : s_encoder.value;
+      setEncoder(final);
+      setDynamicEncoderOptions(s_encoder.allowed);
+      localStorage.setItem(getPrefixedKey("encoder"), final);
+    }
+    const s_framerate = serverSettings.framerate;
+    if (s_framerate) {
+      const stored = getStoredInt("framerate");
+      const final = !isNaN(stored)
+        ? Math.max(s_framerate.min, Math.min(s_framerate.max, stored))
+        : s_framerate.default;
+      setFramerate(final);
+      localStorage.setItem(getPrefixedKey("framerate"), final);
+    }
+    const s_h264_crf = serverSettings.h264_crf;
+    if (s_h264_crf) {
+      const stored = getStoredInt("h264_crf");
+      const final = !isNaN(stored)
+        ? Math.max(s_h264_crf.min, Math.min(s_h264_crf.max, stored))
+        : s_h264_crf.default;
+      setVideoCRF(final);
+      localStorage.setItem(getPrefixedKey("h264_crf"), final);
+    }
+    const s_jpeg_quality = serverSettings.jpeg_quality;
+    if (s_jpeg_quality) {
+      const stored = getStoredInt("jpeg_quality");
+      const final = !isNaN(stored)
+        ? Math.max(s_jpeg_quality.min, Math.min(s_jpeg_quality.max, stored))
+        : s_jpeg_quality.default;
+      setJpegQuality(final);
+      localStorage.setItem(getPrefixedKey("jpeg_quality"), final);
+    }
+    const s_paint_over_jpeg_quality = serverSettings.paint_over_jpeg_quality;
+    if (s_paint_over_jpeg_quality) {
+      const stored = getStoredInt("paint_over_jpeg_quality");
+      const final = !isNaN(stored)
+        ? Math.max(s_paint_over_jpeg_quality.min, Math.min(s_paint_over_jpeg_quality.max, stored))
+        : s_paint_over_jpeg_quality.default;
+      setPaintOverJpegQuality(final);
+      localStorage.setItem(getPrefixedKey("paint_over_jpeg_quality"), final);
+    }
+    const s_h264_paintover_crf = serverSettings.h264_paintover_crf;
+    if (s_h264_paintover_crf) {
+      const stored = getStoredInt("h264_paintover_crf");
+      const final = !isNaN(stored)
+        ? Math.max(s_h264_paintover_crf.min, Math.min(s_h264_paintover_crf.max, stored))
+        : s_h264_paintover_crf.default;
+      setH264PaintoverCRF(final);
+      localStorage.setItem(getPrefixedKey("h264_paintover_crf"), final);
+    }
+    const s_use_paint_over_quality = serverSettings.use_paint_over_quality;
+    if (s_use_paint_over_quality) {
+      const stored = localStorage.getItem(getPrefixedKey("use_paint_over_quality"));
+      const final = s_use_paint_over_quality.locked ? s_use_paint_over_quality.value : (stored !== null ? stored === 'true' : s_use_paint_over_quality.value);
+      setUsePaintOverQuality(final);
+      localStorage.setItem(getPrefixedKey("use_paint_over_quality"), String(final));
+    }
+    const s_h264_fullcolor = serverSettings.h264_fullcolor;
+    if (s_h264_fullcolor) {
+      const final = s_h264_fullcolor.locked ? s_h264_fullcolor.value : getStoredBool("h264_fullcolor");
+      setH264FullColor(final);
+      localStorage.setItem(getPrefixedKey("h264_fullcolor"), String(final));
+    }
+    const s_h264_streaming_mode = serverSettings.h264_streaming_mode;
+    if (s_h264_streaming_mode) {
+      const final = s_h264_streaming_mode.locked ? s_h264_streaming_mode.value : getStoredBool("h264_streaming_mode");
+      setH264StreamingMode(final);
+      localStorage.setItem(getPrefixedKey("h264_streaming_mode"), String(final));
+    }
+    const s_use_cpu = serverSettings.use_cpu;
+    if (s_use_cpu) {
+      const final = s_use_cpu.locked ? s_use_cpu.value : getStoredBool("use_cpu");
+      setUseCpu(final);
+      localStorage.setItem(getPrefixedKey("use_cpu"), String(final));
+    }
+    const s_scaling_dpi = serverSettings.scaling_dpi;
+    if (s_scaling_dpi) {
+      const stored = getStoredInt("scaling_dpi");
+      const final = s_scaling_dpi.allowed.includes(String(stored)) ? stored : parseInt(s_scaling_dpi.value, 10);
+      setSelectedDpi(final);
+      localStorage.setItem(getPrefixedKey("scaling_dpi"), final);
+    }
+    const s_enable_binary_clipboard = serverSettings.enable_binary_clipboard;
+    if (s_enable_binary_clipboard) {
+      const final = s_enable_binary_clipboard.locked ? s_enable_binary_clipboard.value : getStoredBool("enable_binary_clipboard");
+      setEnableBinaryClipboard(final);
+      localStorage.setItem(getPrefixedKey("enable_binary_clipboard"), String(final));
+    }
+    const s_use_browser_cursors = serverSettings.use_browser_cursors;
+    if (s_use_browser_cursors) {
+      const final = s_use_browser_cursors.locked ? s_use_browser_cursors.value : getStoredBool("use_browser_cursors");
+      setUseBrowserCursors(final);
+    }
+    const s_ui_title = serverSettings.ui_title;
+    if (s_ui_title) {
+        setUiTitle(s_ui_title.value);
+    }
+    const s_ui_show_logo = serverSettings.ui_show_logo;
+    if (s_ui_show_logo) {
+        setUiShowLogo(s_ui_show_logo.value);
+    }
+    const s_use_css_scaling = serverSettings.use_css_scaling;
+    if (s_use_css_scaling) {
+      const authoritativeValue = localStorage.getItem(getPrefixedKey("useCssScaling")) === 'true';
+      if (hidpiEnabled === authoritativeValue) {
+        setHidpiEnabled(!authoritativeValue);
+      }
+    }
+  }, [serverSettings]);
 
   const { t, raw } = translator;
   const sendKeyEvent = (type, key, code, modifierState) => {
@@ -880,120 +1087,10 @@ function Sidebar({ isOpen }) {
   // --- Debounce Settings ---
   const DEBOUNCE_DELAY = 500;
 
-  const debouncedUpdateFramerateSettings = useCallback(
-    debounce((newFramerate) => {
+  const debouncedPostSetting = useCallback(
+    debounce((setting) => {
       window.postMessage(
-        { type: "settings", settings: { videoFramerate: newFramerate } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdateVideoBitrateSettings = useCallback(
-    debounce((newBitrate) => {
-      window.postMessage(
-        { type: "settings", settings: { videoBitRate: newBitrate } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdateVideoBufferSizeSettings = useCallback(
-    debounce((newSize) => {
-      window.postMessage(
-        { type: "settings", settings: { videoBufferSize: newSize } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdateVideoCRFSettings = useCallback(
-    debounce((newCRF) => {
-      window.postMessage(
-        { type: "settings", settings: { videoCRF: newCRF } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdateH264PaintoverCRFSettings = useCallback(
-    debounce((newCRF) => {
-      window.postMessage(
-        { type: "settings", settings: { h264_paintover_crf: newCRF } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdateUsePaintOverQualitySettings = useCallback(
-    debounce((newVal) => {
-      window.postMessage(
-        { type: "settings", settings: { use_paint_over_quality: newVal } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdateH264FullColorSettings = useCallback(
-    debounce((newFullColor) => {
-      window.postMessage(
-        { type: "settings", settings: { h264_fullcolor: newFullColor } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdateH264StreamingModeSettings = useCallback(
-    debounce((newStreamingMode) => {
-      window.postMessage(
-        { type: "settings", settings: { h264_streaming_mode: newStreamingMode } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdateJpegQualitySettings = useCallback(
-    debounce((newQuality) => {
-      window.postMessage(
-        { type: "settings", settings: { jpegQuality: newQuality } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdatePaintOverJpegQualitySettings = useCallback(
-    debounce((newQuality) => {
-      window.postMessage(
-        { type: "settings", settings: { paintOverJpegQuality: newQuality } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdateUseCpuSettings = useCallback(
-    debounce((newUseCpu) => {
-      window.postMessage(
-        { type: "settings", settings: { useCpu: newUseCpu } },
-        window.location.origin
-      );
-    }, DEBOUNCE_DELAY),
-    []
-  );
-
-  const debouncedUpdateEnableBinaryClipboardSettings = useCallback(
-    debounce((newVal) => {
-      window.postMessage(
-        { type: "settings", settings: { enableBinaryClipboard: newVal } },
+        { type: "settings", settings: setting },
         window.location.origin
       );
     }, DEBOUNCE_DELAY),
@@ -1003,10 +1100,7 @@ function Sidebar({ isOpen }) {
   const handleDpiScalingChange = (event) => {
     const newDpi = parseInt(event.target.value, 10);
     setSelectedDpi(newDpi);
-    window.postMessage(
-      { type: "settings", settings: { SCALING_DPI: newDpi } },
-      window.location.origin
-    );
+    debouncedPostSetting({ scaling_dpi: newDpi });
   };
 
   const DRAG_THRESHOLD = 10;
@@ -1243,86 +1337,52 @@ function Sidebar({ isOpen }) {
   const handleEncoderChange = (event) => {
     const selectedEncoder = event.target.value;
     setEncoder(selectedEncoder);
-    window.postMessage(
-      { type: "settings", settings: { encoder: selectedEncoder } },
-      window.location.origin
-    );
+    debouncedPostSetting({ encoder: selectedEncoder });
   };
   const handleFramerateChange = (event) => {
-    const index = parseInt(event.target.value, 10);
-    const selectedFramerate = framerateOptions[index];
-    if (selectedFramerate !== undefined) {
-      setFramerate(selectedFramerate);
-      debouncedUpdateFramerateSettings(selectedFramerate);
-    }
+    const selectedFramerate = parseInt(event.target.value, 10);
+    setFramerate(selectedFramerate);
+    debouncedPostSetting({ framerate: selectedFramerate });
   };
   const handleJpegQualityChange = (event) => {
-    const index = parseInt(event.target.value, 10);
-    const selectedQuality = jpegQualityOptions[index];
-    if (selectedQuality !== undefined) {
-      setJpegQuality(selectedQuality);
-      debouncedUpdateJpegQualitySettings(selectedQuality);
-    }
+    const selectedQuality = parseInt(event.target.value, 10);
+    setJpegQuality(selectedQuality);
+    debouncedPostSetting({ jpeg_quality: selectedQuality });
   };
   const handlePaintOverJpegQualityChange = (event) => {
-    const index = parseInt(event.target.value, 10);
-    const selectedQuality = paintOverJpegQualityOptions[index];
-    if (selectedQuality !== undefined) {
-      setPaintOverJpegQuality(selectedQuality);
-      debouncedUpdatePaintOverJpegQualitySettings(selectedQuality);
-    }
-  };
-  const handleVideoBitrateChange = (event) => {
-    const index = parseInt(event.target.value, 10);
-    const selectedBitrate = videoBitrateOptions[index];
-    if (selectedBitrate !== undefined) {
-      setVideoBitRate(selectedBitrate);
-      debouncedUpdateVideoBitrateSettings(selectedBitrate);
-    }
-  };
-  const handleVideoBufferSizeChange = (event) => {
-    const index = parseInt(event.target.value, 10);
-    const selectedSize = videoBufferOptions[index];
-    if (selectedSize !== undefined) {
-      setVideoBufferSize(selectedSize);
-      debouncedUpdateVideoBufferSizeSettings(selectedSize);
-    }
+    const selectedQuality = parseInt(event.target.value, 10);
+    setPaintOverJpegQuality(selectedQuality);
+    debouncedPostSetting({ paint_over_jpeg_quality: selectedQuality });
   };
   const handleVideoCRFChange = (event) => {
-    const index = parseInt(event.target.value, 10);
-    const selectedCRF = videoCRFOptions[index];
-    if (selectedCRF !== undefined) {
-      setVideoCRF(selectedCRF);
-      debouncedUpdateVideoCRFSettings(selectedCRF);
-    }
+    const selectedCRF = parseInt(event.target.value, 10);
+    setVideoCRF(selectedCRF);
+    debouncedPostSetting({ h264_crf: selectedCRF });
   };
   const handleH264PaintoverCRFChange = (event) => {
-    const index = parseInt(event.target.value, 10);
-    const selectedCRF = videoCRFOptions[index];
-    if (selectedCRF !== undefined) {
-      setH264PaintoverCRF(selectedCRF);
-      debouncedUpdateH264PaintoverCRFSettings(selectedCRF);
-    }
+    const selectedCRF = parseInt(event.target.value, 10);
+    setH264PaintoverCRF(selectedCRF);
+    debouncedPostSetting({ h264_paintover_crf: selectedCRF });
   };
   const handleH264FullColorToggle = () => {
     const newFullColorState = !h264FullColor;
     setH264FullColor(newFullColorState);
-    debouncedUpdateH264FullColorSettings(newFullColorState);
+    debouncedPostSetting({ h264_fullcolor: newFullColorState });
   };
   const handleUsePaintOverQualityToggle = () => {
     const newUsePaintOverQualityState = !usePaintOverQuality;
     setUsePaintOverQuality(newUsePaintOverQualityState);
-    debouncedUpdateUsePaintOverQualitySettings(newUsePaintOverQualityState);
+    debouncedPostSetting({ use_paint_over_quality: newUsePaintOverQualityState });
   };
   const handleUseCpuToggle = () => {
     const newUseCpuState = !useCpu;
     setUseCpu(newUseCpuState);
-    debouncedUpdateUseCpuSettings(newUseCpuState);
+    debouncedPostSetting({ use_cpu: newUseCpuState });
   };
   const handleH264StreamingModeToggle = () => {
     const newStreamingModeState = !h264StreamingMode;
     setH264StreamingMode(newStreamingModeState);
-    debouncedUpdateH264StreamingModeSettings(newStreamingModeState);
+    debouncedPostSetting({ h264_streaming_mode: newStreamingModeState });
   };
   const handleAudioInputChange = (event) => {
     const deviceId = event.target.value;
@@ -1407,7 +1467,7 @@ function Sidebar({ isOpen }) {
   const handleEnableBinaryClipboardToggle = () => {
     const newState = !enableBinaryClipboard;
     setEnableBinaryClipboard(newState);
-    debouncedUpdateEnableBinaryClipboardSettings(newState);
+    debouncedPostSetting({ enable_binary_clipboard: newState });
   };
   const handleSetManualResolution = () => {
     const width = parseInt(manualWidth.trim(), 10),
@@ -1839,7 +1899,6 @@ function Sidebar({ isOpen }) {
     isOpen,
   ]);
 
-  const sidebarClasses = `sidebar ${isOpen ? "is-open" : ""} theme-${theme}`;
   const gaugeSize = 80,
     gaugeStrokeWidth = 8,
     gaugeRadius = gaugeSize / 2 - gaugeStrokeWidth / 2;
@@ -1920,9 +1979,27 @@ function Sidebar({ isOpen }) {
   const showH264Options = ["x264enc-striped", "x264enc"].includes(encoder);
   const showJpegOptions = encoder === 'jpeg';
   const showPaintOverQualityToggle = showH264Options || showJpegOptions;
+  if (serverSettings && serverSettings.ui_show_sidebar?.value === false) {
+    return null;
+  }
+  const sidebarClasses = `sidebar ${isOpen ? "is-open" : ""} theme-${theme}`;
+  const filteredSharingLinks = sharingLinks.filter(link => {
+    if (link.id === 'shared') return renderableSettings.enableShared ?? true;
+    if (link.id === 'player2') return renderableSettings.enablePlayer2 ?? true;
+    if (link.id === 'player3') return renderableSettings.enablePlayer3 ?? true;
+    if (link.id === 'player4') return renderableSettings.enablePlayer4 ?? true;
+    return false;
+  });
 
   return (
     <>
+      <div
+        className='toggle-handle'
+        onClick={toggleSidebar}
+        title={`${isOpen ? 'Close' : 'Open'} Dashboard`}
+      >
+        <div className="toggle-indicator"></div>
+      </div>
       {availablePlacements && (() => {
         const arrowBaseStyle = {
           position: 'absolute',
@@ -1976,22 +2053,24 @@ function Sidebar({ isOpen }) {
         );
       })()}
       <div className={sidebarClasses}>
-        <div className="sidebar-header">
-          <a
-            href="https://github.com/selkies-project/selkies"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <SelkiesLogo width={30} height={30} t={t} />
-          </a>
-          <a
-            href="https://github.com/selkies-project/selkies"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <h2>{t("selkiesTitle")}</h2>
-          </a>
-          <div className="header-controls">
+          <div className="sidebar-header">
+            {uiShowLogo && (
+              <a
+                href="https://github.com/selkies-project/selkies"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <SelkiesLogo width={30} height={30} t={t} />
+              </a>
+            )}
+            <a
+              href="https://github.com/selkies-project/selkies"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <h2>{uiTitle}</h2>
+            </a>
+            <div className="header-controls">
             <div
               className={`theme-toggle ${theme}`}
               onClick={toggleTheme}
@@ -2012,87 +2091,97 @@ function Sidebar({ isOpen }) {
                 <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
               </svg>
             </div>
-            <button
-              className="header-action-button fullscreen-button"
-              onClick={handleBrowserFullscreen}
-              title={t("fullscreenTitle")}
-            >
-              <FullscreenIcon />
-            </button>
+            {(renderableSettings.fullscreen ?? true) && (
+              <button
+                className="header-action-button fullscreen-button"
+                onClick={handleBrowserFullscreen}
+                title={t("fullscreenTitle")}
+              >
+                <FullscreenIcon />
+              </button>
+            )}
             {(isMobile || hasDetectedTouch) ? (
-              <button
-                className={`header-action-button trackpad-mode-button ${isTrackpadModeActive ? "active" : ""}`}
-                onClick={handleToggleTrackpadMode}
-                title={t("trackpadModeTitle", "Trackpad Mode")}
-              >
-                <TrackpadIcon />
-              </button>
+              (renderableSettings.trackpad ?? true) && (
+                <button
+                  className={`header-action-button trackpad-mode-button ${isTrackpadModeActive ? "active" : ""}`}
+                  onClick={handleToggleTrackpadMode}
+                  title={t("trackpadModeTitle", "Trackpad Mode")}
+                >
+                  <TrackpadIcon />
+                </button>
+              )
             ) : (
-              <button
-                className="header-action-button gaming-mode-button"
-                onClick={handleFullscreenRequest}
-                title={t("gamingModeTitle", "Gaming Mode")}
-              >
-                <GamingModeIcon />
-              </button>
+              (renderableSettings.gamingMode ?? true) && (
+                <button
+                  className="header-action-button gaming-mode-button"
+                  onClick={handleFullscreenRequest}
+                  title={t("gamingModeTitle", "Gaming Mode")}
+                >
+                  <GamingModeIcon />
+                </button>
+              )
             )}
           </div>
         </div>
 
-        {!isSecondaryDisplay && (
+        {!isSecondaryDisplay && (renderableSettings.coreButtons ?? true) && (
           <div className="sidebar-action-buttons">
-            <button
-              className={`action-button ${isVideoActive ? "active" : ""}`}
-              onClick={handleVideoToggle}
-              title={t(
-                isVideoActive
-                  ? "buttons.videoStreamDisableTitle"
-                  : "buttons.videoStreamEnableTitle"
-              )}
-            >
-              {" "}
-              <ScreenIcon />{" "}
-            </button>
-            <button
-              className={`action-button ${isAudioActive ? "active" : ""}`}
-              onClick={handleAudioToggle}
-              title={t(
-                isAudioActive
-                  ? "buttons.audioStreamDisableTitle"
-                  : "buttons.audioStreamEnableTitle"
-              )}
-            >
-              {" "}
-              <SpeakerIcon />{" "}
-            </button>
-            <button
-              className={`action-button ${isMicrophoneActive ? "active" : ""}`}
-              onClick={handleMicrophoneToggle}
-              title={t(
-                isMicrophoneActive
-                  ? "buttons.microphoneDisableTitle"
-                  : "buttons.microphoneEnableTitle"
-              )}
-            >
-              {" "}
-              <MicrophoneIcon />{" "}
-            </button>
-            <button
-              className={`action-button ${isGamepadEnabled ? "active" : ""}`}
-              onClick={handleGamepadToggle}
-              title={t(
-                isGamepadEnabled
-                  ? "buttons.gamepadDisableTitle"
-                  : "buttons.gamepadEnableTitle"
-              )}
-            >
-              {" "}
-              <GamepadIcon />{" "}
-            </button>
+            {(renderableSettings.videoToggle ?? true) && (
+              <button
+                className={`action-button ${isVideoActive ? "active" : ""}`}
+                onClick={handleVideoToggle}
+                title={t(
+                  isVideoActive
+                    ? "buttons.videoStreamDisableTitle"
+                    : "buttons.videoStreamEnableTitle"
+                )}
+              >
+                <ScreenIcon />
+              </button>
+            )}
+            {(renderableSettings.audioToggle ?? true) && (
+              <button
+                className={`action-button ${isAudioActive ? "active" : ""}`}
+                onClick={handleAudioToggle}
+                title={t(
+                  isAudioActive
+                    ? "buttons.audioStreamDisableTitle"
+                    : "buttons.audioStreamEnableTitle"
+                )}
+              >
+                <SpeakerIcon />
+              </button>
+            )}
+            {(renderableSettings.microphoneToggle ?? true) && (
+              <button
+                className={`action-button ${isMicrophoneActive ? "active" : ""}`}
+                onClick={handleMicrophoneToggle}
+                title={t(
+                  isMicrophoneActive
+                    ? "buttons.microphoneDisableTitle"
+                    : "buttons.microphoneEnableTitle"
+                )}
+              >
+                <MicrophoneIcon />
+              </button>
+            )}
+            {(renderableSettings.gamepadToggle ?? true) && (
+              <button
+                className={`action-button ${isGamepadEnabled ? "active" : ""}`}
+                onClick={handleGamepadToggle}
+                title={t(
+                  isGamepadEnabled
+                    ? "buttons.gamepadDisableTitle"
+                    : "buttons.gamepadEnableTitle"
+                )}
+              >
+                <GamepadIcon />
+              </button>
+            )}
           </div>
         )}
         
-        {(isMobile || hasDetectedTouch) && (
+        {(isMobile || hasDetectedTouch) && (renderableSettings.softButtons ?? true) && (
           <>
             <div className="sidebar-section-divider"></div>
             <div className="sidebar-mobile-key-actions">
@@ -2141,1246 +2230,1219 @@ function Sidebar({ isOpen }) {
           </>
         )}
 
-        <div className="sidebar-section">
-          <div
-            className="sidebar-section-header"
-            onClick={() => toggleSection("settings")}
-            role="button"
-            aria-expanded={sectionsOpen.settings}
-            aria-controls="settings-content"
-            tabIndex="0"
-            onKeyDown={(e) =>
-              (e.key === "Enter" || e.key === " ") && toggleSection("settings")
-            }
-          >
-            <h3>{t("sections.video.title")}</h3>{" "}
-            <span className="section-toggle-icon">
-              {sectionsOpen.settings ? <CaretUpIcon /> : <CaretDownIcon />}
-            </span>
-          </div>
-          {sectionsOpen.settings && (
-            <div className="sidebar-section-content" id="settings-content">
-              <div className="dev-setting-item">
-                {" "}
-                <label htmlFor="encoderSelect">
-                  {t("sections.video.encoderLabel")}
-                </label>{" "}
-                <select
-                  id="encoderSelect"
-                  value={encoder}
-                  onChange={handleEncoderChange}
-                >
-                  {" "}
-                  {dynamicEncoderOptions.map((enc) => (
-                    <option key={enc} value={enc}>
-                      {enc}
-                    </option>
-                  ))}{" "}
-                </select>{" "}
-              </div>
-              {showFPS && (
-                <div className="dev-setting-item">
-                  {" "}
-                  <label htmlFor="framerateSlider">
-                    {t("sections.video.framerateLabel", {
-                      framerate: framerate,
-                    })}
-                  </label>{" "}
-                  <input
-                    type="range"
-                    id="framerateSlider"
-                    min="0"
-                    max={framerateOptions.length - 1}
-                    step="1"
-                    value={framerateOptions.indexOf(framerate)}
-                    onChange={handleFramerateChange}
-                  />{" "}
-                </div>
-              )}
-              {showJpegOptions && (
-                <>
-                  <div className="dev-setting-item">
-                    <label htmlFor="jpegQualitySlider">
-                      {t("sections.video.jpegQualityLabel", {
-                        jpegQuality: jpegQuality,
-                      })}
-                    </label>
-                    <input
-                      type="range"
-                      id="jpegQualitySlider"
-                      min="0"
-                      max={jpegQualityOptions.length - 1}
-                      step="1"
-                      value={jpegQualityOptions.indexOf(jpegQuality)}
-                      onChange={handleJpegQualityChange}
-                    />
-                  </div>
-                  <div className="dev-setting-item">
-                    <label htmlFor="paintOverJpegQualitySlider">
-                      {t("sections.video.paintOverJpegQualityLabel", {
-                        paintOverJpegQuality: paintOverJpegQuality,
-                      })}
-                    </label>
-                    <input
-                      type="range"
-                      id="paintOverJpegQualitySlider"
-                      min="0"
-                      max={paintOverJpegQualityOptions.length - 1}
-                      step="1"
-                      value={paintOverJpegQualityOptions.indexOf(paintOverJpegQuality)}
-                      onChange={handlePaintOverJpegQualityChange}
-                    />
-                  </div>
-                </>
-              )}
-              {showBitrate && (
-                <div className="dev-setting-item">
-                  {" "}
-                  <label htmlFor="videoBitrateSlider">
-                    {t("sections.video.bitrateLabel", {
-                      bitrate: videoBitRate / 1000,
-                    })}
-                  </label>{" "}
-                  <input
-                    type="range"
-                    id="videoBitrateSlider"
-                    min="0"
-                    max={videoBitrateOptions.length - 1}
-                    step="1"
-                    value={videoBitrateOptions.indexOf(videoBitRate)}
-                    onChange={handleVideoBitrateChange}
-                  />{" "}
-                </div>
-              )}
-              {showBufferSize && (
-                <div className="dev-setting-item">
-                  {" "}
-                  <label htmlFor="videoBufferSizeSlider">
-                    {videoBufferSize === 0
-                      ? t("sections.video.bufferLabelImmediate")
-                      : t("sections.video.bufferLabelFrames", {
-                          videoBufferSize: videoBufferSize,
-                        })}
-                  </label>{" "}
-                  <input
-                    type="range"
-                    id="videoBufferSizeSlider"
-                    min="0"
-                    max={videoBufferOptions.length - 1}
-                    step="1"
-                    value={videoBufferOptions.indexOf(videoBufferSize)}
-                    onChange={handleVideoBufferSizeChange}
-                  />{" "}
-                </div>
-              )}
-              {showCRF && (
-                <div className="dev-setting-item">
-                  {" "}
-                  <label htmlFor="videoCRFSlider">
-                    {t("sections.video.crfLabel", { crf: videoCRF })}
-                  </label>{" "}
-                  <input
-                    type="range"
-                    id="videoCRFSlider"
-                    min="0"
-                    max={videoCRFOptions.length - 1}
-                    step="1"
-                    value={videoCRFOptions.indexOf(videoCRF)}
-                    onChange={handleVideoCRFChange}
-                  />{" "}
-                </div>
-              )}
-              {showCRF && (
-                <div className="dev-setting-item">
-                  {" "}
-                  <label htmlFor="h264PaintoverCRFSlider">
-                    {t("sections.video.paintoverCrfLabel", { crf: h264PaintoverCRF }, `Paint-Over CRF: ${h264PaintoverCRF}`)}
-                  </label>{" "}
-                  <input
-                    type="range"
-                    id="h264PaintoverCRFSlider"
-                    min="0"
-                    max={videoCRFOptions.length - 1}
-                    step="1"
-                    value={videoCRFOptions.indexOf(h264PaintoverCRF)}
-                    onChange={handleH264PaintoverCRFChange}
-                  />{" "}
-                </div>
-              )}
-              {showPaintOverQualityToggle && (
-                <div className="dev-setting-item toggle-item">
-                  <label htmlFor="usePaintOverQualityToggle">
-                    {t("sections.video.usePaintOverQualityLabel", "Use Paint-Over Quality")}
-                  </label>
-                  <button
-                    id="usePaintOverQualityToggle"
-                    className={`toggle-button-sidebar ${usePaintOverQuality ? "active" : ""}`}
-                    onClick={handleUsePaintOverQualityToggle}
-                    aria-pressed={usePaintOverQuality}
-                    title={t(usePaintOverQuality ? "buttons.usePaintOverQualityDisableTitle" : "buttons.usePaintOverQualityEnableTitle",
-                               usePaintOverQuality ? "Disable Paint-Over Quality" : "Enable Paint-Over Quality")}
-                  >
-                    <span className="toggle-button-sidebar-knob"></span>
-                  </button>
-                </div>
-              )}
-              {showH264Options && (
-                <div className="dev-setting-item toggle-item">
-                  <label 
-                    htmlFor="h264StreamingModeToggle"
-                    title={t("sections.video.streamingModeDetails", "Turbo mode disables all VNC logic and encodes all frames like a traditional video encoder.")}
-                  >
-                    {t("sections.video.streamingModeLabel", "Turbo")}
-                  </label>
-                  <button
-                    id="h264StreamingModeToggle"
-                    className={`toggle-button-sidebar ${h264StreamingMode ? "active" : ""}`}
-                    onClick={handleH264StreamingModeToggle}
-                    aria-pressed={h264StreamingMode}
-                    title={t(h264StreamingMode ? "buttons.h264StreamingModeDisableTitle" : "buttons.h264StreamingModeEnableTitle",
-                               h264StreamingMode ? "Disable Turbo" : "Enable Turbo")}
-                  >
-                    <span className="toggle-button-sidebar-knob"></span>
-                  </button>
-                </div>
-              )}
-              {showH264Options && (
-                <div className="dev-setting-item toggle-item">
-                  <label htmlFor="h264FullColorToggle">
-                    {t("sections.video.fullColorLabel")}
-                  </label>
-                  <button
-                    id="h264FullColorToggle"
-                    className={`toggle-button-sidebar ${h264FullColor ? "active" : ""}`}
-                    onClick={handleH264FullColorToggle}
-                    aria-pressed={h264FullColor}
-                    title={t(h264FullColor ? "buttons.h264FullColorDisableTitle" : "buttons.h264FullColorEnableTitle", 
-                               h264FullColor ? "Disable H.264 Full Color" : "Enable H.264 Full Color")}
-                  >
-                    <span className="toggle-button-sidebar-knob"></span>
-                  </button>
-                </div>
-              )}
-              {showH264Options && (
-                <div className="dev-setting-item toggle-item">
-                  <label htmlFor="useCpuToggle">
-                    {t("sections.video.useCpuLabel", "CPU Encoding")}
-                  </label>
-                  <button
-                    id="useCpuToggle"
-                    className={`toggle-button-sidebar ${useCpu ? "active" : ""}`}
-                    onClick={handleUseCpuToggle}
-                    aria-pressed={useCpu}
-                    title={t(useCpu ? "buttons.useCpuDisableTitle" : "buttons.useCpuEnableTitle",
-                               useCpu ? "Disable CPU Encoding" : "Enable CPU Encoding")}
-                  >
-                    <span className="toggle-button-sidebar-knob"></span>
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="sidebar-section">
-          <div
-            className="sidebar-section-header"
-            onClick={() => toggleSection("screenSettings")}
-            role="button"
-            aria-expanded={sectionsOpen.screenSettings}
-            aria-controls="screen-settings-content"
-            tabIndex="0"
-            onKeyDown={(e) =>
-              (e.key === "Enter" || e.key === " ") &&
-              toggleSection("screenSettings")
-            }
-          >
-            <h3>{t("sections.screen.title")}</h3>{" "}
-            <span className="section-toggle-icon">
-              {sectionsOpen.screenSettings ? (
-                <CaretUpIcon />
-              ) : (
-                <CaretDownIcon />
-              )}
-            </span>
-          </div>
-          {sectionsOpen.screenSettings && (
+        {(renderableSettings.videoSettings ?? true) && (
+          <div className="sidebar-section">
             <div
-              className="sidebar-section-content"
-              id="screen-settings-content"
+              className="sidebar-section-header"
+              onClick={() => toggleSection("settings")}
+              role="button"
+              aria-expanded={sectionsOpen.settings}
+              aria-controls="settings-content"
+              tabIndex="0"
+              onKeyDown={(e) =>
+                (e.key === "Enter" || e.key === " ") && toggleSection("settings")
+              }
             >
-              {!isSecondaryDisplay && (
-                <>
-                  <button
-                    className="resolution-button toggle-button"
-                    onClick={handleAddScreenClick}
-                    style={{ marginBottom: "10px" }}
-                    title={t("sections.screen.addScreenTitle", "Add a second screen")}
-                  >
-                    {t("sections.screen.addScreenButton", "Add Screen +")}
-                  </button>
-                  <div className="dev-setting-item toggle-item">
-                    <label htmlFor="hidpiToggle">
-                      {t("sections.screen.hidpiLabel", "HiDPI (Pixel Perfect)")}
-                    </label>
-                    <button
-                      id="hidpiToggle"
-                      className={`toggle-button-sidebar ${hidpiEnabled ? "active" : ""}`}
-                      onClick={handleHidpiToggle}
-                      aria-pressed={hidpiEnabled}
-                      title={t(hidpiEnabled ? "sections.screen.hidpiDisableTitle" : "sections.screen.hidpiEnableTitle",
-                                hidpiEnabled ? "Disable HiDPI (Use CSS Scaling)" : "Enable HiDPI (Pixel Perfect)")}
-                    >
-                      <span className="toggle-button-sidebar-knob"></span>
-                    </button>
-                  </div>
-                  <div className="dev-setting-item toggle-item">
-                    <label htmlFor="antiAliasingToggle">
-                      {t("sections.screen.antiAliasingLabel", "Anti-aliasing")}
-                    </label>
-                    <button
-                      id="antiAliasingToggle"
-                      className={`toggle-button-sidebar ${antiAliasing ? "active" : ""}`}
-                      onClick={handleAntiAliasingToggle}
-                      aria-pressed={antiAliasing}
-                      title={t(antiAliasing ? "sections.screen.antiAliasingDisableTitle" : "sections.screen.antiAliasingEnableTitle",
-                                antiAliasing ? "Disable anti-aliasing (force pixelated)" : "Enable anti-aliasing (smooth on scaling)")}
-                    >
-                      <span className="toggle-button-sidebar-knob"></span>
-                    </button>
-                  </div>
-                  <div className="dev-setting-item toggle-item">
-                    <label htmlFor="useBrowserCursorsToggle">
-                      {t("sections.screen.useNativeCursorStylesLabel", "Use CSS cursors")}
-                    </label>
-                    <button
-                      id="useBrowserCursorsToggle"
-                      className={`toggle-button-sidebar ${useBrowserCursors ? "active" : ""}`}
-                      onClick={handleUseBrowserCursorsToggle}
-                      aria-pressed={useBrowserCursors}
-                      title={t(useBrowserCursors ? "sections.screen.useNativeCursorStylesDisableTitle" : "sections.screen.useNativeCursorStylesEnableTitle",
-                                useBrowserCursors ? "Use canvas cursor rendering (Paint to canvas)" : "Use CSS cursor rendering (Replace system cursors)")}
-                    >
-                      <span className="toggle-button-sidebar-knob"></span>
-                    </button>
-                  </div>
+              <h3>{t("sections.video.title")}</h3>
+              <span className="section-toggle-icon">
+                {sectionsOpen.settings ? <CaretUpIcon /> : <CaretDownIcon />}
+              </span>
+            </div>
+            {sectionsOpen.settings && (
+              <div className="sidebar-section-content" id="settings-content">
+                {(renderableSettings.encoder ?? true) && (
                   <div className="dev-setting-item">
-                    <label htmlFor="uiScalingSelect">
-                      {t("sections.screen.uiScalingLabel", "UI Scaling")}
+                    <label htmlFor="encoderSelect">
+                      {t("sections.video.encoderLabel")}
                     </label>
                     <select
-                      id="uiScalingSelect"
-                      value={selectedDpi}
-                      onChange={handleDpiScalingChange}
+                      id="encoderSelect"
+                      value={encoder}
+                      onChange={handleEncoderChange}
+                      disabled={!serverSettings || serverSettings.encoder?.allowed?.length <= 1}
                     >
-                      {dpiScalingOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.value === currentDeviceDpi
-                            ? `${option.label} *`
-                            : option.label}
+                      {(serverSettings?.encoder?.allowed || encoderOptions).map((enc) => (
+                        <option key={enc} value={enc}>
+                          {enc}
                         </option>
                       ))}
                     </select>
                   </div>
-                </>
-              )}
-              <div className="dev-setting-item">
-                {" "}
-                <label htmlFor="resolutionPresetSelect">
-                  {t("sections.screen.presetLabel")}
-                </label>{" "}
-                <select
-                  id="resolutionPresetSelect"
-                  value={presetValue}
-                  onChange={handlePresetChange}
-                >
-                  {" "}
-                  {translatedCommonResolutions.map((res, i) => (
-                    <option key={i} value={res.value} disabled={i === 0}>
-                      {res.text}
-                    </option>
-                  ))}{" "}
-                </select>{" "}
-              </div>
-              <div className="resolution-manual-inputs">
-                <div className="dev-setting-item manual-input-item">
-                  {" "}
-                  <label htmlFor="manualWidthInput">
-                    {t("sections.screen.widthLabel")}
-                  </label>{" "}
-                  <input
-                    className="allow-native-input"
-                    type="number"
-                    id="manualWidthInput"
-                    min="1"
-                    step="2"
-                    placeholder={t("sections.screen.widthPlaceholder")}
-                    value={manualWidth}
-                    onChange={handleManualWidthChange}
-                  />{" "}
-                </div>
-                <div className="dev-setting-item manual-input-item">
-                  {" "}
-                  <label htmlFor="manualHeightInput">
-                    {t("sections.screen.heightLabel")}
-                  </label>{" "}
-                  <input
-                    className="allow-native-input"
-                    type="number"
-                    id="manualHeightInput"
-                    min="1"
-                    step="2"
-                    placeholder={t("sections.screen.heightPlaceholder")}
-                    value={manualHeight}
-                    onChange={handleManualHeightChange}
-                  />{" "}
-                </div>
-              </div>
-              <div className="resolution-action-buttons">
-                {" "}
-                <button
-                  className="resolution-button"
-                  onClick={handleSetManualResolution}
-                >
-                  {t("sections.screen.setManualButton")}
-                </button>{" "}
-                <button
-                  className="resolution-button reset-button"
-                  onClick={handleResetResolution}
-                >
-                  {t("sections.screen.resetButton")}
-                </button>{" "}
-              </div>
-              <button
-                className={`resolution-button toggle-button ${
-                  scaleLocally ? "active" : ""
-                }`}
-                onClick={handleScaleLocallyToggle}
-                style={{ marginTop: "10px" }}
-                title={t(
-                  scaleLocally
-                    ? "sections.screen.scaleLocallyTitleDisable"
-                    : "sections.screen.scaleLocallyTitleEnable"
                 )}
-              >
-                {" "}
-                {t("sections.screen.scaleLocallyLabel")}{" "}
-                {t(
-                  scaleLocally
-                    ? "sections.screen.scaleLocallyOn"
-                    : "sections.screen.scaleLocallyOff"
-                )}{" "}
-              </button>
-            </div>
-          )}
-        </div>
+                {showFPS && (renderableSettings.framerate ?? true) && (
+                  <div className="dev-setting-item">
+                    <label htmlFor="framerateSlider">
+                      {t("sections.video.framerateLabel", {
+                        framerate: framerate,
+                      })}
+                    </label>
+                    <input
+                      type="range"
+                      id="framerateSlider"
+                      min={serverSettings?.framerate?.min || 8}
+                      max={serverSettings?.framerate?.max || 165}
+                      step="1"
+                      value={framerate}
+                      onChange={handleFramerateChange}
+                      disabled={!serverSettings || serverSettings.framerate?.min === serverSettings.framerate?.max}
+                    />
+                  </div>
+                )}
+                {showJpegOptions && (
+                  <>
+                    {(renderableSettings.jpegQuality ?? true) && (
+                      <div className="dev-setting-item">
+                        <label htmlFor="jpegQualitySlider">
+                          {t("sections.video.jpegQualityLabel", {
+                            jpegQuality: jpegQuality,
+                          })}
+                        </label>
+                        <input
+                          type="range"
+                          id="jpegQualitySlider"
+                          min={serverSettings?.jpeg_quality?.min || 1}
+                          max={serverSettings?.jpeg_quality?.max || 100}
+                          step="1"
+                          value={jpegQuality}
+                          onChange={handleJpegQualityChange}
+                          disabled={!serverSettings || serverSettings.jpeg_quality?.min === serverSettings.jpeg_quality?.max}
+                        />
+                      </div>
+                    )}
+                    {(renderableSettings.paintOverJpegQuality ?? true) && (
+                      <div className="dev-setting-item">
+                        <label htmlFor="paintOverJpegQualitySlider">
+                          {t("sections.video.paintOverJpegQualityLabel", {
+                            paintOverJpegQuality: paintOverJpegQuality,
+                          })}
+                        </label>
+                        <input
+                          type="range"
+                          id="paintOverJpegQualitySlider"
+                          min={serverSettings?.paint_over_jpeg_quality?.min || 1}
+                          max={serverSettings?.paint_over_jpeg_quality?.max || 100}
+                          step="1"
+                          value={paintOverJpegQuality}
+                          onChange={handlePaintOverJpegQualityChange}
+                          disabled={!serverSettings || serverSettings.paint_over_jpeg_quality?.min === serverSettings.paint_over_jpeg_quality?.max}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+                {showCRF && (renderableSettings.videoCRF ?? true) && (
+                  <div className="dev-setting-item">
+                    <label htmlFor="videoCRFSlider">
+                      {t("sections.video.crfLabel", { crf: videoCRF })}
+                    </label>
+                    <input
+                      type="range"
+                      id="videoCRFSlider"
+                      min={serverSettings?.h264_crf?.min || 5}
+                      max={serverSettings?.h264_crf?.max || 50}
+                      step="1"
+                      value={videoCRF}
+                      onChange={handleVideoCRFChange}
+                      disabled={!serverSettings || serverSettings.h264_crf?.min === serverSettings.h264_crf?.max}
+                      style={{ direction: 'rtl' }}
+                    />
+                  </div>
+                )}
+                {showCRF && (renderableSettings.h264PaintoverCRF ?? true) && (
+                  <div className="dev-setting-item">
+                    <label htmlFor="h264PaintoverCRFSlider">
+                      {t("sections.video.paintoverCrfLabel", { crf: h264PaintoverCRF })}
+                    </label>
+                    <input
+                      type="range"
+                      id="h264PaintoverCRFSlider"
+                      min={serverSettings?.h264_paintover_crf?.min || 5}
+                      max={serverSettings?.h264_paintover_crf?.max || 50}
+                      step="1"
+                      value={h264PaintoverCRF}
+                      onChange={handleH264PaintoverCRFChange}
+                      disabled={!serverSettings || serverSettings.h264_paintover_crf?.min === serverSettings.h264_paintover_crf?.max}
+                      style={{ direction: 'rtl' }}
+                    />
+                  </div>
+                )}
+                {showPaintOverQualityToggle && (renderableSettings.usePaintOverQuality ?? true) && (
+                  <div className="dev-setting-item toggle-item">
+                    <label htmlFor="usePaintOverQualityToggle">
+                      {t("sections.video.usePaintOverQualityLabel", "Use Paint-Over Quality")}
+                    </label>
+                    <button
+                      id="usePaintOverQualityToggle"
+                      className={`toggle-button-sidebar ${usePaintOverQuality ? "active" : ""}`}
+                      onClick={handleUsePaintOverQualityToggle}
+                      aria-pressed={usePaintOverQuality}
+                      disabled={!serverSettings || serverSettings.use_paint_over_quality?.locked}
+                      title={t(usePaintOverQuality ? "buttons.usePaintOverQualityDisableTitle" : "buttons.usePaintOverQualityEnableTitle")}
+                    >
+                      <span className="toggle-button-sidebar-knob"></span>
+                    </button>
+                  </div>
+                )}
+                {showH264Options && (renderableSettings.h264StreamingMode ?? true) && (
+                  <div className="dev-setting-item toggle-item">
+                    <label 
+                      htmlFor="h264StreamingModeToggle"
+                      title={t("sections.video.streamingModeDetails")}
+                    >
+                      {t("sections.video.streamingModeLabel", "Turbo")}
+                    </label>
+                    <button
+                      id="h264StreamingModeToggle"
+                      className={`toggle-button-sidebar ${h264StreamingMode ? "active" : ""}`}
+                      onClick={handleH264StreamingModeToggle}
+                      aria-pressed={h264StreamingMode}
+                      disabled={!serverSettings || serverSettings.h264_streaming_mode?.locked}
+                      title={t(h264StreamingMode ? "buttons.h264StreamingModeDisableTitle" : "buttons.h264StreamingModeEnableTitle")}
+                    >
+                      <span className="toggle-button-sidebar-knob"></span>
+                    </button>
+                  </div>
+                )}
+                {showH264Options && (renderableSettings.h264FullColor ?? true) && (
+                  <div className="dev-setting-item toggle-item">
+                    <label htmlFor="h264FullColorToggle">
+                      {t("sections.video.fullColorLabel")}
+                    </label>
+                    <button
+                      id="h264FullColorToggle"
+                      className={`toggle-button-sidebar ${h264FullColor ? "active" : ""}`}
+                      onClick={handleH264FullColorToggle}
+                      aria-pressed={h264FullColor}
+                      disabled={!serverSettings || serverSettings.h264_fullcolor?.locked}
+                      title={t(h264FullColor ? "buttons.h264FullColorDisableTitle" : "buttons.h264FullColorEnableTitle")}
+                    >
+                      <span className="toggle-button-sidebar-knob"></span>
+                    </button>
+                  </div>
+                )}
+                {showH264Options && (renderableSettings.useCpu ?? true) && (
+                  <div className="dev-setting-item toggle-item">
+                    <label htmlFor="useCpuToggle">
+                      {t("sections.video.useCpuLabel", "CPU Encoding")}
+                    </label>
+                    <button
+                      id="useCpuToggle"
+                      className={`toggle-button-sidebar ${useCpu ? "active" : ""}`}
+                      onClick={handleUseCpuToggle}
+                      aria-pressed={useCpu}
+                      disabled={!serverSettings || serverSettings.use_cpu?.locked}
+                      title={t(useCpu ? "buttons.useCpuDisableTitle" : "buttons.useCpuEnableTitle")}
+                    >
+                      <span className="toggle-button-sidebar-knob"></span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
-        {!isSecondaryDisplay && (
-          <><></>
+        {(renderableSettings.screenSettings ?? true) && (
           <div className="sidebar-section">
             <div
               className="sidebar-section-header"
-              onClick={() => toggleSection("audioSettings")}
+              onClick={() => toggleSection("screenSettings")}
               role="button"
-              aria-expanded={sectionsOpen.audioSettings}
-              aria-controls="audio-settings-content"
+              aria-expanded={sectionsOpen.screenSettings}
+              aria-controls="screen-settings-content"
               tabIndex="0"
-              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") &&
-                toggleSection("audioSettings")}
+              onKeyDown={(e) =>
+                (e.key === "Enter" || e.key === " ") &&
+                toggleSection("screenSettings")
+              }
             >
-              <h3>{t("sections.audio.title")}</h3>{" "}
+              <h3>{t("sections.screen.title")}</h3>
               <span className="section-toggle-icon">
-                {isLoadingAudioDevices ? (
-                  <SpinnerIcon />
-                ) : sectionsOpen.audioSettings ? (
+                {sectionsOpen.screenSettings ? (
                   <CaretUpIcon />
                 ) : (
                   <CaretDownIcon />
                 )}
               </span>
             </div>
-            {sectionsOpen.audioSettings && (
+            {sectionsOpen.screenSettings && (
               <div
                 className="sidebar-section-content"
-                id="audio-settings-content"
+                id="screen-settings-content"
               >
-                {audioDeviceError && (
-                  <div className="error-message">{audioDeviceError}</div>
-                )}
-                <div className="dev-setting-item">
-                  {" "}
-                  <label htmlFor="audioInputSelect">
-                    {t("sections.audio.inputLabel")}
-                  </label>{" "}
-                  <select
-                    id="audioInputSelect"
-                    value={selectedInputDeviceId}
-                    onChange={handleAudioInputChange}
-                    disabled={isLoadingAudioDevices || !!audioDeviceError}
-                    className="audio-device-select"
-                  >
-                    {" "}
-                    {audioInputDevices.map((d) => (
-                      <option key={d.deviceId} value={d.deviceId}>
-                        {d.label}
-                      </option>
-                    ))}{" "}
-                  </select>{" "}
-                </div>
-                {isOutputSelectionSupported && (
-                  <div className="dev-setting-item">
-                    {" "}
-                    <label htmlFor="audioOutputSelect">
-                      {t("sections.audio.outputLabel")}
-                    </label>{" "}
-                    <select
-                      id="audioOutputSelect"
-                      value={selectedOutputDeviceId}
-                      onChange={handleAudioOutputChange}
-                      disabled={isLoadingAudioDevices || !!audioDeviceError}
-                      className="audio-device-select"
-                    >
-                      {" "}
-                      {audioOutputDevices.map((d) => (
-                        <option key={d.deviceId} value={d.deviceId}>
-                          {d.label}
-                        </option>
-                      ))}{" "}
-                    </select>{" "}
-                  </div>
-                )}
-                {!isOutputSelectionSupported &&
-                  !isLoadingAudioDevices &&
-                  !audioDeviceError && (
-                    <p className="device-support-notice">
-                      {t("sections.audio.outputNotSupported")}
-                    </p>
-                  )}
-              </div>
-            )}
-          </div><div className="sidebar-section">
-              <div
-                className="sidebar-section-header"
-                onClick={() => toggleSection("stats")}
-                role="button"
-                aria-expanded={sectionsOpen.stats}
-                aria-controls="stats-content"
-                tabIndex="0"
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleSection("stats")}
-              >
-                <h3>{t("sections.stats.title")}</h3>{" "}
-                <span className="section-toggle-icon">
-                  {sectionsOpen.stats ? <CaretUpIcon /> : <CaretDownIcon />}
-                </span>
-              </div>
-              {sectionsOpen.stats && (
-                <div className="sidebar-section-content" id="stats-content">
-                  <div className="stats-gauges">
-                    <div
-                      className="gauge-container"
-                      onMouseEnter={(e) => handleMouseEnter(e, "cpu")}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                      {" "}
-                      <svg
-                        width={gaugeSize}
-                        height={gaugeSize}
-                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                {!isSecondaryDisplay && (
+                  <>
+                    {serverSettings?.second_screen?.value && (
+                      <button
+                        className="resolution-button toggle-button"
+                        onClick={handleAddScreenClick}
+                        style={{ marginBottom: "10px" }}
+                        title={t("sections.screen.addScreenTitle", "Add a second screen")}
                       >
-                        {" "}
-                        <circle
-                          stroke="var(--item-border)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter} />{" "}
-                        <circle
-                          stroke="var(--sidebar-header-color)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter}
-                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                          style={{
-                            strokeDasharray: gaugeCircumference,
-                            strokeDashoffset: cpuOffset,
-                            transition: "stroke-dashoffset 0.3s ease-in-out",
-                            strokeLinecap: "round",
-                          }} />{" "}
-                        <text
-                          x={gaugeCenter}
-                          y={gaugeCenter}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fontSize={`${gaugeSize / 5}px`}
-                          fill="var(--sidebar-text)"
-                          fontWeight="bold"
-                        >
-                          {" "}
-                          {Math.round(
-                            Math.max(0, Math.min(100, cpuPercent || 0))
-                          )}%{" "}
-                        </text>{" "}
-                      </svg>{" "}
-                      <div className="gauge-label">
-                        {t("sections.stats.cpuLabel")}
-                      </div>{" "}
-                    </div>
-                    <div
-                      className="gauge-container"
-                      onMouseEnter={(e) => handleMouseEnter(e, "sysmem")}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                      {" "}
-                      <svg
-                        width={gaugeSize}
-                        height={gaugeSize}
-                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                      >
-                        {" "}
-                        <circle
-                          stroke="var(--item-border)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter} />{" "}
-                        <circle
-                          stroke="var(--sidebar-header-color)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter}
-                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                          style={{
-                            strokeDasharray: gaugeCircumference,
-                            strokeDashoffset: sysMemOffset,
-                            transition: "stroke-dashoffset 0.3s ease-in-out",
-                            strokeLinecap: "round",
-                          }} />{" "}
-                        <text
-                          x={gaugeCenter}
-                          y={gaugeCenter}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fontSize={`${gaugeSize / 5}px`}
-                          fill="var(--sidebar-text)"
-                          fontWeight="bold"
-                        >
-                          {" "}
-                          {Math.round(
-                            Math.max(0, Math.min(100, sysMemPercent || 0))
-                          )}
-                          %{" "}
-                        </text>{" "}
-                      </svg>{" "}
-                      <div className="gauge-label">
-                        {t("sections.stats.sysMemLabel")}
-                      </div>{" "}
-                    </div>
-                    {window.gpu_stats && (
-                      <>
-                        <div
-                          className="gauge-container"
-                          onMouseEnter={(e) => handleMouseEnter(e, "gpu")}
-                          onMouseLeave={handleMouseLeave}
-                        >
-                          <svg
-                            width={gaugeSize}
-                            height={gaugeSize}
-                            viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                          >
-                            <circle
-                              stroke="var(--item-border)"
-                              fill="transparent"
-                              strokeWidth={gaugeStrokeWidth}
-                              r={gaugeRadius}
-                              cx={gaugeCenter}
-                              cy={gaugeCenter} />
-                            <circle
-                              stroke="var(--sidebar-header-color)"
-                              fill="transparent"
-                              strokeWidth={gaugeStrokeWidth}
-                              r={gaugeRadius}
-                              cx={gaugeCenter}
-                              cy={gaugeCenter}
-                              transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                              style={{
-                                strokeDasharray: gaugeCircumference,
-                                strokeDashoffset: gpuOffset,
-                                transition: "stroke-dashoffset 0.3s ease-in-out",
-                                strokeLinecap: "round",
-                              }} />
-                            <text
-                              x={gaugeCenter}
-                              y={gaugeCenter}
-                              textAnchor="middle"
-                              dominantBaseline="central"
-                              fontSize={`${gaugeSize / 5}px`}
-                              fill="var(--sidebar-text)"
-                              fontWeight="bold"
-                            >
-                              {" "}
-                              {Math.round(
-                                Math.max(0, Math.min(100, gpuPercent || 0))
-                              )}%{" "}
-                            </text>
-                          </svg>
-                          <div className="gauge-label">
-                            {t("sections.stats.gpuLabel")}
-                          </div>
-                        </div>
-                        <div
-                          className="gauge-container"
-                          onMouseEnter={(e) => handleMouseEnter(e, "gpumem")}
-                          onMouseLeave={handleMouseLeave}
-                        >
-                          <svg
-                            width={gaugeSize}
-                            height={gaugeSize}
-                            viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                          >
-                            <circle
-                              stroke="var(--item-border)"
-                              fill="transparent"
-                              strokeWidth={gaugeStrokeWidth}
-                              r={gaugeRadius}
-                              cx={gaugeCenter}
-                              cy={gaugeCenter} />
-                            <circle
-                              stroke="var(--sidebar-header-color)"
-                              fill="transparent"
-                              strokeWidth={gaugeStrokeWidth}
-                              r={gaugeRadius}
-                              cx={gaugeCenter}
-                              cy={gaugeCenter}
-                              transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                              style={{
-                                strokeDasharray: gaugeCircumference,
-                                strokeDashoffset: gpuMemOffset,
-                                transition: "stroke-dashoffset 0.3s ease-in-out",
-                                strokeLinecap: "round",
-                              }} />
-                            <text
-                              x={gaugeCenter}
-                              y={gaugeCenter}
-                              textAnchor="middle"
-                              dominantBaseline="central"
-                              fontSize={`${gaugeSize / 5}px`}
-                              fill="var(--sidebar-text)"
-                              fontWeight="bold"
-                            >
-                              {" "}
-                              {Math.round(
-                                Math.max(0, Math.min(100, gpuMemPercent || 0))
-                              )}
-                              %{" "}
-                            </text>
-                          </svg>
-                          <div className="gauge-label">
-                            {t("sections.stats.gpuMemLabel")}
-                          </div>
-                        </div>
-                      </>
+                        {t("sections.screen.addScreenButton", "Add Screen +")}
+                      </button>
                     )}
-                    <div
-                      className="gauge-container"
-                      onMouseEnter={(e) => handleMouseEnter(e, "fps")}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                      {" "}
-                      <svg
-                        width={gaugeSize}
-                        height={gaugeSize}
-                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
-                      >
-                        {" "}
-                        <circle
-                          stroke="var(--item-border)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter} />{" "}
-                        <circle
-                          stroke="var(--sidebar-header-color)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter}
-                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                          style={{
-                            strokeDasharray: gaugeCircumference,
-                            strokeDashoffset: fpsOffset,
-                            transition: "stroke-dashoffset 0.3s ease-in-out",
-                            strokeLinecap: "round",
-                          }} />{" "}
-                        <text
-                          x={gaugeCenter}
-                          y={gaugeCenter}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fontSize={`${gaugeSize / 5}px`}
-                          fill="var(--sidebar-text)"
-                          fontWeight="bold"
+                    {(renderableSettings.hidpi ?? true) && (
+                      <div className="dev-setting-item toggle-item">
+                        <label htmlFor="hidpiToggle">
+                          {t("sections.screen.hidpiLabel", "HiDPI (Pixel Perfect)")}
+                        </label>
+                        <button
+                          id="hidpiToggle"
+                          className={`toggle-button-sidebar ${hidpiEnabled ? "active" : ""}`}
+                          onClick={handleHidpiToggle}
+                          aria-pressed={hidpiEnabled}
+                          title={t(hidpiEnabled ? "sections.screen.hidpiDisableTitle" : "sections.screen.hidpiEnableTitle",
+                                  hidpiEnabled ? "Disable HiDPI (Use CSS Scaling)" : "Enable HiDPI (Pixel Perfect)")}
                         >
-                          {" "}
-                          {clientFps}{" "}
-                        </text>{" "}
-                      </svg>{" "}
-                      <div className="gauge-label">
-                        {t("sections.stats.fpsLabel")}
-                      </div>{" "}
-                    </div>
-                    <div
-                      className="gauge-container"
-                      onMouseEnter={(e) => handleMouseEnter(e, "audio")}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                      {" "}
-                      <svg
-                        width={gaugeSize}
-                        height={gaugeSize}
-                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                          <span className="toggle-button-sidebar-knob"></span>
+                        </button>
+                      </div>
+                    )}
+                    <div className="dev-setting-item toggle-item">
+                      <label htmlFor="antiAliasingToggle">
+                        {t("sections.screen.antiAliasingLabel", "Anti-aliasing")}
+                      </label>
+                      <button
+                        id="antiAliasingToggle"
+                        className={`toggle-button-sidebar ${antiAliasing ? "active" : ""}`}
+                        onClick={handleAntiAliasingToggle}
+                        aria-pressed={antiAliasing}
+                        title={t(antiAliasing ? "sections.screen.antiAliasingDisableTitle" : "sections.screen.antiAliasingEnableTitle",
+                                  antiAliasing ? "Disable anti-aliasing (force pixelated)" : "Enable anti-aliasing (smooth on scaling)")}
                       >
-                        {" "}
-                        <circle
-                          stroke="var(--item-border)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter} />{" "}
-                        <circle
-                          stroke="var(--sidebar-header-color)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter}
-                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                          style={{
-                            strokeDasharray: gaugeCircumference,
-                            strokeDashoffset: audioBufferOffset,
-                            transition: "stroke-dashoffset 0.3s ease-in-out",
-                            strokeLinecap: "round",
-                          }} />{" "}
-                        <text
-                          x={gaugeCenter}
-                          y={gaugeCenter}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fontSize={`${gaugeSize / 5}px`}
-                          fill="var(--sidebar-text)"
-                          fontWeight="bold"
-                        >
-                          {" "}
-                          {audioBuffer}{" "}
-                        </text>{" "}
-                      </svg>{" "}
-                      <div className="gauge-label">
-                        {t("sections.stats.audioLabel")}
-                      </div>{" "}
+                        <span className="toggle-button-sidebar-knob"></span>
+                      </button>
                     </div>
-                    <div
-                      className="gauge-container"
-                      onMouseEnter={(e) => handleMouseEnter(e, "bandwidth")}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                      {" "}
-                      <svg
-                        width={gaugeSize}
-                        height={gaugeSize}
-                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                    {(renderableSettings.useBrowserCursors ?? true) && (
+                      <div className="dev-setting-item toggle-item">
+                        <label htmlFor="useBrowserCursorsToggle">
+                          {t("sections.screen.useNativeCursorStylesLabel", "Use CSS cursors")}
+                        </label>
+                        <button
+                          id="useBrowserCursorsToggle"
+                          className={`toggle-button-sidebar ${useBrowserCursors ? "active" : ""}`}
+                          onClick={handleUseBrowserCursorsToggle}
+                          aria-pressed={useBrowserCursors}
+                          title={t(useBrowserCursors ? "sections.screen.useNativeCursorStylesDisableTitle" : "sections.screen.useNativeCursorStylesEnableTitle",
+                                  useBrowserCursors ? "Use canvas cursor rendering (Paint to canvas)" : "Use CSS cursor rendering (Replace system cursors)")}
+                        >
+                          <span className="toggle-button-sidebar-knob"></span>
+                        </button>
+                      </div>
+                    )}
+                    {(renderableSettings.uiScaling ?? true) && (
+                      <div className="dev-setting-item">
+                        <label htmlFor="uiScalingSelect">
+                          {t("sections.screen.uiScalingLabel", "UI Scaling")}
+                        </label>
+                        <select
+                          id="uiScalingSelect"
+                          value={selectedDpi}
+                          onChange={handleDpiScalingChange}
+                          disabled={!serverSettings || serverSettings.scaling_dpi?.allowed?.length <= 1}
+                        >
+                          {(serverSettings?.scaling_dpi?.allowed || []).map((dpiValue) => {
+                            const percent = Math.round((parseInt(dpiValue, 10) / 96) * 100);
+                            const label = `${percent}%`;
+                            return (
+                              <option key={dpiValue} value={dpiValue}>
+                                {dpiValue === String(currentDeviceDpi) ? `${label} *` : label}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    )}
+                  </>
+                )}
+                {(!serverSettings?.is_manual_resolution_mode?.locked) && (
+                  <>
+                    <div className="dev-setting-item">
+                      <label htmlFor="resolutionPresetSelect">
+                        {t("sections.screen.presetLabel")}
+                      </label>
+                      <select
+                        id="resolutionPresetSelect"
+                        value={presetValue}
+                        onChange={handlePresetChange}
                       >
-                        {" "}
-                        <circle
-                          stroke="var(--item-border)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter} />{" "}
-                        <circle
-                          stroke="var(--sidebar-header-color)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter}
-                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                          style={{
-                            strokeDasharray: gaugeCircumference,
-                            strokeDashoffset: bandwidthOffset,
-                            transition: "stroke-dashoffset 0.3s ease-in-out",
-                            strokeLinecap: "round",
-                          }} />{" "}
-                        <text
-                          x={gaugeCenter}
-                          y={gaugeCenter}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fontSize={`${gaugeSize / 5}px`}
-                          fill="var(--sidebar-text)"
-                          fontWeight="bold"
-                        >
-                          {" "}
-                          {Math.round(bandwidthMbps)}{" "}
-                        </text>{" "}
-                      </svg>{" "}
-                      <div className="gauge-label">
-                        {t("sections.stats.bandwidthLabel", "Bandwidth")}
-                      </div>{" "}
+                        {translatedCommonResolutions.map((res, i) => (
+                          <option key={i} value={res.value} disabled={i === 0}>
+                            {res.text}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    <div
-                      className="gauge-container"
-                      onMouseEnter={(e) => handleMouseEnter(e, "latency")}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                      {" "}
-                      <svg
-                        width={gaugeSize}
-                        height={gaugeSize}
-                        viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                    <div className="resolution-manual-inputs">
+                      <div className="dev-setting-item manual-input-item">
+                        <label htmlFor="manualWidthInput">
+                          {t("sections.screen.widthLabel")}
+                        </label>
+                        <input
+                          className="allow-native-input"
+                          type="number"
+                          id="manualWidthInput"
+                          min="1"
+                          step="2"
+                          placeholder={t("sections.screen.widthPlaceholder")}
+                          value={manualWidth}
+                          onChange={handleManualWidthChange}
+                        />
+                      </div>
+                      <div className="dev-setting-item manual-input-item">
+                        <label htmlFor="manualHeightInput">
+                          {t("sections.screen.heightLabel")}
+                        </label>
+                        <input
+                          className="allow-native-input"
+                          type="number"
+                          id="manualHeightInput"
+                          min="1"
+                          step="2"
+                          placeholder={t("sections.screen.heightPlaceholder")}
+                          value={manualHeight}
+                          onChange={handleManualHeightChange}
+                        />
+                      </div>
+                    </div>
+                    <div className="resolution-action-buttons">
+                      <button
+                        className="resolution-button"
+                        onClick={handleSetManualResolution}
                       >
-                        {" "}
-                        <circle
-                          stroke="var(--item-border)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter} />{" "}
-                        <circle
-                          stroke="var(--sidebar-header-color)"
-                          fill="transparent"
-                          strokeWidth={gaugeStrokeWidth}
-                          r={gaugeRadius}
-                          cx={gaugeCenter}
-                          cy={gaugeCenter}
-                          transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
-                          style={{
-                            strokeDasharray: gaugeCircumference,
-                            strokeDashoffset: latencyOffset,
-                            transition: "stroke-dashoffset 0.3s ease-in-out",
-                            strokeLinecap: "round",
-                          }} />{" "}
-                        <text
-                          x={gaugeCenter}
-                          y={gaugeCenter}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fontSize={`${gaugeSize / 5}px`}
-                          fill="var(--sidebar-text)"
-                          fontWeight="bold"
-                        >
-                          {" "}
-                          {Math.round(latencyMs)}{" "}
-                        </text>{" "}
-                      </svg>{" "}
-                      <div className="gauge-label">
-                        {t("sections.stats.latencyLabel", "Latency")}
-                      </div>{" "}
+                        {t("sections.screen.setManualButton")}
+                      </button>
+                      <button
+                        className="resolution-button reset-button"
+                        onClick={handleResetResolution}
+                      >
+                        {t("sections.screen.resetButton")}
+                      </button>
                     </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-          <div className="sidebar-section">
-            <div
-              className="sidebar-section-header"
-              onClick={() => toggleSection("clipboard")}
-              role="button"
-              aria-expanded={sectionsOpen.clipboard}
-              aria-controls="clipboard-content"
-              tabIndex="0"
-              onKeyDown={(e) =>
-                (e.key === "Enter" || e.key === " ") && toggleSection("clipboard")
-              }
-            >
-              <h3>{t("sections.clipboard.title")}</h3>{" "}
-              <span className="section-toggle-icon">
-                {sectionsOpen.clipboard ? <CaretUpIcon /> : <CaretDownIcon />}
-              </span>
-            </div>
-            {sectionsOpen.clipboard && (
-              <div className="sidebar-section-content" id="clipboard-content">
-                <div className="dev-setting-item toggle-item">
-                  <label 
-                    htmlFor="enableBinaryClipboardToggle"
-                    title={t("sections.clipboard.binaryModeDetails", "Allows copying and pasting images (e.g., PNG) to and from the remote session. May cause issues if a very large file is in the clipboard.")}
-                  >
-                    {t("sections.clipboard.binaryModeLabel", "Image Support")}
-                  </label>
-                  <button
-                    id="enableBinaryClipboardToggle"
-                    className={`toggle-button-sidebar ${enableBinaryClipboard ? "active" : ""}`}
-                    onClick={handleEnableBinaryClipboardToggle}
-                    aria-pressed={enableBinaryClipboard}
-                    title={t(enableBinaryClipboard ? "buttons.binaryClipboardDisableTitle" : "buttons.binaryClipboardEnableTitle",
-                              enableBinaryClipboard ? "Disable Image Clipboard" : "Enable Image Clipboard")}
-                  >
-                    <span className="toggle-button-sidebar-knob"></span>
-                  </button>
-                </div>
-                <div className="dashboard-clipboard-item">
-                  {" "}
-                  <label htmlFor="dashboardClipboardTextarea">
-                    {t("sections.clipboard.label")}
-                  </label>{" "}
-                  <textarea
-                    className="allow-native-input"
-                    id="dashboardClipboardTextarea"
-                    value={dashboardClipboardContent}
-                    onChange={handleClipboardChange}
-                    onBlur={handleClipboardBlur}
-                    rows="5"
-                    placeholder={t("sections.clipboard.placeholder")}
-                  />{" "}
-                </div>{" "}
+                  </>
+                )}
+                <button
+                  className={`resolution-button toggle-button ${
+                    scaleLocally ? "active" : ""
+                  }`}
+                  onClick={handleScaleLocallyToggle}
+                  style={{ marginTop: "10px" }}
+                  title={t(
+                    scaleLocally
+                      ? "sections.screen.scaleLocallyTitleDisable"
+                      : "sections.screen.scaleLocallyTitleEnable"
+                  )}
+                >
+                  {t("sections.screen.scaleLocallyLabel")}
+                  {t(
+                    scaleLocally
+                      ? "sections.screen.scaleLocallyOn"
+                      : "sections.screen.scaleLocallyOff"
+                  )}
+                </button>
               </div>
             )}
           </div>
+        )}
+
+        {!isSecondaryDisplay && (
+          <>
+            {(renderableSettings.audioSettings ?? true) && (
+              <div className="sidebar-section">
+                <div
+                  className="sidebar-section-header"
+                  onClick={() => toggleSection("audioSettings")}
+                  role="button"
+                  aria-expanded={sectionsOpen.audioSettings}
+                  aria-controls="audio-settings-content"
+                  tabIndex="0"
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") &&
+                    toggleSection("audioSettings")}
+                >
+                  <h3>{t("sections.audio.title")}</h3>
+                  <span className="section-toggle-icon">
+                    {isLoadingAudioDevices ? (
+                      <SpinnerIcon />
+                    ) : sectionsOpen.audioSettings ? (
+                      <CaretUpIcon />
+                    ) : (
+                      <CaretDownIcon />
+                    )}
+                  </span>
+                </div>
+                {sectionsOpen.audioSettings && (
+                  <div
+                    className="sidebar-section-content"
+                    id="audio-settings-content"
+                  >
+                    {audioDeviceError && (
+                      <div className="error-message">{audioDeviceError}</div>
+                    )}
+                    <div className="dev-setting-item">
+                      <label htmlFor="audioInputSelect">
+                        {t("sections.audio.inputLabel")}
+                      </label>
+                      <select
+                        id="audioInputSelect"
+                        value={selectedInputDeviceId}
+                        onChange={handleAudioInputChange}
+                        disabled={isLoadingAudioDevices || !!audioDeviceError}
+                        className="audio-device-select"
+                      >
+                        {audioInputDevices.map((d) => (
+                          <option key={d.deviceId} value={d.deviceId}>
+                            {d.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {isOutputSelectionSupported && (
+                      <div className="dev-setting-item">
+                        <label htmlFor="audioOutputSelect">
+                          {t("sections.audio.outputLabel")}
+                        </label>
+                        <select
+                          id="audioOutputSelect"
+                          value={selectedOutputDeviceId}
+                          onChange={handleAudioOutputChange}
+                          disabled={isLoadingAudioDevices || !!audioDeviceError}
+                          className="audio-device-select"
+                        >
+                          {audioOutputDevices.map((d) => (
+                            <option key={d.deviceId} value={d.deviceId}>
+                              {d.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    {!isOutputSelectionSupported &&
+                      !isLoadingAudioDevices &&
+                      !audioDeviceError && (
+                        <p className="device-support-notice">
+                          {t("sections.audio.outputNotSupported")}
+                        </p>
+                      )}
+                  </div>
+                )}
+              </div>
+            )}
+            {(renderableSettings.stats ?? true) && (
+              <div className="sidebar-section">
+                <div
+                  className="sidebar-section-header"
+                  onClick={() => toggleSection("stats")}
+                  role="button"
+                  aria-expanded={sectionsOpen.stats}
+                  aria-controls="stats-content"
+                  tabIndex="0"
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleSection("stats")}
+                >
+                  <h3>{t("sections.stats.title")}</h3>
+                  <span className="section-toggle-icon">
+                    {sectionsOpen.stats ? <CaretUpIcon /> : <CaretDownIcon />}
+                  </span>
+                </div>
+                {sectionsOpen.stats && (
+                  <div className="sidebar-section-content" id="stats-content">
+                    <div className="stats-gauges">
+                      <div
+                        className="gauge-container"
+                        onMouseEnter={(e) => handleMouseEnter(e, "cpu")}
+                        onMouseLeave={handleMouseLeave}
+                      >
+                        <svg
+                          width={gaugeSize}
+                          height={gaugeSize}
+                          viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                        >
+                          <circle
+                            stroke="var(--item-border)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter} />
+                          <circle
+                            stroke="var(--sidebar-header-color)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter}
+                            transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                            style={{
+                              strokeDasharray: gaugeCircumference,
+                              strokeDashoffset: cpuOffset,
+                              transition: "stroke-dashoffset 0.3s ease-in-out",
+                              strokeLinecap: "round",
+                            }} />
+                          <text
+                            x={gaugeCenter}
+                            y={gaugeCenter}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fontSize={`${gaugeSize / 5}px`}
+                            fill="var(--sidebar-text)"
+                            fontWeight="bold"
+                          >
+                            {Math.round(
+                              Math.max(0, Math.min(100, cpuPercent || 0))
+                            )}%
+                          </text>
+                        </svg>
+                        <div className="gauge-label">
+                          {t("sections.stats.cpuLabel")}
+                        </div>
+                      </div>
+                      <div
+                        className="gauge-container"
+                        onMouseEnter={(e) => handleMouseEnter(e, "sysmem")}
+                        onMouseLeave={handleMouseLeave}
+                      >
+                        <svg
+                          width={gaugeSize}
+                          height={gaugeSize}
+                          viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                        >
+                          <circle
+                            stroke="var(--item-border)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter} />
+                          <circle
+                            stroke="var(--sidebar-header-color)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter}
+                            transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                            style={{
+                              strokeDasharray: gaugeCircumference,
+                              strokeDashoffset: sysMemOffset,
+                              transition: "stroke-dashoffset 0.3s ease-in-out",
+                              strokeLinecap: "round",
+                            }} />
+                          <text
+                            x={gaugeCenter}
+                            y={gaugeCenter}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fontSize={`${gaugeSize / 5}px`}
+                            fill="var(--sidebar-text)"
+                            fontWeight="bold"
+                          >
+                            {Math.round(
+                              Math.max(0, Math.min(100, sysMemPercent || 0))
+                            )}
+                            %
+                          </text>
+                        </svg>
+                        <div className="gauge-label">
+                          {t("sections.stats.sysMemLabel")}
+                        </div>
+                      </div>
+                      {window.gpu_stats && (
+                        <>
+                          <div
+                            className="gauge-container"
+                            onMouseEnter={(e) => handleMouseEnter(e, "gpu")}
+                            onMouseLeave={handleMouseLeave}
+                          >
+                            <svg
+                              width={gaugeSize}
+                              height={gaugeSize}
+                              viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                            >
+                              <circle
+                                stroke="var(--item-border)"
+                                fill="transparent"
+                                strokeWidth={gaugeStrokeWidth}
+                                r={gaugeRadius}
+                                cx={gaugeCenter}
+                                cy={gaugeCenter} />
+                              <circle
+                                stroke="var(--sidebar-header-color)"
+                                fill="transparent"
+                                strokeWidth={gaugeStrokeWidth}
+                                r={gaugeRadius}
+                                cx={gaugeCenter}
+                                cy={gaugeCenter}
+                                transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                                style={{
+                                  strokeDasharray: gaugeCircumference,
+                                  strokeDashoffset: gpuOffset,
+                                  transition: "stroke-dashoffset 0.3s ease-in-out",
+                                  strokeLinecap: "round",
+                                }} />
+                              <text
+                                x={gaugeCenter}
+                                y={gaugeCenter}
+                                textAnchor="middle"
+                                dominantBaseline="central"
+                                fontSize={`${gaugeSize / 5}px`}
+                                fill="var(--sidebar-text)"
+                                fontWeight="bold"
+                              >
+                                {Math.round(
+                                  Math.max(0, Math.min(100, gpuPercent || 0))
+                                )}%
+                              </text>
+                            </svg>
+                            <div className="gauge-label">
+                              {t("sections.stats.gpuLabel")}
+                            </div>
+                          </div>
+                          <div
+                            className="gauge-container"
+                            onMouseEnter={(e) => handleMouseEnter(e, "gpumem")}
+                            onMouseLeave={handleMouseLeave}
+                          >
+                            <svg
+                              width={gaugeSize}
+                              height={gaugeSize}
+                              viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                            >
+                              <circle
+                                stroke="var(--item-border)"
+                                fill="transparent"
+                                strokeWidth={gaugeStrokeWidth}
+                                r={gaugeRadius}
+                                cx={gaugeCenter}
+                                cy={gaugeCenter} />
+                              <circle
+                                stroke="var(--sidebar-header-color)"
+                                fill="transparent"
+                                strokeWidth={gaugeStrokeWidth}
+                                r={gaugeRadius}
+                                cx={gaugeCenter}
+                                cy={gaugeCenter}
+                                transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                                style={{
+                                  strokeDasharray: gaugeCircumference,
+                                  strokeDashoffset: gpuMemOffset,
+                                  transition: "stroke-dashoffset 0.3s ease-in-out",
+                                  strokeLinecap: "round",
+                                }} />
+                              <text
+                                x={gaugeCenter}
+                                y={gaugeCenter}
+                                textAnchor="middle"
+                                dominantBaseline="central"
+                                fontSize={`${gaugeSize / 5}px`}
+                                fill="var(--sidebar-text)"
+                                fontWeight="bold"
+                              >
+                                {Math.round(
+                                  Math.max(0, Math.min(100, gpuMemPercent || 0))
+                                )}
+                                %
+                              </text>
+                            </svg>
+                            <div className="gauge-label">
+                              {t("sections.stats.gpuMemLabel")}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      <div
+                        className="gauge-container"
+                        onMouseEnter={(e) => handleMouseEnter(e, "fps")}
+                        onMouseLeave={handleMouseLeave}
+                      >
+                        <svg
+                          width={gaugeSize}
+                          height={gaugeSize}
+                          viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                        >
+                          <circle
+                            stroke="var(--item-border)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter} />
+                          <circle
+                            stroke="var(--sidebar-header-color)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter}
+                            transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                            style={{
+                              strokeDasharray: gaugeCircumference,
+                              strokeDashoffset: fpsOffset,
+                              transition: "stroke-dashoffset 0.3s ease-in-out",
+                              strokeLinecap: "round",
+                            }} />
+                          <text
+                            x={gaugeCenter}
+                            y={gaugeCenter}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fontSize={`${gaugeSize / 5}px`}
+                            fill="var(--sidebar-text)"
+                            fontWeight="bold"
+                          >
+                            {clientFps}
+                          </text>
+                        </svg>
+                        <div className="gauge-label">
+                          {t("sections.stats.fpsLabel")}
+                        </div>
+                      </div>
+                      <div
+                        className="gauge-container"
+                        onMouseEnter={(e) => handleMouseEnter(e, "audio")}
+                        onMouseLeave={handleMouseLeave}
+                      >
+                        <svg
+                          width={gaugeSize}
+                          height={gaugeSize}
+                          viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                        >
+                          <circle
+                            stroke="var(--item-border)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter} />
+                          <circle
+                            stroke="var(--sidebar-header-color)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter}
+                            transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                            style={{
+                              strokeDasharray: gaugeCircumference,
+                              strokeDashoffset: audioBufferOffset,
+                              transition: "stroke-dashoffset 0.3s ease-in-out",
+                              strokeLinecap: "round",
+                            }} />
+                          <text
+                            x={gaugeCenter}
+                            y={gaugeCenter}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fontSize={`${gaugeSize / 5}px`}
+                            fill="var(--sidebar-text)"
+                            fontWeight="bold"
+                          >
+                            {audioBuffer}
+                          </text>
+                        </svg>
+                        <div className="gauge-label">
+                          {t("sections.stats.audioLabel")}
+                        </div>
+                      </div>
+                      <div
+                        className="gauge-container"
+                        onMouseEnter={(e) => handleMouseEnter(e, "bandwidth")}
+                        onMouseLeave={handleMouseLeave}
+                      >
+                        <svg
+                          width={gaugeSize}
+                          height={gaugeSize}
+                          viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                        >
+                          <circle
+                            stroke="var(--item-border)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter} />
+                          <circle
+                            stroke="var(--sidebar-header-color)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter}
+                            transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                            style={{
+                              strokeDasharray: gaugeCircumference,
+                              strokeDashoffset: bandwidthOffset,
+                              transition: "stroke-dashoffset 0.3s ease-in-out",
+                              strokeLinecap: "round",
+                            }} />
+                          <text
+                            x={gaugeCenter}
+                            y={gaugeCenter}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fontSize={`${gaugeSize / 5}px`}
+                            fill="var(--sidebar-text)"
+                            fontWeight="bold"
+                          >
+                            {Math.round(bandwidthMbps)}
+                          </text>
+                        </svg>
+                        <div className="gauge-label">
+                          {t("sections.stats.bandwidthLabel", "Bandwidth")}
+                        </div>
+                      </div>
+                      <div
+                        className="gauge-container"
+                        onMouseEnter={(e) => handleMouseEnter(e, "latency")}
+                        onMouseLeave={handleMouseLeave}
+                      >
+                        <svg
+                          width={gaugeSize}
+                          height={gaugeSize}
+                          viewBox={`0 0 ${gaugeSize} ${gaugeSize}`}
+                        >
+                          <circle
+                            stroke="var(--item-border)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter} />
+                          <circle
+                            stroke="var(--sidebar-header-color)"
+                            fill="transparent"
+                            strokeWidth={gaugeStrokeWidth}
+                            r={gaugeRadius}
+                            cx={gaugeCenter}
+                            cy={gaugeCenter}
+                            transform={`rotate(-90 ${gaugeCenter} ${gaugeCenter})`}
+                            style={{
+                              strokeDasharray: gaugeCircumference,
+                              strokeDashoffset: latencyOffset,
+                              transition: "stroke-dashoffset 0.3s ease-in-out",
+                              strokeLinecap: "round",
+                            }} />
+                          <text
+                            x={gaugeCenter}
+                            y={gaugeCenter}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fontSize={`${gaugeSize / 5}px`}
+                            fill="var(--sidebar-text)"
+                            fontWeight="bold"
+                          >
+                            {Math.round(latencyMs)}
+                          </text>
+                        </svg>
+                        <div className="gauge-label">
+                          {t("sections.stats.latencyLabel", "Latency")}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(renderableSettings.clipboard ?? true) && (
+              <div className="sidebar-section">
+                <div
+                  className="sidebar-section-header"
+                  onClick={() => toggleSection("clipboard")}
+                  role="button"
+                  aria-expanded={sectionsOpen.clipboard}
+                  aria-controls="clipboard-content"
+                  tabIndex="0"
+                  onKeyDown={(e) =>
+                    (e.key === "Enter" || e.key === " ") && toggleSection("clipboard")
+                  }
+                >
+                  <h3>{t("sections.clipboard.title")}</h3>
+                  <span className="section-toggle-icon">
+                    {sectionsOpen.clipboard ? <CaretUpIcon /> : <CaretDownIcon />}
+                  </span>
+                </div>
+                {sectionsOpen.clipboard && (
+                  <div className="sidebar-section-content" id="clipboard-content">
+                    {(renderableSettings.binaryClipboard ?? true) && (
+                      <div className="dev-setting-item toggle-item">
+                        <label 
+                          htmlFor="enableBinaryClipboardToggle"
+                          title={t("sections.clipboard.binaryModeDetails")}
+                        >
+                          {t("sections.clipboard.binaryModeLabel", "Image Support")}
+                        </label>
+                        <button
+                          id="enableBinaryClipboardToggle"
+                          className={`toggle-button-sidebar ${enableBinaryClipboard ? "active" : ""}`}
+                          onClick={handleEnableBinaryClipboardToggle}
+                          aria-pressed={enableBinaryClipboard}
+                          disabled={!serverSettings || serverSettings.enable_binary_clipboard?.locked}
+                          title={t(enableBinaryClipboard ? "buttons.binaryClipboardDisableTitle" : "buttons.binaryClipboardEnableTitle")}
+                        >
+                          <span className="toggle-button-sidebar-knob"></span>
+                        </button>
+                      </div>
+                    )}
+                    <div className="dashboard-clipboard-item">
+                      <label htmlFor="dashboardClipboardTextarea">
+                        {t("sections.clipboard.label")}
+                      </label>
+                      <textarea
+                        className="allow-native-input"
+                        id="dashboardClipboardTextarea"
+                        value={dashboardClipboardContent}
+                        onChange={handleClipboardChange}
+                        onBlur={handleClipboardBlur}
+                        rows="5"
+                        placeholder={t("sections.clipboard.placeholder")}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 
         {!isSecondaryDisplay && (
           <>
-            <div className="sidebar-section">
-              <div
-                className="sidebar-section-header"
-                onClick={() => toggleSection("files")}
-                role="button"
-                aria-expanded={sectionsOpen.files}
-                aria-controls="files-content"
-                tabIndex="0"
-                onKeyDown={(e) =>
-                  (e.key === "Enter" || e.key === " ") && toggleSection("files")
-                }
-              >
-                <h3>{t("sections.files.title")}</h3>{" "}
-                <span className="section-toggle-icon">
-                  {sectionsOpen.files ? <CaretUpIcon /> : <CaretDownIcon />}
-                </span>
-              </div>
-              {sectionsOpen.files && (
-                <div className="sidebar-section-content" id="files-content">
-                  {" "}
-                  <button
-                    className="resolution-button"
-                    onClick={handleUploadClick}
-                    style={{ marginTop: "5px", marginBottom: "5px" }}
-                    title={t("sections.files.uploadButtonTitle")}
-                  >
-                    {" "}
-                    {t("sections.files.uploadButton")}{" "}
-                  </button>{" "}
-                  <button
-                    className="resolution-button"
-                    onClick={toggleFilesModal}
-                    style={{ marginTop: "5px", marginBottom: "5px" }}
-                    title={t(
-                      "sections.files.downloadButtonTitle",
-                      "Download Files"
-                    )}
-                  >
-                    {" "}
-                    {t("sections.files.downloadButtonTitle", "Download Files")}{" "}
-                  </button>{" "}
+            {(renderableSettings.files ?? true) && (
+              <div className="sidebar-section">
+                <div
+                  className="sidebar-section-header"
+                  onClick={() => toggleSection("files")}
+                  role="button"
+                  aria-expanded={sectionsOpen.files}
+                  aria-controls="files-content"
+                  tabIndex="0"
+                  onKeyDown={(e) =>
+                    (e.key === "Enter" || e.key === " ") && toggleSection("files")
+                  }
+                >
+                  <h3>{t("sections.files.title")}</h3>
+                  <span className="section-toggle-icon">
+                    {sectionsOpen.files ? <CaretUpIcon /> : <CaretDownIcon />}
+                  </span>
                 </div>
-              )}
-            </div>
-
-            <div className="sidebar-section">
-              <div
-                className="sidebar-section-header"
-                onClick={() => toggleSection("apps")}
-                role="button"
-                aria-expanded={sectionsOpen.apps}
-                aria-controls="apps-content"
-                tabIndex="0"
-                onKeyDown={(e) =>
-                  (e.key === "Enter" || e.key === " ") && toggleSection("apps")
-                }
-              >
-                <h3>{t("sections.apps.title", "Apps")}</h3>{" "}
-                <span className="section-toggle-icon">
-                  {sectionsOpen.apps ? <CaretUpIcon /> : <CaretDownIcon />}
-                </span>
-              </div>
-              {sectionsOpen.apps && (
-                <div className="sidebar-section-content" id="apps-content">
-                  {" "}
-                  <button
-                    className="resolution-button"
-                    onClick={toggleAppsModal}
-                    style={{ marginTop: "5px", marginBottom: "5px" }}
-                    title={t("sections.apps.openButtonTitle", "Manage Apps")}
-                  >
-                    {" "}
-                    <AppsIcon />{" "}
-                    <span style={{ marginLeft: "8px" }}>
-                      {t("sections.apps.openButton", "Manage Apps")}
-                    </span>{" "}
-                  </button>{" "}
-                </div>
-              )}
-            </div>
-
-            <div className="sidebar-section">
-              <div
-                className="sidebar-section-header"
-                onClick={() => toggleSection("sharing")}
-                role="button"
-                aria-expanded={sectionsOpen.sharing}
-                aria-controls="sharing-content"
-                tabIndex="0"
-                onKeyDown={(e) =>
-                  (e.key === "Enter" || e.key === " ") &&
-                  toggleSection("sharing")
-                }
-              >
-                <h3>{t("sections.sharing.title", "Sharing")}</h3>
-                <span className="section-toggle-icon">
-                  {sectionsOpen.sharing ? <CaretUpIcon /> : <CaretDownIcon />}
-                </span>
-              </div>
-              {sectionsOpen.sharing && (
-                <div className="sidebar-section-content" id="sharing-content">
-                  {sharingLinks.map((link) => {
-                    const fullUrl = `${baseUrl}${link.hash}`;
-                    return (
-                      <div
-                        key={link.id}
-                        className="sharing-link-item"
-                        title={link.tooltip}
+                {sectionsOpen.files && (
+                  <div className="sidebar-section-content" id="files-content">
+                    {(renderableSettings.fileUpload ?? true) && (
+                      <button
+                        className="resolution-button"
+                        onClick={handleUploadClick}
+                        style={{ marginTop: "5px", marginBottom: "5px" }}
+                        title={t("sections.files.uploadButtonTitle")}
                       >
-                        <span className="sharing-link-label">
-                          {link.label}
-                        </span>
-                        <div className="sharing-link-actions">
-                          <a
-                            href={fullUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="sharing-link"
-                            title={`Open ${link.label} link in new tab`}
-                          >
-                            {fullUrl}
-                          </a>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyLink(fullUrl, link.label)}
-                            className="copy-button"
-                            title={`Copy ${link.label} link`}
-                          >
-                            <CopyIcon />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="sidebar-section">
-              <div
-                className="sidebar-section-header"
-                onClick={() => toggleSection("gamepads")}
-                role="button"
-                aria-expanded={sectionsOpen.gamepads}
-                aria-controls="gamepads-content"
-                tabIndex="0"
-                onKeyDown={(e) =>
-                  (e.key === "Enter" || e.key === " ") &&
-                  toggleSection("gamepads")
-                }
-              >
-                <h3>{t("sections.gamepads.title", "Gamepads")}</h3>
-                <span className="section-toggle-icon" aria-hidden="true">
-                  {sectionsOpen.gamepads ? <CaretUpIcon /> : <CaretDownIcon />}
-                </span>
-              </div>
-              {sectionsOpen.gamepads && (
-                <div className="sidebar-section-content" id="gamepads-content">
-                  <div
-                    className="dev-setting-item"
-                    style={{ marginBottom: "10px" }}
-                  >
-                    <button
-                      className={`resolution-button toggle-button ${
-                        isTouchGamepadActive ? "active" : ""
-                      }`}
-                      onClick={handleToggleTouchGamepad}
-                      title={t(
-                        isTouchGamepadActive
-                          ? "sections.gamepads.touchDisableTitle"
-                          : "sections.gamepads.touchEnableTitle",
-                        isTouchGamepadActive
-                          ? "Disable Touch Gamepad"
-                          : "Enable Touch Gamepad"
-                      )}
-                    >
-                      <GamepadIcon />
-                      <span style={{ marginLeft: "8px" }}>
-                        {t(
-                          isTouchGamepadActive
-                            ? "sections.gamepads.touchActiveLabel"
-                            : "sections.gamepads.touchInactiveLabel",
-                          isTouchGamepadActive
-                            ? "Touch Gamepad: ON"
-                            : "Touch Gamepad: OFF"
+                        {t("sections.files.uploadButton")}
+                      </button>
+                    )}
+                    {(renderableSettings.fileDownload ?? true) && (
+                      <button
+                        className="resolution-button"
+                        onClick={toggleFilesModal}
+                        style={{ marginTop: "5px", marginBottom: "5px" }}
+                        title={t(
+                          "sections.files.downloadButtonTitle",
+                          "Download Files"
                         )}
+                      >
+                        {t("sections.files.downloadButtonTitle", "Download Files")}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(renderableSettings.apps ?? true) && (
+              <div className="sidebar-section">
+                <div
+                  className="sidebar-section-header"
+                  onClick={() => toggleSection("apps")}
+                  role="button"
+                  aria-expanded={sectionsOpen.apps}
+                  aria-controls="apps-content"
+                  tabIndex="0"
+                  onKeyDown={(e) =>
+                    (e.key === "Enter" || e.key === " ") && toggleSection("apps")
+                  }
+                >
+                  <h3>{t("sections.apps.title", "Apps")}</h3>
+                  <span className="section-toggle-icon">
+                    {sectionsOpen.apps ? <CaretUpIcon /> : <CaretDownIcon />}
+                  </span>
+                </div>
+                {sectionsOpen.apps && (
+                  <div className="sidebar-section-content" id="apps-content">
+                    <button
+                      className="resolution-button"
+                      onClick={toggleAppsModal}
+                      style={{ marginTop: "5px", marginBottom: "5px" }}
+                      title={t("sections.apps.openButtonTitle", "Manage Apps")}
+                    >
+                      <AppsIcon />
+                      <span style={{ marginLeft: "8px" }}>
+                        {t("sections.apps.openButton", "Manage Apps")}
                       </span>
                     </button>
                   </div>
+                )}
+              </div>
+            )}
 
-                  {isMobile && isTouchGamepadActive ? (
-                    <p>
-                      {t(
-                        "sections.gamepads.physicalHiddenForTouch",
-                        "Physical gamepad display is hidden while touch gamepad is active."
-                      )}
-                    </p>
-                  ) : (
-                    <>
-                      {Object.keys(gamepadStates).length > 0 ? (
-                        Object.keys(gamepadStates)
-                          .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
-                          .map((gpIndexStr) => {
-                            const gpIndex = parseInt(gpIndexStr, 10);
-                            return (
-                              <GamepadVisualizer
-                                key={gpIndex}
-                                gamepadIndex={gpIndex}
-                                gamepadState={gamepadStates[gpIndex]}
-                              />
-                            );
-                          })
-                      ) : (
-                        <p className="no-gamepads-message">
-                          {isMobile
-                            ? t(
-                                "sections.gamepads.noActivityMobileOrEnableTouch",
-                                "No physical gamepads. Enable touch gamepad or connect a controller."
-                              )
-                            : t(
-                                "sections.gamepads.noActivity",
-                                "No physical gamepad activity detected."
-                              )}
-                        </p>
-                      )}
-                    </>
-                  )}
+            {(renderableSettings.sharing ?? true) && (renderableSettings.enableSharing ?? true) && (
+              <div className="sidebar-section">
+                <div
+                  className="sidebar-section-header"
+                  onClick={() => toggleSection("sharing")}
+                  role="button"
+                  aria-expanded={sectionsOpen.sharing}
+                  aria-controls="sharing-content"
+                  tabIndex="0"
+                  onKeyDown={(e) =>
+                    (e.key === "Enter" || e.key === " ") &&
+                    toggleSection("sharing")
+                  }
+                >
+                  <h3>{t("sections.sharing.title", "Sharing")}</h3>
+                  <span className="section-toggle-icon">
+                    {sectionsOpen.sharing ? <CaretUpIcon /> : <CaretDownIcon />}
+                  </span>
                 </div>
-              )}
-            </div>
+                {sectionsOpen.sharing && (
+                  <div className="sidebar-section-content" id="sharing-content">
+                    {filteredSharingLinks.map((link) => {
+                      const fullUrl = `${baseUrl}${link.hash}`;
+                      return (
+                        <div
+                          key={link.id}
+                          className="sharing-link-item"
+                          title={link.tooltip}
+                        >
+                          <span className="sharing-link-label">
+                            {link.label}
+                          </span>
+                          <div className="sharing-link-actions">
+                            <a
+                              href={fullUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="sharing-link"
+                              title={`Open ${link.label} link in new tab`}
+                            >
+                              {fullUrl}
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(fullUrl, link.label)}
+                              className="copy-button"
+                              title={`Copy ${link.label} link`}
+                            >
+                              <CopyIcon />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(renderableSettings.gamepads ?? true) && (
+              <div className="sidebar-section">
+                <div
+                  className="sidebar-section-header"
+                  onClick={() => toggleSection("gamepads")}
+                  role="button"
+                  aria-expanded={sectionsOpen.gamepads}
+                  aria-controls="gamepads-content"
+                  tabIndex="0"
+                  onKeyDown={(e) =>
+                    (e.key === "Enter" || e.key === " ") &&
+                    toggleSection("gamepads")
+                  }
+                >
+                  <h3>{t("sections.gamepads.title", "Gamepads")}</h3>
+                  <span className="section-toggle-icon" aria-hidden="true">
+                    {sectionsOpen.gamepads ? <CaretUpIcon /> : <CaretDownIcon />}
+                  </span>
+                </div>
+                {sectionsOpen.gamepads && (
+                  <div className="sidebar-section-content" id="gamepads-content">
+                    <div
+                      className="dev-setting-item"
+                      style={{ marginBottom: "10px" }}
+                    >
+                      <button
+                        className={`resolution-button toggle-button ${
+                          isTouchGamepadActive ? "active" : ""
+                        }`}
+                        onClick={handleToggleTouchGamepad}
+                        title={t(
+                          isTouchGamepadActive
+                            ? "sections.gamepads.touchDisableTitle"
+                            : "sections.gamepads.touchEnableTitle",
+                          isTouchGamepadActive
+                            ? "Disable Touch Gamepad"
+                            : "Enable Touch Gamepad"
+                        )}
+                      >
+                        <GamepadIcon />
+                        <span style={{ marginLeft: "8px" }}>
+                          {t(
+                            isTouchGamepadActive
+                              ? "sections.gamepads.touchActiveLabel"
+                              : "sections.gamepads.touchInactiveLabel",
+                            isTouchGamepadActive
+                              ? "Touch Gamepad: ON"
+                              : "Touch Gamepad: OFF"
+                          )}
+                        </span>
+                      </button>
+                    </div>
+
+                    {isMobile && isTouchGamepadActive ? (
+                      <p>
+                        {t(
+                          "sections.gamepads.physicalHiddenForTouch",
+                          "Physical gamepad display is hidden while touch gamepad is active."
+                        )}
+                      </p>
+                    ) : (
+                      <>
+                        {Object.keys(gamepadStates).length > 0 ? (
+                          Object.keys(gamepadStates)
+                            .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+                            .map((gpIndexStr) => {
+                              const gpIndex = parseInt(gpIndexStr, 10);
+                              return (
+                                <GamepadVisualizer
+                                  key={gpIndex}
+                                  gamepadIndex={gpIndex}
+                                  gamepadState={gamepadStates[gpIndex]}
+                                />
+                              );
+                            })
+                        ) : (
+                          <p className="no-gamepads-message">
+                            {isMobile
+                              ? t(
+                                  "sections.gamepads.noActivityMobileOrEnableTouch",
+                                  "No physical gamepads. Enable touch gamepad or connect a controller."
+                                )
+                              : t(
+                                  "sections.gamepads.noActivity",
+                                  "No physical gamepad activity detected."
+                                )}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -3394,8 +3456,7 @@ function Sidebar({ isOpen }) {
             top: `${tooltipPosition.y}px`,
           }}
         >
-          {" "}
-          {getTooltipContent(hoveredItem)}{" "}
+          {getTooltipContent(hoveredItem)}
         </div>
       )}
 
@@ -3410,10 +3471,9 @@ function Sidebar({ isOpen }) {
             aria-live="polite"
           >
             <div className="notification-header">
-              {" "}
               <span className="notification-filename" title={n.fileName}>
                 {n.fileName}
-              </span>{" "}
+              </span>
               <button
                 className="notification-close-button"
                 onClick={() => removeNotification(n.id)}
@@ -3422,52 +3482,49 @@ function Sidebar({ isOpen }) {
                 })}
               >
                 &times;
-              </button>{" "}
+              </button>
             </div>
             <div className="notification-body">
               {n.status === "progress" && (
                 <>
-                  {" "}
                   <span className="notification-status-text">
                     {t("notifications.uploading", { progress: n.progress })}
-                  </span>{" "}
+                  </span>
                   <div className="notification-progress-bar-outer">
                     <div
                       className="notification-progress-bar-inner"
                       style={{ width: `${n.progress}%` }}
                     />
-                  </div>{" "}
+                  </div>
                 </>
               )}
               {n.status === "end" && (
                 <>
-                  {" "}
                   <span className="notification-status-text">
                     {n.message ? n.message : t("notifications.uploadComplete")}
-                  </span>{" "}
+                  </span>
                   <div className="notification-progress-bar-outer">
                     <div
                       className="notification-progress-bar-inner"
                       style={{ width: `100%` }}
                     />
-                  </div>{" "}
+                  </div>
                 </>
               )}
               {n.status === "error" && (
                 <>
-                  {" "}
                   <span className="notification-status-text error-text">
                     {t("notifications.uploadFailed")}
-                  </span>{" "}
+                  </span>
                   <div className="notification-progress-bar-outer">
                     <div
                       className="notification-progress-bar-inner"
                       style={{ width: `100%` }}
                     />
-                  </div>{" "}
+                  </div>
                   {n.message && (
                     <p className="notification-error-message">{n.message}</p>
-                  )}{" "}
+                  )}
                 </>
               )}
             </div>
@@ -3477,22 +3534,21 @@ function Sidebar({ isOpen }) {
 
       {isFilesModalOpen && (
         <div className="files-modal">
-          {" "}
           <button
             className="files-modal-close"
             onClick={toggleFilesModal}
             aria-label="Close files modal"
           >
             &times;
-          </button>{" "}
-          <iframe src="./files/" title="Downloadable Files" />{" "}
+          </button>
+          <iframe src="./files/" title="Downloadable Files" />
         </div>
       )}
       {isAppsModalOpen && (
         <AppsModal isOpen={isAppsModalOpen} onClose={toggleAppsModal} t={t} />
       )}
 
-      {(isMobile || hasDetectedTouch) && isKeyboardButtonVisible && (
+      {(isMobile || hasDetectedTouch) && isKeyboardButtonVisible && (renderableSettings.keyboardButton ?? true) && (
         <button
           className={`virtual-keyboard-button theme-${theme} allow-native-input`}
           onClick={onKeyboardButtonClick}
