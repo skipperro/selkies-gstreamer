@@ -128,61 +128,61 @@ The server can be forced to use a single, fixed resolution for all connecting cl
 
 The table below lists all available server settings.
 
-| Environment Variable | CLI Flag | Description |
-| -------------------- | -------- | ----------- |
-| `SELKIES_UI_TITLE` | `--ui-title` | Title in top left corner of sidebar. |
-| `SELKIES_UI_SHOW_LOGO` | `--ui-show-logo` | Show the Selkies logo in the sidebar. |
-| `SELKIES_UI_SHOW_SIDEBAR` | `--ui-show-sidebar` | Show the main sidebar UI. |
-| `SELKIES_UI_SHOW_CORE_BUTTONS` | `--ui-show-core-buttons` | Show the core components buttons display, audio, microphone, and gamepad. |
-| `SELKIES_UI_SIDEBAR_SHOW_VIDEO_SETTINGS` | `--ui-sidebar-show-video-settings` | Show the video settings section in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_SCREEN_SETTINGS` | `--ui-sidebar-show-screen-settings` | Show the screen settings section in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_AUDIO_SETTINGS` | `--ui-sidebar-show-audio-settings` | Show the audio settings section in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_STATS` | `--ui-sidebar-show-stats` | Show the stats section in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_CLIPBOARD` | `--ui-sidebar-show-clipboard` | Show the clipboard section in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_FILES` | `--ui-sidebar-show-files` | Show the file transfer section in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_APPS` | `--ui-sidebar-show-apps` | Show the applications section in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_SHARING` | `--ui-sidebar-show-sharing` | Show the sharing section in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_GAMEPADS` | `--ui-sidebar-show-gamepads` | Show the gamepads section in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_FULLSCREEN` | `--ui-sidebar-show-fullscreen` | Show the fullscreen button in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_GAMING_MODE` | `--ui-sidebar-show-gaming-mode` | Show the gaming mode button in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_TRACKPAD` | `--ui-sidebar-show-trackpad` | Show the virtual trackpad button in the sidebar. |
-| `SELKIES_UI_SIDEBAR_SHOW_KEYBOARD_BUTTON` | `--ui-sidebar-show-keyboard-button` | Show the on-screen keyboard button in the display area. |
-| `SELKIES_UI_SIDEBAR_SHOW_SOFT_BUTTONS` | `--ui-sidebar-show-soft-buttons` | Show the soft buttons section in the sidebar. |
-| `SELKIES_AUDIO_ENABLED` | `--audio-enabled` | Enable server-to-client audio streaming. |
-| `SELKIES_MICROPHONE_ENABLED` | `--microphone-enabled` | Enable client-to-server microphone forwarding. |
-| `SELKIES_GAMEPAD_ENABLED` | `--gamepad-enabled` | Enable gamepad support. |
-| `SELKIES_CLIPBOARD_ENABLED` | `--clipboard-enabled` | Enable clipboard synchronization. |
-| `SELKIES_COMMAND_ENABLED` | `--command-enabled` | Enable parsing of command websocket messages. |
-| `SELKIES_FILE_TRANSFERS` | `--file-transfers` | Allowed file transfer directions (comma-separated: "upload,download"). Set to "" or "none" to disable. |
-| `SELKIES_ENCODER` | `--encoder` | The default video encoder. |
-| `SELKIES_FRAMERATE` | `--framerate` | Allowed framerate range (e.g., "8-165") or a fixed value (e.g., "60"). |
-| `SELKIES_H264_CRF` | `--h264-crf` | Allowed H.264 CRF range (e.g., "5-50") or a fixed value. |
-| `SELKIES_JPEG_QUALITY` | `--jpeg-quality` | Allowed JPEG quality range (e.g., "1-100") or a fixed value. |
-| `SELKIES_H264_FULLCOLOR` | `--h264-fullcolor` | Enable H.264 full color range for pixelflux encoders. |
-| `SELKIES_H264_STREAMING_MODE` | `--h264-streaming-mode` | Enable H.264 streaming mode for pixelflux encoders. |
-| `SELKIES_USE_CPU` | `--use-cpu` | Force CPU-based encoding for pixelflux. |
-| `SELKIES_USE_PAINT_OVER_QUALITY` | `--use-paint-over-quality` | Enable high-quality paint-over for static scenes. |
-| `SELKIES_PAINT_OVER_JPEG_QUALITY` | `--paint-over-jpeg-quality` | Allowed JPEG paint-over quality range or a fixed value. |
-| `SELKIES_H264_PAINTOVER_CRF` | `--h264-paintover-crf` | Allowed H.264 paint-over CRF range or a fixed value. |
-| `SELKIES_H264_PAINTOVER_BURST_FRAMES` | `--h264-paintover-burst-frames` | Allowed H.264 paint-over burst frames range or a fixed value. |
-| `SELKIES_SECOND_SCREEN` | `--second-screen` | Enable support for a second monitor/display. |
-| `SELKIES_AUDIO_BITRATE` | `--audio-bitrate` | The default audio bitrate. |
-| `SELKIES_IS_MANUAL_RESOLUTION_MODE` | `--is-manual-resolution-mode` | Lock the resolution to the manual width/height values. |
-| `SELKIES_MANUAL_WIDTH` | `--manual-width` | Lock width to a fixed value. Setting this forces manual resolution mode. |
-| `SELKIES_MANUAL_HEIGHT` | `--manual-height` | Lock height to a fixed value. Setting this forces manual resolution mode. |
-| `SELKIES_SCALING_DPI` | `--scaling-dpi` | The default DPI for UI scaling. |
-| `SELKIES_ENABLE_BINARY_CLIPBOARD` | `--enable-binary-clipboard` | Allow binary data (e.g., images) on the clipboard. |
-| `SELKIES_USE_BROWSER_CURSORS` | `--use-browser-cursors` | Use browser CSS cursors instead of rendering to canvas. |
-| `SELKIES_USE_CSS_SCALING` | `--use-css-scaling` | HiDPI when false, if true a lower resolution is sent from the client and the canvas is stretched. |
-| `SELKIES_PORT` (or `CUSTOM_WS_PORT`) | `--port` | Port for the data websocket server. |
-| `SELKIES_DRI_NODE` (or `DRI_NODE`) | `--dri-node` | Path to the DRI render node for VA-API. |
-| `SELKIES_AUDIO_DEVICE_NAME` | `--audio-device-name` | Audio device name for pcmflux capture. |
-| `SELKIES_WATERMARK_PATH` (or `WATERMARK_PNG`) | `--watermark-path` | Absolute path to the watermark PNG file. |
-| `SELKIES_WATERMARK_LOCATION` (or `WATERMARK_LOCATION`) | `--watermark-location` | Watermark location enum (0-6). |
-| `SELKIES_DEBUG` | `--debug` | Enable debug logging. |
-| `SELKIES_ENABLE_SHARING` | `--enable-sharing` | Master toggle for all sharing features. |
-| `SELKIES_ENABLE_COLLAB` | `--enable-collab` | Enable collaborative (read-write) sharing link. |
-| `SELKIES_ENABLE_SHARED` | `--enable-shared` | Enable view-only sharing links. |
-| `SELKIES_ENABLE_PLAYER2` | `--enable-player2` | Enable sharing link for gamepad player 2. |
-| `SELKIES_ENABLE_PLAYER3` | `--enable-player3` | Enable sharing link for gamepad player 3. |
-| `SELKIES_ENABLE_PLAYER4` | `--enable-player4` | Enable sharing link for gamepad player 4. |
+| Environment Variable | CLI Flag | Default Value | Description |
+| -------------------- | -------- | ------------- | ----------- |
+| `SELKIES_UI_TITLE` | `--ui-title` | `'Selkies'` | Title in top left corner of sidebar. |
+| `SELKIES_UI_SHOW_LOGO` | `--ui-show-logo` | `True` | Show the Selkies logo in the sidebar. |
+| `SELKIES_UI_SHOW_SIDEBAR` | `--ui-show-sidebar` | `True` | Show the main sidebar UI. |
+| `SELKIES_UI_SHOW_CORE_BUTTONS` | `--ui-show-core-buttons` | `True` | Show the core components buttons display, audio, microphone, and gamepad. |
+| `SELKIES_UI_SIDEBAR_SHOW_VIDEO_SETTINGS` | `--ui-sidebar-show-video-settings` | `True` | Show the video settings section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_SCREEN_SETTINGS` | `--ui-sidebar-show-screen-settings` | `True` | Show the screen settings section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_AUDIO_SETTINGS` | `--ui-sidebar-show-audio-settings` | `True` | Show the audio settings section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_STATS` | `--ui-sidebar-show-stats` | `True` | Show the stats section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_CLIPBOARD` | `--ui-sidebar-show-clipboard` | `True` | Show the clipboard section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_FILES` | `--ui-sidebar-show-files` | `True` | Show the file transfer section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_APPS` | `--ui-sidebar-show-apps` | `True` | Show the applications section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_SHARING` | `--ui-sidebar-show-sharing` | `True` | Show the sharing section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_GAMEPADS` | `--ui-sidebar-show-gamepads` | `True` | Show the gamepads section in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_FULLSCREEN` | `--ui-sidebar-show-fullscreen` | `True` | Show the fullscreen button in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_GAMING_MODE` | `--ui-sidebar-show-gaming-mode` | `True` | Show the gaming mode button in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_TRACKPAD` | `--ui-sidebar-show-trackpad` | `True` | Show the virtual trackpad button in the sidebar. |
+| `SELKIES_UI_SIDEBAR_SHOW_KEYBOARD_BUTTON` | `--ui-sidebar-show-keyboard-button` | `True` | Show the on-screen keyboard button in the display area. |
+| `SELKIES_UI_SIDEBAR_SHOW_SOFT_BUTTONS` | `--ui-sidebar-show-soft-buttons` | `True` | Show the soft buttons section in the sidebar. |
+| `SELKIES_AUDIO_ENABLED` | `--audio-enabled` | `True` | Enable server-to-client audio streaming. |
+| `SELKIES_MICROPHONE_ENABLED` | `--microphone-enabled` | `True` | Enable client-to-server microphone forwarding. |
+| `SELKIES_GAMEPAD_ENABLED` | `--gamepad-enabled` | `True` | Enable gamepad support. |
+| `SELKIES_CLIPBOARD_ENABLED` | `--clipboard-enabled` | `True` | Enable clipboard synchronization. |
+| `SELKIES_COMMAND_ENABLED` | `--command-enabled` | `True` | Enable parsing of command websocket messages. |
+| `SELKIES_FILE_TRANSFERS` | `--file-transfers` | `'upload,download'` | Allowed file transfer directions (comma-separated: "upload,download"). Set to "" or "none" to disable. |
+| `SELKIES_ENCODER` | `--encoder` | `'x264enc'` | The default video encoder. |
+| `SELKIES_FRAMERATE` | `--framerate` | `'8-120'` | Allowed framerate range or a fixed value. |
+| `SELKIES_H264_CRF` | `--h264-crf` | `'5-50'` | Allowed H.264 CRF range or a fixed value. |
+| `SELKIES_JPEG_QUALITY` | `--jpeg-quality` | `'1-100'` | Allowed JPEG quality range or a fixed value. |
+| `SELKIES_H264_FULLCOLOR` | `--h264-fullcolor` | `False` | Enable H.264 full color range for pixelflux encoders. |
+| `SELKIES_H264_STREAMING_MODE` | `--h264-streaming-mode` | `False` | Enable H.264 streaming mode for pixelflux encoders. |
+| `SELKIES_USE_CPU` | `--use-cpu` | `False` | Force CPU-based encoding for pixelflux. |
+| `SELKIES_USE_PAINT_OVER_QUALITY` | `--use-paint-over-quality` | `True` | Enable high-quality paint-over for static scenes. |
+| `SELKIES_PAINT_OVER_JPEG_QUALITY` | `--paint-over-jpeg-quality` | `'1-100'` | Allowed JPEG paint-over quality range or a fixed value. |
+| `SELKIES_H264_PAINTOVER_CRF` | `--h264-paintover-crf` | `'5-50'` | Allowed H.264 paint-over CRF range or a fixed value. |
+| `SELKIES_H264_PAINTOVER_BURST_FRAMES` | `--h264-paintover-burst-frames` | `'1-30'` | Allowed H.264 paint-over burst frames range or a fixed value. |
+| `SELKIES_SECOND_SCREEN` | `--second-screen` | `True` | Enable support for a second monitor/display. |
+| `SELKIES_AUDIO_BITRATE` | `--audio-bitrate` | `'320000'` | The default audio bitrate. |
+| `SELKIES_IS_MANUAL_RESOLUTION_MODE` | `--is-manual-resolution-mode` | `False` | Lock the resolution to the manual width/height values. |
+| `SELKIES_MANUAL_WIDTH` | `--manual-width` | `0` | Lock width to a fixed value. Setting this forces manual resolution mode. |
+| `SELKIES_MANUAL_HEIGHT` | `--manual-height` | `0` | Lock height to a fixed value. Setting this forces manual resolution mode. |
+| `SELKIES_SCALING_DPI` | `--scaling-dpi` | `'96'` | The default DPI for UI scaling. |
+| `SELKIES_ENABLE_BINARY_CLIPBOARD` | `--enable-binary-clipboard` | `False` | Allow binary data on the clipboard. |
+| `SELKIES_USE_BROWSER_CURSORS` | `--use-browser-cursors` | `False` | Use browser CSS cursors instead of rendering to canvas. |
+| `SELKIES_USE_CSS_SCALING` | `--use-css-scaling` | `False` | HiDPI when false, if true a lower resolution is sent from the client and the canvas is stretched. |
+| `SELKIES_PORT` (or `CUSTOM_WS_PORT`) | `--port` | `8082` | Port for the data websocket server. |
+| `SELKIES_DRI_NODE` (or `DRI_NODE`) | `--dri-node` | `''` | Path to the DRI render node for VA-API. |
+| `SELKIES_AUDIO_DEVICE_NAME` | `--audio-device-name` | `'output.monitor'` | Audio device name for pcmflux capture. |
+| `SELKIES_WATERMARK_PATH` (or `WATERMARK_PNG`) | `--watermark-path` | `''` | Absolute path to the watermark PNG file. |
+| `SELKIES_WATERMARK_LOCATION` (or `WATERMARK_LOCATION`) | `--watermark-location` | `-1` | Watermark location enum (0-6). |
+| `SELKIES_DEBUG` | `--debug` | `False` | Enable debug logging. |
+| `SELKIES_ENABLE_SHARING` | `--enable-sharing` | `True` | Master toggle for all sharing features. |
+| `SELKIES_ENABLE_COLLAB` | `--enable-collab` | `True` | Enable collaborative (read-write) sharing link. |
+| `SELKIES_ENABLE_SHARED` | `--enable-shared` | `True` | Enable view-only sharing links. |
+| `SELKIES_ENABLE_PLAYER2` | `--enable-player2` | `True` | Enable sharing link for gamepad player 2. |
+| `SELKIES_ENABLE_PLAYER3` | `--enable-player3` | `True` | Enable sharing link for gamepad player 3. |
+| `SELKIES_ENABLE_PLAYER4` | `--enable-player4` | `True` | Enable sharing link for gamepad player 4. |
