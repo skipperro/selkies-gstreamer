@@ -1363,24 +1363,26 @@ class DataStreamingServer:
         old_position = display_state.get('position', 'right')
         new_position = settings.get("displayPosition", "right")
 
+        target_w = None
+        target_h = None
         server_is_manual, _ = self.cli_args.is_manual_resolution_mode
-        target_w, target_h = old_display_width, old_display_height
 
         if server_is_manual:
             data_logger.info(f"Server is configured for manual resolution mode for display '{display_id}'.")
             target_w = self.cli_args.manual_width
             target_h = self.cli_args.manual_height
         else:
-            client_wants_manual = sanitize_value("is_manual_resolution_mode", settings.get("is_manual_resolution_mode", False))
+            client_wants_manual = sanitize_value("is_manual_resolution_mode", settings.get("is_manual_resolution_mode"))
             if client_wants_manual:
-                target_w = sanitize_value("manual_width", settings.get("manual_width", old_display_width))
-                target_h = sanitize_value("manual_height", settings.get("manual_height", old_display_height))
+                target_w = sanitize_value("manual_width", settings.get("manual_width"))
+                target_h = sanitize_value("manual_height", settings.get("manual_height"))
             elif is_initial_settings:
-                target_w = settings.get("initialClientWidth", old_display_width)
-                target_h = settings.get("initialClientHeight", old_display_height)
-
-        if target_w <= 0: target_w = old_display_width if old_display_width > 0 else 1024
-        if target_h <= 0: target_h = old_display_height if old_display_height > 0 else 768
+                target_w = settings.get("initialClientWidth")
+                target_h = settings.get("initialClientHeight")
+        if not isinstance(target_w, int) or target_w <= 0:
+            target_w = old_display_width if old_display_width > 0 else 1024
+        if not isinstance(target_h, int) or target_h <= 0:
+            target_h = old_display_height if old_display_height > 0 else 768
         if target_w % 2 != 0: target_w -= 1
         if target_h % 2 != 0: target_h -= 1
 
