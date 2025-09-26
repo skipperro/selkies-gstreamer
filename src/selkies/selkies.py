@@ -836,25 +836,40 @@ class DataStreamingServer:
         self._rtt_samples = deque(maxlen=RTT_SMOOTHING_SAMPLES)
         self._smoothed_rtt_ms = 0.0
         self._sent_frames_log = deque()
-        self._initial_x264_crf = self.cli_args.h264_crf
-        self.h264_crf = self._initial_x264_crf
-        self._initial_h264_fullcolor = self.cli_args.h264_fullcolor
+        
+        def get_initial_value(setting_name):
+            """Helper to get the correct initial integer/bool from a processed setting."""
+            processed_value = getattr(self.cli_args, setting_name)
+            setting_def = next((s for s in SETTING_DEFINITIONS if s['name'] == setting_name), None)
+            if not setting_def: return None
+
+            if setting_def['type'] == 'range':
+                min_val, max_val = processed_value
+                return min_val if min_val == max_val else setting_def.get('meta', {}).get('default_value')
+            elif setting_def['type'] == 'bool':
+                return processed_value[0]
+            return processed_value
+
+        self._initial_h264_crf = get_initial_value('h264_crf')
+        self.h264_crf = self._initial_h264_crf
+        self._initial_h264_fullcolor = get_initial_value('h264_fullcolor')
         self.h264_fullcolor = self._initial_h264_fullcolor
-        self._initial_h264_streaming_mode = self.cli_args.h264_streaming_mode
+        self._initial_h264_streaming_mode = get_initial_value('h264_streaming_mode')
         self.h264_streaming_mode = self._initial_h264_streaming_mode
         self.capture_cursor = False
-        self._initial_jpeg_quality = 60
+        self._initial_jpeg_quality = get_initial_value('jpeg_quality')
         self.jpeg_quality = self._initial_jpeg_quality
-        self._initial_paint_over_jpeg_quality = 90
+        self._initial_paint_over_jpeg_quality = get_initial_value('paint_over_jpeg_quality')
         self.paint_over_jpeg_quality = self._initial_paint_over_jpeg_quality
-        self._initial_h264_paintover_crf = 18
+        self._initial_h264_paintover_crf = get_initial_value('h264_paintover_crf')
         self.h264_paintover_crf = self._initial_h264_paintover_crf
-        self._initial_h264_paintover_burst_frames = 5
+        self._initial_h264_paintover_burst_frames = get_initial_value('h264_paintover_burst_frames')
         self.h264_paintover_burst_frames = self._initial_h264_paintover_burst_frames
-        self._initial_use_cpu = False
+        self._initial_use_cpu = get_initial_value('use_cpu')
         self.use_cpu = self._initial_use_cpu
-        self._initial_use_paint_over_quality = True
+        self._initial_use_paint_over_quality = get_initial_value('use_paint_over_quality')
         self.use_paint_over_quality = self._initial_use_paint_over_quality
+
         self._system_monitor_task_ws = None
         self._gpu_monitor_task_ws = None
         self._stats_sender_task_ws = None
@@ -1237,54 +1252,50 @@ class DataStreamingServer:
         settings_data = json.loads(payload_str)
         parsed = {}
 
-        def get_int(k, d):
+        def get_int(k):
             v = settings_data.get(k)
-            return int(v) if v is not None else d
+            return int(v) if v is not None else None
 
-        def get_bool(k, d):
+        def get_bool(k):
             v = settings_data.get(k)
-            return str(v).lower() == "true" if v is not None else d
+            return str(v).lower() == "true" if v is not None else None
 
-        def get_str(k, d):
+        def get_str(k):
             v = settings_data.get(k)
-            return str(v) if v is not None else d
-
-        parsed["framerate"] = get_int("framerate", self.app.framerate)
-        parsed["h264_crf"] = get_int("h264_crf", self.h264_crf)
-        parsed["encoder"] = get_str("encoder", self.app.encoder)
-        parsed["h264_fullcolor"] = get_bool("h264_fullcolor", self.h264_fullcolor)
-        parsed["h264_streaming_mode"] = get_bool("h264_streaming_mode", self.h264_streaming_mode)
+            return str(v) if v is not None else None
+        parsed["framerate"] = get_int("framerate")
+        parsed["h264_crf"] = get_int("h264_crf")
+        parsed["encoder"] = get_str("encoder")
+        parsed["h264_fullcolor"] = get_bool("h264_fullcolor")
+        parsed["h264_streaming_mode"] = get_bool("h264_streaming_mode")
         parsed["is_manual_resolution_mode"] = get_bool(
-            "is_manual_resolution_mode",
-            getattr(self.app, "client_is_manual_resolution_mode", False),
+            "is_manual_resolution_mode"
         )
         parsed["manual_width"] = get_int(
-            "manual_width",
-            getattr(self.app, "client_manual_width", self.app.display_width),
+            "manual_width"
         )
         parsed["manual_height"] = get_int(
-            "manual_height",
-            getattr(self.app, "client_manual_height", self.app.display_height),
+            "manual_height"
         )
-        parsed["audio_bitrate"] = get_int("audio_bitrate", self.app.audio_bitrate)
+        parsed["audio_bitrate"] = get_int("audio_bitrate")
         parsed["initialClientWidth"] = get_int(
-            "initialClientWidth", self.app.display_width
+            "initialClientWidth"
         )
         parsed["initialClientHeight"] = get_int(
-            "initialClientHeight", self.app.display_height
+            "initialClientHeight"
         )
-        parsed["jpeg_quality"] = get_int("jpeg_quality", self.jpeg_quality)
+        parsed["jpeg_quality"] = get_int("jpeg_quality")
         parsed["paint_over_jpeg_quality"] = get_int(
-            "paint_over_jpeg_quality", self.paint_over_jpeg_quality
+            "paint_over_jpeg_quality"
         )
-        parsed["use_cpu"] = get_bool("use_cpu", self.use_cpu)
-        parsed["h264_paintover_crf"] = get_int("h264_paintover_crf", self.h264_paintover_crf)
-        parsed["h264_paintover_burst_frames"] = get_int("h264_paintover_burst_frames", self.h264_paintover_burst_frames)
-        parsed["use_paint_over_quality"] = get_bool("use_paint_over_quality", self.use_paint_over_quality)
-        parsed["scaling_dpi"] = get_int("scaling_dpi", 96)
-        parsed["enable_binary_clipboard"] = get_bool("enable_binary_clipboard", self.enable_binary_clipboard)
-        parsed["displayId"] = get_str("displayId", "primary")
-        parsed["displayPosition"] = get_str("displayPosition", "right")
+        parsed["use_cpu"] = get_bool("use_cpu")
+        parsed["h264_paintover_crf"] = get_int("h264_paintover_crf")
+        parsed["h264_paintover_burst_frames"] = get_int("h264_paintover_burst_frames")
+        parsed["use_paint_over_quality"] = get_bool("use_paint_over_quality")
+        parsed["scaling_dpi"] = get_int("scaling_dpi")
+        parsed["enable_binary_clipboard"] = get_bool("enable_binary_clipboard")
+        parsed["displayId"] = get_str("displayId")
+        parsed["displayPosition"] = get_str("displayPosition")
         data_logger.debug(f"Parsed client settings: {parsed}")
         return parsed
 
@@ -1307,6 +1318,15 @@ class DataStreamingServer:
             if not setting_def:
                 return None
             server_limit = getattr(self.cli_args, name)
+            if client_value is None:
+                if setting_def['type'] == 'range':
+                    min_val, max_val = server_limit
+                    return min_val if min_val == max_val else setting_def.get('meta', {}).get('default_value')
+                elif setting_def['type'] == 'bool':
+                    return server_limit[0]
+                else: # enum, list, str, int
+                    return server_limit
+
             try:
                 if setting_def['type'] == 'range':
                     min_val, max_val = server_limit
@@ -1315,22 +1335,26 @@ class DataStreamingServer:
                         data_logger.warning(f"Client value for '{name}' ({client_value}) was clamped to {sanitized} (server range: {min_val}-{max_val}).")
                     return sanitized
                 elif setting_def['type'] == 'enum':
-                    if str(client_value) in setting_def['meta']['allowed']:
+                    allowed_values = setting_def['meta']['allowed']
+                    if str(client_value) in allowed_values:
                         return client_value
-                    data_logger.warning(f"Client value for '{name}' ({client_value}) is not allowed. Using server default '{setting_def['default']}'.")
-                    return setting_def['default']
+                    server_default = allowed_values[0] if allowed_values else setting_def['default']
+                    data_logger.warning(f"Client value for '{name}' ('{client_value}') is not in the allowed list {allowed_values}. Using server default '{server_default}'.")
+                    return server_default
                 elif setting_def['type'] == 'bool':
                     server_val, is_locked = server_limit
+                    client_bool = str(client_value).lower() in ['true', '1']
                     if is_locked:
-                        if bool(client_value) != server_val:
+                        if client_bool != server_val:
                             data_logger.warning(f"Client tried to change locked setting '{name}'. Request ignored.")
                         return server_val
-                    if not server_val and client_value:
+                    if not server_val and client_bool:
                         data_logger.warning(f"Client tried to enable '{name}', but it is disabled by server settings.")
                         return False
-                    return bool(client_value)
-            except (ValueError, TypeError):
-                return setting_def.get('meta', {}).get('default_value', setting_def['default'])
+                    return client_bool
+            except (ValueError, TypeError, IndexError):
+                def_val_meta = setting_def.get('meta', {}).get('default_value')
+                return def_val_meta if def_val_meta is not None else setting_def.get('default')
             return client_value
 
         old_settings = display_state.copy()
@@ -1347,10 +1371,10 @@ class DataStreamingServer:
             target_w = self.cli_args.manual_width
             target_h = self.cli_args.manual_height
         else:
-            client_wants_manual = sanitize_value("is_manual_resolution_mode", settings.get("isManualResolutionMode", False))
+            client_wants_manual = sanitize_value("is_manual_resolution_mode", settings.get("is_manual_resolution_mode", False))
             if client_wants_manual:
-                target_w = sanitize_value("manual_width", settings.get("manualWidth", old_display_width))
-                target_h = sanitize_value("manual_height", settings.get("manualHeight", old_display_height))
+                target_w = sanitize_value("manual_width", settings.get("manual_width", old_display_width))
+                target_h = sanitize_value("manual_height", settings.get("manual_height", old_display_height))
             elif is_initial_settings:
                 target_w = settings.get("initialClientWidth", old_display_width)
                 target_h = settings.get("initialClientHeight", old_display_height)
@@ -1372,8 +1396,8 @@ class DataStreamingServer:
                 self.app.display_height = target_h
 
         display_state["encoder"] = sanitize_value("encoder", settings.get("encoder"))
-        display_state["framerate"] = sanitize_value("framerate", settings.get("videoFramerate"))
-        display_state["h264_crf"] = sanitize_value("h264_crf", settings.get("videoCRF"))
+        display_state["framerate"] = sanitize_value("framerate", settings.get("framerate"))
+        display_state["h264_crf"] = sanitize_value("h264_crf", settings.get("h264_crf"))
         display_state["h264_fullcolor"] = sanitize_value("h264_fullcolor", settings.get("h264_fullcolor"))
         display_state["h264_streaming_mode"] = sanitize_value("h264_streaming_mode", settings.get("h264_streaming_mode"))
         display_state["jpeg_quality"] = sanitize_value("jpeg_quality", settings.get("jpeg_quality"))
@@ -1415,7 +1439,8 @@ class DataStreamingServer:
                 data_logger.info(f"Client settings for '{display_id}' or resolution changed, triggering full display reconfiguration.")
                 await self.reconfigure_displays()
 
-            if self.app.audio_bitrate != old_settings.get('audio_bitrate', self.app.audio_bitrate) and self.is_pcmflux_capturing:
+            audio_bitrate_changed = self.app.audio_bitrate != old_settings.get('audio_bitrate')
+            if audio_bitrate_changed and self.is_pcmflux_capturing:
                 data_logger.info("Restarting audio pipeline due to settings update.")
                 await self._stop_pcmflux_pipeline()
                 await self._start_pcmflux_pipeline()
@@ -1491,16 +1516,6 @@ class DataStreamingServer:
         self._previous_ack_id_for_stall_check = -1
         self._previous_sent_id_for_stall_check = -1
         self._last_client_stable_report_time = time.monotonic()
-        self._initial_x264_crf = self.cli_args.h264_crf
-        self.h264_crf = self._initial_x264_crf
-        self.h264_fullcolor = self._initial_h264_fullcolor
-        self.h264_streaming_mode = self._initial_h264_streaming_mode
-        self.jpeg_quality = self._initial_jpeg_quality
-        self.paint_over_jpeg_quality = self._initial_paint_over_jpeg_quality
-        self.use_cpu = self._initial_use_cpu
-        self.h264_paintover_crf = self._initial_h264_paintover_crf
-        self.h264_paintover_burst_frames = self._initial_h264_paintover_burst_frames
-        self.use_paint_over_quality = self._initial_use_paint_over_quality
 
         self._backpressure_send_frames_enabled = True
         active_uploads_by_path_conn = {}
@@ -1971,15 +1986,15 @@ class DataStreamingServer:
                                     'video_active': True,
                                     'encoder': self.app.encoder,
                                     'framerate': self.app.framerate,
-                                    'h264_crf': self.cli_args.h264_crf,
-                                    'h264_fullcolor': self.cli_args.h264_fullcolor,
-                                    'h264_streaming_mode': self.cli_args.h264_streaming_mode,
-                                    'jpeg_quality': 60,
-                                    'paint_over_jpeg_quality': 90,
-                                    'use_cpu': False,
-                                    'h264_paintover_crf': 18,
-                                    'h264_paintover_burst_frames': 5,
-                                    'use_paint_over_quality': True,
+                                    'h264_crf': self._initial_h264_crf,
+                                    'h264_fullcolor': self._initial_h264_fullcolor,
+                                    'h264_streaming_mode': self._initial_h264_streaming_mode,
+                                    'jpeg_quality': self._initial_jpeg_quality,
+                                    'paint_over_jpeg_quality': self._initial_paint_over_jpeg_quality,
+                                    'use_cpu': self._initial_use_cpu,
+                                    'h264_paintover_crf': self._initial_h264_paintover_crf,
+                                    'h264_paintover_burst_frames': self._initial_h264_paintover_burst_frames,
+                                    'use_paint_over_quality': self._initial_use_paint_over_quality,
                                 }
                             else:
                                 data_logger.info(f"Client is taking over existing display '{display_id}'. Updating state for new connection.")
@@ -2168,124 +2183,45 @@ class DataStreamingServer:
                     elif message.startswith("SET_ENCODER,"):
                         await self.client_settings_received.wait()
                         try:
-                            new_encoder_cmd = message.split(",")[1].strip().lower()
-                            data_logger.info(f"Received SET_ENCODER for '{client_display_id}': {new_encoder_cmd}")
-                            
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set encoder, display '{client_display_id}' not registered.")
-                                continue
-
-                            if not (new_encoder_cmd in PIXELFLUX_VIDEO_ENCODERS and X11_CAPTURE_AVAILABLE):
-                                data_logger.warning(f"SET_ENCODER: '{new_encoder_cmd}' is not valid or available. No change.")
-                                continue
-
-                            display_state = self.display_clients[client_display_id]
-                            if new_encoder_cmd != display_state.get('encoder'):
-                                display_state['encoder'] = new_encoder_cmd
-                                data_logger.info(f"Encoder for '{client_display_id}' changed to {new_encoder_cmd}, triggering display reconfiguration.")
-                                await self.reconfigure_displays()
-                            else:
-                                data_logger.info(f"SET_ENCODER: Encoder '{new_encoder_cmd}' is already active for '{client_display_id}'.")
+                            new_encoder = message.split(",")[1].strip().lower()
+                            data_logger.info(f"Received SET_ENCODER for '{client_display_id}': {new_encoder}")
+                            await self._apply_client_settings(websocket, {"encoder": new_encoder}, is_initial_settings=False)
                         except (IndexError, ValueError) as e:
                             data_logger.warning(f"Malformed SET_ENCODER message: {message}, error: {e}")
 
                     elif message.startswith("SET_FRAMERATE,"):
                         await self.client_settings_received.wait()
                         try:
-                            new_fps_cmd = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_FRAMERATE for '{client_display_id}': {new_fps_cmd}")
-
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set framerate, display '{client_display_id}' not registered.")
-                                continue
-
-                            display_state = self.display_clients[client_display_id]
-                            if display_state.get('framerate') != new_fps_cmd:
-                                display_state['framerate'] = new_fps_cmd
-                                data_logger.info(f"Framerate for '{client_display_id}' changed, triggering display reconfiguration.")
-                                await self.reconfigure_displays()
-                            else:
-                                data_logger.info(f"SET_FRAMERATE: Framerate {new_fps_cmd} is already set for '{client_display_id}'.")
+                            new_fps = int(message.split(",")[1])
+                            data_logger.info(f"Received SET_FRAMERATE for '{client_display_id}': {new_fps}")
+                            await self._apply_client_settings(websocket, {"framerate": new_fps}, is_initial_settings=False)
                         except (IndexError, ValueError) as e:
                             data_logger.warning(f"Malformed SET_FRAMERATE message: {message}, error: {e}")
 
                     elif message.startswith("SET_CRF,"):
                         await self.client_settings_received.wait()
                         try:
-                            new_crf_cmd = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_CRF for '{client_display_id}': {new_crf_cmd}")
-
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set CRF, display '{client_display_id}' not registered.")
-                                continue
-
-                            display_state = self.display_clients[client_display_id]
-                            current_enc = display_state.get('encoder')
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
-
-                            if is_pixelflux_h264:
-                                if display_state.get('h264_crf') != new_crf_cmd:
-                                    display_state['h264_crf'] = new_crf_cmd
-                                    data_logger.info(f"CRF for '{client_display_id}' changed, triggering display reconfiguration.")
-                                    await self.reconfigure_displays()
-                                else:
-                                    data_logger.info(f"SET_CRF: Value {new_crf_cmd} is already set for '{client_display_id}'.")
-                            else:
-                                data_logger.warning(f"SET_CRF received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                            new_crf = int(message.split(",")[1])
+                            data_logger.info(f"Received SET_CRF for '{client_display_id}': {new_crf}")
+                            await self._apply_client_settings(websocket, {"h264_crf": new_crf}, is_initial_settings=False)
                         except (IndexError, ValueError) as e:
                             data_logger.warning(f"Malformed SET_CRF message: {message}, error: {e}")
 
                     elif message.startswith("SET_H264_FULLCOLOR,"):
                         await self.client_settings_received.wait()
                         try:
-                            new_fullcolor_cmd_str = message.split(",")[1].strip().lower()
-                            new_fullcolor_cmd = new_fullcolor_cmd_str == "true"
-                            data_logger.info(f"Received SET_H264_FULLCOLOR for '{client_display_id}': {new_fullcolor_cmd}")
-
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set H264_FULLCOLOR, display '{client_display_id}' not registered.")
-                                continue
-
-                            display_state = self.display_clients[client_display_id]
-                            current_enc = display_state.get('encoder')
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
-
-                            if is_pixelflux_h264:
-                                if display_state.get('h264_fullcolor') != new_fullcolor_cmd:
-                                    display_state['h264_fullcolor'] = new_fullcolor_cmd
-                                    data_logger.info(f"H.264 Full Color for '{client_display_id}' changed, triggering display reconfiguration.")
-                                    await self.reconfigure_displays()
-                                else:
-                                    data_logger.info(f"SET_H264_FULLCOLOR: Value {new_fullcolor_cmd} is already set for '{client_display_id}'.")
-                            else:
-                                data_logger.warning(f"SET_H264_FULLCOLOR received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                            new_fullcolor = message.split(",")[1].strip().lower() == "true"
+                            data_logger.info(f"Received SET_H264_FULLCOLOR for '{client_display_id}': {new_fullcolor}")
+                            await self._apply_client_settings(websocket, {"h264_fullcolor": new_fullcolor}, is_initial_settings=False)
                         except IndexError:
                             data_logger.warning(f"Malformed SET_H264_FULLCOLOR message: {message}")
 
                     elif message.startswith("SET_H264_STREAMING_MODE,"):
                         await self.client_settings_received.wait()
                         try:
-                            new_streaming_mode_str = message.split(",")[1].strip().lower()
-                            new_streaming_mode = new_streaming_mode_str == "true"
+                            new_streaming_mode = message.split(",")[1].strip().lower() == "true"
                             data_logger.info(f"Received SET_H264_STREAMING_MODE for '{client_display_id}': {new_streaming_mode}")
-
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set H264_STREAMING_MODE, display '{client_display_id}' not registered.")
-                                continue
-                            
-                            display_state = self.display_clients[client_display_id]
-                            current_enc = display_state.get('encoder')
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
-
-                            if is_pixelflux_h264:
-                                if display_state.get('h264_streaming_mode') != new_streaming_mode:
-                                    display_state['h264_streaming_mode'] = new_streaming_mode
-                                    data_logger.info(f"H.264 Streaming Mode for '{client_display_id}' changed, triggering display reconfiguration.")
-                                    await self.reconfigure_displays()
-                                else:
-                                    data_logger.info(f"SET_H264_STREAMING_MODE: Value {new_streaming_mode} is already set for '{client_display_id}'.")
-                            else:
-                                data_logger.warning(f"SET_H264_STREAMING_MODE received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                            await self._apply_client_settings(websocket, {"h264_streaming_mode": new_streaming_mode}, is_initial_settings=False)
                         except IndexError:
                             data_logger.warning(f"Malformed SET_H264_STREAMING_MODE message: {message}")
 
@@ -2294,21 +2230,7 @@ class DataStreamingServer:
                         try:
                             new_quality = int(message.split(",")[1])
                             data_logger.info(f"Received SET_JPEG_QUALITY for '{client_display_id}': {new_quality}")
-
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set JPEG_QUALITY, display '{client_display_id}' not registered.")
-                                continue
-
-                            display_state = self.display_clients[client_display_id]
-                            if display_state.get('encoder') == "jpeg":
-                                if display_state.get('jpeg_quality') != new_quality:
-                                    display_state['jpeg_quality'] = new_quality
-                                    data_logger.info(f"JPEG Quality for '{client_display_id}' changed, triggering display reconfiguration.")
-                                    await self.reconfigure_displays()
-                                else:
-                                    data_logger.info(f"SET_JPEG_QUALITY: Value {new_quality} is already set for '{client_display_id}'.")
-                            else:
-                                data_logger.warning(f"SET_JPEG_QUALITY received for '{client_display_id}' but its current encoder is '{display_state.get('encoder')}', not 'jpeg'.")
+                            await self._apply_client_settings(websocket, {"jpeg_quality": new_quality}, is_initial_settings=False)
                         except (IndexError, ValueError):
                             data_logger.warning(f"Malformed SET_JPEG_QUALITY message: {message}")
 
@@ -2317,42 +2239,16 @@ class DataStreamingServer:
                         try:
                             new_quality = int(message.split(",")[1])
                             data_logger.info(f"Received SET_PAINT_OVER_JPEG_QUALITY for '{client_display_id}': {new_quality}")
-
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set PAINT_OVER_JPEG_QUALITY, display '{client_display_id}' not registered.")
-                                continue
-
-                            display_state = self.display_clients[client_display_id]
-                            if display_state.get('encoder') == "jpeg":
-                                if display_state.get('paint_over_jpeg_quality') != new_quality:
-                                    display_state['paint_over_jpeg_quality'] = new_quality
-                                    data_logger.info(f"Paint-Over JPEG Quality for '{client_display_id}' changed, triggering display reconfiguration.")
-                                    await self.reconfigure_displays()
-                                else:
-                                    data_logger.info(f"SET_PAINT_OVER_JPEG_QUALITY: Value {new_quality} is already set for '{client_display_id}'.")
-                            else:
-                                data_logger.warning(f"SET_PAINT_OVER_JPEG_QUALITY received for '{client_display_id}' but its current encoder is '{display_state.get('encoder')}', not 'jpeg'.")
+                            await self._apply_client_settings(websocket, {"paint_over_jpeg_quality": new_quality}, is_initial_settings=False)
                         except (IndexError, ValueError):
                             data_logger.warning(f"Malformed SET_PAINT_OVER_JPEG_QUALITY message: {message}")
 
                     elif message.startswith("SET_USE_PAINT_OVER_QUALITY,"):
                         await self.client_settings_received.wait()
                         try:
-                            new_val_str = message.split(",")[1].strip().lower()
-                            new_val = new_val_str == "true"
+                            new_val = message.split(",")[1].strip().lower() == "true"
                             data_logger.info(f"Received SET_USE_PAINT_OVER_QUALITY for '{client_display_id}': {new_val}")
-                            
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set USE_PAINT_OVER_QUALITY, display '{client_display_id}' not registered.")
-                                continue
-
-                            display_state = self.display_clients[client_display_id]
-                            if display_state.get('use_paint_over_quality') != new_val:
-                                display_state['use_paint_over_quality'] = new_val
-                                data_logger.info(f"Use Paint-Over Quality for '{client_display_id}' changed, triggering display reconfiguration.")
-                                await self.reconfigure_displays()
-                            else:
-                                data_logger.info(f"SET_USE_PAINT_OVER_QUALITY: Value {new_val} is already set for '{client_display_id}'.")
+                            await self._apply_client_settings(websocket, {"use_paint_over_quality": new_val}, is_initial_settings=False)
                         except IndexError:
                             data_logger.warning(f"Malformed SET_USE_PAINT_OVER_QUALITY message: {message}")
 
@@ -2361,24 +2257,7 @@ class DataStreamingServer:
                         try:
                             new_crf = int(message.split(",")[1])
                             data_logger.info(f"Received SET_H264_PAINTOVER_CRF for '{client_display_id}': {new_crf}")
-                            
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set H264_PAINTOVER_CRF, display '{client_display_id}' not registered.")
-                                continue
-                            
-                            display_state = self.display_clients[client_display_id]
-                            current_enc = display_state.get('encoder')
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
-
-                            if is_pixelflux_h264:
-                                if display_state.get('h264_paintover_crf') != new_crf:
-                                    display_state['h264_paintover_crf'] = new_crf
-                                    data_logger.info(f"H.264 Paint-Over CRF for '{client_display_id}' changed, triggering display reconfiguration.")
-                                    await self.reconfigure_displays()
-                                else:
-                                    data_logger.info(f"SET_H264_PAINTOVER_CRF: Value {new_crf} is already set for '{client_display_id}'.")
-                            else:
-                                data_logger.warning(f"SET_H264_PAINTOVER_CRF received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                            await self._apply_client_settings(websocket, {"h264_paintover_crf": new_crf}, is_initial_settings=False)
                         except (IndexError, ValueError):
                             data_logger.warning(f"Malformed SET_H264_PAINTOVER_CRF message: {message}")
 
@@ -2387,54 +2266,18 @@ class DataStreamingServer:
                         try:
                             new_burst = int(message.split(",")[1])
                             data_logger.info(f"Received SET_H264_PAINTOVER_BURST_FRAMES for '{client_display_id}': {new_burst}")
-                            
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set H264_PAINTOVER_BURST_FRAMES, display '{client_display_id}' not registered.")
-                                continue
-
-                            display_state = self.display_clients[client_display_id]
-                            current_enc = display_state.get('encoder')
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
-                            
-                            if is_pixelflux_h264:
-                                if display_state.get('h264_paintover_burst_frames') != new_burst:
-                                    display_state['h264_paintover_burst_frames'] = new_burst
-                                    data_logger.info(f"H.264 Paint-Over Burst Frames for '{client_display_id}' changed, triggering display reconfiguration.")
-                                    await self.reconfigure_displays()
-                                else:
-                                    data_logger.info(f"SET_H264_PAINTOVER_BURST_FRAMES: Value {new_burst} is already set for '{client_display_id}'.")
-                            else:
-                                data_logger.warning(f"SET_H264_PAINTOVER_BURST_FRAMES received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                            await self._apply_client_settings(websocket, {"h264_paintover_burst_frames": new_burst}, is_initial_settings=False)
                         except (IndexError, ValueError):
                             data_logger.warning(f"Malformed SET_H264_PAINTOVER_BURST_FRAMES message: {message}")
 
                     elif message.startswith("SET_USE_CPU,"):
                         await self.client_settings_received.wait()
                         try:
-                            new_use_cpu_str = message.split(",")[1].strip().lower()
-                            new_use_cpu = new_use_cpu_str == "true"
+                            new_use_cpu = message.split(",")[1].strip().lower() == "true"
                             data_logger.info(f"Received SET_USE_CPU for '{client_display_id}': {new_use_cpu}")
-
-                            if not client_display_id or client_display_id not in self.display_clients:
-                                data_logger.warning(f"Cannot set USE_CPU, display '{client_display_id}' not registered.")
-                                continue
-
-                            display_state = self.display_clients[client_display_id]
-                            current_enc = display_state.get('encoder')
-                            is_pixelflux_h264 = (current_enc in PIXELFLUX_VIDEO_ENCODERS and "x264" in current_enc)
-
-                            if is_pixelflux_h264:
-                                if display_state.get('use_cpu') != new_use_cpu:
-                                    display_state['use_cpu'] = new_use_cpu
-                                    data_logger.info(f"Use CPU for '{client_display_id}' changed, triggering display reconfiguration.")
-                                    await self.reconfigure_displays()
-                                else:
-                                    data_logger.info(f"SET_USE_CPU: Value {new_use_cpu} is already set for '{client_display_id}'.")
-                            else:
-                                data_logger.warning(f"SET_USE_CPU received for '{client_display_id}' but its current encoder '{current_enc}' is not a Pixelflux H.264 encoder.")
+                            await self._apply_client_settings(websocket, {"use_cpu": new_use_cpu}, is_initial_settings=False)
                         except IndexError:
                             data_logger.warning(f"Malformed SET_USE_CPU message: {message}")
-
                     elif message.startswith("SET_NATIVE_CURSOR_RENDERING,"):
                         await self.client_settings_received.wait()
                         try:
@@ -3146,22 +2989,22 @@ class DataStreamingServer:
         encoder = display_state.get('encoder', self.app.encoder)
         if encoder == "jpeg":
             cs.output_mode = 0
-            cs.jpeg_quality = display_state.get('jpeg_quality', 60)
-            cs.paint_over_jpeg_quality = display_state.get('paint_over_jpeg_quality', 90)
+            cs.jpeg_quality = display_state.get('jpeg_quality', self._initial_jpeg_quality)
+            cs.paint_over_jpeg_quality = display_state.get('paint_over_jpeg_quality', self._initial_paint_over_jpeg_quality)
         else: # H.264 modes
             cs.output_mode = 1
-            cs.h264_crf = display_state.get('h264_crf', 25)
-            cs.h264_paintover_crf = display_state.get('h264_paintover_crf', 18)
-            cs.h264_paintover_burst_frames = display_state.get('h264_paintover_burst_frames', 5)
-            cs.h264_fullcolor = display_state.get('h264_fullcolor', False)
-            cs.h264_streaming_mode = display_state.get('h264_streaming_mode', False)
+            cs.h264_crf = display_state.get('h264_crf', self._initial_h264_crf)
+            cs.h264_paintover_crf = display_state.get('h264_paintover_crf', self._initial_h264_paintover_crf)
+            cs.h264_paintover_burst_frames = display_state.get('h264_paintover_burst_frames', self._initial_h264_paintover_burst_frames)
+            cs.h264_fullcolor = display_state.get('h264_fullcolor', self._initial_h264_fullcolor)
+            cs.h264_streaming_mode = display_state.get('h264_streaming_mode', self._initial_h264_streaming_mode)
             cs.h264_fullframe = (encoder == "x264enc")
 
-        cs.use_paint_over_quality = display_state.get('use_paint_over_quality', True)
+        cs.use_paint_over_quality = display_state.get('use_paint_over_quality', self._initial_use_paint_over_quality)
         cs.paint_over_trigger_frames = 15
         cs.damage_block_threshold = 10
         cs.damage_block_duration = 20
-        cs.use_cpu = display_state.get('use_cpu', False)
+        cs.use_cpu = display_state.get('use_cpu', self._initial_use_cpu)
         
         if self.cli_args.dri_node:
             cs.vaapi_render_node_index = parse_dri_node_to_index(self.cli_args.dri_node)
@@ -3347,7 +3190,14 @@ async def main():
             pass
 
     global TARGET_FRAMERATE
-    TARGET_FRAMERATE = settings.framerate
+    processed_framerate = settings.framerate
+    min_fr, max_fr = processed_framerate
+    if min_fr == max_fr:
+        TARGET_FRAMERATE = min_fr
+    else:
+        fr_def = next((s for s in SETTING_DEFINITIONS if s['name'] == 'framerate'), None)
+        TARGET_FRAMERATE = fr_def['meta']['default_value'] if fr_def else 60
+
     initial_encoder = settings.encoder
 
     if not settings.debug[0] and PULSEAUDIO_AVAILABLE:
