@@ -1346,11 +1346,8 @@ class DataStreamingServer:
                     client_bool = str(client_value).lower() in ['true', '1']
                     if is_locked:
                         if client_bool != server_val:
-                            data_logger.warning(f"Client tried to change locked setting '{name}'. Request ignored.")
+                            data_logger.warning(f"Client tried to change locked setting '{name}' to '{client_bool}'. Request ignored, using server value '{server_val}'.")
                         return server_val
-                    if not server_val and client_bool:
-                        data_logger.warning(f"Client tried to enable '{name}', but it is disabled by server settings.")
-                        return False
                     return client_bool
             except (ValueError, TypeError, IndexError):
                 def_val_meta = setting_def.get('meta', {}).get('default_value')
