@@ -552,6 +552,19 @@ body {
   document.head.appendChild(style);
 };
 
+function sendFullSettingsUpdateToServer(reason) {
+    if (isSharedMode) return;
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        const settingsToSend = getCurrentSettingsPayload();
+        const settingsJson = JSON.stringify(settingsToSend);
+        const message = `SETTINGS,${settingsJson}`;
+        websocket.send(message);
+        console.log(`[websockets] Sent full settings update. Reason: ${reason}`);
+    } else {
+        console.warn(`[websockets] Cannot send full settings update. Reason: ${reason}. WebSocket not open.`);
+    }
+}
+
 function getCurrentSettingsPayload() {
     const settingsToSend = {};
     const dpr = useCssScaling ? 1 : (window.devicePixelRatio || 1);
@@ -1824,298 +1837,103 @@ async function sendClipboardData(data, mimeType = 'text/plain') {
 
 function handleSettingsMessage(settings) {
   console.log('Applying settings:', settings);
+  let settingsChanged = false;
   if (settings.framerate !== undefined) {
     framerate = parseInt(settings.framerate);
     setIntParam('framerate', framerate);
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
-      const message = `SET_FRAMERATE,${framerate}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send framerate setting.");
-    }
+    settingsChanged = true;
   }
   if (settings.encoder !== undefined) {
     const newEncoderSetting = settings.encoder;
-    const oldEncoderActual = currentEncoderMode;
-
-    if (oldEncoderActual !== newEncoderSetting) {
-      currentEncoderMode = newEncoderSetting;
-      setStringParam('encoder', currentEncoderMode);
-
-      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
-        const message = `SET_ENCODER,${currentEncoderMode}`;
-        console.log(`Sent websocket message: ${message}`);
-        websocket.send(message);
-      } else if (!isSharedMode) {
-        console.warn("Websocket connection not open, cannot send encoder setting.");
-      }
-
-      const isNewPixelfluxH264 = newEncoderSetting === 'x264enc' || newEncoderSetting === 'x264enc-striped';
-      const isOldPixelfluxH264 = oldEncoderActual === 'x264enc' || oldEncoderActual === 'x264enc-striped';
-      const isNewJpeg = newEncoderSetting === 'jpeg';
-      const isOldJpeg = oldEncoderActual === 'jpeg';
-      const isNewVideoPipeline = !isNewJpeg && !isNewPixelfluxH264;
-      const isOldVideoPipeline = !isOldJpeg && !isOldPixelfluxH264;
-      const isOldStripedH264 = oldEncoderActual === 'x264enc-striped';
-      const isNewStripedH264 = newEncoderSetting === 'x264enc-striped';
-
-      if (isOldStripedH264 && !isNewStripedH264) {
-        clearAllVncStripeDecoders();
-      }
-      if ((isOldVideoPipeline || isOldStripedH264) && isNewJpeg) {
-        if (decoder && decoder.state !== 'closed') {
-          console.log(`Switching from ${oldEncoderActual} to JPEG, closing main video decoder.`);
-          decoder.close();
-          decoder = null;
+    if (currentEncoderMode !== newEncoderSetting) {
+        currentEncoderMode = newEncoderSetting;
+        setStringParam('encoder', currentEncoderMode);
+        settingsChanged = true;
+        if (newEncoderSetting === 'jpeg' || newEncoderSetting === 'x264enc' || newEncoderSetting === 'x264enc-striped') {
+            if (decoder && decoder.state !== 'closed') {
+                console.log(`Switching to ${newEncoderSetting}, closing main video decoder.`);
+                decoder.close();
+                decoder = null;
+            }
         }
-      }
-
-      if (isNewPixelfluxH264) {
-        if (canvasContext) {
-          canvasContext.setTransform(1, 0, 0, 1, 0, 0);
-          canvasContext.clearRect(0, 0, canvas.width, canvas.height);
-          console.log("Switched to x264enc-striped, cleared canvas.");
+        if (newEncoderSetting !== 'x264enc-striped') {
+            clearAllVncStripeDecoders();
         }
-        if (decoder && decoder.state !== 'closed') {
-          console.log("Switching to x264enc-striped, closing main video decoder.");
-          decoder.close();
-          decoder = null;
-        }
-      } else if (isNewJpeg) {
-        console.log("Encoder changed to JPEG. Ensuring canvas buffer is correctly sized.");
-        let currentTargetWidth, currentTargetHeight;
-        if (isSharedMode) {
-            currentTargetWidth = manual_width;
-            currentTargetHeight = manual_height;
-            if (currentTargetWidth && currentTargetHeight) applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, true);
-
-        } else if (window.is_manual_resolution_mode && manual_width != null && manual_height != null) {
-          currentTargetWidth = manual_width;
-          currentTargetHeight = manual_height;
-          applyManualCanvasStyle(currentTargetWidth, currentTargetHeight, scaleLocallyManual);
-        } else {
-          if (window.webrtcInput && typeof window.webrtcInput.getWindowResolution === 'function') {
-            const currentWindowRes = window.webrtcInput.getWindowResolution();
-            currentTargetWidth = roundDownToEven(currentWindowRes[0]);
-            currentTargetHeight = roundDownToEven(currentWindowRes[1]);
-            resetCanvasStyle(currentTargetWidth, currentTargetHeight);
-          } else {
-            console.warn("Cannot determine auto resolution for JPEG switch: webrtcInput or getWindowResolution not available.");
-          }
-        }
-      } else if (isNewVideoPipeline) {
-        console.log(`Switching to video pipeline ${newEncoderSetting}. Ensuring main decoder is initialized/reconfigured.`);
-        triggerInitializeDecoder();
-      }
-      const wasStripedOrJpeg = isOldJpeg || isOldStripedH264;
-      if (wasStripedOrJpeg && isNewVideoPipeline) {
-        console.log(`Switched from ${oldEncoderActual} (striped/jpeg) to ${newEncoderSetting} (video pipeline). Resending video bitrate ${videoBitRate} kbit/s.`);
-        if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
-          const message = `SET_VIDEO_BITRATE,${videoBitRate}`;
-          websocket.send(message);
-        }
-      }
-    } else {
-      console.log(`Encoder setting received (${newEncoderSetting}), but it's the same as current (${oldEncoderActual}). No change.`);
     }
   }
   if (settings.h264_crf !== undefined) {
-    const newCrf = parseInt(settings.h264_crf, 10);
-    h264_crf = newCrf;
+    h264_crf = parseInt(settings.h264_crf, 10);
     setIntParam('h264_crf', h264_crf);
-    console.log(`Applied Video CRF setting: ${h264_crf}.`);
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
-      const message = `SET_CRF,${h264_crf}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send CRF setting.");
-    }
+    settingsChanged = true;
   }
   if (settings.h264_fullcolor !== undefined) {
-    const newFullColorValue = !!settings.h264_fullcolor;
-    h264_fullcolor = newFullColorValue;
+    h264_fullcolor = !!settings.h264_fullcolor;
     setBoolParam('h264_fullcolor', h264_fullcolor);
-    console.log(`Applied H.264 Full Color setting: ${h264_fullcolor}.`);
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped')) {
-      const message = `SET_H264_FULLCOLOR,${h264_fullcolor}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped') {
-      console.log("H.264 Full Color setting changed, but current encoder is not x264enc-striped. WebSocket command not sent.");
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send H.264 Full Color setting.");
-    }
+    settingsChanged = true;
   }
   if (settings.h264_streaming_mode !== undefined) {
-    const newStreamingModeValue = !!settings.h264_streaming_mode;
-    h264_streaming_mode = newStreamingModeValue;
+    h264_streaming_mode = !!settings.h264_streaming_mode;
     setBoolParam('h264_streaming_mode', h264_streaming_mode);
-    console.log(`Applied H.264 Streaming Mode setting: ${h264_streaming_mode}.`);
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && (currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped')) {
-      const message = `SET_H264_STREAMING_MODE,${h264_streaming_mode}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode && currentEncoderMode !== 'x264enc' && currentEncoderMode !== 'x264enc-striped') {
-      console.log("H.264 Streaming Mode setting changed, but current encoder is not x264enc-striped. WebSocket command not sent.");
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send H.264 Streaming Mode setting.");
-    }
+    settingsChanged = true;
   }
   if (settings.jpeg_quality !== undefined) {
-    const newQuality = parseInt(settings.jpeg_quality, 10);
-    jpeg_quality = newQuality;
+    jpeg_quality = parseInt(settings.jpeg_quality, 10);
     setIntParam('jpeg_quality', jpeg_quality);
-    console.log(`Applied JPEG Quality setting: ${jpeg_quality}.`);
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && currentEncoderMode === 'jpeg') {
-      const message = `SET_JPEG_QUALITY,${jpeg_quality}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode && currentEncoderMode !== 'jpeg') {
-      console.log("JPEG Quality setting changed, but current encoder is not 'jpeg'. WebSocket command not sent.");
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send JPEG Quality setting.");
-    }
+    settingsChanged = true;
   }
   if (settings.paint_over_jpeg_quality !== undefined) {
-    const newQuality = parseInt(settings.paint_over_jpeg_quality, 10);
-    paint_over_jpeg_quality = newQuality;
+    paint_over_jpeg_quality = parseInt(settings.paint_over_jpeg_quality, 10);
     setIntParam('paint_over_jpeg_quality', paint_over_jpeg_quality);
-    console.log(`Applied Paint-Over JPEG Quality setting: ${paint_over_jpeg_quality}.`);
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && currentEncoderMode === 'jpeg') {
-      const message = `SET_PAINT_OVER_JPEG_QUALITY,${paint_over_jpeg_quality}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode && currentEncoderMode !== 'jpeg') {
-      console.log("Paint-Over JPEG Quality setting changed, but current encoder is not 'jpeg'. WebSocket command not sent.");
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send Paint-Over JPEG Quality setting.");
-    }
+    settingsChanged = true;
   }
   if (settings.use_cpu !== undefined) {
-    const newUseCpu = !!settings.use_cpu;
-    use_cpu = newUseCpu;
+    use_cpu = !!settings.use_cpu;
     setBoolParam('use_cpu', use_cpu);
-    console.log(`Applied Use CPU setting: ${use_cpu}.`);
-    const isPixelfluxH264 = currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped';
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && isPixelfluxH264) {
-      const message = `SET_USE_CPU,${use_cpu}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode && !isPixelfluxH264) {
-      console.log("Use CPU setting changed, but current encoder is not a Pixelflux H.264 encoder. WebSocket command not sent.");
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send Use CPU setting.");
-    }
+    settingsChanged = true;
   }
   if (settings.h264_paintover_crf !== undefined) {
-    const newCrf = parseInt(settings.h264_paintover_crf, 10);
-    h264_paintover_crf = newCrf;
+    h264_paintover_crf = parseInt(settings.h264_paintover_crf, 10);
     setIntParam('h264_paintover_crf', h264_paintover_crf);
-    console.log(`Applied H.264 Paint-Over CRF setting: ${h264_paintover_crf}.`);
-    const isPixelfluxH264 = currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped';
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && isPixelfluxH264) {
-      const message = `SET_H264_PAINTOVER_CRF,${h264_paintover_crf}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode && !isPixelfluxH264) {
-      console.log("H.264 Paint-Over CRF setting changed, but current encoder is not a Pixelflux H.264 encoder. WebSocket command not sent.");
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send H.264 Paint-Over CRF setting.");
-    }
+    settingsChanged = true;
   }
   if (settings.h264_paintover_burst_frames !== undefined) {
-    const newBurst = parseInt(settings.h264_paintover_burst_frames, 10);
-    h264_paintover_burst_frames = newBurst;
+    h264_paintover_burst_frames = parseInt(settings.h264_paintover_burst_frames, 10);
     setIntParam('h264_paintover_burst_frames', h264_paintover_burst_frames);
-    console.log(`Applied H.264 Paint-Over Burst Frames setting: ${h264_paintover_burst_frames}.`);
-    const isPixelfluxH264 = currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped';
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && isPixelfluxH264) {
-      const message = `SET_H264_PAINTOVER_BURST_FRAMES,${h264_paintover_burst_frames}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode && !isPixelfluxH264) {
-      console.log("H.264 Paint-Over Burst Frames setting changed, but current encoder is not a Pixelflux H.264 encoder. WebSocket command not sent.");
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send H.264 Paint-Over Burst Frames setting.");
-    }
+    settingsChanged = true;
   }
   if (settings.use_paint_over_quality !== undefined) {
-    const newUsePaintOver = !!settings.use_paint_over_quality;
-    use_paint_over_quality = newUsePaintOver;
+    use_paint_over_quality = !!settings.use_paint_over_quality;
     setBoolParam('use_paint_over_quality', use_paint_over_quality);
-    console.log(`Applied Use Paint-Over Quality setting: ${use_paint_over_quality}.`);
-    const isApplicableEncoder = currentEncoderMode === 'jpeg' || currentEncoderMode === 'x264enc' || currentEncoderMode === 'x264enc-striped';
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN && isApplicableEncoder) {
-      const message = `SET_USE_PAINT_OVER_QUALITY,${use_paint_over_quality}`;
-      console.log(`Sent websocket message: ${message}`);
-      websocket.send(message);
-    } else if (!isSharedMode && !isApplicableEncoder) {
-      console.log("Use Paint-Over Quality setting changed, but current encoder is not applicable. WebSocket command not sent.");
-    } else if (!isSharedMode) {
-      console.warn("Websocket connection not open, cannot send Use Paint-Over Quality setting.");
-    }
+    settingsChanged = true;
+  }
+  if (settings.scaling_dpi !== undefined) {
+    scalingDPI = parseInt(settings.scaling_dpi, 10);
+    setIntParam('scaling_dpi', scalingDPI);
+    settingsChanged = true;
+  }
+  if (settings.enable_binary_clipboard !== undefined) {
+    enable_binary_clipboard = !!settings.enable_binary_clipboard;
+    setBoolParam('enable_binary_clipboard', enable_binary_clipboard);
+    settingsChanged = true;
   }
   if (settings.use_css_scaling !== undefined) {
-    const newValue = !!settings.use_css_scaling;
-    console.log(`Applying 'use_css_scaling' from settings message. New value: ${newValue}`);
-    const messageData = { type: 'setUseCssScaling', value: newValue };
+    const messageData = { type: 'setUseCssScaling', value: !!settings.use_css_scaling };
     receiveMessage({ origin: window.location.origin, data: messageData });
   }
   if (settings.use_browser_cursors !== undefined) {
-    const newCursorValue = !!settings.use_browser_cursors;
-    use_browser_cursors = newCursorValue;
+    use_browser_cursors = !!settings.use_browser_cursors;
     setBoolParam('use_browser_cursors', use_browser_cursors);
-    console.log(`Applied Use Browser Cursors setting: ${use_browser_cursors}.`);
     applyEffectiveCursorSetting();
-  }
-  if (settings.scaling_dpi !== undefined) {
-    const dpi = parseInt(settings.scaling_dpi, 10);
-    if (!isNaN(dpi)) {
-      scalingDPI = dpi;
-      setIntParam('scaling_dpi', scalingDPI);
-      console.log(`Applied scaling_dpi setting: ${dpi}.`);
-      if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
-        const message = `s,${dpi}`;
-        console.log(`Sent websocket message: ${message}`);
-        websocket.send(message);
-      } else if (isSharedMode) {
-        console.log("scaling_dpi setting ignored in shared mode.");
-      } else {
-        console.warn("Websocket connection not open, cannot send scaling_dpi setting.");
-      }
-    } else {
-      console.warn(`Invalid scaling_dpi value received: ${settings.scaling_dpi}`);
-    }
-  }
-  if (settings.turnSwitch !== undefined) {
-    console.log(`turnSwitch setting received (WebRTC specific): ${settings.turnSwitch}. No action in WebSocket mode.`);
-  }
-  if (settings.enable_binary_clipboard !== undefined) {
-    const newBinaryClipboardValue = !!settings.enable_binary_clipboard;
-    enable_binary_clipboard = newBinaryClipboardValue;
-    setBoolParam('enable_binary_clipboard', enable_binary_clipboard);
-    console.log(`Applied Enable Binary Clipboard setting: ${enable_binary_clipboard}.`);
-    if (!isSharedMode && websocket && websocket.readyState === WebSocket.OPEN) {
-      const settingsToSend = getCurrentSettingsPayload();
-      const settingsJson = JSON.stringify(settingsToSend);
-      const message = `SETTINGS,${settingsJson}`;
-      websocket.send(message);
-      console.log('[websockets] Sent full updated settings to server after changing binary clipboard.');
-    } else if (isSharedMode) {
-      console.log("Binary clipboard setting changed, but not sending to server in shared mode.");
-    } else {
-      console.warn("Websocket connection not open, cannot send binary clipboard setting.");
-    }
   }
   if (settings.debug !== undefined) {
     debug = settings.debug;
     setBoolParam('debug', debug);
     console.log(`Applied debug setting: ${debug}. Reloading...`);
-    setTimeout(() => {
-      window.location.reload();
-    }, 700);
+    setTimeout(() => { window.location.reload(); }, 700);
+    return;
+  }
+  if (settingsChanged) {
+    sendFullSettingsUpdateToServer('handleSettingsMessage');
   }
 }
 
