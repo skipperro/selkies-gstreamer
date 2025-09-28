@@ -2634,10 +2634,9 @@ function handleDecodedFrame(frame) {
           const isSpecific = displayId !== 'primary' && unprefixedKey.endsWith(displaySuffix);
           const baseKey = isSpecific ? unprefixedKey.slice(0, -displaySuffix.length) : unprefixedKey;
 
-          if (unprefixedKey.includes('_') && !isSpecific) {
+          if (!isSpecific && isSetBySpecificKey[baseKey]) {
             continue;
           }
-
           if (knownSettings.includes(baseKey)) {
             if (!isSpecific && isSetBySpecificKey[baseKey]) {
               continue;

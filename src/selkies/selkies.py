@@ -1412,12 +1412,14 @@ class DataStreamingServer:
             self.enable_binary_clipboard = sanitize_value("enable_binary_clipboard", settings.get("enable_binary_clipboard"))
             await self.input_handler.update_binary_clipboard_setting(self.enable_binary_clipboard)
         
-        if is_initial_settings and "scaling_dpi" in settings:
-            dpi = sanitize_value("scaling_dpi", settings.get("scaling_dpi"))
-            await set_dpi(dpi)
+        new_dpi = sanitize_value("scaling_dpi", settings.get("scaling_dpi"))
+        if new_dpi is not None and new_dpi != old_settings.get("scaling_dpi"):
+            data_logger.info(f"DPI changed from {old_settings.get('scaling_dpi')} to {new_dpi}. Applying system-level change.")
+            await set_dpi(new_dpi)
             if CURSOR_SIZE > 0:
-                new_cursor_size = max(1, int(round(int(dpi) / 96.0 * CURSOR_SIZE)))
+                new_cursor_size = max(1, int(round(int(new_dpi) / 96.0 * CURSOR_SIZE)))
                 await set_cursor_size(new_cursor_size)
+        display_state["scaling_dpi"] = new_dpi
 
         async with self._reconfigure_lock:
             params_changed = any(
