@@ -957,17 +957,20 @@ class DataStreamingServer:
             while True:
                 opus_bytes = await self.pcmflux_audio_queue.get()
 
-                if not self.clients:
+                secondary_websockets = {
+                    client_info.get('ws')
+                    for did, client_info in self.display_clients.items()
+                    if did != 'primary' and client_info.get('ws')
+                }
+                primary_viewers = self.clients - secondary_websockets
+
+                if not primary_viewers:
                     self.pcmflux_audio_queue.task_done()
                     continue
                 
-                # Protocol: 1-byte data type (0x01=audio) + 1-byte frame type (0x00=opus) + payload
                 message_to_send = b'\x01\x00' + opus_bytes
-                self._bytes_sent_in_interval += len(message_to_send)
-                active_clients = list(self.clients)
-                tasks = [client.send(message_to_send) for client in active_clients]
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                self._bytes_sent_in_interval += len(message_to_send) * len(primary_viewers)
+                websockets.broadcast(primary_viewers, message_to_send)
 
                 self.pcmflux_audio_queue.task_done()
         except asyncio.CancelledError:
@@ -1409,6 +1412,7 @@ class DataStreamingServer:
         display_state["use_cpu"] = sanitize_value("use_cpu", settings.get("use_cpu"))
         
         self.app.audio_bitrate = sanitize_value("audio_bitrate", settings.get("audio_bitrate"))
+        display_state["audio_bitrate"] = self.app.audio_bitrate
         
         if self.input_handler:
             self.enable_binary_clipboard = sanitize_value("enable_binary_clipboard", settings.get("enable_binary_clipboard"))

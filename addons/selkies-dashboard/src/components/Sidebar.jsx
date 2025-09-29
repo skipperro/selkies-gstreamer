@@ -2273,7 +2273,7 @@ function Sidebar() {
                       <div className="dev-setting-item">
                         <label htmlFor="jpegQualitySlider">
                           {t("sections.video.jpegQualityLabel", {
-                            jpeg_quality: jpeg_quality,
+                            jpegQuality: jpeg_quality,
                           })}
                         </label>
                         <input
@@ -2292,7 +2292,7 @@ function Sidebar() {
                       <div className="dev-setting-item">
                         <label htmlFor="paintOverJpegQualitySlider">
                           {t("sections.video.paintOverJpegQualityLabel", {
-                            paint_over_jpeg_quality: paint_over_jpeg_quality,
+                            paintOverJpegQuality: paint_over_jpeg_quality,
                           })}
                         </label>
                         <input
