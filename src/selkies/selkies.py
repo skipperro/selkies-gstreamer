@@ -2105,22 +2105,13 @@ class DataStreamingServer:
 
                     elif message == "START_VIDEO":
                         if client_display_id and client_display_id in self.display_clients:
-                            data_logger.info(f"Received START_VIDEO for '{client_display_id}'. Starting stream without reconfiguring layout.")
+                            data_logger.info(f"Received START_VIDEO for '{client_display_id}'. Triggering a full display reconfiguration to ensure a clean start.")
                             self.display_clients[client_display_id]['video_active'] = True
-                            
-                            layout = self.display_layouts.get(client_display_id)
-                            if layout:
-                                await self._start_capture_for_display(
-                                    display_id=client_display_id,
-                                    width=layout['w'], height=layout['h'],
-                                    x_offset=layout['x'], y_offset=layout['y']
-                                )
-                                await self._start_backpressure_task_if_needed(client_display_id)
+                            await self.reconfigure_displays()
+                            try:
                                 await websocket.send("VIDEO_STARTED")
-                            else:
-                                data_logger.warning(f"No layout found for '{client_display_id}'. Triggering a full reconfigure to recover state.")
-                                async with self._reconfigure_lock:
-                                    await self.reconfigure_displays()
+                            except websockets.ConnectionClosed:
+                                pass
 
                     elif message == "STOP_VIDEO":
                         if client_display_id and client_display_id in self.display_clients:
@@ -2275,10 +2266,18 @@ class DataStreamingServer:
             if self.data_ws is websocket:
                 self.data_ws = None
             
-            if client_display_id and client_display_id in self.display_clients:
-                del self.display_clients[client_display_id]
-                data_logger.info(f"Client for {client_display_id} removed. Triggering display reconfiguration.")
+            disconnected_display_id = None
+            for disp_id, client_info in self.display_clients.items():
+                if client_info.get('ws') is websocket:
+                    disconnected_display_id = disp_id
+                    break
+            
+            if disconnected_display_id:
+                del self.display_clients[disconnected_display_id]
+                data_logger.info(f"Client for '{disconnected_display_id}' disconnected. Removing and triggering full display reconfiguration.")
                 await self.reconfigure_displays()
+            else:
+                data_logger.info(f"Unregistered client at {raddr} disconnected. No display reconfiguration needed.")
 
             if "_stats_sender_task_ws" in locals():
                 _task_to_cancel = locals()["_stats_sender_task_ws"]
