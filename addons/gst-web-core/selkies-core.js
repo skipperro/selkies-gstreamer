@@ -3234,7 +3234,7 @@ function handleDecodedFrame(frame) {
                          manual_height = logicalNewHeight;
                          applyManualCanvasStyle(manual_width, manual_height, true);
                      }
-
+                     
                      if (sharedClientState === 'ready' && dimensionsChanged && identifiedEncoderModeForShared === 'h264_full_frame') {
                          console.log(`Shared mode: Triggering main decoder re-init for new resolution.`);
                          triggerInitializeDecoder();
@@ -3248,19 +3248,6 @@ function handleDecodedFrame(frame) {
                  } else {
                      console.warn(`Shared mode: Received invalid stream_resolution dimensions: ${obj.width}x${obj.height}`);
                  }
-             }
-           } else {
-             const streamWidth = parseInt(obj.width, 10);
-             const streamHeight = parseInt(obj.height, 10);
-             if (window.is_manual_resolution_mode && streamWidth > 0 && streamHeight > 0) {
-                 console.log(`Applying received stream resolution (${streamWidth}x${streamHeight}) to update manual dimensions and style.`);
-                 manual_width = streamWidth;
-                 manual_height = streamHeight;
-                 setIntParam('manual_width', manual_width);
-                 setIntParam('manual_height', manual_height);
-                 applyManualCanvasStyle(manual_width, manual_height, scaleLocallyManual);
-             } else {
-                console.log(`Non-shared mode: Received stream_resolution (ignored for control): ${obj.width}x${obj.height}`);
              }
            }
           } else {
