@@ -2109,11 +2109,19 @@ class DataStreamingServer:
 
                     elif message == "START_VIDEO":
                         if client_display_id and client_display_id in self.display_clients:
-                            data_logger.info(f"Received START_VIDEO for '{client_display_id}'. Triggering a full display reconfiguration to ensure a clean start.")
+                            data_logger.info(f"Received START_VIDEO for '{client_display_id}'.")
                             self.display_clients[client_display_id]['video_active'] = True
                             await self.reconfigure_displays()
                             try:
                                 await websocket.send("VIDEO_STARTED")
+                            except websockets.ConnectionClosed:
+                                pass
+                        else:
+                            data_logger.info(f"Received START_VIDEO from a shared client ({websocket.remote_address}).")
+                            await self.broadcast_stream_resolution()
+                            await self.reconfigure_displays()
+                            try:
+                                pass
                             except websockets.ConnectionClosed:
                                 pass
 
