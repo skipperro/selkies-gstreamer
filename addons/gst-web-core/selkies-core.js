@@ -32,6 +32,7 @@ let isAudioPipelineActive = true;
 let isMicrophoneActive = false;
 let isGamepadEnabled;
 let lastReceivedVideoFrameId = -1;
+let mainDecoderHasKeyframe = false;
 let initializationComplete = false;
 // Display related resources
 let displayId = 'primary';
@@ -1999,6 +2000,7 @@ function clearSharedModeProbingTimeout() {
 
 document.addEventListener('DOMContentLoaded', () => {
   async function initializeDecoder() {
+    mainDecoderHasKeyframe = false;
     if (decoder && decoder.state !== 'closed') {
       console.warn("VideoDecoder already exists, closing before re-initializing.");
       decoder.close();
@@ -2035,7 +2037,8 @@ document.addEventListener('DOMContentLoaded', () => {
       codec: 'avc1.42E01E',
       codedWidth: actualCodedWidth,
       codedHeight: actualCodedHeight,
-      optimizeForLatency: true
+      optimizeForLatency: true, 
+      hardwareAcceleration: "prefer-software"
     };
     try {
       const support = await VideoDecoder.isConfigSupported(decoderConfig);
@@ -2829,6 +2832,13 @@ function handleDecodedFrame(frame) {
             }
           }
           if (decoder && decoder.state === 'configured') {
+            const chunkType = frameTypeFlag === 1 ? 'key' : 'delta';
+            if (chunkType === 'delta' && !mainDecoderHasKeyframe) {
+              return;
+            }
+            if (chunkType === 'key') {
+              mainDecoderHasKeyframe = true;
+            }
             const chunk = new EncodedVideoChunk({
               type: frameTypeFlag === 1 ? 'key' : 'delta',
               timestamp: performance.now() * 1000,
@@ -2945,6 +2955,9 @@ function handleDecodedFrame(frame) {
 
             let decoderInfo = vncStripeDecoders[vncStripeYStart];
             const chunkType = (video_frame_type_byte === 0x01) ? 'key' : 'delta';
+            if (chunkType === 'delta' && (!decoderInfo || !decoderInfo.hasReceivedKeyframe)) {
+                return;
+            }
             if (!decoderInfo || decoderInfo.decoder.state === 'closed' ||
                 (decoderInfo.decoder.state === 'configured' && (decoderInfo.width !== stripeWidth || decoderInfo.height !== stripeHeight))) {
 
@@ -2966,7 +2979,8 @@ function handleDecodedFrame(frame) {
                     decoder: newStripeDecoder,
                     pendingChunks: [],
                     width: stripeWidth,
-                    height: stripeHeight
+                    height: stripeHeight,
+                    hasReceivedKeyframe: false
                 };
                 decoderInfo = vncStripeDecoders[vncStripeYStart];
 
@@ -2993,6 +3007,9 @@ function handleDecodedFrame(frame) {
             }
 
             if (decoderInfo) {
+                if (chunkType === 'key') {
+                    decoderInfo.hasReceivedKeyframe = true;
+                }
                 const chunkTimestamp = performance.now() * 1000;
                 const chunkData = {
                     type: chunkType,
