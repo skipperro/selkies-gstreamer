@@ -95,7 +95,9 @@ from .input_handler import WebRTCInput as InputHandler, SelkiesGamepad, GamepadM
 import psutil
 import GPUtil
 
-upload_dir_path = os.path.expanduser("~/Desktop")
+upload_path = os.getenv('FILE_MANAGER_PATH', '~/Desktop')
+upload_dir_path = os.path.expanduser(upload_path)
+
 try:
     os.makedirs(upload_dir_path, exist_ok=True)
     logger.info(f"Upload directory ensured: {upload_dir_path}")
