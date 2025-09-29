@@ -3047,6 +3047,13 @@ async def on_resize_handler(res_str, current_app_instance, data_server_instance=
     Handles client resize request. Updates the state for a specific display and triggers a full reconfiguration.
     """
     logger_gst_app_resize.info(f"on_resize_handler for display '{display_id}' with resolution: {res_str}")
+    if data_server_instance:
+        server_is_manual, _ = data_server_instance.cli_args.is_manual_resolution_mode
+        if server_is_manual:
+            logger_gst_app_resize.warning(
+                f"Client attempted to resize to {res_str} but server is in manual resolution mode. Request ignored."
+            )
+            return
     try:
         w_str, h_str = res_str.split("x")
         target_w, target_h = int(w_str), int(h_str)
