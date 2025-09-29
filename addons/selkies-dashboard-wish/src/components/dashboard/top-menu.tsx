@@ -11,6 +11,9 @@ import {
   MenubarTrigger,
   MenubarSeparator,
   MenubarLabel,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
 } from "@/components/ui/menubar";
 import {
   Volume2,
@@ -25,7 +28,10 @@ import {
   FileText,
   LayoutGrid,
   Hand,
-  LayoutPanelLeft
+  LayoutPanelLeft,
+  Keyboard,
+  Touchpad,
+  ScreenShare
 } from "lucide-react";
 
 import { Clipboard } from "@/components/dashboard/clipboard";
@@ -34,7 +40,14 @@ import { Apps } from "@/components/dashboard/apps";
 import { Settings } from "@/components/dashboard/settings";
 import { SystemMonitoring } from "@/components/dashboard/system-monitoring";
 import { Sharing } from "@/components/dashboard/sharing";
+import { ShortcutsMenu } from "@/components/dashboard/shortcuts-menu";
 import { SelkiesLogo } from "@/components/logo";
+
+// --- Constants ---
+const urlHash = window.location.hash;
+const displayId = urlHash.startsWith('#display2') ? 'display2' : 'primary';
+
+const TOUCH_GAMEPAD_HOST_DIV_ID = "touch-gamepad-host";
 
 interface TopMenuProps {
   isVideoActive: boolean;
@@ -57,6 +70,7 @@ export function TopMenu({
   onAudioToggle,
   onMicrophoneToggle,
   onGamepadToggle }: TopMenuProps) {
+
   const [activePanel, setActivePanel] = React.useState<string | null>(null);
   const [showAppsModal, setShowAppsModal] = React.useState(false);
   const [showDropdown, setShowDropdown] = React.useState(false);
@@ -67,11 +81,94 @@ export function TopMenu({
     return { x, y: 0 };
   });
 
+  // --- Server Settings & UI Customization ---
+  const [serverSettings, setServerSettings] = React.useState<any>(null);
+  const [uiTitle, setUiTitle] = React.useState('Selkies');
+  const [uiShowLogo, setUiShowLogo] = React.useState(true);
+
+  // --- Mobile/Touch Detection ---
+  const [isMobile, setIsMobile] = React.useState(false);
+  const [hasDetectedTouch, setHasDetectedTouch] = React.useState(false);
+  const [isTrackpadModeActive, setIsTrackpadModeActive] = React.useState(false);
+
+  // --- Touch Gamepad ---
+  const [isTouchGamepadActive, setIsTouchGamepadActive] = React.useState(false);
+  const [isTouchGamepadSetup, setIsTouchGamepadSetup] = React.useState(false);
+
+  // --- Second Screen Support ---
+  const [availablePlacements, setAvailablePlacements] = React.useState<any>(null);
+
+  // --- Keyboard Assistance ---
+  const [isKeyboardButtonVisible, setIsKeyboardButtonVisible] = React.useState(true);
+  const [heldKeys, setHeldKeys] = React.useState({
+    Control: false,
+    Alt: false,
+    Meta: false,
+  });
+
   const dragRef = React.useRef<HTMLDivElement>(null);
   const ellipsisRef = React.useRef<HTMLDivElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const panelRef = React.useRef<HTMLDivElement>(null);
+
   const startPosRef = React.useRef({ x: 0, y: 0 });
+
+  // --- Server Settings Message Listener ---
+  React.useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (
+        event.origin === window.location.origin &&
+        event.data?.type === "serverSettings"
+      ) {
+        console.log("Dashboard received server settings:", event.data.payload);
+        setServerSettings(event.data.payload);
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, []);
+
+  // --- Update UI Title and Logo from Server Settings ---
+  React.useEffect(() => {
+    if (!serverSettings) return;
+
+    const s_ui_title = serverSettings.ui_title;
+    if (s_ui_title) {
+      setUiTitle(s_ui_title.value);
+    }
+
+    const s_ui_show_logo = serverSettings.ui_show_logo;
+    if (s_ui_show_logo) {
+      setUiShowLogo(s_ui_show_logo.value);
+    }
+  }, [serverSettings]);
+
+  // --- Mobile Detection ---
+  React.useEffect(() => {
+    const mobileCheck =
+      typeof window !== "undefined" &&
+      (((navigator as any).userAgentData && (navigator as any).userAgentData.mobile) ||
+        /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        ));
+    setIsMobile(!!mobileCheck);
+  }, []);
+
+  // --- Touch Detection ---
+  React.useEffect(() => {
+    const detectTouch = () => {
+      console.log("Dashboard: First touch detected. Enabling touch-specific features.");
+      setHasDetectedTouch(true);
+      // Remove the listener after first touch
+      window.removeEventListener('touchstart', detectTouch);
+    };
+    window.addEventListener('touchstart', detectTouch, { passive: true } as AddEventListenerOptions);
+    return () => {
+      window.removeEventListener('touchstart', detectTouch);
+    };
+  }, []);
 
   // Center the menu properly after mount
   React.useEffect(() => {
@@ -147,7 +244,13 @@ export function TopMenu({
         const isOutsideMainMenu = dragRef.current && !dragRef.current.contains(target);
         const isOutsidePanel = panelRef.current && !panelRef.current.contains(target);
 
-        if (isOutsideMainMenu && isOutsidePanel) {
+        // Also check if the click is on a dropdown portal (which might be rendered outside the panel)
+        const isOnDropdownPortal = (target as Element).closest('[data-radix-popper-content-wrapper]') !== null;
+        const isOnDropdownTrigger = (target as Element).closest('[data-radix-dropdown-menu-trigger]') !== null;
+        const isOnSelectTrigger = (target as Element).closest('[data-radix-select-trigger]') !== null;
+        const isOnSelectContent = (target as Element).closest('[data-radix-select-content]') !== null;
+
+        if (isOutsideMainMenu && isOutsidePanel && !isOnDropdownPortal && !isOnDropdownTrigger && !isOnSelectTrigger && !isOnSelectContent) {
           setActivePanel(null);
         }
       }
@@ -163,6 +266,7 @@ export function TopMenu({
     };
   }, [activePanel, showDropdown]);
 
+  // --- Handler Functions ---
   const handlePanelToggle = (panelName: string) => {
     // Close dropdown when opening any panel or modal
     setShowDropdown(false);
@@ -177,22 +281,205 @@ export function TopMenu({
     setActivePanel(newPanel);
   };
 
+  const handleToggleTouchGamepad = React.useCallback(() => {
+    const newActiveState = !isTouchGamepadActive;
+    setIsTouchGamepadActive(newActiveState);
+
+    if (newActiveState && !isTouchGamepadSetup) {
+      window.postMessage(
+        {
+          type: "TOUCH_GAMEPAD_SETUP",
+          payload: { targetDivId: TOUCH_GAMEPAD_HOST_DIV_ID, visible: true },
+        },
+        window.location.origin
+      );
+      setIsTouchGamepadSetup(true);
+      console.log(
+        "Dashboard: Touch Gamepad SETUP sent, targetDivId:",
+        TOUCH_GAMEPAD_HOST_DIV_ID,
+        "visible: true"
+      );
+    } else if (isTouchGamepadSetup) {
+      window.postMessage(
+        {
+          type: "TOUCH_GAMEPAD_VISIBILITY",
+          payload: {
+            visible: newActiveState,
+            targetDivId: TOUCH_GAMEPAD_HOST_DIV_ID,
+          },
+        },
+        window.location.origin
+      );
+      console.log(
+        `Dashboard: Touch Gamepad VISIBILITY sent, targetDivId:`,
+        TOUCH_GAMEPAD_HOST_DIV_ID,
+        `visible: ${newActiveState}`
+      );
+    }
+  }, [isTouchGamepadActive, isTouchGamepadSetup]);
+
+  const handleToggleTrackpadMode = React.useCallback(() => {
+    const newActiveState = !isTrackpadModeActive;
+    setIsTrackpadModeActive(newActiveState);
+    const message = newActiveState ? "touchinput:trackpad" : "touchinput:touch";
+    console.log(`Dashboard: Toggling trackpad mode. Sending: ${message}`);
+    window.postMessage({ type: message }, window.location.origin);
+  }, [isTrackpadModeActive]);
+
+  const launchWindow = (direction: string, screen: any = null) => {
+    const url = `${window.location.href.split('#')[0]}#display2-${direction}`;
+    let features = 'resizable=yes,scrollbars=yes,noopener,noreferrer';
+    if (screen) {
+      features += `,left=${screen.availLeft},top=${screen.availTop},width=${screen.availWidth},height=${screen.availHeight}`;
+    }
+    window.open(url, '_blank', features);
+    setAvailablePlacements(null);
+  };
+
+  const handleAddScreenClick = async () => {
+    if (!('getScreenDetails' in window)) {
+      console.warn("Window Management API not supported. Opening default second screen.");
+      launchWindow('right');
+      return;
+    }
+
+    try {
+      const screenDetails = await (window as any).getScreenDetails();
+      const currentScreen = screenDetails.currentScreen;
+      const otherScreens = screenDetails.screens.filter((s: any) => s !== currentScreen);
+
+      if (otherScreens.length === 0) {
+        console.log("No other screens detected. Opening default second screen.");
+        launchWindow('right');
+        return;
+      }
+
+      const placements: any = {};
+      for (const s of otherScreens) {
+        if (!placements.right && s.left >= currentScreen.left + currentScreen.width) {
+          placements.right = s;
+        }
+        if (!placements.left && s.left + s.width <= currentScreen.left) {
+          placements.left = s;
+        }
+        if (!placements.down && s.top >= currentScreen.top + currentScreen.height) {
+          placements.down = s;
+        }
+        if (!placements.up && s.top + s.height <= currentScreen.top) {
+          placements.up = s;
+        }
+      }
+
+      const availableDirections = Object.keys(placements);
+
+      if (availableDirections.length === 1) {
+        const direction = availableDirections[0];
+        const screen = placements[direction];
+        console.log(`Auto-placing single screen to the ${direction}.`);
+        launchWindow(direction, screen);
+      } else if (availableDirections.length > 1) {
+        console.log("Multiple placement options found. Showing arrows.");
+        setAvailablePlacements(placements);
+      } else {
+        console.log("No adjacent screens found in cardinal directions. Opening default.");
+        launchWindow('right');
+      }
+    } catch (err) {
+      console.error("Error with Window Management API or permission denied:", err);
+      launchWindow('right');
+    }
+  };
+
+  const handleShowVirtualKeyboard = React.useCallback(() => {
+    console.log("Dashboard: Directly handling virtual keyboard pop.");
+    const kbdAssistInput = document.getElementById('keyboard-input-assist');
+    const mainInteractionOverlay = document.getElementById('overlayInput');
+    if (kbdAssistInput) {
+      (kbdAssistInput as HTMLInputElement).removeAttribute('aria-hidden');
+      (kbdAssistInput as HTMLInputElement).value = '';
+      (kbdAssistInput as HTMLInputElement).focus();
+      console.log("Focused #keyboard-input-assist element to pop keyboard.");
+      if (mainInteractionOverlay) {
+        mainInteractionOverlay.addEventListener(
+          "touchstart",
+          () => {
+            if (document.activeElement === kbdAssistInput) {
+              (kbdAssistInput as HTMLInputElement).blur();
+              console.log("Blurred #keyboard-input-assist on main overlay touch.");
+              kbdAssistInput.setAttribute('aria-hidden', 'true');
+            }
+          }, {
+          once: true,
+          passive: true
+        }
+        );
+      } else {
+        console.warn("Could not find #overlayInput to attach blur listener.");
+      }
+    } else {
+      console.error("Could not find #keyboard-input-assist element to focus.");
+    }
+  }, []);
+
+  const sendKeyEvent = (type: string, key: string, code: string, modifierState: any) => {
+    const event = new KeyboardEvent(type, {
+      key: key,
+      code: code,
+      ctrlKey: modifierState.Control,
+      altKey: modifierState.Alt,
+      metaKey: modifierState.Meta,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+  };
+
+  const handleHoldKeyClick = (key: string, code: string) => {
+    const isCurrentlyHeld = heldKeys[key as keyof typeof heldKeys];
+    const currentHeldCount = Object.values(heldKeys).filter(Boolean).length;
+    if (!isCurrentlyHeld && currentHeldCount === 0) {
+      window.postMessage({ type: 'setSynth', value: true }, window.location.origin);
+    } else if (isCurrentlyHeld && currentHeldCount === 1) {
+      window.postMessage({ type: 'setSynth', value: false }, window.location.origin);
+    }
+    const nextHeldState = {
+      ...heldKeys,
+      [key]: !isCurrentlyHeld,
+    };
+    setHeldKeys(nextHeldState);
+    if (isCurrentlyHeld) {
+      sendKeyEvent('keyup', key, code, nextHeldState);
+      console.log(`Dashboard: Dispatched keyup for ${key} with state:`, nextHeldState);
+    } else {
+      sendKeyEvent('keydown', key, code, nextHeldState);
+      console.log(`Dashboard: Dispatched keydown for ${key} with state:`, nextHeldState);
+    }
+  };
+
+  const handleOnceKeyClick = (key: string, code: string) => {
+    console.log(`Dashboard: Dispatching key press for ${key} with modifiers:`, heldKeys);
+    sendKeyEvent('keydown', key, code, heldKeys);
+    setTimeout(() => {
+      sendKeyEvent('keyup', key, code, heldKeys);
+    }, 50);
+  };
+
+  const toggleKeyboardButtonVisibility = () => {
+    setIsKeyboardButtonVisible(prev => !prev);
+  };
+
   const renderPanel = () => {
     switch (activePanel) {
-      case 'clipboard':
-        return <Clipboard />;
-      case 'files':
-        return <Files />;
       case 'settings':
         return <Settings />;
       case 'monitoring':
         return <SystemMonitoring />;
-      case 'sharing':
-        return <Sharing show={true} onClose={() => setActivePanel(null)} />;
       default:
         return null;
     }
   };
+
+
 
   return (
     <>
@@ -279,31 +566,88 @@ export function TopMenu({
                 <MenubarSeparator />
                 <MenubarLabel>Tools & Panels</MenubarLabel>
 
-                <MenubarItem onClick={() => handlePanelToggle('clipboard')}>
-                  <ClipboardIcon className="h-4 w-4 mr-2" />
-                  <span className="flex-1">Clipboard</span>
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    Sync clipboard content
-                  </span>
-                </MenubarItem>
+                <MenubarSub>
+                  <MenubarSubTrigger>
+                    <ClipboardIcon className="h-4 w-4 mr-2" />
+                    Clipboard
+                  </MenubarSubTrigger>
+                  <MenubarSubContent>
+                    <Clipboard />
+                  </MenubarSubContent>
+                </MenubarSub>
 
-                <MenubarItem onClick={() => handlePanelToggle('files')}>
-                  <FileText className="h-4 w-4 mr-2" />
-                  <span className="flex-1">Files</span>
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    File browser
-                  </span>
-                </MenubarItem>
+                <MenubarSub>
+                  <MenubarSubTrigger>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Files
+                  </MenubarSubTrigger>
+                  <MenubarSubContent>
+                    <Files />
+                  </MenubarSubContent>
+                </MenubarSub>
 
-                <MenubarItem onClick={() => handlePanelToggle('sharing')}>
-                  <Share2 className="h-4 w-4 mr-2" />
-                  <span className="flex-1">Sharing</span>
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    Share session
-                  </span>
-                </MenubarItem>
+                <MenubarSub>
+                  <MenubarSubTrigger>
+                    <Share2 className="h-4 w-4 mr-2" />
+                    Sharing
+                  </MenubarSubTrigger>
+                  <MenubarSubContent>
+                    <Sharing show={true} onClose={() => { }} />
+                  </MenubarSubContent>
+                </MenubarSub>
+
+                <MenubarSub>
+                  <MenubarSubTrigger>
+                    <Keyboard className="h-4 w-4 mr-2" />
+                    Shortcuts
+                  </MenubarSubTrigger>
+                  <MenubarSubContent>
+                    <ShortcutsMenu />
+                  </MenubarSubContent>
+                </MenubarSub>
 
                 <MenubarSeparator />
+
+                {/* Mobile/Touch Controls */}
+                {(isMobile || hasDetectedTouch) && (
+                  <>
+                    <MenubarLabel>Touch Controls</MenubarLabel>
+
+                    <MenubarItem onClick={handleToggleTouchGamepad}>
+                      <Gamepad2 className="h-4 w-4 mr-2" />
+                      <span className="flex-1">Touch Gamepad</span>
+                      <span className="text-xs text-muted-foreground ml-auto">
+                        {isTouchGamepadActive ? 'On' : 'Off'}
+                      </span>
+                    </MenubarItem>
+
+                    <MenubarItem onClick={handleToggleTrackpadMode}>
+                      <Touchpad className="h-4 w-4 mr-2" />
+                      <span className="flex-1">Trackpad Mode</span>
+                      <span className="text-xs text-muted-foreground ml-auto">
+                        {isTrackpadModeActive ? 'On' : 'Off'}
+                      </span>
+                    </MenubarItem>
+
+                    <MenubarItem onClick={handleShowVirtualKeyboard}>
+                      <Keyboard className="h-4 w-4 mr-2" />
+                      <span className="flex-1">Virtual Keyboard</span>
+                    </MenubarItem>
+
+                    <MenubarSeparator />
+                  </>
+                )}
+
+                {/* Second Screen Support */}
+                {displayId === 'primary' && (
+                  <>
+                    <MenubarItem onClick={handleAddScreenClick}>
+                      <ScreenShare className="h-4 w-4 mr-2" />
+                      <span className="flex-1">Add Second Screen</span>
+                    </MenubarItem>
+                    <MenubarSeparator />
+                  </>
+                )}
 
                 <div className="flex items-center justify-between w-full px-2 py-1">
                   <a
@@ -312,9 +656,9 @@ export function TopMenu({
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 hover:text-primary transition-colors"
                   >
-                    <SelkiesLogo width={20} height={20} />
+                    {uiShowLogo && <SelkiesLogo width={20} height={20} />}
                     <span className="text-sm font-medium">
-                      Selkies
+                      {uiTitle}
                     </span>
                   </a>
                   <ModeToggle />
@@ -415,6 +759,8 @@ export function TopMenu({
         </div>
       </motion.div>
 
+
+
       {/* Active Panel */}
       <AnimatePresence>
         {activePanel && (
@@ -433,6 +779,118 @@ export function TopMenu({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Mobile Key Buttons */}
+      {(isMobile || hasDetectedTouch) && (
+        <motion.div
+          className="fixed bottom-4 left-4 z-40 flex flex-wrap gap-2 p-2 rounded-lg border bg-background/95 backdrop-blur-sm shadow-lg"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <Button
+            variant={heldKeys.Control ? "default" : "secondary"}
+            size="sm"
+            onClick={() => handleHoldKeyClick('Control', 'ControlLeft')}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            CTRL
+          </Button>
+          <Button
+            variant={heldKeys.Alt ? "default" : "secondary"}
+            size="sm"
+            onClick={() => handleHoldKeyClick('Alt', 'AltLeft')}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            ALT
+          </Button>
+          <Button
+            variant={heldKeys.Meta ? "default" : "secondary"}
+            size="sm"
+            onClick={() => handleHoldKeyClick('Meta', 'MetaLeft')}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            WIN
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => handleOnceKeyClick('Tab', 'Tab')}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            TAB
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => handleOnceKeyClick('Escape', 'Escape')}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            ESC
+          </Button>
+          {isKeyboardButtonVisible && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleShowVirtualKeyboard}
+            >
+              <Keyboard className="h-4 w-4" />
+            </Button>
+          )}
+        </motion.div>
+      )}
+
+      {/* Second Screen Placement Arrows */}
+      {availablePlacements && (
+        <div
+          className="fixed inset-0 z-50 pointer-events-auto"
+          onClick={() => setAvailablePlacements(null)}
+        >
+          {availablePlacements.up && (
+            <Button
+              className="absolute top-10 left-1/2 transform -translate-x-1/2 w-24 h-24 text-4xl"
+              onClick={(e) => {
+                e.stopPropagation();
+                launchWindow('up', availablePlacements.up);
+              }}
+            >
+              ▲
+            </Button>
+          )}
+          {availablePlacements.down && (
+            <Button
+              className="absolute bottom-10 left-1/2 transform -translate-x-1/2 w-24 h-24 text-4xl"
+              onClick={(e) => {
+                e.stopPropagation();
+                launchWindow('down', availablePlacements.down);
+              }}
+            >
+              ▼
+            </Button>
+          )}
+          {availablePlacements.left && (
+            <Button
+              className="absolute left-10 top-1/2 transform -translate-y-1/2 w-24 h-24 text-4xl"
+              onClick={(e) => {
+                e.stopPropagation();
+                launchWindow('left', availablePlacements.left);
+              }}
+            >
+              ◄
+            </Button>
+          )}
+          {availablePlacements.right && (
+            <Button
+              className="absolute right-10 top-1/2 transform -translate-y-1/2 w-24 h-24 text-4xl"
+              onClick={(e) => {
+                e.stopPropagation();
+                launchWindow('right', availablePlacements.right);
+              }}
+            >
+              ►
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Apps Modal - Separate from panels */}
       {showAppsModal && (

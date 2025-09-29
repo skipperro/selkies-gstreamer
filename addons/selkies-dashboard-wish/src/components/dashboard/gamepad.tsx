@@ -81,6 +81,9 @@ export function Gamepad({ isGamepadEnabled, onGamepadToggle }: GamepadProps) {
                         }, window.location.origin);
                         setIsTouchGamepadSetup(true);
                     }
+                } else if (message.type === 'trackpadModeUpdate') {
+                    // Handle trackpad mode updates if needed
+                    console.log('Gamepad: Received trackpad mode update:', message.enabled);
                 }
             }
         };

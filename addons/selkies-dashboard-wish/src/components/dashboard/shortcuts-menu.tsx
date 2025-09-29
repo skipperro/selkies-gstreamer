@@ -1,8 +1,6 @@
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
-import { ChevronLeft } from "lucide-react";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 
 const shortcuts = [
 	{ label: "Fullscreen", combo: "Ctrl + Shift + F" },
@@ -12,23 +10,17 @@ const shortcuts = [
 	{ label: "Toggle Settings Checkbox", combo: "Ctrl + Shift + X" },
 ];
 
-const ShortcutsMenu = () => {
+export function ShortcutsMenu() {
 	return (
-		<DropdownMenu>
-			<DropdownMenuTrigger asChild>
-				<Button variant="ghost" className="flex w-full items-center px-3 py-1.5 text-sm hover:bg-accent group">
-					<ChevronLeft className="h-4 w-4 mr-2 flex-shrink-0" />
-					<span className="text-left break-words whitespace-normal flex-1">Shortcuts</span>
-				</Button>
-			</DropdownMenuTrigger>
-			<DropdownMenuContent side="left" align="start" className="w-auto p-4 bg-background/95 backdrop-blur-sm border shadow-sm">
+		<Card className="w-[320px] bg-background/95 backdrop-blur-sm border shadow-sm">
+			<CardContent className="p-4">
 				<Alert className="mb-3">
 					<AlertTitle>Keyboard Shortcuts</AlertTitle>
 					<AlertDescription>
 						<ul className="space-y-2">
 							{shortcuts.map((s, i) => (
 								<li key={i} className="flex items-center gap-2">
-									<Badge variant="blue" className="text-xs px-2 py-0.5 font-mono bg-blue-600/90 text-white">
+									<Badge variant="secondary" className="text-xs px-2 py-0.5 font-mono bg-primary/90 text-primary-foreground">
 										{s.combo}
 									</Badge>
 									<span className="text-foreground text-sm">
@@ -53,8 +45,8 @@ const ShortcutsMenu = () => {
 						</li>
 					</ul>
 				</small>
-			</DropdownMenuContent>
-		</DropdownMenu>
+			</CardContent>
+		</Card>
 	);
 };
 

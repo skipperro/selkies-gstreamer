@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Info } from "lucide-react";
+import { toast } from "sonner";
 
 const sharingLinks = [
 	{
@@ -39,21 +40,93 @@ interface SharingProps {
 
 export const Sharing = ({ show, onClose }: SharingProps) => {
 	const [copiedId, setCopiedId] = useState<string | null>(null);
+	const [serverSettings, setServerSettings] = useState<any>(null);
+	const [renderableSettings, setRenderableSettings] = useState<any>({});
+	
 	const baseUrl =
 		typeof window !== "undefined" ? window.location.href.split("#")[0] : "";
 
-	const handleCopyLink = async (fullUrl: string, id: string) => {
-		if (!navigator.clipboard) return;
+	// --- Server Settings Message Listener ---
+	useEffect(() => {
+		const handleMessage = (event: MessageEvent) => {
+			if (
+				event.origin === window.location.origin &&
+				event.data?.type === "serverSettings"
+			) {
+				console.log("Sharing received server settings:", event.data.payload);
+				setServerSettings(event.data.payload);
+			}
+		};
+		window.addEventListener("message", handleMessage);
+		return () => {
+			window.removeEventListener("message", handleMessage);
+		};
+	}, []);
+
+	// --- Update Renderable Settings from Server Settings ---
+	useEffect(() => {
+		if (!serverSettings) return;
+
+		const newRenderable: any = {};
+		const s = serverSettings;
+
+		newRenderable.enableSharing = s.enable_sharing?.value ?? true;
+		newRenderable.enableShared = s.enable_shared?.value ?? true;
+		newRenderable.enablePlayer2 = s.enable_player2?.value ?? true;
+		newRenderable.enablePlayer3 = s.enable_player3?.value ?? true;
+		newRenderable.enablePlayer4 = s.enable_player4?.value ?? true;
+
+		setRenderableSettings(newRenderable);
+	}, [serverSettings]);
+
+	const handleCopyLink = async (fullUrl: string, id: string, label: string) => {
+		if (!navigator.clipboard) {
+			console.warn("Clipboard API not available.");
+			return;
+		}
 		try {
 			await navigator.clipboard.writeText(fullUrl);
 			setCopiedId(id);
 			setTimeout(() => setCopiedId(null), 2000);
+			
+			// Show success toast
+			toast.success(`${label} Link Copied`, {
+				description: `Link copied to clipboard: ${fullUrl}`,
+				duration: 3000,
+			});
 		} catch (err) {
-			// Optionally handle error
+			console.error("Failed to copy link: ", err);
+			
+			// Show error toast
+			toast.error(`Failed to Copy ${label} Link`, {
+				description: "Could not copy link to clipboard",
+				duration: 5000,
+			});
 		}
 	};
 
 	if (!show) return null;
+
+	// Filter sharing links based on server settings
+	const filteredSharingLinks = sharingLinks.filter(link => {
+		if (link.id === 'shared') return renderableSettings.enableShared ?? true;
+		if (link.id === 'player2') return renderableSettings.enablePlayer2 ?? true;
+		if (link.id === 'player3') return renderableSettings.enablePlayer3 ?? true;
+		if (link.id === 'player4') return renderableSettings.enablePlayer4 ?? true;
+		return false;
+	});
+
+	// Don't show sharing panel if sharing is disabled
+	if (renderableSettings.enableSharing === false) {
+		return (
+			<Card className="w-[320px] bg-background/95 backdrop-blur-sm border shadow-lg rounded-lg relative p-4">
+				<div className="text-center text-muted-foreground">
+					<Info className="h-8 w-8 mx-auto mb-2" />
+					<p className="text-sm">Sharing is disabled by the server administrator.</p>
+				</div>
+			</Card>
+		);
+	}
 
 	return (
 		<Card className="w-[320px] bg-background/95 backdrop-blur-sm border shadow-lg rounded-lg relative p-2">
@@ -73,7 +146,7 @@ export const Sharing = ({ show, onClose }: SharingProps) => {
 					</Tooltip>
 				</div>
 				<div className="grid grid-cols-2 gap-3">
-					{sharingLinks.map((link) => {
+					{filteredSharingLinks.map((link) => {
 						const fullUrl = `${baseUrl}${link.hash}`;
 						return (
 							<div key={link.id} className="flex flex-col items-start justify-between bg-muted/60 rounded-md p-3 gap-2 shadow-sm">
@@ -84,7 +157,7 @@ export const Sharing = ({ show, onClose }: SharingProps) => {
 										variant="outline"
 										size="sm"
 										className="px-2 py-0.5 h-6 text-xs font-medium"
-										onClick={() => handleCopyLink(fullUrl, link.id)}
+										onClick={() => handleCopyLink(fullUrl, link.id, link.label)}
 										aria-label={`Copy ${link.label} link`}
 									>
 										{copiedId === link.id ? (
@@ -98,6 +171,11 @@ export const Sharing = ({ show, onClose }: SharingProps) => {
 						);
 					})}
 				</div>
+				{filteredSharingLinks.length === 0 && (
+					<div className="text-center text-muted-foreground py-4">
+						<p className="text-sm">No sharing options are currently available.</p>
+					</div>
+				)}
 			</div>
 		</Card>
 	);

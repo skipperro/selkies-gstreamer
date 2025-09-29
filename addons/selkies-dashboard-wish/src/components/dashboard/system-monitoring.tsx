@@ -22,6 +22,10 @@ declare global {
 		};
 		fps?: number;
 		currentAudioBufferSize?: number;
+		network_stats?: {
+			bandwidth_mbps?: number;
+			latency_ms?: number;
+		};
 	}
 }
 
@@ -106,6 +110,8 @@ interface SystemMonitoringProps {
 
 const STATS_READ_INTERVAL_MS = 100;
 const MAX_AUDIO_BUFFER = 10;
+const MAX_BANDWIDTH_MBPS = 1000;
+const MAX_LATENCY_MS = 1000;
 
 export function SystemMonitoring({ scale = 1 }: SystemMonitoringProps) {
 	const [clientFps, setClientFps] = useState(0);
@@ -118,6 +124,8 @@ export function SystemMonitoring({ scale = 1 }: SystemMonitoringProps) {
 	const [sysMemTotal, setSysMemTotal] = useState<number | null>(null);
 	const [gpuMemUsed, setGpuMemUsed] = useState<number | null>(null);
 	const [gpuMemTotal, setGpuMemTotal] = useState<number | null>(null);
+	const [bandwidthMbps, setBandwidthMbps] = useState(0);
+	const [latencyMs, setLatencyMs] = useState(0);
 
 	// Read stats periodically
 	useEffect(() => {
@@ -141,6 +149,10 @@ export function SystemMonitoring({ scale = 1 }: SystemMonitoringProps) {
 
 			setClientFps(window.fps ?? 0);
 			setAudioBuffer(window.currentAudioBufferSize ?? 0);
+
+			const netStats = window.network_stats;
+			setBandwidthMbps(netStats?.bandwidth_mbps ?? 0);
+			setLatencyMs(netStats?.latency_ms ?? 0);
 		};
 		const intervalId = setInterval(readStats, STATS_READ_INTERVAL_MS);
 		return () => clearInterval(intervalId);
@@ -182,6 +194,18 @@ export function SystemMonitoring({ scale = 1 }: SystemMonitoringProps) {
 			current: audioBuffer,
 			max: MAX_AUDIO_BUFFER,
 			fill: "hsl(230, 100%, 70%)"
+		},
+		{
+			name: "Bandwidth",
+			current: Math.round(bandwidthMbps * 100) / 100,
+			max: MAX_BANDWIDTH_MBPS,
+			fill: "hsl(200, 100%, 60%)"
+		},
+		{
+			name: "Latency",
+			current: Math.round(latencyMs * 10) / 10,
+			max: MAX_LATENCY_MS,
+			fill: "hsl(180, 100%, 60%)"
 		}
 	];
 
@@ -196,10 +220,12 @@ export function SystemMonitoring({ scale = 1 }: SystemMonitoringProps) {
 								...metric,
 								fill: metric.name === "CPU" ? "hsl(250, 100%, 60%)" :
 									metric.name === "GPU Usage" ? "hsl(260, 100%, 50%)" :
-									metric.name === "Sys Mem" ? "hsl(240, 100%, 60%)" :
-									metric.name === "GPU Mem" ? "hsl(240, 100%, 60%)" :
-									metric.name === "FPS" ? "hsl(220, 100%, 50%)" :
-									"hsl(230, 100%, 60%)"
+										metric.name === "Sys Mem" ? "hsl(240, 100%, 60%)" :
+											metric.name === "GPU Mem" ? "hsl(240, 100%, 60%)" :
+												metric.name === "FPS" ? "hsl(220, 100%, 50%)" :
+													metric.name === "Audio" ? "hsl(230, 100%, 60%)" :
+														metric.name === "Bandwidth" ? "hsl(200, 100%, 60%)" :
+															"hsl(180, 100%, 60%)"
 							}}
 							size={100}
 						/>
