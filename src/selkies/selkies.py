@@ -2494,7 +2494,7 @@ class DataStreamingServer:
         if self._is_reconfiguring:
             data_logger.warning(f"Client '{display_id}' disconnected DURING a reconfiguration. "
                                 "A new reconfiguration will NOT be triggered to prevent a loop.")
-            return # EXIT EARLY TO BREAK THE LOOP
+            return
 
         data_logger.info(f"Client for {display_id} removed. Triggering display reconfiguration.")
         async with self._reconfigure_lock:
@@ -2578,177 +2578,164 @@ class DataStreamingServer:
         It then starts capture pipelines ONLY for clients with 'video_active' = True.
         This is called on connect, disconnect, or settings change.
         """
-        if self._is_reconfiguring:
+        if self._reconfigure_lock.locked():
             data_logger.warning("Reconfiguration already in progress. Ignoring concurrent request.")
             return
+        async with self._reconfigure_lock:
+            self._is_reconfiguring = True
+            data_logger.info("Starting display reconfiguration...")
+            try:
+                current_display_count = len(self.display_clients)
+                if self._wm_swap_is_supported is None:
+                    if which("xfce4-session") or which("startplasma-x11"):
+                        self._wm_swap_is_supported = True
+                    else:
+                        self._wm_swap_is_supported = False
+                if (current_display_count > 1 and self._wm_swap_is_supported and not self._is_wm_swapped):
+                    data_logger.info("Multi-monitor setup: switching to Openbox with a minimal config.")
+                    config_path = "/tmp/openbox_selkies_config.xml"
+                    config_content = "<openbox_config></openbox_config>\n"
+                    try:
+                        with open(config_path, "w") as f:
+                            f.write(config_content)
+                        data_logger.info(f"Wrote minimal Openbox config to {config_path}")
+                        openbox_cmd = ["openbox", "--config-file", config_path, "--replace"]
+                    except IOError as e:
+                        data_logger.error(f"Could not write Openbox config to {config_path}: {e}. Proceeding without custom config.")
+                        openbox_cmd = ["openbox", "--replace"]
+                    await self._run_detached_command(openbox_cmd, "switch to openbox")
+                    self._is_wm_swapped = True
+                if self.capture_instances or any(d.get('backpressure_task') for d in self.display_clients.values()):
+                    data_logger.info("Stopping all existing capture and backpressure tasks...")
+                    stop_bp_tasks = [self._ensure_backpressure_task_is_stopped(disp_id) for disp_id in self.display_clients.keys()]
+                    if stop_bp_tasks:
+                        await asyncio.gather(*stop_bp_tasks, return_exceptions=True)
+                    stop_capture_tasks = [
+                        self.capture_loop.run_in_executor(None, inst['module'].stop_capture)
+                        for inst in self.capture_instances.values() if inst.get('module')
+                    ]
+                    if stop_capture_tasks:
+                        await asyncio.gather(*stop_capture_tasks, return_exceptions=True)
 
-        self._is_reconfiguring = True
-        try:
-            current_display_count = len(self.display_clients)
-
-            if self._wm_swap_is_supported is None:
-                if which("xfce4-session") or which("startplasma-x11"):
-                    self._wm_swap_is_supported = True
-                else:
-                    self._wm_swap_is_supported = False
-
-            if (current_display_count > 1 and self._wm_swap_is_supported and not self._is_wm_swapped):
-                data_logger.info("Multi-monitor setup: switching to Openbox with a minimal config.")
-
-                config_path = "/tmp/openbox_selkies_config.xml"
-                config_content = "<openbox_config></openbox_config>\n"
-                try:
-                    with open(config_path, "w") as f:
-                        f.write(config_content)
-                    data_logger.info(f"Wrote minimal Openbox config to {config_path}")
-                    openbox_cmd = ["openbox", "--config-file", config_path, "--replace"]
-                except IOError as e:
-                    data_logger.error(f"Could not write Openbox config to {config_path}: {e}. Proceeding without custom config.")
-                    openbox_cmd = ["openbox", "--replace"]
-
-                await self._run_detached_command(openbox_cmd, "switch to openbox")
-                self._is_wm_swapped = True
-
-            if self.capture_instances or any(d.get('backpressure_task') for d in self.display_clients.values()):
-                data_logger.info("Stopping all existing capture and backpressure tasks...")
-
-                stop_bp_tasks = [self._ensure_backpressure_task_is_stopped(disp_id) for disp_id in self.display_clients.keys()]
-                if stop_bp_tasks:
-                    await asyncio.gather(*stop_bp_tasks, return_exceptions=True)
-
-                stop_capture_tasks = [
-                    self.capture_loop.run_in_executor(None, inst['module'].stop_capture)
-                    for inst in self.capture_instances.values() if inst.get('module')
-                ]
-                if stop_capture_tasks:
-                    await asyncio.gather(*stop_capture_tasks, return_exceptions=True)
-
-                for display_id, inst in self.capture_instances.items():
-                    sender_task = inst.get('sender_task')
-                    if sender_task and not sender_task.done():
-                        sender_task.cancel()
-                self.capture_instances.clear()
-                self.video_chunk_queues.clear()
-                data_logger.info("All capture instances, senders, and backpressure tasks stopped.")
-
-            if not self.display_clients:
-                data_logger.warning("No display clients connected. Video pipelines remain stopped.")
-                _, _, _, _, screen_name = await get_new_res("1x1")
-                if screen_name:
-                    current_monitors = await self._get_current_monitors()
-                    for monitor_name in current_monitors:
-                        await self._run_command(["xrandr", "--delmonitor", monitor_name], f"cleanup monitor {monitor_name}")
-                return
-
-            data_logger.info("Calculating new extended desktop layout from ALL clients...")
-            layouts = {}
-            total_width = 0
-            total_height = 0
-
-            primary_client = self.display_clients.get('primary')
-            secondary_client = None
-            secondary_id = None
-            for display_id, client in self.display_clients.items():
-                if display_id != 'primary':
-                    secondary_client = client
-                    secondary_id = display_id
-                    break
-
-            if primary_client and not secondary_client:
-                p_w, p_h = primary_client.get('width', 0), primary_client.get('height', 0)
-                if p_w > 0 and p_h > 0:
-                    layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
-                    total_width, total_height = p_w, p_h
-            elif primary_client and secondary_client:
-                p_w, p_h = primary_client.get('width', 0), primary_client.get('height', 0)
-                s_w, s_h = secondary_client.get('width', 0), secondary_client.get('height', 0)
-                position = secondary_client.get('position', 'right')
-
-                if p_w > 0 and p_h > 0 and s_w > 0 and s_h > 0:
-                    if position == 'right':
-                        layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
-                        layouts[secondary_id] = {'x': p_w, 'y': 0, 'w': s_w, 'h': s_h}
-                        total_width, total_height = p_w + s_w, max(p_h, s_h)
-                    elif position == 'left':
-                        layouts[secondary_id] = {'x': 0, 'y': 0, 'w': s_w, 'h': s_h}
-                        layouts['primary'] = {'x': s_w, 'y': 0, 'w': p_w, 'h': p_h}
-                        total_width, total_height = p_w + s_w, max(p_h, s_h)
-                    elif position == 'down':
-                        layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
-                        layouts[secondary_id] = {'x': 0, 'y': p_h, 'w': s_w, 'h': s_h}
-                        total_width, total_height = max(p_w, s_w), p_h + s_h
-                    elif position == 'up':
-                        layouts[secondary_id] = {'x': 0, 'y': 0, 'w': s_w, 'h': s_h}
-                        layouts['primary'] = {'x': 0, 'y': s_h, 'w': p_w, 'h': p_h}
-                        total_width, total_height = max(p_w, s_w), p_h + s_h
-
-            if total_width == 0 or total_height == 0:
-                data_logger.error("Calculated total display size is zero. Aborting reconfiguration.")
-                return
-
-            aligned_total_width = (total_width + 7) & ~7
-            if aligned_total_width != total_width:
-                data_logger.info(f"Aligned total width from {total_width} to {aligned_total_width} for xrandr.")
-                total_width = aligned_total_width
-
-            self.display_layouts = layouts
-            data_logger.info(f"Layout calculated: Total Size={total_width}x{total_height}. Layouts: {layouts}")
-
-            _, _, available_resolutions, _, screen_name = await get_new_res("1x1")
-            if not screen_name:
-                data_logger.error("CRITICAL: Could not determine screen name from xrandr. Aborting.")
-                return
-
-            current_monitors = await self._get_current_monitors()
-            for monitor_name in current_monitors:
-                await self._run_command(["xrandr", "--delmonitor", monitor_name], f"delete old monitor {monitor_name}")
-
-            total_mode_str = f"{total_width}x{total_height}"
-            if total_mode_str not in available_resolutions:
-                data_logger.info(f"Mode {total_mode_str} not found. Creating it.")
-                try:
-                    _, modeline_params = await generate_xrandr_gtf_modeline(total_mode_str)
-                    await self._run_command(["xrandr", "--newmode", total_mode_str] + modeline_params.split(), "create new mode")
-                    await self._run_command(["xrandr", "--addmode", screen_name, total_mode_str], "add new mode")
-                except Exception as e:
-                    data_logger.error(f"FATAL: Could not create extended mode {total_mode_str}: {e}. Aborting.")
+                    for display_id, inst in self.capture_instances.items():
+                        sender_task = inst.get('sender_task')
+                        if sender_task and not sender_task.done():
+                            sender_task.cancel()
+                    self.capture_instances.clear()
+                    self.video_chunk_queues.clear()
+                    data_logger.info("All capture instances, senders, and backpressure tasks stopped.")
+                if not self.display_clients:
+                    data_logger.warning("No display clients connected. Video pipelines remain stopped.")
+                    _, _, _, _, screen_name = await get_new_res("1x1")
+                    if screen_name:
+                        current_monitors = await self._get_current_monitors()
+                        for monitor_name in current_monitors:
+                            await self._run_command(["xrandr", "--delmonitor", monitor_name], f"cleanup monitor {monitor_name}")
                     return
-
-            await self._run_command(["xrandr", "--fb", total_mode_str, "--output", screen_name, "--mode", total_mode_str], "set framebuffer")
-
-            data_logger.info("Defining logical monitors for the window manager...")
-            for display_id, layout in layouts.items():
-                geometry = f"{layout['w']}/0x{layout['h']}/0+{layout['x']}+{layout['y']}"
-                monitor_name = f"selkies-{display_id}"
-                cmd = ["xrandr", "--setmonitor", monitor_name, geometry, screen_name]
-                await self._run_command(cmd, f"set logical monitor {monitor_name}")
-
-            if 'primary' in layouts:
-                await self._run_command(
-                    ["xrandr", "--output", screen_name, "--primary"],
-                    "set primary output"
-                )
-
-            data_logger.info("Starting separate capture instances for each ACTIVE display region...")
-            for display_id, layout in layouts.items():
-                client_data = self.display_clients.get(display_id)
-                if client_data and client_data.get('video_active', False):
-                    data_logger.info(f"Client '{display_id}' is active. Starting its capture.")
-                    await self._start_capture_for_display(
-                        display_id=display_id,
-                        width=layout['w'], height=layout['h'],
-                        x_offset=layout['x'], y_offset=layout['y']
+                data_logger.info("Calculating new extended desktop layout from ALL clients...")
+                layouts = {}
+                total_width = 0
+                total_height = 0
+                primary_client = self.display_clients.get('primary')
+                secondary_client = None
+                secondary_id = None
+                for display_id, client in self.display_clients.items():
+                    if display_id != 'primary':
+                        secondary_client = client
+                        secondary_id = display_id
+                        break
+                if primary_client and not secondary_client:
+                    p_w, p_h = primary_client.get('width', 0), primary_client.get('height', 0)
+                    if p_w > 0 and p_h > 0:
+                        layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
+                        total_width, total_height = p_w, p_h
+                elif primary_client and secondary_client:
+                    p_w, p_h = primary_client.get('width', 0), primary_client.get('height', 0)
+                    s_w, s_h = secondary_client.get('width', 0), secondary_client.get('height', 0)
+                    position = secondary_client.get('position', 'right')
+                    if p_w > 0 and p_h > 0 and s_w > 0 and s_h > 0:
+                        if position == 'right':
+                            layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
+                            layouts[secondary_id] = {'x': p_w, 'y': 0, 'w': s_w, 'h': s_h}
+                            total_width, total_height = p_w + s_w, max(p_h, s_h)
+                        elif position == 'left':
+                            layouts[secondary_id] = {'x': 0, 'y': 0, 'w': s_w, 'h': s_h}
+                            layouts['primary'] = {'x': s_w, 'y': 0, 'w': p_w, 'h': p_h}
+                            total_width, total_height = p_w + s_w, max(p_h, s_h)
+                        elif position == 'down':
+                            layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
+                            layouts[secondary_id] = {'x': 0, 'y': p_h, 'w': s_w, 'h': s_h}
+                            total_width, total_height = max(p_w, s_w), p_h + s_h
+                        elif position == 'up':
+                            layouts[secondary_id] = {'x': 0, 'y': 0, 'w': s_w, 'h': s_h}
+                            layouts['primary'] = {'x': 0, 'y': s_h, 'w': p_w, 'h': p_h}
+                            total_width, total_height = max(p_w, s_w), p_h + s_h
+                if total_width == 0 or total_height == 0:
+                    data_logger.error("Calculated total display size is zero. Aborting reconfiguration.")
+                    return
+                aligned_total_width = (total_width + 7) & ~7
+                if aligned_total_width != total_width:
+                    data_logger.info(f"Aligned total width from {total_width} to {aligned_total_width} for xrandr.")
+                    total_width = aligned_total_width
+                self.display_layouts = layouts
+                data_logger.info(f"Layout calculated: Total Size={total_width}x{total_height}. Layouts: {layouts}")
+                _, _, available_resolutions, _, screen_name = await get_new_res("1x1")
+                if not screen_name:
+                    data_logger.error("CRITICAL: Could not determine screen name from xrandr. Aborting.")
+                    return
+                current_monitors = await self._get_current_monitors()
+                for monitor_name in current_monitors:
+                    await self._run_command(["xrandr", "--delmonitor", monitor_name], f"delete old monitor {monitor_name}")
+                total_mode_str = f"{total_width}x{total_height}"
+                if total_mode_str not in available_resolutions:
+                    data_logger.info(f"Mode {total_mode_str} not found. Creating it.")
+                    try:
+                        _, modeline_params = await generate_xrandr_gtf_modeline(total_mode_str)
+                        await self._run_command(["xrandr", "--newmode", total_mode_str] + modeline_params.split(), "create new mode")
+                        await self._run_command(["xrandr", "--addmode", screen_name, total_mode_str], "add new mode")
+                    except Exception as e:
+                        data_logger.error(f"FATAL: Could not create extended mode {total_mode_str}: {e}. Aborting.")
+                        return
+                await self._run_command(["xrandr", "--fb", total_mode_str, "--output", screen_name, "--mode", total_mode_str], "set framebuffer")
+                data_logger.info("Defining logical monitors for the window manager...")
+                for display_id, layout in layouts.items():
+                    geometry = f"{layout['w']}/0x{layout['h']}/0+{layout['x']}+{layout['y']}"
+                    monitor_name = f"selkies-{display_id}"
+                    cmd = ["xrandr", "--setmonitor", monitor_name, geometry, screen_name]
+                    await self._run_command(cmd, f"set logical monitor {monitor_name}")
+                if 'primary' in layouts:
+                    await self._run_command(
+                        ["xrandr", "--output", screen_name, "--primary"],
+                        "set primary output"
                     )
-                    await self._start_backpressure_task_if_needed(display_id)
-                else:
-                    data_logger.info(f"Client '{display_id}' is connected but not active. Skipping video start.")
-
-            await self.broadcast_stream_resolution()
-            await self.broadcast_display_config()
-
-        finally:
-            self._last_display_count = len(self.display_clients)
-            self._is_reconfiguring = False
+                data_logger.info("Starting separate capture instances for each ACTIVE display region...")
+                for display_id, layout in layouts.items():
+                    client_data = self.display_clients.get(display_id)
+                    if client_data and client_data.get('video_active', False):
+                        data_logger.info(f"Client '{display_id}' is active. Starting its capture.")
+                        try:
+                            await self._start_capture_for_display(
+                                display_id=display_id,
+                                width=layout['w'], height=layout['h'],
+                                x_offset=layout['x'], y_offset=layout['y']
+                            )
+                            await self._start_backpressure_task_if_needed(display_id)
+                        except Exception as e:
+                            data_logger.error(
+                                f"Failed to start capture for display '{display_id}' during reconfiguration. "
+                                f"This display will not stream. Error: {e}", exc_info=False
+                            )
+                    else:
+                        data_logger.info(f"Client '{display_id}' is connected but not active. Skipping video start.")
+                await self.broadcast_stream_resolution()
+                await self.broadcast_display_config()
+                data_logger.info("Display reconfiguration finished successfully.")
+            except Exception as e:
+                data_logger.error(f"A critical error occurred during display reconfiguration: {e}", exc_info=True)
+            finally:
+                self._last_display_count = len(self.display_clients)
+                self._is_reconfiguring = False
+                data_logger.info("Reconfiguration process complete (state unlocked).")
 
     async def _video_chunk_sender(self, display_id: str):
         """
