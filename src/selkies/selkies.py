@@ -1442,9 +1442,8 @@ class DataStreamingServer:
                 data_logger.warning("Pipeline is inactive for the initial client. Forcing a start.")
                 should_restart_video = True
 
-            if should_restart_video:
-                data_logger.info(f"Client settings for '{display_id}' or resolution changed, triggering full display reconfiguration.")
-                await self.reconfigure_displays()
+            if is_initial_settings:
+                should_restart_video = False 
 
             audio_bitrate_changed = self.app.audio_bitrate != old_settings.get('audio_bitrate')
             if audio_bitrate_changed and self.is_pcmflux_capturing:
@@ -2022,10 +2021,11 @@ class DataStreamingServer:
                             if not initial_settings_processed:
                                 initial_settings_processed = True
                                 data_logger.info("Initial client settings message processed by ws_handler.")
+                                data_logger.info("Triggering initial display reconfiguration after first settings message.")
+                                await self.reconfigure_displays()
                                 video_is_active = len(self.capture_instances) > 0
                                 if not video_is_active:
-                                    data_logger.warning(f"Initial setup: Video pipeline was expected to be started but is not.")
-                                
+                                    data_logger.error(f"FATAL: Initial reconfiguration completed, but video pipeline did not start.")
                                 async with self._reconfigure_lock:
                                     audio_is_active = self.is_pcmflux_capturing
                                     if not audio_is_active and PCMFLUX_AVAILABLE and display_id == 'primary':

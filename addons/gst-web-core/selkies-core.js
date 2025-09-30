@@ -3129,7 +3129,6 @@ function handleDecodedFrame(frame) {
             startSharedModeProbingTimeout();
         } else {
             if (websocket && websocket.readyState === WebSocket.OPEN) {
-              if (!document.hidden && isVideoPipelineActive) websocket.send('START_VIDEO');
               if (isAudioPipelineActive) websocket.send('START_AUDIO');
             }
         }
