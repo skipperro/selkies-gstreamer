@@ -1311,12 +1311,10 @@ class DataStreamingServer:
         if display_id not in self.display_clients:
             data_logger.error(f"Cannot apply settings for unknown display_id '{display_id}'")
             return
-
         display_state = self.display_clients[display_id]
         data_logger.info(
             f"Applying and sanitizing client settings for '{display_id}' (initial={is_initial_settings})"
         )
-
         def sanitize_value(name, client_value):
             """Clamps ranges, validates enums, and enforces bools against server limits."""
             setting_def = next((s for s in SETTING_DEFINITIONS if s['name'] == name), None)
@@ -1331,7 +1329,6 @@ class DataStreamingServer:
                     return server_limit[0]
                 else: # enum, list, str, int
                     return server_limit
-
             try:
                 if setting_def['type'] == 'range':
                     min_val, max_val = server_limit
@@ -1358,76 +1355,68 @@ class DataStreamingServer:
                 def_val_meta = setting_def.get('meta', {}).get('default_value')
                 return def_val_meta if def_val_meta is not None else setting_def.get('default')
             return client_value
-
-        old_settings = display_state.copy()
-        old_display_width = display_state.get("width", 0)
-        old_display_height = display_state.get("height", 0)
-        old_position = display_state.get('position', 'right')
-        new_position = settings.get("displayPosition", "right")
-
-        target_w = None
-        target_h = None
-        server_is_manual, _ = self.cli_args.is_manual_resolution_mode
-
-        if server_is_manual:
-            data_logger.info(f"Server is configured for manual resolution mode for display '{display_id}'.")
-            target_w = self.cli_args.manual_width
-            target_h = self.cli_args.manual_height
-        else:
-            client_wants_manual = sanitize_value("is_manual_resolution_mode", settings.get("is_manual_resolution_mode"))
-            if client_wants_manual:
-                target_w = sanitize_value("manual_width", settings.get("manual_width"))
-                target_h = sanitize_value("manual_height", settings.get("manual_height"))
-            elif is_initial_settings:
-                target_w = settings.get("initialClientWidth")
-                target_h = settings.get("initialClientHeight")
-        if not isinstance(target_w, int) or target_w <= 0:
-            target_w = old_display_width if old_display_width > 0 else 1024
-        if not isinstance(target_h, int) or target_h <= 0:
-            target_h = old_display_height if old_display_height > 0 else 768
-        if target_w % 2 != 0: target_w -= 1
-        if target_h % 2 != 0: target_h -= 1
-
-        resolution_actually_changed = (target_w != old_display_width or target_h != old_display_height)
-        position_actually_changed = (new_position != old_position)
-        
-        if resolution_actually_changed or position_actually_changed:
-            display_state['width'] = target_w
-            display_state['height'] = target_h
-            display_state['position'] = new_position
-            if display_id == 'primary':
-                self.app.display_width = target_w
-                self.app.display_height = target_h
-
-        display_state["encoder"] = sanitize_value("encoder", settings.get("encoder"))
-        display_state["framerate"] = sanitize_value("framerate", settings.get("framerate"))
-        display_state["h264_crf"] = sanitize_value("h264_crf", settings.get("h264_crf"))
-        display_state["h264_fullcolor"] = sanitize_value("h264_fullcolor", settings.get("h264_fullcolor"))
-        display_state["h264_streaming_mode"] = sanitize_value("h264_streaming_mode", settings.get("h264_streaming_mode"))
-        display_state["jpeg_quality"] = sanitize_value("jpeg_quality", settings.get("jpeg_quality"))
-        display_state["paint_over_jpeg_quality"] = sanitize_value("paint_over_jpeg_quality", settings.get("paint_over_jpeg_quality"))
-        display_state["use_paint_over_quality"] = sanitize_value("use_paint_over_quality", settings.get("use_paint_over_quality"))
-        display_state["h264_paintover_crf"] = sanitize_value("h264_paintover_crf", settings.get("h264_paintover_crf"))
-        display_state["h264_paintover_burst_frames"] = sanitize_value("h264_paintover_burst_frames", settings.get("h264_paintover_burst_frames"))
-        display_state["use_cpu"] = sanitize_value("use_cpu", settings.get("use_cpu"))
-        
-        self.app.audio_bitrate = sanitize_value("audio_bitrate", settings.get("audio_bitrate"))
-        display_state["audio_bitrate"] = self.app.audio_bitrate
-        
-        if self.input_handler:
-            self.enable_binary_clipboard = sanitize_value("enable_binary_clipboard", settings.get("enable_binary_clipboard"))
-            await self.input_handler.update_binary_clipboard_setting(self.enable_binary_clipboard)
-        
-        new_dpi = sanitize_value("scaling_dpi", settings.get("scaling_dpi"))
-        if new_dpi is not None and new_dpi != old_settings.get("scaling_dpi"):
-            data_logger.info(f"DPI changed from {old_settings.get('scaling_dpi')} to {new_dpi}. Applying system-level change.")
-            await set_dpi(new_dpi)
-            if CURSOR_SIZE > 0:
-                new_cursor_size = max(1, int(round(int(new_dpi) / 96.0 * CURSOR_SIZE)))
-                await set_cursor_size(new_cursor_size)
-        display_state["scaling_dpi"] = new_dpi
-
+        should_restart_video = False
+        audio_restart_needed = False
         async with self._reconfigure_lock:
+            old_settings = display_state.copy()
+            old_display_width = display_state.get("width", 0)
+            old_display_height = display_state.get("height", 0)
+            old_position = display_state.get('position', 'right')
+            new_position = settings.get("displayPosition", "right")
+            target_w = None
+            target_h = None
+            server_is_manual, _ = self.cli_args.is_manual_resolution_mode
+            if server_is_manual:
+                data_logger.info(f"Server is configured for manual resolution mode for display '{display_id}'.")
+                target_w = self.cli_args.manual_width
+                target_h = self.cli_args.manual_height
+            else:
+                client_wants_manual = sanitize_value("is_manual_resolution_mode", settings.get("is_manual_resolution_mode"))
+                if client_wants_manual:
+                    target_w = sanitize_value("manual_width", settings.get("manual_width"))
+                    target_h = sanitize_value("manual_height", settings.get("manual_height"))
+                elif is_initial_settings:
+                    target_w = settings.get("initialClientWidth")
+                    target_h = settings.get("initialClientHeight")
+            if not isinstance(target_w, int) or target_w <= 0:
+                target_w = old_display_width if old_display_width > 0 else 1024
+            if not isinstance(target_h, int) or target_h <= 0:
+                target_h = old_display_height if old_display_height > 0 else 768
+            if target_w % 2 != 0: target_w -= 1
+            if target_h % 2 != 0: target_h -= 1
+            resolution_actually_changed = (target_w != old_display_width or target_h != old_display_height)
+            position_actually_changed = (new_position != old_position)
+            if resolution_actually_changed or position_actually_changed:
+                display_state['width'] = target_w
+                display_state['height'] = target_h
+                display_state['position'] = new_position
+                if display_id == 'primary':
+                    self.app.display_width = target_w
+                    self.app.display_height = target_h
+            display_state["encoder"] = sanitize_value("encoder", settings.get("encoder"))
+            display_state["framerate"] = sanitize_value("framerate", settings.get("framerate"))
+            display_state["h264_crf"] = sanitize_value("h264_crf", settings.get("h264_crf"))
+            display_state["h264_fullcolor"] = sanitize_value("h264_fullcolor", settings.get("h264_fullcolor"))
+            display_state["h264_streaming_mode"] = sanitize_value("h264_streaming_mode", settings.get("h264_streaming_mode"))
+            display_state["jpeg_quality"] = sanitize_value("jpeg_quality", settings.get("jpeg_quality"))
+            display_state["paint_over_jpeg_quality"] = sanitize_value("paint_over_jpeg_quality", settings.get("paint_over_jpeg_quality"))
+            display_state["use_paint_over_quality"] = sanitize_value("use_paint_over_quality", settings.get("use_paint_over_quality"))
+            display_state["h264_paintover_crf"] = sanitize_value("h264_paintover_crf", settings.get("h264_paintover_crf"))
+            display_state["h264_paintover_burst_frames"] = sanitize_value("h264_paintover_burst_frames", settings.get("h264_paintover_burst_frames"))
+            display_state["use_cpu"] = sanitize_value("use_cpu", settings.get("use_cpu"))
+            self.app.audio_bitrate = sanitize_value("audio_bitrate", settings.get("audio_bitrate"))
+            display_state["audio_bitrate"] = self.app.audio_bitrate
+            if self.input_handler:
+                self.enable_binary_clipboard = sanitize_value("enable_binary_clipboard", settings.get("enable_binary_clipboard"))
+                await self.input_handler.update_binary_clipboard_setting(self.enable_binary_clipboard)
+            new_dpi = sanitize_value("scaling_dpi", settings.get("scaling_dpi"))
+            if new_dpi is not None and new_dpi != old_settings.get("scaling_dpi"):
+                data_logger.info(f"DPI changed from {old_settings.get('scaling_dpi')} to {new_dpi}. Applying system-level change.")
+                await set_dpi(new_dpi)
+                if CURSOR_SIZE > 0:
+                    new_cursor_size = max(1, int(round(int(new_dpi) / 96.0 * CURSOR_SIZE)))
+                    await set_cursor_size(new_cursor_size)
+            display_state["scaling_dpi"] = new_dpi
             params_changed = any(
                 display_state.get(key) != old_settings.get(key)
                 for key in [
@@ -1436,21 +1425,17 @@ class DataStreamingServer:
                     'h264_paintover_burst_frames', 'use_paint_over_quality'
                 ]
             )
-
-            should_restart_video = resolution_actually_changed or position_actually_changed or params_changed
-            if is_initial_settings and not self.capture_instances:
-                data_logger.warning("Pipeline is inactive for the initial client. Forcing a start.")
+            if is_initial_settings or resolution_actually_changed or position_actually_changed or params_changed:
                 should_restart_video = True
-
-            if is_initial_settings:
-                should_restart_video = False 
-
             audio_bitrate_changed = self.app.audio_bitrate != old_settings.get('audio_bitrate')
             if audio_bitrate_changed and self.is_pcmflux_capturing:
-                data_logger.info("Restarting audio pipeline due to settings update.")
-                await self._stop_pcmflux_pipeline()
-                await self._start_pcmflux_pipeline()
-
+                audio_restart_needed = True
+        if audio_restart_needed:
+            data_logger.info("Restarting audio pipeline due to settings update.")
+            await self._stop_pcmflux_pipeline()
+            await self._start_pcmflux_pipeline()
+        if should_restart_video:
+            await self.reconfigure_displays()
         if is_initial_settings and self.client_settings_received and not self.client_settings_received.is_set():
             self.client_settings_received.set()
 
@@ -2021,8 +2006,6 @@ class DataStreamingServer:
                             if not initial_settings_processed:
                                 initial_settings_processed = True
                                 data_logger.info("Initial client settings message processed by ws_handler.")
-                                data_logger.info("Triggering initial display reconfiguration after first settings message.")
-                                await self.reconfigure_displays()
                                 video_is_active = len(self.capture_instances) > 0
                                 if not video_is_active:
                                     data_logger.error(f"FATAL: Initial reconfiguration completed, but video pipeline did not start.")
