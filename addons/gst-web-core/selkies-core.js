@@ -3851,7 +3851,6 @@ function cleanup() {
   if (statusDisplayElement) statusDisplayElement.classList.remove('hidden');
   if (playButtonElement) playButtonElement.classList.remove('hidden');
   if (overlayInput) overlayInput.style.cursor = 'auto';
-  serverClipboardContent = '';
   isVideoPipelineActive = true;
   isAudioPipelineActive = true;
   isMicrophoneActive = false;
