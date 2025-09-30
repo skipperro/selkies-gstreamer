@@ -2109,25 +2109,34 @@ class DataStreamingServer:
 
                     elif message == "START_VIDEO":
                         if client_display_id and client_display_id in self.display_clients:
-                            data_logger.info(f"Received START_VIDEO for '{client_display_id}'.")
-                            self.display_clients[client_display_id]['video_active'] = True
-                            await self.reconfigure_displays()
-                            try:
+                            data_logger.info(f"Received START_VIDEO for '{client_display_id}'. Starting its stream.")
+                            display_state = self.display_clients[client_display_id]
+                            display_state['video_active'] = True
+                            if hasattr(self, 'display_layouts') and client_display_id in self.display_layouts:
+                                layout = self.display_layouts[client_display_id]
+                                data_logger.info(f"Found existing layout for '{client_display_id}'. Starting capture with: {layout}")
+                                try:
+                                    await self._start_capture_for_display(
+                                        display_id=client_display_id,
+                                        width=layout['w'], height=layout['h'],
+                                        x_offset=layout['x'], y_offset=layout['y']
+                                    )
+                                    await self._start_backpressure_task_if_needed(client_display_id)
+                                    await websocket.send("VIDEO_STARTED")
+                                except Exception as e:
+                                    data_logger.error(f"Failed to restart individual stream for '{client_display_id}': {e}", exc_info=True)
+                                    await self.reconfigure_displays()
+                            else:
+                                data_logger.warning(f"No layout found for '{client_display_id}' on START_VIDEO. Performing full reconfiguration.")
+                                await self.reconfigure_displays()
                                 await websocket.send("VIDEO_STARTED")
-                            except websockets.ConnectionClosed:
-                                pass
                         else:
-                            data_logger.info(f"Received START_VIDEO from a shared client ({websocket.remote_address}).")
-                            await self.broadcast_stream_resolution()
+                            data_logger.info(f"Received START_VIDEO from a shared client ({websocket.remote_address}). Triggering reconfiguration.")
                             await self.reconfigure_displays()
-                            try:
-                                pass
-                            except websockets.ConnectionClosed:
-                                pass
 
                     elif message == "STOP_VIDEO":
                         if client_display_id and client_display_id in self.display_clients:
-                            data_logger.info(f"Received STOP_VIDEO for '{client_display_id}'. Stopping stream without reconfiguring layout.")
+                            data_logger.info(f"Received STOP_VIDEO for '{client_display_id}'. Stopping stream.")
                             self.display_clients[client_display_id]['video_active'] = False
                             
                             await self._stop_capture_for_display(client_display_id)
