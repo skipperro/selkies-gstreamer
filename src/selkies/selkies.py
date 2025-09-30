@@ -95,7 +95,9 @@ from .input_handler import WebRTCInput as InputHandler, SelkiesGamepad, GamepadM
 import psutil
 import GPUtil
 
-upload_dir_path = os.path.expanduser("~/Desktop")
+upload_path = os.getenv('FILE_MANAGER_PATH', '~/Desktop')
+upload_dir_path = os.path.expanduser(upload_path)
+
 try:
     os.makedirs(upload_dir_path, exist_ok=True)
     logger.info(f"Upload directory ensured: {upload_dir_path}")
@@ -955,17 +957,20 @@ class DataStreamingServer:
             while True:
                 opus_bytes = await self.pcmflux_audio_queue.get()
 
-                if not self.clients:
+                secondary_websockets = {
+                    client_info.get('ws')
+                    for did, client_info in self.display_clients.items()
+                    if did != 'primary' and client_info.get('ws')
+                }
+                primary_viewers = self.clients - secondary_websockets
+
+                if not primary_viewers:
                     self.pcmflux_audio_queue.task_done()
                     continue
                 
-                # Protocol: 1-byte data type (0x01=audio) + 1-byte frame type (0x00=opus) + payload
                 message_to_send = b'\x01\x00' + opus_bytes
-                self._bytes_sent_in_interval += len(message_to_send)
-                active_clients = list(self.clients)
-                tasks = [client.send(message_to_send) for client in active_clients]
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                self._bytes_sent_in_interval += len(message_to_send) * len(primary_viewers)
+                websockets.broadcast(primary_viewers, message_to_send)
 
                 self.pcmflux_audio_queue.task_done()
         except asyncio.CancelledError:
@@ -1407,17 +1412,20 @@ class DataStreamingServer:
         display_state["use_cpu"] = sanitize_value("use_cpu", settings.get("use_cpu"))
         
         self.app.audio_bitrate = sanitize_value("audio_bitrate", settings.get("audio_bitrate"))
+        display_state["audio_bitrate"] = self.app.audio_bitrate
         
         if self.input_handler:
             self.enable_binary_clipboard = sanitize_value("enable_binary_clipboard", settings.get("enable_binary_clipboard"))
             await self.input_handler.update_binary_clipboard_setting(self.enable_binary_clipboard)
         
-        if is_initial_settings and "scaling_dpi" in settings:
-            dpi = sanitize_value("scaling_dpi", settings.get("scaling_dpi"))
-            await set_dpi(dpi)
+        new_dpi = sanitize_value("scaling_dpi", settings.get("scaling_dpi"))
+        if new_dpi is not None and new_dpi != old_settings.get("scaling_dpi"):
+            data_logger.info(f"DPI changed from {old_settings.get('scaling_dpi')} to {new_dpi}. Applying system-level change.")
+            await set_dpi(new_dpi)
             if CURSOR_SIZE > 0:
-                new_cursor_size = max(1, int(round(int(dpi) / 96.0 * CURSOR_SIZE)))
+                new_cursor_size = max(1, int(round(int(new_dpi) / 96.0 * CURSOR_SIZE)))
                 await set_cursor_size(new_cursor_size)
+        display_state["scaling_dpi"] = new_dpi
 
         async with self._reconfigure_lock:
             params_changed = any(
@@ -1434,9 +1442,8 @@ class DataStreamingServer:
                 data_logger.warning("Pipeline is inactive for the initial client. Forcing a start.")
                 should_restart_video = True
 
-            if should_restart_video:
-                data_logger.info(f"Client settings for '{display_id}' or resolution changed, triggering full display reconfiguration.")
-                await self.reconfigure_displays()
+            if is_initial_settings:
+                should_restart_video = False 
 
             audio_bitrate_changed = self.app.audio_bitrate != old_settings.get('audio_bitrate')
             if audio_bitrate_changed and self.is_pcmflux_capturing:
@@ -2014,10 +2021,11 @@ class DataStreamingServer:
                             if not initial_settings_processed:
                                 initial_settings_processed = True
                                 data_logger.info("Initial client settings message processed by ws_handler.")
+                                data_logger.info("Triggering initial display reconfiguration after first settings message.")
+                                await self.reconfigure_displays()
                                 video_is_active = len(self.capture_instances) > 0
                                 if not video_is_active:
-                                    data_logger.warning(f"Initial setup: Video pipeline was expected to be started but is not.")
-                                
+                                    data_logger.error(f"FATAL: Initial reconfiguration completed, but video pipeline did not start.")
                                 async with self._reconfigure_lock:
                                     audio_is_active = self.is_pcmflux_capturing
                                     if not audio_is_active and PCMFLUX_AVAILABLE and display_id == 'primary':
@@ -2101,26 +2109,34 @@ class DataStreamingServer:
 
                     elif message == "START_VIDEO":
                         if client_display_id and client_display_id in self.display_clients:
-                            data_logger.info(f"Received START_VIDEO for '{client_display_id}'. Starting stream without reconfiguring layout.")
-                            self.display_clients[client_display_id]['video_active'] = True
-                            
-                            layout = self.display_layouts.get(client_display_id)
-                            if layout:
-                                await self._start_capture_for_display(
-                                    display_id=client_display_id,
-                                    width=layout['w'], height=layout['h'],
-                                    x_offset=layout['x'], y_offset=layout['y']
-                                )
-                                await self._start_backpressure_task_if_needed(client_display_id)
-                                await websocket.send("VIDEO_STARTED")
-                            else:
-                                data_logger.warning(f"No layout found for '{client_display_id}'. Triggering a full reconfigure to recover state.")
-                                async with self._reconfigure_lock:
+                            data_logger.info(f"Received START_VIDEO for '{client_display_id}'. Starting its stream.")
+                            display_state = self.display_clients[client_display_id]
+                            display_state['video_active'] = True
+                            if hasattr(self, 'display_layouts') and client_display_id in self.display_layouts:
+                                layout = self.display_layouts[client_display_id]
+                                data_logger.info(f"Found existing layout for '{client_display_id}'. Starting capture with: {layout}")
+                                try:
+                                    await self._start_capture_for_display(
+                                        display_id=client_display_id,
+                                        width=layout['w'], height=layout['h'],
+                                        x_offset=layout['x'], y_offset=layout['y']
+                                    )
+                                    await self._start_backpressure_task_if_needed(client_display_id)
+                                    await websocket.send("VIDEO_STARTED")
+                                except Exception as e:
+                                    data_logger.error(f"Failed to restart individual stream for '{client_display_id}': {e}", exc_info=True)
                                     await self.reconfigure_displays()
+                            else:
+                                data_logger.warning(f"No layout found for '{client_display_id}' on START_VIDEO. Performing full reconfiguration.")
+                                await self.reconfigure_displays()
+                                await websocket.send("VIDEO_STARTED")
+                        else:
+                            data_logger.info(f"Received START_VIDEO from a shared client ({websocket.remote_address}). Triggering reconfiguration.")
+                            await self.reconfigure_displays()
 
                     elif message == "STOP_VIDEO":
                         if client_display_id and client_display_id in self.display_clients:
-                            data_logger.info(f"Received STOP_VIDEO for '{client_display_id}'. Stopping stream without reconfiguring layout.")
+                            data_logger.info(f"Received STOP_VIDEO for '{client_display_id}'. Stopping stream.")
                             self.display_clients[client_display_id]['video_active'] = False
                             
                             await self._stop_capture_for_display(client_display_id)
@@ -2179,104 +2195,6 @@ class DataStreamingServer:
 
                         await on_resize_handler(target_res_str, self.app, self, display_id)
 
-                    elif message.startswith("SET_ENCODER,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_encoder = message.split(",")[1].strip().lower()
-                            data_logger.info(f"Received SET_ENCODER for '{client_display_id}': {new_encoder}")
-                            await self._apply_client_settings(websocket, {"encoder": new_encoder}, is_initial_settings=False)
-                        except (IndexError, ValueError) as e:
-                            data_logger.warning(f"Malformed SET_ENCODER message: {message}, error: {e}")
-
-                    elif message.startswith("SET_FRAMERATE,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_fps = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_FRAMERATE for '{client_display_id}': {new_fps}")
-                            await self._apply_client_settings(websocket, {"framerate": new_fps}, is_initial_settings=False)
-                        except (IndexError, ValueError) as e:
-                            data_logger.warning(f"Malformed SET_FRAMERATE message: {message}, error: {e}")
-
-                    elif message.startswith("SET_CRF,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_crf = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_CRF for '{client_display_id}': {new_crf}")
-                            await self._apply_client_settings(websocket, {"h264_crf": new_crf}, is_initial_settings=False)
-                        except (IndexError, ValueError) as e:
-                            data_logger.warning(f"Malformed SET_CRF message: {message}, error: {e}")
-
-                    elif message.startswith("SET_H264_FULLCOLOR,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_fullcolor = message.split(",")[1].strip().lower() == "true"
-                            data_logger.info(f"Received SET_H264_FULLCOLOR for '{client_display_id}': {new_fullcolor}")
-                            await self._apply_client_settings(websocket, {"h264_fullcolor": new_fullcolor}, is_initial_settings=False)
-                        except IndexError:
-                            data_logger.warning(f"Malformed SET_H264_FULLCOLOR message: {message}")
-
-                    elif message.startswith("SET_H264_STREAMING_MODE,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_streaming_mode = message.split(",")[1].strip().lower() == "true"
-                            data_logger.info(f"Received SET_H264_STREAMING_MODE for '{client_display_id}': {new_streaming_mode}")
-                            await self._apply_client_settings(websocket, {"h264_streaming_mode": new_streaming_mode}, is_initial_settings=False)
-                        except IndexError:
-                            data_logger.warning(f"Malformed SET_H264_STREAMING_MODE message: {message}")
-
-                    elif message.startswith("SET_JPEG_QUALITY,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_quality = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_JPEG_QUALITY for '{client_display_id}': {new_quality}")
-                            await self._apply_client_settings(websocket, {"jpeg_quality": new_quality}, is_initial_settings=False)
-                        except (IndexError, ValueError):
-                            data_logger.warning(f"Malformed SET_JPEG_QUALITY message: {message}")
-
-                    elif message.startswith("SET_PAINT_OVER_JPEG_QUALITY,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_quality = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_PAINT_OVER_JPEG_QUALITY for '{client_display_id}': {new_quality}")
-                            await self._apply_client_settings(websocket, {"paint_over_jpeg_quality": new_quality}, is_initial_settings=False)
-                        except (IndexError, ValueError):
-                            data_logger.warning(f"Malformed SET_PAINT_OVER_JPEG_QUALITY message: {message}")
-
-                    elif message.startswith("SET_USE_PAINT_OVER_QUALITY,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_val = message.split(",")[1].strip().lower() == "true"
-                            data_logger.info(f"Received SET_USE_PAINT_OVER_QUALITY for '{client_display_id}': {new_val}")
-                            await self._apply_client_settings(websocket, {"use_paint_over_quality": new_val}, is_initial_settings=False)
-                        except IndexError:
-                            data_logger.warning(f"Malformed SET_USE_PAINT_OVER_QUALITY message: {message}")
-
-                    elif message.startswith("SET_H264_PAINTOVER_CRF,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_crf = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_H264_PAINTOVER_CRF for '{client_display_id}': {new_crf}")
-                            await self._apply_client_settings(websocket, {"h264_paintover_crf": new_crf}, is_initial_settings=False)
-                        except (IndexError, ValueError):
-                            data_logger.warning(f"Malformed SET_H264_PAINTOVER_CRF message: {message}")
-
-                    elif message.startswith("SET_H264_PAINTOVER_BURST_FRAMES,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_burst = int(message.split(",")[1])
-                            data_logger.info(f"Received SET_H264_PAINTOVER_BURST_FRAMES for '{client_display_id}': {new_burst}")
-                            await self._apply_client_settings(websocket, {"h264_paintover_burst_frames": new_burst}, is_initial_settings=False)
-                        except (IndexError, ValueError):
-                            data_logger.warning(f"Malformed SET_H264_PAINTOVER_BURST_FRAMES message: {message}")
-
-                    elif message.startswith("SET_USE_CPU,"):
-                        await self.client_settings_received.wait()
-                        try:
-                            new_use_cpu = message.split(",")[1].strip().lower() == "true"
-                            data_logger.info(f"Received SET_USE_CPU for '{client_display_id}': {new_use_cpu}")
-                            await self._apply_client_settings(websocket, {"use_cpu": new_use_cpu}, is_initial_settings=False)
-                        except IndexError:
-                            data_logger.warning(f"Malformed SET_USE_CPU message: {message}")
                     elif message.startswith("SET_NATIVE_CURSOR_RENDERING,"):
                         await self.client_settings_received.wait()
                         try:
@@ -2369,10 +2287,18 @@ class DataStreamingServer:
             if self.data_ws is websocket:
                 self.data_ws = None
             
-            if client_display_id and client_display_id in self.display_clients:
-                del self.display_clients[client_display_id]
-                data_logger.info(f"Client for {client_display_id} removed. Triggering display reconfiguration.")
+            disconnected_display_id = None
+            for disp_id, client_info in self.display_clients.items():
+                if client_info.get('ws') is websocket:
+                    disconnected_display_id = disp_id
+                    break
+            
+            if disconnected_display_id:
+                del self.display_clients[disconnected_display_id]
+                data_logger.info(f"Client for '{disconnected_display_id}' disconnected. Removing and triggering full display reconfiguration.")
                 await self.reconfigure_displays()
+            else:
+                data_logger.info(f"Unregistered client at {raddr} disconnected. No display reconfiguration needed.")
 
             if "_stats_sender_task_ws" in locals():
                 _task_to_cancel = locals()["_stats_sender_task_ws"]
@@ -2577,7 +2503,7 @@ class DataStreamingServer:
         if self._is_reconfiguring:
             data_logger.warning(f"Client '{display_id}' disconnected DURING a reconfiguration. "
                                 "A new reconfiguration will NOT be triggered to prevent a loop.")
-            return # EXIT EARLY TO BREAK THE LOOP
+            return
 
         data_logger.info(f"Client for {display_id} removed. Triggering display reconfiguration.")
         async with self._reconfigure_lock:
@@ -2661,177 +2587,164 @@ class DataStreamingServer:
         It then starts capture pipelines ONLY for clients with 'video_active' = True.
         This is called on connect, disconnect, or settings change.
         """
-        if self._is_reconfiguring:
+        if self._reconfigure_lock.locked():
             data_logger.warning("Reconfiguration already in progress. Ignoring concurrent request.")
             return
+        async with self._reconfigure_lock:
+            self._is_reconfiguring = True
+            data_logger.info("Starting display reconfiguration...")
+            try:
+                current_display_count = len(self.display_clients)
+                if self._wm_swap_is_supported is None:
+                    if which("xfce4-session") or which("startplasma-x11"):
+                        self._wm_swap_is_supported = True
+                    else:
+                        self._wm_swap_is_supported = False
+                if (current_display_count > 1 and self._wm_swap_is_supported and not self._is_wm_swapped):
+                    data_logger.info("Multi-monitor setup: switching to Openbox with a minimal config.")
+                    config_path = "/tmp/openbox_selkies_config.xml"
+                    config_content = "<openbox_config></openbox_config>\n"
+                    try:
+                        with open(config_path, "w") as f:
+                            f.write(config_content)
+                        data_logger.info(f"Wrote minimal Openbox config to {config_path}")
+                        openbox_cmd = ["openbox", "--config-file", config_path, "--replace"]
+                    except IOError as e:
+                        data_logger.error(f"Could not write Openbox config to {config_path}: {e}. Proceeding without custom config.")
+                        openbox_cmd = ["openbox", "--replace"]
+                    await self._run_detached_command(openbox_cmd, "switch to openbox")
+                    self._is_wm_swapped = True
+                if self.capture_instances or any(d.get('backpressure_task') for d in self.display_clients.values()):
+                    data_logger.info("Stopping all existing capture and backpressure tasks...")
+                    stop_bp_tasks = [self._ensure_backpressure_task_is_stopped(disp_id) for disp_id in self.display_clients.keys()]
+                    if stop_bp_tasks:
+                        await asyncio.gather(*stop_bp_tasks, return_exceptions=True)
+                    stop_capture_tasks = [
+                        self.capture_loop.run_in_executor(None, inst['module'].stop_capture)
+                        for inst in self.capture_instances.values() if inst.get('module')
+                    ]
+                    if stop_capture_tasks:
+                        await asyncio.gather(*stop_capture_tasks, return_exceptions=True)
 
-        self._is_reconfiguring = True
-        try:
-            current_display_count = len(self.display_clients)
-
-            if self._wm_swap_is_supported is None:
-                if which("xfce4-session") or which("startplasma-x11"):
-                    self._wm_swap_is_supported = True
-                else:
-                    self._wm_swap_is_supported = False
-
-            if (current_display_count > 1 and self._wm_swap_is_supported and not self._is_wm_swapped):
-                data_logger.info("Multi-monitor setup: switching to Openbox with a minimal config.")
-
-                config_path = "/tmp/openbox_selkies_config.xml"
-                config_content = "<openbox_config></openbox_config>\n"
-                try:
-                    with open(config_path, "w") as f:
-                        f.write(config_content)
-                    data_logger.info(f"Wrote minimal Openbox config to {config_path}")
-                    openbox_cmd = ["openbox", "--config-file", config_path, "--replace"]
-                except IOError as e:
-                    data_logger.error(f"Could not write Openbox config to {config_path}: {e}. Proceeding without custom config.")
-                    openbox_cmd = ["openbox", "--replace"]
-
-                await self._run_detached_command(openbox_cmd, "switch to openbox")
-                self._is_wm_swapped = True
-
-            if self.capture_instances or any(d.get('backpressure_task') for d in self.display_clients.values()):
-                data_logger.info("Stopping all existing capture and backpressure tasks...")
-
-                stop_bp_tasks = [self._ensure_backpressure_task_is_stopped(disp_id) for disp_id in self.display_clients.keys()]
-                if stop_bp_tasks:
-                    await asyncio.gather(*stop_bp_tasks, return_exceptions=True)
-
-                stop_capture_tasks = [
-                    self.capture_loop.run_in_executor(None, inst['module'].stop_capture)
-                    for inst in self.capture_instances.values() if inst.get('module')
-                ]
-                if stop_capture_tasks:
-                    await asyncio.gather(*stop_capture_tasks, return_exceptions=True)
-
-                for display_id, inst in self.capture_instances.items():
-                    sender_task = inst.get('sender_task')
-                    if sender_task and not sender_task.done():
-                        sender_task.cancel()
-                self.capture_instances.clear()
-                self.video_chunk_queues.clear()
-                data_logger.info("All capture instances, senders, and backpressure tasks stopped.")
-
-            if not self.display_clients:
-                data_logger.warning("No display clients connected. Video pipelines remain stopped.")
-                _, _, _, _, screen_name = await get_new_res("1x1")
-                if screen_name:
-                    current_monitors = await self._get_current_monitors()
-                    for monitor_name in current_monitors:
-                        await self._run_command(["xrandr", "--delmonitor", monitor_name], f"cleanup monitor {monitor_name}")
-                return
-
-            data_logger.info("Calculating new extended desktop layout from ALL clients...")
-            layouts = {}
-            total_width = 0
-            total_height = 0
-
-            primary_client = self.display_clients.get('primary')
-            secondary_client = None
-            secondary_id = None
-            for display_id, client in self.display_clients.items():
-                if display_id != 'primary':
-                    secondary_client = client
-                    secondary_id = display_id
-                    break
-
-            if primary_client and not secondary_client:
-                p_w, p_h = primary_client.get('width', 0), primary_client.get('height', 0)
-                if p_w > 0 and p_h > 0:
-                    layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
-                    total_width, total_height = p_w, p_h
-            elif primary_client and secondary_client:
-                p_w, p_h = primary_client.get('width', 0), primary_client.get('height', 0)
-                s_w, s_h = secondary_client.get('width', 0), secondary_client.get('height', 0)
-                position = secondary_client.get('position', 'right')
-
-                if p_w > 0 and p_h > 0 and s_w > 0 and s_h > 0:
-                    if position == 'right':
-                        layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
-                        layouts[secondary_id] = {'x': p_w, 'y': 0, 'w': s_w, 'h': s_h}
-                        total_width, total_height = p_w + s_w, max(p_h, s_h)
-                    elif position == 'left':
-                        layouts[secondary_id] = {'x': 0, 'y': 0, 'w': s_w, 'h': s_h}
-                        layouts['primary'] = {'x': s_w, 'y': 0, 'w': p_w, 'h': p_h}
-                        total_width, total_height = p_w + s_w, max(p_h, s_h)
-                    elif position == 'down':
-                        layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
-                        layouts[secondary_id] = {'x': 0, 'y': p_h, 'w': s_w, 'h': s_h}
-                        total_width, total_height = max(p_w, s_w), p_h + s_h
-                    elif position == 'up':
-                        layouts[secondary_id] = {'x': 0, 'y': 0, 'w': s_w, 'h': s_h}
-                        layouts['primary'] = {'x': 0, 'y': s_h, 'w': p_w, 'h': p_h}
-                        total_width, total_height = max(p_w, s_w), p_h + s_h
-
-            if total_width == 0 or total_height == 0:
-                data_logger.error("Calculated total display size is zero. Aborting reconfiguration.")
-                return
-
-            aligned_total_width = (total_width + 7) & ~7
-            if aligned_total_width != total_width:
-                data_logger.info(f"Aligned total width from {total_width} to {aligned_total_width} for xrandr.")
-                total_width = aligned_total_width
-
-            self.display_layouts = layouts
-            data_logger.info(f"Layout calculated: Total Size={total_width}x{total_height}. Layouts: {layouts}")
-
-            _, _, available_resolutions, _, screen_name = await get_new_res("1x1")
-            if not screen_name:
-                data_logger.error("CRITICAL: Could not determine screen name from xrandr. Aborting.")
-                return
-
-            current_monitors = await self._get_current_monitors()
-            for monitor_name in current_monitors:
-                await self._run_command(["xrandr", "--delmonitor", monitor_name], f"delete old monitor {monitor_name}")
-
-            total_mode_str = f"{total_width}x{total_height}"
-            if total_mode_str not in available_resolutions:
-                data_logger.info(f"Mode {total_mode_str} not found. Creating it.")
-                try:
-                    _, modeline_params = await generate_xrandr_gtf_modeline(total_mode_str)
-                    await self._run_command(["xrandr", "--newmode", total_mode_str] + modeline_params.split(), "create new mode")
-                    await self._run_command(["xrandr", "--addmode", screen_name, total_mode_str], "add new mode")
-                except Exception as e:
-                    data_logger.error(f"FATAL: Could not create extended mode {total_mode_str}: {e}. Aborting.")
+                    for display_id, inst in self.capture_instances.items():
+                        sender_task = inst.get('sender_task')
+                        if sender_task and not sender_task.done():
+                            sender_task.cancel()
+                    self.capture_instances.clear()
+                    self.video_chunk_queues.clear()
+                    data_logger.info("All capture instances, senders, and backpressure tasks stopped.")
+                if not self.display_clients:
+                    data_logger.warning("No display clients connected. Video pipelines remain stopped.")
+                    _, _, _, _, screen_name = await get_new_res("1x1")
+                    if screen_name:
+                        current_monitors = await self._get_current_monitors()
+                        for monitor_name in current_monitors:
+                            await self._run_command(["xrandr", "--delmonitor", monitor_name], f"cleanup monitor {monitor_name}")
                     return
-
-            await self._run_command(["xrandr", "--fb", total_mode_str, "--output", screen_name, "--mode", total_mode_str], "set framebuffer")
-
-            data_logger.info("Defining logical monitors for the window manager...")
-            for display_id, layout in layouts.items():
-                geometry = f"{layout['w']}/0x{layout['h']}/0+{layout['x']}+{layout['y']}"
-                monitor_name = f"selkies-{display_id}"
-                cmd = ["xrandr", "--setmonitor", monitor_name, geometry, screen_name]
-                await self._run_command(cmd, f"set logical monitor {monitor_name}")
-
-            if 'primary' in layouts:
-                await self._run_command(
-                    ["xrandr", "--output", screen_name, "--primary"],
-                    "set primary output"
-                )
-
-            data_logger.info("Starting separate capture instances for each ACTIVE display region...")
-            for display_id, layout in layouts.items():
-                client_data = self.display_clients.get(display_id)
-                if client_data and client_data.get('video_active', False):
-                    data_logger.info(f"Client '{display_id}' is active. Starting its capture.")
-                    await self._start_capture_for_display(
-                        display_id=display_id,
-                        width=layout['w'], height=layout['h'],
-                        x_offset=layout['x'], y_offset=layout['y']
+                data_logger.info("Calculating new extended desktop layout from ALL clients...")
+                layouts = {}
+                total_width = 0
+                total_height = 0
+                primary_client = self.display_clients.get('primary')
+                secondary_client = None
+                secondary_id = None
+                for display_id, client in self.display_clients.items():
+                    if display_id != 'primary':
+                        secondary_client = client
+                        secondary_id = display_id
+                        break
+                if primary_client and not secondary_client:
+                    p_w, p_h = primary_client.get('width', 0), primary_client.get('height', 0)
+                    if p_w > 0 and p_h > 0:
+                        layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
+                        total_width, total_height = p_w, p_h
+                elif primary_client and secondary_client:
+                    p_w, p_h = primary_client.get('width', 0), primary_client.get('height', 0)
+                    s_w, s_h = secondary_client.get('width', 0), secondary_client.get('height', 0)
+                    position = secondary_client.get('position', 'right')
+                    if p_w > 0 and p_h > 0 and s_w > 0 and s_h > 0:
+                        if position == 'right':
+                            layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
+                            layouts[secondary_id] = {'x': p_w, 'y': 0, 'w': s_w, 'h': s_h}
+                            total_width, total_height = p_w + s_w, max(p_h, s_h)
+                        elif position == 'left':
+                            layouts[secondary_id] = {'x': 0, 'y': 0, 'w': s_w, 'h': s_h}
+                            layouts['primary'] = {'x': s_w, 'y': 0, 'w': p_w, 'h': p_h}
+                            total_width, total_height = p_w + s_w, max(p_h, s_h)
+                        elif position == 'down':
+                            layouts['primary'] = {'x': 0, 'y': 0, 'w': p_w, 'h': p_h}
+                            layouts[secondary_id] = {'x': 0, 'y': p_h, 'w': s_w, 'h': s_h}
+                            total_width, total_height = max(p_w, s_w), p_h + s_h
+                        elif position == 'up':
+                            layouts[secondary_id] = {'x': 0, 'y': 0, 'w': s_w, 'h': s_h}
+                            layouts['primary'] = {'x': 0, 'y': s_h, 'w': p_w, 'h': p_h}
+                            total_width, total_height = max(p_w, s_w), p_h + s_h
+                if total_width == 0 or total_height == 0:
+                    data_logger.error("Calculated total display size is zero. Aborting reconfiguration.")
+                    return
+                aligned_total_width = (total_width + 7) & ~7
+                if aligned_total_width != total_width:
+                    data_logger.info(f"Aligned total width from {total_width} to {aligned_total_width} for xrandr.")
+                    total_width = aligned_total_width
+                self.display_layouts = layouts
+                data_logger.info(f"Layout calculated: Total Size={total_width}x{total_height}. Layouts: {layouts}")
+                _, _, available_resolutions, _, screen_name = await get_new_res("1x1")
+                if not screen_name:
+                    data_logger.error("CRITICAL: Could not determine screen name from xrandr. Aborting.")
+                    return
+                current_monitors = await self._get_current_monitors()
+                for monitor_name in current_monitors:
+                    await self._run_command(["xrandr", "--delmonitor", monitor_name], f"delete old monitor {monitor_name}")
+                total_mode_str = f"{total_width}x{total_height}"
+                if total_mode_str not in available_resolutions:
+                    data_logger.info(f"Mode {total_mode_str} not found. Creating it.")
+                    try:
+                        _, modeline_params = await generate_xrandr_gtf_modeline(total_mode_str)
+                        await self._run_command(["xrandr", "--newmode", total_mode_str] + modeline_params.split(), "create new mode")
+                        await self._run_command(["xrandr", "--addmode", screen_name, total_mode_str], "add new mode")
+                    except Exception as e:
+                        data_logger.error(f"FATAL: Could not create extended mode {total_mode_str}: {e}. Aborting.")
+                        return
+                await self._run_command(["xrandr", "--fb", total_mode_str, "--output", screen_name, "--mode", total_mode_str], "set framebuffer")
+                data_logger.info("Defining logical monitors for the window manager...")
+                for display_id, layout in layouts.items():
+                    geometry = f"{layout['w']}/0x{layout['h']}/0+{layout['x']}+{layout['y']}"
+                    monitor_name = f"selkies-{display_id}"
+                    cmd = ["xrandr", "--setmonitor", monitor_name, geometry, screen_name]
+                    await self._run_command(cmd, f"set logical monitor {monitor_name}")
+                if 'primary' in layouts:
+                    await self._run_command(
+                        ["xrandr", "--output", screen_name, "--primary"],
+                        "set primary output"
                     )
-                    await self._start_backpressure_task_if_needed(display_id)
-                else:
-                    data_logger.info(f"Client '{display_id}' is connected but not active. Skipping video start.")
-
-            await self.broadcast_stream_resolution()
-            await self.broadcast_display_config()
-
-        finally:
-            self._last_display_count = len(self.display_clients)
-            self._is_reconfiguring = False
+                data_logger.info("Starting separate capture instances for each ACTIVE display region...")
+                for display_id, layout in layouts.items():
+                    client_data = self.display_clients.get(display_id)
+                    if client_data and client_data.get('video_active', False):
+                        data_logger.info(f"Client '{display_id}' is active. Starting its capture.")
+                        try:
+                            await self._start_capture_for_display(
+                                display_id=display_id,
+                                width=layout['w'], height=layout['h'],
+                                x_offset=layout['x'], y_offset=layout['y']
+                            )
+                            await self._start_backpressure_task_if_needed(display_id)
+                        except Exception as e:
+                            data_logger.error(
+                                f"Failed to start capture for display '{display_id}' during reconfiguration. "
+                                f"This display will not stream. Error: {e}", exc_info=False
+                            )
+                    else:
+                        data_logger.info(f"Client '{display_id}' is connected but not active. Skipping video start.")
+                await self.broadcast_stream_resolution()
+                await self.broadcast_display_config()
+                data_logger.info("Display reconfiguration finished successfully.")
+            except Exception as e:
+                data_logger.error(f"A critical error occurred during display reconfiguration: {e}", exc_info=True)
+            finally:
+                self._last_display_count = len(self.display_clients)
+                self._is_reconfiguring = False
+                data_logger.info("Reconfiguration process complete (state unlocked).")
 
     async def _video_chunk_sender(self, display_id: str):
         """
@@ -3141,6 +3054,13 @@ async def on_resize_handler(res_str, current_app_instance, data_server_instance=
     Handles client resize request. Updates the state for a specific display and triggers a full reconfiguration.
     """
     logger_gst_app_resize.info(f"on_resize_handler for display '{display_id}' with resolution: {res_str}")
+    if data_server_instance:
+        server_is_manual, _ = data_server_instance.cli_args.is_manual_resolution_mode
+        if server_is_manual:
+            logger_gst_app_resize.warning(
+                f"Client attempted to resize to {res_str} but server is in manual resolution mode. Request ignored."
+            )
+            return
     try:
         w_str, h_str = res_str.split("x")
         target_w, target_h = int(w_str), int(h_str)

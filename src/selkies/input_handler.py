@@ -1664,16 +1664,6 @@ class WebRTCInput:
                 if await self.write_clipboard(data):
                     logger_webrtc_input.info(f"Set clipboard content, length: {len(data)}")
             else: logger_webrtc_input.warning("Rejecting clipboard write: inbound clipboard disabled.")
-        elif msg_type == "r": 
-            res = toks[1]
-            if re.fullmatch(r"^\d+x\d+$", res):
-                w, h = [int(i) + int(i)%2 for i in res.split("x")] 
-                self.on_resize(f"{w}x{h}")
-            else: logger_webrtc_input.warning(f"Rejecting resolution change, invalid: {res}")
-        elif msg_type == "s": 
-            scale = toks[1]
-            if re.fullmatch(r"^\d+(\.\d+)?$", scale): self.on_scaling_ratio(float(scale))
-            else: logger_webrtc_input.warning(f"Rejecting scaling change, invalid: {scale}")
         elif msg_type == "_arg_fps": self.on_set_fps(int(toks[1]))
         elif msg_type == "_arg_resize":
             if len(toks) == 3:

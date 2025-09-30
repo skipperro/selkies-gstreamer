@@ -9,11 +9,11 @@ const urlHash = window.location.hash;
 const displayId = urlHash.startsWith('#display2') ? 'display2' : 'primary';
 
 const PER_DISPLAY_SETTINGS = [
-    'videoBitRate', 'videoFramerate', 'videoCRF', 'h264_fullcolor',
-    'h264_streaming_mode', 'jpegQuality', 'paintOverJpegQuality', 'useCpu',
+    'framerate', 'h264_crf', 'h264_fullcolor',
+    'h264_streaming_mode', 'jpeg_quality', 'paint_over_jpeg_quality', 'use_cpu',
     'h264_paintover_crf', 'h264_paintover_burst_frames', 'use_paint_over_quality',
-    'resizeRemote', 'isManualResolutionMode', 'manualWidth', 'manualHeight',
-    'encoder', 'scaleLocallyManual'
+    'is_manual_resolution_mode', 'manual_width', 'manual_height',
+    'encoder', 'scaleLocallyManual', 'use_browser_cursors'
 ];
 
 const encoderOptions = [
@@ -21,22 +21,6 @@ const encoderOptions = [
   "x264enc-striped",
   "jpeg",
 ];
-
-const framerateOptions = [
-  8, 12, 15, 24, 25, 30, 48, 50, 60, 90, 100, 120, 144,
-];
-
-const videoBitrateOptions = [
-  1000, 2000, 4000, 8000, 10000, 12000, 14000, 16000, 18000, 20000, 25000,
-  30000, 35000, 40000, 45000, 50000, 60000, 70000, 80000, 90000, 100000,
-];
-
-const videoBufferOptions = Array.from({ length: 16 }, (_, i) => i);
-
-const videoCRFOptions = [...[50, 45, 40, 35, 30], ...Array.from({ length: 12 }, (_, i) => 28 - i), ...[15, 10, 5]];
-
-const jpegQualityOptions = Array.from({ length: (100 - 5) / 5 + 1 }, (_, i) => 5 + i * 5);
-const paintOverJpegQualityOptions = Array.from({ length: (100 - 5) / 5 + 1 }, (_, i) => 5 + i * 5);
 
 const commonResolutionValues = [
   "",
@@ -527,7 +511,6 @@ const getStorageAppName = () => {
 const storageAppName = getStorageAppName();
 const getPrefixedKey = (key) => {
   const prefixedKey = `${storageAppName}_${key}`;
-  // Use the module-level 'displayId' to decide which key to return
   if (displayId === 'display2' && PER_DISPLAY_SETTINGS.includes(key)) {
     return `${prefixedKey}_display2`;
   }
@@ -583,7 +566,7 @@ function Sidebar() {
     if (!serverSettings) return;
 
     const newRenderable = {};
-    const s = serverSettings; // The fix is here: use serverSettings directly
+    const s = serverSettings;
 
     const isRenderable = (key) => {
         const setting = s[key];
@@ -612,17 +595,17 @@ function Sidebar() {
 
     newRenderable.encoder = isRenderable('encoder');
     newRenderable.framerate = isRenderable('framerate');
-    newRenderable.jpegQuality = isRenderable('jpeg_quality');
-    newRenderable.paintOverJpegQuality = isRenderable('paint_over_jpeg_quality');
-    newRenderable.videoCRF = isRenderable('h264_crf');
+    newRenderable.jpeg_quality = isRenderable('jpeg_quality');
+    newRenderable.paint_over_jpeg_quality = isRenderable('paint_over_jpeg_quality');
+    newRenderable.h264_crf = isRenderable('h264_crf');
     newRenderable.h264PaintoverCRF = isRenderable('h264_paintover_crf');
     newRenderable.usePaintOverQuality = isRenderable('use_paint_over_quality');
     newRenderable.h264StreamingMode = isRenderable('h264_streaming_mode');
     newRenderable.h264FullColor = isRenderable('h264_fullcolor');
-    newRenderable.useCpu = isRenderable('use_cpu');
+    newRenderable.use_cpu = isRenderable('use_cpu');
     newRenderable.uiScaling = isRenderable('scaling_dpi');
     newRenderable.binaryClipboard = isRenderable('enable_binary_clipboard');
-    newRenderable.useBrowserCursors = isRenderable('use_browser_cursors');
+    newRenderable.use_browser_cursors = isRenderable('use_browser_cursors');
     
     const hypotheticalHidpi = s.hidpi_enabled || { value: true, locked: false };
     newRenderable.hidpi = hypotheticalHidpi.locked !== true;
@@ -902,7 +885,7 @@ function Sidebar() {
     }
     const s_use_css_scaling = serverSettings.use_css_scaling;
     if (s_use_css_scaling) {
-      const authoritativeValue = localStorage.getItem(getPrefixedKey("useCssScaling")) === 'true';
+      const authoritativeValue = localStorage.getItem(getPrefixedKey("use_css_scaling")) === 'true';
       if (hidpiEnabled === authoritativeValue) {
         setHidpiEnabled(!authoritativeValue);
       }
@@ -960,19 +943,15 @@ function Sidebar() {
   const [dynamicEncoderOptions, setDynamicEncoderOptions] =
     useState(encoderOptions);
   const [framerate, setFramerate] = useState(
-    parseInt(localStorage.getItem(getPrefixedKey("videoFramerate")), 10) ||
+    parseInt(localStorage.getItem(getPrefixedKey("framerate")), 10) ||
       DEFAULT_FRAMERATE
-  );
-  const [videoBitRate, setVideoBitRate] = useState(
-    parseInt(localStorage.getItem(getPrefixedKey("videoBitRate")), 10) ||
-      DEFAULT_VIDEO_BITRATE
   );
   const [videoBufferSize, setVideoBufferSize] = useState(
     parseInt(localStorage.getItem(getPrefixedKey("videoBufferSize")), 10) ||
       DEFAULT_VIDEO_BUFFER_SIZE
   );
-  const [videoCRF, setVideoCRF] = useState(
-    parseInt(localStorage.getItem(getPrefixedKey("videoCRF")), 10) ||
+  const [h264_crf, setVideoCRF] = useState(
+    parseInt(localStorage.getItem(getPrefixedKey("h264_crf")), 10) ||
       DEFAULT_VIDEO_CRF
   );
   const [h264PaintoverCRF, setH264PaintoverCRF] = useState(
@@ -986,43 +965,43 @@ function Sidebar() {
   const [h264FullColor, setH264FullColor] = useState(
     localStorage.getItem(getPrefixedKey("h264_fullcolor")) === "true"
   );
-  const [jpegQuality, setJpegQuality] = useState(
-    parseInt(localStorage.getItem(getPrefixedKey("jpegQuality")), 10) ||
+  const [jpeg_quality, setJpegQuality] = useState(
+    parseInt(localStorage.getItem(getPrefixedKey("jpeg_quality")), 10) ||
       DEFAULT_JPEG_QUALITY
   );
-  const [paintOverJpegQuality, setPaintOverJpegQuality] = useState(
-    parseInt(localStorage.getItem(getPrefixedKey("paintOverJpegQuality")), 10) ||
+  const [paint_over_jpeg_quality, setPaintOverJpegQuality] = useState(
+    parseInt(localStorage.getItem(getPrefixedKey("paint_over_jpeg_quality")), 10) ||
       DEFAULT_PAINT_OVER_JPEG_QUALITY
   );
-  const [useCpu, setUseCpu] = useState(
-    localStorage.getItem(getPrefixedKey("useCpu")) === "true"
+  const [use_cpu, setUseCpu] = useState(
+    localStorage.getItem(getPrefixedKey("use_cpu")) === "true"
   );
   const [h264StreamingMode, setH264StreamingMode] = useState(
     localStorage.getItem(getPrefixedKey("h264_streaming_mode")) === "true"
   );
   const [selectedDpi, setSelectedDpi] = useState(
-    parseInt(localStorage.getItem(getPrefixedKey("SCALING_DPI")), 10) || DEFAULT_SCALING_DPI
+    parseInt(localStorage.getItem(getPrefixedKey("scaling_dpi")), 10) || DEFAULT_SCALING_DPI
   );
-  const [manualWidth, setManualWidth] = useState(localStorage.getItem(getPrefixedKey("manualWidth")) || "");
-  const [manualHeight, setManualHeight] = useState(localStorage.getItem(getPrefixedKey("manualHeight")) || "");
+  const [manual_width, setManualWidth] = useState(localStorage.getItem(getPrefixedKey("manual_width")) || "");
+  const [manual_height, setManualHeight] = useState(localStorage.getItem(getPrefixedKey("manual_height")) || "");
   const [scaleLocally, setScaleLocally] = useState(() => {
     const saved = localStorage.getItem(getPrefixedKey("scaleLocallyManual"));
     return saved !== null ? saved === "true" : DEFAULT_SCALE_LOCALLY;
   });
   const [hidpiEnabled, setHidpiEnabled] = useState(() => {
-    const saved = localStorage.getItem(getPrefixedKey("useCssScaling"));
+    const saved = localStorage.getItem(getPrefixedKey("use_css_scaling"));
     return saved !== "true";
   });
   const [antiAliasing, setAntiAliasing] = useState(() => {
     const saved = localStorage.getItem(getPrefixedKey("antiAliasingEnabled"));
     return saved !== null ? saved === "true" : true;
   });
-  const [useBrowserCursors, setUseBrowserCursors] = useState(() => {
-    const saved = localStorage.getItem(getPrefixedKey("useBrowserCursors"));
+  const [use_browser_cursors, setUseBrowserCursors] = useState(() => {
+    const saved = localStorage.getItem(getPrefixedKey("use_browser_cursors"));
     return saved !== null ? saved === "true" : false;
   });
   const [enableBinaryClipboard, setEnableBinaryClipboard] = useState(() => {
-    const saved = localStorage.getItem(getPrefixedKey("enableBinaryClipboard"));
+    const saved = localStorage.getItem(getPrefixedKey("enable_binary_clipboard"));
     return saved !== null ? saved === 'true' : DEFAULT_ENABLE_BINARY_CLIPBOARD;
   });
   const [presetValue, setPresetValue] = useState("");
@@ -1375,7 +1354,7 @@ function Sidebar() {
     debouncedPostSetting({ use_paint_over_quality: newUsePaintOverQualityState });
   };
   const handleUseCpuToggle = () => {
-    const newUseCpuState = !useCpu;
+    const newUseCpuState = !use_cpu;
     setUseCpu(newUseCpuState);
     debouncedPostSetting({ use_cpu: newUseCpuState });
   };
@@ -1457,7 +1436,7 @@ function Sidebar() {
     );
   };
   const handleUseBrowserCursorsToggle = () => {
-    const newState = !useBrowserCursors;
+    const newState = !use_browser_cursors;
     setUseBrowserCursors(newState);
     window.postMessage(
       { type: "setUseBrowserCursors", value: newState },
@@ -1470,8 +1449,8 @@ function Sidebar() {
     debouncedPostSetting({ enable_binary_clipboard: newState });
   };
   const handleSetManualResolution = () => {
-    const width = parseInt(manualWidth.trim(), 10),
-      height = parseInt(manualHeight.trim(), 10);
+    const width = parseInt(manual_width.trim(), 10),
+      height = parseInt(manual_height.trim(), 10);
     if (isNaN(width) || width <= 0 || isNaN(height) || height <= 0) {
       alert(t("alerts.invalidResolution"));
       return;
@@ -2290,11 +2269,11 @@ function Sidebar() {
                 )}
                 {showJpegOptions && (
                   <>
-                    {(renderableSettings.jpegQuality ?? true) && (
+                    {(renderableSettings.jpeg_quality ?? true) && (
                       <div className="dev-setting-item">
                         <label htmlFor="jpegQualitySlider">
                           {t("sections.video.jpegQualityLabel", {
-                            jpegQuality: jpegQuality,
+                            jpegQuality: jpeg_quality,
                           })}
                         </label>
                         <input
@@ -2303,17 +2282,17 @@ function Sidebar() {
                           min={serverSettings?.jpeg_quality?.min || 1}
                           max={serverSettings?.jpeg_quality?.max || 100}
                           step="1"
-                          value={jpegQuality}
+                          value={jpeg_quality}
                           onChange={handleJpegQualityChange}
                           disabled={!serverSettings || serverSettings.jpeg_quality?.min === serverSettings.jpeg_quality?.max}
                         />
                       </div>
                     )}
-                    {(renderableSettings.paintOverJpegQuality ?? true) && (
+                    {(renderableSettings.paint_over_jpeg_quality ?? true) && (
                       <div className="dev-setting-item">
                         <label htmlFor="paintOverJpegQualitySlider">
                           {t("sections.video.paintOverJpegQualityLabel", {
-                            paintOverJpegQuality: paintOverJpegQuality,
+                            paintOverJpegQuality: paint_over_jpeg_quality,
                           })}
                         </label>
                         <input
@@ -2322,7 +2301,7 @@ function Sidebar() {
                           min={serverSettings?.paint_over_jpeg_quality?.min || 1}
                           max={serverSettings?.paint_over_jpeg_quality?.max || 100}
                           step="1"
-                          value={paintOverJpegQuality}
+                          value={paint_over_jpeg_quality}
                           onChange={handlePaintOverJpegQualityChange}
                           disabled={!serverSettings || serverSettings.paint_over_jpeg_quality?.min === serverSettings.paint_over_jpeg_quality?.max}
                         />
@@ -2330,10 +2309,10 @@ function Sidebar() {
                     )}
                   </>
                 )}
-                {showCRF && (renderableSettings.videoCRF ?? true) && (
+                {showCRF && (renderableSettings.h264_crf ?? true) && (
                   <div className="dev-setting-item">
                     <label htmlFor="videoCRFSlider">
-                      {t("sections.video.crfLabel", { crf: videoCRF })}
+                      {t("sections.video.crfLabel", { crf: h264_crf })}
                     </label>
                     <input
                       type="range"
@@ -2341,7 +2320,7 @@ function Sidebar() {
                       min={serverSettings?.h264_crf?.min || 5}
                       max={serverSettings?.h264_crf?.max || 50}
                       step="1"
-                      value={videoCRF}
+                      value={h264_crf}
                       onChange={handleVideoCRFChange}
                       disabled={!serverSettings || serverSettings.h264_crf?.min === serverSettings.h264_crf?.max}
                       style={{ direction: 'rtl' }}
@@ -2420,18 +2399,18 @@ function Sidebar() {
                     </button>
                   </div>
                 )}
-                {showH264Options && (renderableSettings.useCpu ?? true) && (
+                {showH264Options && (renderableSettings.use_cpu ?? true) && (
                   <div className="dev-setting-item toggle-item">
                     <label htmlFor="useCpuToggle">
                       {t("sections.video.useCpuLabel", "CPU Encoding")}
                     </label>
                     <button
                       id="useCpuToggle"
-                      className={`toggle-button-sidebar ${useCpu ? "active" : ""}`}
+                      className={`toggle-button-sidebar ${use_cpu ? "active" : ""}`}
                       onClick={handleUseCpuToggle}
-                      aria-pressed={useCpu}
+                      aria-pressed={use_cpu}
                       disabled={!serverSettings || serverSettings.use_cpu?.locked}
-                      title={t(useCpu ? "buttons.useCpuDisableTitle" : "buttons.useCpuEnableTitle")}
+                      title={t(use_cpu ? "buttons.useCpuDisableTitle" : "buttons.useCpuEnableTitle")}
                     >
                       <span className="toggle-button-sidebar-knob"></span>
                     </button>
@@ -2514,18 +2493,18 @@ function Sidebar() {
                         <span className="toggle-button-sidebar-knob"></span>
                       </button>
                     </div>
-                    {(renderableSettings.useBrowserCursors ?? true) && (
+                    {(renderableSettings.use_browser_cursors ?? true) && (
                       <div className="dev-setting-item toggle-item">
                         <label htmlFor="useBrowserCursorsToggle">
                           {t("sections.screen.useNativeCursorStylesLabel", "Use CSS cursors")}
                         </label>
                         <button
                           id="useBrowserCursorsToggle"
-                          className={`toggle-button-sidebar ${useBrowserCursors ? "active" : ""}`}
+                          className={`toggle-button-sidebar ${use_browser_cursors ? "active" : ""}`}
                           onClick={handleUseBrowserCursorsToggle}
-                          aria-pressed={useBrowserCursors}
-                          title={t(useBrowserCursors ? "sections.screen.useNativeCursorStylesDisableTitle" : "sections.screen.useNativeCursorStylesEnableTitle",
-                                  useBrowserCursors ? "Use canvas cursor rendering (Paint to canvas)" : "Use CSS cursor rendering (Replace system cursors)")}
+                          aria-pressed={use_browser_cursors}
+                          title={t(use_browser_cursors ? "sections.screen.useNativeCursorStylesDisableTitle" : "sections.screen.useNativeCursorStylesEnableTitle",
+                                  use_browser_cursors ? "Use canvas cursor rendering (Paint to canvas)" : "Use CSS cursor rendering (Replace system cursors)")}
                         >
                           <span className="toggle-button-sidebar-knob"></span>
                         </button>
@@ -2586,7 +2565,7 @@ function Sidebar() {
                           min="1"
                           step="2"
                           placeholder={t("sections.screen.widthPlaceholder")}
-                          value={manualWidth}
+                          value={manual_width}
                           onChange={handleManualWidthChange}
                         />
                       </div>
@@ -2601,7 +2580,7 @@ function Sidebar() {
                           min="1"
                           step="2"
                           placeholder={t("sections.screen.heightPlaceholder")}
-                          value={manualHeight}
+                          value={manual_height}
                           onChange={handleManualHeightChange}
                         />
                       </div>
