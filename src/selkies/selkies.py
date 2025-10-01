@@ -827,6 +827,9 @@ class DataStreamingServer:
         self.clients = set()
         self.app = app
         self.cli_args = cli_args
+        self.RECONNECT_DEBOUNCE_MS = 500
+        self.MAX_RECENT_CLIENTS = 1000
+        self.last_connection_times = OrderedDict()
         self._latest_client_render_fps = 0.0
         self._last_time_client_ok = 0.0
         self._client_acknowledged_frame_id = -1
@@ -1441,6 +1444,20 @@ class DataStreamingServer:
 
     async def ws_handler(self, websocket):
         global TARGET_FRAMERATE
+        current_time = time.monotonic()
+        ip_address, _ = websocket.remote_address
+        last_time = self.last_connection_times.get(ip_address)
+        if last_time:
+            elapsed_ms = (current_time - last_time) * 1000
+            if elapsed_ms < self.RECONNECT_DEBOUNCE_MS:
+                data_logger.warning(
+                    f"Client {ip_address} reconnecting too quickly ({elapsed_ms:.1f}ms). Rejecting connection."
+                )
+                await websocket.close(code=4029, reason="Rate limited: reconnecting too quickly")
+                return
+        self.last_connection_times[ip_address] = current_time
+        if len(self.last_connection_times) > self.MAX_RECENT_CLIENTS:
+            self.last_connection_times.popitem(last=False)
         raddr = websocket.remote_address
         data_logger.info(f"Data WebSocket connected from {raddr}")
         self.clients.add(websocket)
