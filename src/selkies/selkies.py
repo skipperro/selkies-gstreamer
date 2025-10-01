@@ -1420,7 +1420,8 @@ class DataStreamingServer:
                     new_cursor_size = max(1, int(round(int(new_dpi) / 96.0 * CURSOR_SIZE)))
                     await set_cursor_size(new_cursor_size)
             display_state["scaling_dpi"] = new_dpi
-            params_changed = any(
+            dimensional_change = resolution_actually_changed or position_actually_changed
+            video_params_changed = any(
                 display_state.get(key) != old_settings.get(key)
                 for key in [
                     'encoder', 'framerate', 'h264_crf', 'h264_fullcolor', 'h264_streaming_mode',
@@ -1428,8 +1429,6 @@ class DataStreamingServer:
                     'h264_paintover_burst_frames', 'use_paint_over_quality'
                 ]
             )
-            if is_initial_settings or resolution_actually_changed or position_actually_changed or params_changed:
-                should_restart_video = True
             audio_bitrate_changed = self.app.audio_bitrate != old_settings.get('audio_bitrate')
             if audio_bitrate_changed and self.is_pcmflux_capturing:
                 audio_restart_needed = True
@@ -1437,8 +1436,32 @@ class DataStreamingServer:
             data_logger.info("Restarting audio pipeline due to settings update.")
             await self._stop_pcmflux_pipeline()
             await self._start_pcmflux_pipeline()
-        if should_restart_video:
+        if is_initial_settings or dimensional_change:
+            data_logger.info(
+                f"Initial setup or dimensional change detected for '{display_id}'. "
+                "Performing full display reconfiguration."
+            )
             await self.reconfigure_displays()
+        elif video_params_changed:
+            data_logger.info(
+                f"Video parameters changed for '{display_id}'. "
+                "Restarting its capture stream without reconfiguring displays."
+            )
+            if hasattr(self, 'display_layouts') and display_id in self.display_layouts:
+                layout = self.display_layouts[display_id]
+                await self._stop_capture_for_display(display_id)
+                await self._start_capture_for_display(
+                    display_id=display_id,
+                    width=layout['w'], height=layout['h'],
+                    x_offset=layout['x'], y_offset=layout['y']
+                )
+                await self._start_backpressure_task_if_needed(display_id)
+            else:
+                data_logger.warning(
+                    f"Cannot restart capture for '{display_id}': no layout found. "
+                    "Triggering full reconfiguration as a fallback."
+                )
+                await self.reconfigure_displays()
         if is_initial_settings and self.client_settings_received and not self.client_settings_received.is_set():
             self.client_settings_received.set()
 
