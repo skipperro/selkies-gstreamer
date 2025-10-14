@@ -3173,6 +3173,17 @@ function handleDecodedFrame(frame) {
               }
               if (obj.settings && obj.settings.is_manual_resolution_mode && obj.settings.is_manual_resolution_mode.value === true) {
                   console.log("Server settings payload confirms manual mode. Switching to manual resize handlers.");
+                  const serverWidth = obj.settings.manual_width ? parseInt(obj.settings.manual_width.value, 10) : 0;
+                  const serverHeight = obj.settings.manual_height ? parseInt(obj.settings.manual_height.value, 10) : 0;
+                  if (serverWidth > 0 && serverHeight > 0) {
+                      console.log(`Applying server-enforced manual resolution: ${serverWidth}x${serverHeight}`);
+                      window.is_manual_resolution_mode = true;
+                      manual_width = serverWidth;
+                      manual_height = serverHeight;
+                      applyManualCanvasStyle(manual_width, manual_height, scaleLocallyManual);
+                  } else {
+                      console.warn("Server dictated manual mode but did not provide valid dimensions.");
+                  }
                   disableAutoResize();
               } else {
                   console.log("Server settings payload confirms auto mode. Switching to auto resize handlers.");

@@ -1011,6 +1011,7 @@ class DataStreamingServer:
             capture_settings.frame_duration_ms = 20
             capture_settings.use_vbr = True
             capture_settings.use_silence_gate = False
+            capture_settings.debug_logging = self.cli_args.debug[0]
             self.pcmflux_settings = capture_settings
 
             data_logger.info(f"pcmflux settings: device='{self.audio_device_name}', "
@@ -1369,18 +1370,26 @@ class DataStreamingServer:
             target_w = None
             target_h = None
             server_is_manual, _ = self.cli_args.is_manual_resolution_mode
+            client_wants_manual = sanitize_value("is_manual_resolution_mode", settings.get("is_manual_resolution_mode"))
             if server_is_manual:
-                data_logger.info(f"Server is configured for manual resolution mode for display '{display_id}'.")
-                target_w = self.cli_args.manual_width
-                target_h = self.cli_args.manual_height
-            else:
-                client_wants_manual = sanitize_value("is_manual_resolution_mode", settings.get("is_manual_resolution_mode"))
-                if client_wants_manual:
-                    target_w = sanitize_value("manual_width", settings.get("manual_width"))
-                    target_h = sanitize_value("manual_height", settings.get("manual_height"))
-                elif is_initial_settings:
-                    target_w = settings.get("initialClientWidth")
-                    target_h = settings.get("initialClientHeight")
+                data_logger.info(f"Server override is active. Forcing manual resolution from server configuration for display '{display_id}'.")
+                try:
+                    w_val = self.cli_args.manual_width
+                    h_val = self.cli_args.manual_height
+                    target_w = int(w_val[0] if isinstance(w_val, (list, tuple)) else w_val)
+                    target_h = int(h_val[0] if isinstance(h_val, (list, tuple)) else h_val)
+                    data_logger.info(f"Server override: Applying manual resolution {target_w}x{target_h}.")
+                except (ValueError, TypeError, IndexError) as e:
+                    data_logger.error(f"Server override failed: Could not parse manual resolution from server config. Error: {e}. Falling back.")
+                    target_w = 1024
+                    target_h = 768
+            elif client_wants_manual:
+                data_logger.info(f"Client has requested manual resolution mode for display '{display_id}'.")
+                target_w = sanitize_value("manual_width", settings.get("manual_width"))
+                target_h = sanitize_value("manual_height", settings.get("manual_height"))
+            elif is_initial_settings:
+                target_w = settings.get("initialClientWidth")
+                target_h = settings.get("initialClientHeight")
             if not isinstance(target_w, int) or target_w <= 0:
                 target_w = old_display_width if old_display_width > 0 else 1024
             if not isinstance(target_h, int) or target_h <= 0:
@@ -2920,6 +2929,7 @@ class DataStreamingServer:
         cs.capture_y = y
         cs.target_fps = float(display_state.get('framerate', self.app.framerate))
         cs.capture_cursor = self.capture_cursor
+        cs.debug_logging = self.cli_args.debug[0]
         
         encoder = display_state.get('encoder', self.app.encoder)
         if encoder == "jpeg":
