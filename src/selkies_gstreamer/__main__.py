@@ -548,16 +548,16 @@ def main():
     # Handle errors from the signalling server
     async def on_signalling_error(e):
        if isinstance(e, WebRTCSignallingErrorNoPeer):
-           # Waiting for peer to connect, retry in 2 seconds.
-           time.sleep(2)
+           # Waiting for peer to connect, retry in 0.2 seconds.
+           time.sleep(0.2)
            await signalling.setup_call()
        else:
            logger.error("signalling error: %s", str(e))
            app.stop_pipeline()
     async def on_audio_signalling_error(e):
        if isinstance(e, WebRTCSignallingErrorNoPeer):
-           # Waiting for peer to connect, retry in 2 seconds.
-           time.sleep(2)
+           # Waiting for peer to connect, retry in 0.2 seconds.
+           time.sleep(0.2)
            await audio_signalling.setup_call()
        else:
            logger.error("signalling error: %s", str(e))
