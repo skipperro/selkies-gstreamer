@@ -6,7 +6,7 @@ SCRIPT_DIR=$(dirname $(readlink -f $0))
 
 function cleanup() {
     kill -9 $(pidof turnserver) 1>/dev/null 2>&1|| true
-    pgrep -af '.*selkies-gstreamer.*' | cut -d' ' -f1 | xargs kill -9 1>/dev/null 2>&1|| true
+    pgrep -af '.*selkies.*' | cut -d' ' -f1 | xargs kill -9 1>/dev/null 2>&1|| true
     pgrep -afi '.*xfce4.*' | cut -d' ' -f1 | xargs kill -9 1>/dev/null 2>&1|| true
     pgrep -afi '.*fluxbox.*' | cut -d' ' -f1 | xargs kill -9 1>/dev/null 2>&1|| true
     sudo /usr/bin/pulseaudio -k 1>/dev/null 2>&1  || true
@@ -67,8 +67,8 @@ esac
 ${SCRIPT_DIR}/start-turnserver.sh &
 
 # Start Selkies
-selkies-gstreamer-resize 1920x1080
-selkies-gstreamer \
+selkies-resize 1920x1080
+selkies \
     --addr="0.0.0.0" \
     --port="${WEB_PORT:-6080}" \
     --metrics_port=${SELKIES_METRICS_PORT:-19090} \

@@ -8,11 +8,16 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   # Note: When modifying this job, copy modifications to all other workflow image jobs
   core_images:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
@@ -43,6 +48,9 @@ jobs:
   component_images:
     needs: core_images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
@@ -105,6 +113,9 @@ jobs:
   example_images:
     needs: component_images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
@@ -140,6 +151,9 @@ jobs:
   upload_artifacts:
     needs: component_images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     if: ${{ github.event_name != 'pull_request' }}
     env:
       TMPDIR: /tmp
@@ -147,8 +161,8 @@ jobs:
       matrix:
         include:
         - name: conda
-          source: /opt/selkies-gstreamer-conda.tar.gz
-          target: selkies-gstreamer-portable.tar.gz
+          source: /opt/selkies-conda.tar.gz
+          target: selkies-portable.tar.gz
 
         - name: gst-web
           source: /opt/gst-web.tar.gz
@@ -156,8 +170,8 @@ jobs:
 
         - name: gstreamer
           version_suffix: -ubuntu24.04
-          source: /opt/selkies-gstreamer-latest.tar.gz
-          target: selkies-gstreamer.tar.gz
+          source: /opt/selkies-latest.tar.gz
+          target: selkies.tar.gz
 
         - name: js-interposer
           version_suffix: -ubuntu24.04
@@ -186,8 +200,8 @@ jobs:
           platforms: linux/arm64
 
         - name: py-build
-          source: /opt/pypi/dist/selkies_gstreamer-0.0.0.dev0-py3-none-any.whl
-          target: selkies_gstreamer-0.0.0.dev0-py3-none-any.whl
+          source: /opt/pypi/dist/selkies-0.0.0.dev0-py3-none-any.whl
+          target: selkies-0.0.0.dev0-py3-none-any.whl
 
     name: ${{ matrix.name }}${{ matrix.version_suffix }}${{ matrix.suffix }}_${{ matrix.platforms || 'linux/amd64' }} build artifact extraction & upload
     steps:

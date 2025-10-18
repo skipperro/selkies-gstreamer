@@ -367,15 +367,15 @@ if (audioElement === null) {
     throw 'audioElement not found on page';
 }
 
-// WebRTC entrypoint, connect to the signalling server
-/*global WebRTCDemoSignalling, WebRTCDemo*/
+// WebRTC entrypoint, connect to the signaling server
+/*global WebRTCDemoSignaling, WebRTCDemo*/
 var pathname = window.location.pathname;
 pathname = pathname.slice(0, pathname.lastIndexOf("/") + 1);
 var protocol = (location.protocol == "http:" ? "ws://" : "wss://");
-var signalling = new WebRTCDemoSignalling(new URL(protocol + window.location.host + pathname + app.appName + "/signalling/"));
-var webrtc = new WebRTCDemo(signalling, videoElement, 1);
-var audio_signalling = new WebRTCDemoSignalling(new URL(protocol + window.location.host + pathname + app.appName + "/signalling/"));
-var audio_webrtc = new WebRTCDemo(audio_signalling, audioElement, 3);
+var signaling = new WebRTCDemoSignaling(new URL(protocol + window.location.host + pathname + app.appName + "/signaling/"));
+var webrtc = new WebRTCDemo(signaling, videoElement, 1);
+var audio_signaling = new WebRTCDemoSignaling(new URL(protocol + window.location.host + pathname + app.appName + "/signaling/"));
+var audio_webrtc = new WebRTCDemo(audio_signaling, audioElement, 3);
 
 // Function to add timestamp to logs.
 var applyTimestamp = (msg) => {
@@ -384,39 +384,39 @@ var applyTimestamp = (msg) => {
     return "[" + ts + "]" + " " + msg;
 }
 
-// Send signalling status and error messages to logs.
-signalling.onstatus = (message) => {
+// Send signaling status and error messages to logs.
+signaling.onstatus = (message) => {
     app.loadingText = message;
-    app.logEntries.push(applyTimestamp("[signalling] " + message));
+    app.logEntries.push(applyTimestamp("[signaling] " + message));
 };
-signalling.onerror = (message) => { app.logEntries.push(applyTimestamp("[signalling] [ERROR] " + message)) };
+signaling.onerror = (message) => { app.logEntries.push(applyTimestamp("[signaling] [ERROR] " + message)) };
 
-signalling.ondisconnect = () => {
+signaling.ondisconnect = () => {
     var checkconnect = app.status == checkconnect;
     // if (app.status !== "connected") return;
-    console.log("signalling disconnected");
+    console.log("signaling disconnected");
     app.status = 'connecting';
     videoElement.style.cursor = "auto";
     webrtc.reset();
     app.status = 'checkconnect';
-    if (!checkconnect) audio_signalling.disconnect();
+    if (!checkconnect) audio_signaling.disconnect();
 }
 
-audio_signalling.onstatus = (message) => {
+audio_signaling.onstatus = (message) => {
     app.loadingText = message;
-    app.logEntries.push(applyTimestamp("[audio signalling] " + message));
+    app.logEntries.push(applyTimestamp("[audio signaling] " + message));
 };
-audio_signalling.onerror = (message) => { app.logEntries.push(applyTimestamp("[audio signalling] [ERROR] " + message)) };
+audio_signaling.onerror = (message) => { app.logEntries.push(applyTimestamp("[audio signaling] [ERROR] " + message)) };
 
-audio_signalling.ondisconnect = () => {
+audio_signaling.ondisconnect = () => {
     var checkconnect = app.status == checkconnect;
     // if (app.status !== "connected") return;
-    console.log("audio signalling disconnected");
+    console.log("audio signaling disconnected");
     app.status = 'connecting';
     videoElement.style.cursor = "auto";
     audio_webrtc.reset();
     app.status = 'checkconnect';
-    if (!checkconnect) signalling.disconnect();
+    if (!checkconnect) signaling.disconnect();
 }
 
 // Send webrtc status and error messages to logs.
@@ -426,8 +426,8 @@ audio_webrtc.onstatus = (message) => { app.logEntries.push(applyTimestamp("[audi
 audio_webrtc.onerror = (message) => { app.logEntries.push(applyTimestamp("[audio webrtc] [ERROR] " + message)) };
 
 if (app.debug) {
-    signalling.ondebug = (message) => { app.debugEntries.push("[signalling] " + message); };
-    audio_signalling.ondebug = (message) => { app.debugEntries.push("[audio signalling] " + message); };
+    signaling.ondebug = (message) => { app.debugEntries.push("[signaling] " + message); };
+    audio_signaling.ondebug = (message) => { app.debugEntries.push("[audio signaling] " + message); };
     webrtc.ondebug = (message) => { app.debugEntries.push(applyTimestamp("[webrtc] " + message)) };
     audio_webrtc.ondebug = (message) => { app.debugEntries.push(applyTimestamp("[audio webrtc] " + message)) };
 }
@@ -686,8 +686,8 @@ webrtc.onsystemaction = (action) => {
     webrtc._setStatus("Executing system action: " + action);
     if (action === 'reload') {
         setTimeout(() => {
-            // trigger webrtc.reset() by disconnecting from the signalling server.
-            signalling.disconnect();
+            // trigger webrtc.reset() by disconnecting from the signaling server.
+            signaling.disconnect();
         }, 700);
     } else if (action.startsWith('framerate')) {
         // Server received framerate setting.

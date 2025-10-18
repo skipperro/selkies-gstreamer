@@ -11,7 +11,7 @@ FROM quay.io/condaforge/miniforge3:latest
 # Version for Conda
 ARG PKG_VERSION=0.0.0
 # Version for prebuilt Python package
-ARG PYPI_PACKAGE=selkies_gstreamer
+ARG PYPI_PACKAGE=selkies
 ARG PACKAGE_VERSION=0.0.0.dev0
 
 # Use BUILDAH_FORMAT=docker in buildah
@@ -30,6 +30,6 @@ WORKDIR /opt
 RUN . /opt/conda/bin/activate && \
     conda install -c conda-forge -y conda-build conda-pack && \
     SELKIES_VERSION="${PKG_VERSION}" conda-build -c conda-forge -c nvidia "${SELKIES_BUILD}" && \
-    conda create -n selkies-gstreamer -y --use-local -c conda-forge -c nvidia selkies-gstreamer && \
-    conda-pack -f -n selkies-gstreamer --arcroot selkies-gstreamer -o /opt/selkies-gstreamer-conda.tar.gz --format tar.gz --compress-level 7 -j -1 && \
+    conda create -n selkies -y --use-local -c conda-forge -c nvidia selkies && \
+    conda-pack -f -n selkies --arcroot selkies -o /opt/selkies-conda.tar.gz --format tar.gz --compress-level 7 -j -1 && \
     conda-build purge-all && conda clean --all -f -y

@@ -26,4 +26,4 @@ Environment variables for command-line options are available as capitalizations 
 
 ## CI/CD Build
 
-We use Docker® containers for building every commit. The root directory [`Dockerfile`](https://github.com/selkies-project/selkies-gstreamer/tree/main/Dockerfile) and Dockerfiles within the [`addons`](https://github.com/selkies-project/selkies-gstreamer/tree/main/addons) directory provide directions for building each component, so that you may replicate the procedures in your own setup even without Docker® by copying the commands to your own shell.
+We use Docker® containers for building every commit. The root directory [`Dockerfile`](https://github.com/selkies-project/selkies/tree/main/Dockerfile) and Dockerfiles within the [`addons`](https://github.com/selkies-project/selkies/tree/main/addons) directory provide directions for building each component, so that you may replicate the procedures in your own setup even without Docker® by copying the commands to your own shell.

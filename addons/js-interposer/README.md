@@ -2,7 +2,7 @@
 
 An `LD_PRELOAD` library for interposing application calls to open a Linux joystick/gamepad device and pass data through a unix domain socket.
 
-This allows the Selkies-GStreamer WebRTC interface to pass gamepad events over the WebRTC `RTCDataChannel`, and translate them to joystick/gamepad events to emulate devices without requiring access to /dev/input/js0 or depending on kernel modules including `uinput`.
+This allows the Selkies remote desktop application interface to pass gamepad events over the WebRTC `RTCDataChannel` or WebSockets, and translate them to joystick/gamepad events to emulate devices without requiring access to /dev/input/js0 or depending on kernel modules including `uinput`.
 
 ## Compiling
 
@@ -26,7 +26,7 @@ sudo touch /dev/input/js0 /dev/input/js1 /dev/input/js2 /dev/input/js3
 sudo chmod 777 /dev/input/js*
 ```
 
-3. Use the below command before running your target application as well as Selkies-GStreamer for the interposer library to intercept joystick/gamepad events (the single quotes are required in the first line).
+3. Use the below command before running your target application as well as Selkies for the interposer library to intercept joystick/gamepad events (the single quotes are required in the first line).
 
 ```bash
 export SELKIES_INTERPOSER='/usr/$LIB/selkies_joystick_interposer.so'

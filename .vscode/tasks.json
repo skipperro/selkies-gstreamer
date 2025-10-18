@@ -24,11 +24,11 @@
         {
             "label": "[install] re-install python package",
             "type": "shell",
-            "command": "sudo PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --force-reinstall --upgrade ${workspaceFolder}/dist/selkies_gstreamer-0.0.1-py3-none-any.whl",
+            "command": "sudo PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --force-reinstall --upgrade ${workspaceFolder}/dist/selkies-0.0.1-py3-none-any.whl",
             "problemMatcher": []
         },
         {
-            "label": "[run] Start selkies-gstreamer",
+            "label": "[run] Start Selkies",
             "type": "shell",
             "command": "${workspaceFolder}/.devcontainer/features/desktop-selkies/src/start-selkies.sh",
             "problemMatcher": [],
@@ -39,14 +39,14 @@
             }
         },
         {
-            "label": "[run] re-build, re-install and run selkies-gstreamer",
+            "label": "[run] re-build, re-install and run Selkies",
             "problemMatcher": [],
             "dependsOrder": "sequence",
             "dependsOn": [
                 "[build] build joystick interposer library",
                 "[build] build python package",
                 "[install] re-install python package",
-                "[run] Start selkies-gstreamer"
+                "[run] Start Selkies"
             ]
         },
         {

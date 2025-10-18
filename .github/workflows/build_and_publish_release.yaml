@@ -37,6 +37,9 @@ jobs:
   core_images:
     needs: get_semver
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
@@ -71,6 +74,9 @@ jobs:
     - get_semver
     - core_images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
@@ -140,6 +146,9 @@ jobs:
     - core_images
     - component_images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
@@ -206,6 +215,9 @@ jobs:
     - component_images
     - example_images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     if: ${{ github.event_name != 'pull_request' }}
     env:
       TMPDIR: /tmp
@@ -213,16 +225,16 @@ jobs:
       matrix:
         include:
         - name: conda
-          source: /opt/selkies-gstreamer-conda.tar.gz
-          target: selkies-gstreamer-portable-${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}_amd64.tar.gz
+          source: /opt/selkies-conda.tar.gz
+          target: selkies-portable-${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}_amd64.tar.gz
 
         - name: gst-web
           source: /opt/gst-web.tar.gz
-          target: selkies-gstreamer-web_${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}.tar.gz
+          target: selkies-web_${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}.tar.gz
 
         - name: gstreamer
           version_suffix: -ubuntu24.04
-          source: /opt/selkies-gstreamer-latest.tar.gz
+          source: /opt/selkies-latest.tar.gz
           target: gstreamer-selkies_gpl_${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}_ubuntu24.04_amd64.tar.gz
 
         - name: js-interposer
@@ -252,8 +264,8 @@ jobs:
           platforms: linux/arm64
 
         - name: py-build
-          source: /opt/pypi/dist/selkies_gstreamer-${{ needs.get_semver.outputs.semver }}-py3-none-any.whl
-          target: selkies_gstreamer-${{ needs.get_semver.outputs.semver }}-py3-none-any.whl
+          source: /opt/pypi/dist/selkies-${{ needs.get_semver.outputs.semver }}-py3-none-any.whl
+          target: selkies-${{ needs.get_semver.outputs.semver }}-py3-none-any.whl
 
     name: ${{ matrix.name }}${{ matrix.version_suffix }}${{ matrix.suffix }}_${{ matrix.platforms || 'linux/amd64' }} release artifact extraction & upload
     steps:
@@ -299,6 +311,8 @@ jobs:
     - example_images
     - upload_artifacts
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     if: ${{ github.event_name != 'pull_request' }}
     env:
       TMPDIR: /tmp

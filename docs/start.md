@@ -19,8 +19,8 @@ In the future, this host dependency requirement may be completely eliminated if 
 **2. Download and unpack the latest stable release of the Selkies-GStreamer portable distribution inside a directory of your choice:**
 
 ```bash
-export SELKIES_VERSION="$(curl -fsSL "https://api.github.com/repos/selkies-project/selkies-gstreamer/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g')"
-cd ~ && curl -fsSL "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/selkies-gstreamer-portable-v${SELKIES_VERSION}_amd64.tar.gz" | tar -xzf -
+export SELKIES_VERSION="$(curl -fsSL "https://api.github.com/repos/selkies-project/selkies/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g')"
+cd ~ && curl -fsSL "https://github.com/selkies-project/selkies/releases/download/v${SELKIES_VERSION}/selkies-gstreamer-portable-v${SELKIES_VERSION}_amd64.tar.gz" | tar -xzf -
 ```
 
 **3. Set your `DISPLAY` and `PULSE_SERVER` environment variables for the X.Org X11 display server or PulseAudio audio server.**
@@ -78,7 +78,7 @@ The [`selkies-vdi`](https://github.com/selkies-project/selkies-vdi) or [`selkies
 
 ## Minimal Container
 
-The [Example Container](https://github.com/selkies-project/selkies-gstreamer/tree/main/addons/example) is the reference minimal-functionality container developers can base upon, or test Selkies-GStreamer quickly. The bare minimum Xfce4 desktop environment is installed together with Firefox, as well as an embedded TURN server inside the container for quick WebRTC firewall traversal.
+The [Example Container](https://github.com/selkies-project/selkies/tree/main/addons/example) is the reference minimal-functionality container developers can base upon, or test Selkies-GStreamer quickly. The bare minimum Xfce4 desktop environment is installed together with Firefox, as well as an embedded TURN server inside the container for quick WebRTC firewall traversal.
 
 Instructions are available in the [Example Container](component.md#example-container) section.
 
@@ -96,15 +96,15 @@ This distribution is slightly more complicated to deploy, yet is the recommended
 
 Selkies-GStreamer has a highly modularized architecture, composed of multiple components.
 
-Three mandatory components are required to run Selkies-GStreamer: the [standalone or distribution-provided build of GStreamer](https://github.com/selkies-project/selkies-gstreamer/tree/main/addons/gstreamer) with the most recent version (currently ≥ 1.22), the [Python component wheel package](https://github.com/selkies-project/selkies-gstreamer/tree/main/src/selkies_gstreamer) including the signaling server, and the [HTML5 web interface components](https://github.com/selkies-project/selkies-gstreamer/tree/main/addons/gst-web). Currently, Ubuntu 24.04 (Mint 22), 22.04 (Mint 21), 20.04 (Mint 20) are supported, but other operating systems should also work if using your own GStreamer build of the newest version (contributions for build workflows of more operating systems are welcome).
+Three mandatory components are required to run Selkies-GStreamer: the [standalone or distribution-provided build of GStreamer](https://github.com/selkies-project/selkies/tree/main/addons/gstreamer) with the most recent version (currently ≥ 1.22), the [Python component wheel package](https://github.com/selkies-project/selkies/tree/main/src/selkies) including the signaling server, and the [HTML5 web interface components](https://github.com/selkies-project/selkies/tree/main/addons/gst-web). Currently, Ubuntu 24.04 (Mint 22), 22.04 (Mint 21), 20.04 (Mint 20) are supported, but other operating systems should also work if using your own GStreamer build of the newest version (contributions for build workflows of more operating systems are welcome).
 
-All three of the components are built and packaged every [Release](https://github.com/selkies-project/selkies-gstreamer/releases). In addition, every latest commit gets built and is made available in container forms [`ghcr.io/selkies-project/selkies-gstreamer/gstreamer`](https://github.com/selkies-project/selkies-gstreamer/pkgs/container/selkies-gstreamer%2Fgstreamer), [`ghcr.io/selkies-project/selkies-gstreamer/py-build`](https://github.com/selkies-project/selkies-gstreamer/pkgs/container/selkies-gstreamer%2Fpy-build), and [`ghcr.io/selkies-project/selkies-gstreamer/gst-web`](https://github.com/selkies-project/selkies-gstreamer/pkgs/container/selkies-gstreamer%2Fgst-web).
+All three of the components are built and packaged every [Release](https://github.com/selkies-project/selkies/releases). In addition, every latest commit gets built and is made available in container forms [`ghcr.io/selkies-project/selkies-gstreamer/gstreamer`](https://github.com/selkies-project/selkies/pkgs/container/selkies-gstreamer%2Fgstreamer), [`ghcr.io/selkies-project/selkies-gstreamer/py-build`](https://github.com/selkies-project/selkies/pkgs/container/selkies-gstreamer%2Fpy-build), and [`ghcr.io/selkies-project/selkies-gstreamer/gst-web`](https://github.com/selkies-project/selkies/pkgs/container/selkies-gstreamer%2Fgst-web).
 
 For more information, check the [Components](component.md#components) section.
 
 The [All-In-One Desktop Containers](#desktop-container) support unprivileged self-hosted Kubernetes clusters and Docker®/Podman.
 
-Example Google Compute Engine/Google Kubernetes Engine deployment configurations of all components are available in the [`infra/gce`](https://github.com/selkies-project/selkies-gstreamer/tree/main/infra/gce) and [`infra/gke`](https://github.com/selkies-project/selkies-gstreamer/tree/main/infra/gke) directories, but may be deprecated in favor of vendor-agnostic Kubernetes configurations.
+Example Google Compute Engine/Google Kubernetes Engine deployment configurations of all components are available in the [`infra/gce`](https://github.com/selkies-project/selkies/tree/main/infra/gce) and [`infra/gke`](https://github.com/selkies-project/selkies/tree/main/infra/gke) directories, but may be deprecated in favor of vendor-agnostic Kubernetes configurations.
 
 ### Install the packaged version on self-hosted standalone machines, cloud instances, or virtual machines
 
@@ -124,14 +124,14 @@ Install additional dependencies if using Ubuntu ≥ 22.04 (Mint 21) or a higher 
 sudo apt-get update && sudo apt-get install --no-install-recommends -y xcvt libopenh264-dev svt-av1 aom-tools
 ```
 
-If using supported NVIDIA GPUs, install NVENC (bundled with the GPU driver) and NVRTC (bundled with pre-built GStreamer component, check the [GStreamer Dockerfile](https://github.com/selkies-project/selkies-gstreamer/tree/main/addons/gstreamer/Dockerfile) for manual installation instructions).
+If using supported NVIDIA GPUs, install NVENC (bundled with the GPU driver) and NVRTC (bundled with pre-built GStreamer component, check the [GStreamer Dockerfile](https://github.com/selkies-project/selkies/tree/main/addons/gstreamer/Dockerfile) for manual installation instructions).
 
 If using AMD or Intel GPUs, install its graphics and VA-API drivers, as well as `libva2`. The bundled VA-API driver in the AMDGPU Pro graphics driver is recommended for AMD GPUs and the `i965-va-driver-shaders` or `intel-media-va-driver-non-free` packages are recommended depending on your Intel GPU generation. Optionally install `vainfo`, `intel-gpu-tools`, `radeontop`, or `nvtop` for GPU monitoring.
 
 Use the following commands to retrieve the latest `SELKIES_VERSION` release, the current Ubuntu `DISTRIB_RELEASE`, and the current architecture `ARCH` in the following steps:
 
 ```bash
-export SELKIES_VERSION="$(curl -fsSL "https://api.github.com/repos/selkies-project/selkies-gstreamer/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g')"
+export SELKIES_VERSION="$(curl -fsSL "https://api.github.com/repos/selkies-project/selkies/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g')"
 export DISTRIB_RELEASE="$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '\"')"
 export ARCH="$(dpkg --print-architecture)"
 ```
@@ -141,17 +141,17 @@ export ARCH="$(dpkg --print-architecture)"
 Read [GStreamer](component.md#gstreamer) for more details of this step and procedures for installing from the latest commit in the `main` branch.
 
 ```bash
-cd /opt && curl -fsSL "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/gstreamer-selkies_gpl_v${SELKIES_VERSION}_ubuntu${DISTRIB_RELEASE}_amd64.tar.gz" | sudo tar -xzf -
+cd /opt && curl -fsSL "https://github.com/selkies-project/selkies/releases/download/v${SELKIES_VERSION}/gstreamer-selkies_gpl_v${SELKIES_VERSION}_ubuntu${DISTRIB_RELEASE}_amd64.tar.gz" | sudo tar -xzf -
 ```
 
-This will install the GStreamer components to the default directory of `/opt/gstreamer`. If you are unpacking to a different directory, make sure to set the the environment variable `GSTREAMER_PATH` to the directory. GStreamer builds for `aarch64` are not provided but can be built following procedures in the [GStreamer Dockerfile](https://github.com/selkies-project/selkies-gstreamer/tree/main/addons/gstreamer/Dockerfile) or [Conda Dockerfile](https://github.com/selkies-project/selkies-gstreamer/tree/main/addons/conda/Dockerfile).
+This will install the GStreamer components to the default directory of `/opt/gstreamer`. If you are unpacking to a different directory, make sure to set the the environment variable `GSTREAMER_PATH` to the directory. GStreamer builds for `aarch64` are not provided but can be built following procedures in the [GStreamer Dockerfile](https://github.com/selkies-project/selkies/tree/main/addons/gstreamer/Dockerfile) or [Conda Dockerfile](https://github.com/selkies-project/selkies/tree/main/addons/conda/Dockerfile).
 
 **3. Install the Selkies-GStreamer Python components** (this component is pure Python and any operating system is compatible, fill in `SELKIES_VERSION`)**:**
 
 Read [Python Application](component.md#python-application) for more details of this step and procedures for installing from the latest commit in the `main` branch.
 
 ```bash
-cd /tmp && curl -O -fsSL "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir --force-reinstall "selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && rm -f "selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl"
+cd /tmp && curl -O -fsSL "https://github.com/selkies-project/selkies/releases/download/v${SELKIES_VERSION}/selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir --force-reinstall "selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && rm -f "selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl"
 ```
 
 **4. Unpack the Selkies-GStreamer HTML5 components:**
@@ -159,7 +159,7 @@ cd /tmp && curl -O -fsSL "https://github.com/selkies-project/selkies-gstreamer/r
 Read [Web Application](component.md#web-application) for more details of this step and procedures for installing from the latest commit in the `main` branch.
 
 ```bash
-cd /opt && curl -fsSL "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/selkies-gstreamer-web_v${SELKIES_VERSION}.tar.gz" | sudo tar -xzf -
+cd /opt && curl -fsSL "https://github.com/selkies-project/selkies/releases/download/v${SELKIES_VERSION}/selkies-gstreamer-web_v${SELKIES_VERSION}.tar.gz" | sudo tar -xzf -
 ```
 
 This will install the HTML5 components to the default directory of `/opt/gst-web`. If you are unpacking to a different directory, make sure to set the directory to the environment variable `SELKIES_WEB_ROOT` or add the command-line option `--web_root=` to Selkies-GStreamer. Note that you should change `manifest.json` and `cacheName` in `sw.js` to rebrand the web interface to a different name.
@@ -169,7 +169,7 @@ This will install the HTML5 components to the default directory of `/opt/gst-web
 Read [Joystick Interposer](component.md#joystick-interposer) for more details of this step and procedures for installing from the latest commit in the `main` branch.
 
 ```bash
-cd /tmp && curl -o selkies-js-interposer.deb -fsSL "https://github.com/selkies-project/selkies-gstreamer/releases/download/v${SELKIES_VERSION}/selkies-js-interposer_v${SELKIES_VERSION}_ubuntu${DISTRIB_RELEASE}_${ARCH}.deb" && sudo apt-get update && sudo apt-get install --no-install-recommends -y ./selkies-js-interposer.deb && rm -f selkies-js-interposer.deb
+cd /tmp && curl -o selkies-js-interposer.deb -fsSL "https://github.com/selkies-project/selkies/releases/download/v${SELKIES_VERSION}/selkies-js-interposer_v${SELKIES_VERSION}_ubuntu${DISTRIB_RELEASE}_${ARCH}.deb" && sudo apt-get update && sudo apt-get install --no-install-recommends -y ./selkies-js-interposer.deb && rm -f selkies-js-interposer.deb
 ```
 
 Alternatively, users may directly place the Joystick Interposer libraries from the `selkies-js-interposer_v${SELKIES_VERSION}_ubuntu${DISTRIB_RELEASE}_${ARCH}.tar.gz` tarball into the library path, for instance into `/usr/lib/i386-linux-gnu` and `/usr/lib/i386-linux-gnu`. More information can be found in [Joystick Interposer](component.md#joystick-interposer).
@@ -246,7 +246,7 @@ Please read [**WebRTC and Firewall Issues**](firewall.md).
 
 ### Install the latest build on self-hosted standalone machines, cloud instances, or virtual machines
 
-**Build artifacts for every `main` branch commit are available as an after logging into GitHub in [Actions](https://github.com/selkies-project/selkies-gstreamer/actions), and you do not need Docker® to download them.**
+**Build artifacts for every `main` branch commit are available as an after logging into GitHub in [Actions](https://github.com/selkies-project/selkies/actions), and you do not need Docker® to download them.**
 
 Otherwise, Docker®/Podman (or any equivalent) may be used if you want to use builds from the latest commit. Refer to [Components](component.md) for more information.
 
