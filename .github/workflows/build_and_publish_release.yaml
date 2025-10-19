@@ -80,13 +80,13 @@ jobs:
     strategy:
       matrix:
         include:
-        - name: conda
-          build_args: |
-            PACKAGE_VERSION=${{ needs.get_semver.outputs.semver }}
-            PKG_VERSION=${{ needs.get_semver.outputs.semver }}
-            PY_BUILD_IMAGE=ghcr.io/${{ github.repository }}/py-build:${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}
-            WEB_IMAGE=ghcr.io/${{ github.repository }}/gst-web:${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}
-          context: addons/conda
+        #- name: conda
+        #  build_args: |
+        #    PACKAGE_VERSION=${{ needs.get_semver.outputs.semver }}
+        #    PKG_VERSION=${{ needs.get_semver.outputs.semver }}
+        #    PY_BUILD_IMAGE=ghcr.io/${{ github.repository }}/py-build:${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}
+        #    WEB_IMAGE=ghcr.io/${{ github.repository }}/gst-web:${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}
+        #  context: addons/conda
 
         - name: coturn
           context: addons/coturn
@@ -224,9 +224,9 @@ jobs:
     strategy:
       matrix:
         include:
-        - name: conda
-          source: /opt/selkies-conda.tar.gz
-          target: selkies-portable-${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}_amd64.tar.gz
+        #- name: conda
+        #  source: /opt/selkies-conda.tar.gz
+        #  target: selkies-portable-${{ github.event_name != 'pull_request' && github.event.inputs.tag || 'main' }}_amd64.tar.gz
 
         - name: gst-web
           source: /opt/gst-web.tar.gz
