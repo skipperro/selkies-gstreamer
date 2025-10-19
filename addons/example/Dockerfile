@@ -61,7 +61,7 @@ USER 1000
 # Use BUILDAH_FORMAT=docker in buildah
 SHELL ["/usr/bin/fakeroot", "--", "/bin/sh", "-c"]
 
-# Install selkies system dependencies
+# Install Selkies system dependencies
 RUN apt-get update && apt-get install --no-install-recommends -y \
         # System dependencies
         build-essential \
@@ -253,7 +253,7 @@ COPY --chown=1000:1000 --from=selkies-js-interposer /opt/*.deb /opt/selkies-js-i
 RUN apt-get update && apt-get install --no-install-recommends -y /opt/selkies-js-interposer.deb && rm -f /opt/selkies-js-interposer.deb && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
-# Install selkies Python application
+# Install Selkies Python application
 ARG PYPI_PACKAGE=selkies
 ARG PACKAGE_VERSION=0.0.0.dev0
 ARG PIP_BREAK_SYSTEM_PACKAGES=1
@@ -295,7 +295,7 @@ turnserver \
 # Configure bashrc to show /etc/motd and /etc/issue
 RUN echo "[ ! -z \"\$TERM\" -a -r /etc/motd ] && echo \"\$(grep '^PRETTY_NAME=' /etc/os-release | cut -d= -f2 | tr -d '\\\"')\" && cat /etc/motd" >> /etc/bash.bashrc && \
     echo "==============================================\n\
-= selkies Example Docker Container =\n\
+= Selkies Example Docker Container =\n\
 ==============================================\n\
 " > /etc/motd
 

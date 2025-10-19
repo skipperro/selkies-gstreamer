@@ -12,7 +12,6 @@ const simpleInterpolate = (str, variables) => {
 // --- English Translations (Default) ---
 const en = {
     selkiesLogoAlt: "Selkies Logo",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Toggle Theme",
     fullscreenTitle: "Enter Fullscreen",
     gamingModeTitle: "Gaming Mode",
@@ -93,6 +92,8 @@ const en = {
             useNativeCursorStylesLabel: "Use CSS cursors",
             useNativeCursorStylesEnableTitle: "Use CSS cursor rendering (Replace system cursors)",
             useNativeCursorStylesDisableTitle: "Use canvas cursor rendering (Paint to canvas)",
+            addScreenTitle: "Add a second screen",
+            addScreenButton: "Add Screen +",
         },
         stats: {
             title: "Stats",
@@ -201,7 +202,6 @@ const en = {
 // --- Spanish Translations (Complete) ---
 const es = {
     selkiesLogoAlt: "Logo de Selkies",
-    selkiesTitle: "Selkies", // Proper noun
     toggleThemeTitle: "Cambiar Tema",
     fullscreenTitle: "Entrar en Pantalla Completa",
     gamingModeTitle: "Modo Juego",
@@ -282,6 +282,8 @@ const es = {
              useNativeCursorStylesLabel: "Usar cursores CSS",
              useNativeCursorStylesEnableTitle: "Usar renderizado de cursor CSS (Reemplaza los cursores del sistema)",
              useNativeCursorStylesDisableTitle: "Usar renderizado de cursor en lienzo (Pintar en el lienzo)",
+             addScreenTitle: "Añadir una segunda pantalla",
+             addScreenButton: "Añadir Pantalla +",
         },
         stats: {
              title: "Estadísticas",
@@ -390,7 +392,6 @@ const es = {
 // --- Chinese (Simplified) Translations ---
 const zh = {
     selkiesLogoAlt: "Selkies 徽标",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "切换主题",
     fullscreenTitle: "进入全屏",
     gamingModeTitle: "游戏模式",
@@ -471,6 +472,8 @@ const zh = {
             useNativeCursorStylesLabel: "使用 CSS 光标",
             useNativeCursorStylesEnableTitle: "使用 CSS 光标渲染 (替换系统光标)",
             useNativeCursorStylesDisableTitle: "使用画布光标渲染 (绘制到画布)",
+            addScreenTitle: "添加第二个屏幕",
+            addScreenButton: "添加屏幕 +",
         },
         stats: {
             title: "统计信息",
@@ -579,7 +582,6 @@ const zh = {
 // --- Hindi Translations ---
 const hi = {
     selkiesLogoAlt: "सेल्कीस लोगो",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "थीम बदलें",
     fullscreenTitle: "फुलस्क्रीन दर्ज करें",
     gamingModeTitle: "गेमिंग मोड",
@@ -660,6 +662,8 @@ const hi = {
             useNativeCursorStylesLabel: "CSS कर्सर का उपयोग करें",
             useNativeCursorStylesEnableTitle: "CSS कर्सर रेंडरिंग का उपयोग करें (सिस्टम कर्सर बदलें)",
             useNativeCursorStylesDisableTitle: "कैनवास कर्सर रेंडरिंग का उपयोग करें (कैनवास पर पेंट करें)",
+            addScreenTitle: "एक दूसरी स्क्रीन जोड़ें",
+            addScreenButton: "स्क्रीन जोड़ें +",
         },
         stats: {
             title: "आँकड़े",
@@ -768,7 +772,6 @@ const hi = {
 // --- Portuguese Translations ---
 const pt = {
     selkiesLogoAlt: "Logo Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Alternar Tema",
     fullscreenTitle: "Entrar em Tela Cheia",
     gamingModeTitle: "Modo de Jogo",
@@ -849,6 +852,8 @@ const pt = {
             useNativeCursorStylesLabel: "Usar cursores CSS",
             useNativeCursorStylesEnableTitle: "Usar renderização de cursor CSS (Substituir cursores do sistema)",
             useNativeCursorStylesDisableTitle: "Usar renderização de cursor em canvas (Pintar no canvas)",
+            addScreenTitle: "Adicionar uma segunda tela",
+            addScreenButton: "Adicionar Tela +",
         },
         stats: {
             title: "Estatísticas",
@@ -957,7 +962,6 @@ const pt = {
 // --- French Translations ---
 const fr = {
     selkiesLogoAlt: "Logo Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Changer de thème",
     fullscreenTitle: "Passer en plein écran",
     gamingModeTitle: "Mode Jeu",
@@ -1038,6 +1042,8 @@ const fr = {
             useNativeCursorStylesLabel: "Utiliser les curseurs CSS",
             useNativeCursorStylesEnableTitle: "Utiliser le rendu des curseurs CSS (Remplacer les curseurs système)",
             useNativeCursorStylesDisableTitle: "Utiliser le rendu des curseurs sur canevas (Dessiner sur le canevas)",
+            addScreenTitle: "Ajouter un deuxième écran",
+            addScreenButton: "Ajouter un écran +",
         },
         stats: {
             title: "Statistiques",
@@ -1146,7 +1152,6 @@ const fr = {
 // --- Russian Translations ---
 const ru = {
     selkiesLogoAlt: "Логотип Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Переключить тему",
     fullscreenTitle: "Войти в полноэкранный режим",
     gamingModeTitle: "Игровой режим",
@@ -1227,6 +1232,8 @@ const ru = {
             useNativeCursorStylesLabel: "Использовать курсоры CSS",
             useNativeCursorStylesEnableTitle: "Использовать рендеринг курсора CSS (Заменяет системные курсоры)",
             useNativeCursorStylesDisableTitle: "Использовать отрисовку курсора на холсте (Рисовать на холсте)",
+            addScreenTitle: "Добавить второй экран",
+            addScreenButton: "Добавить экран +",
         },
         stats: {
             title: "Статистика",
@@ -1335,7 +1342,6 @@ const ru = {
 // --- German Translations ---
 const de = {
     selkiesLogoAlt: "Selkies Logo",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Theme wechseln",
     fullscreenTitle: "Vollbildmodus aktivieren",
     gamingModeTitle: "Gaming-Modus",
@@ -1416,6 +1422,8 @@ const de = {
             useNativeCursorStylesLabel: "CSS-Cursor verwenden",
             useNativeCursorStylesEnableTitle: "CSS-Cursor-Rendering verwenden (Systemcursor ersetzen)",
             useNativeCursorStylesDisableTitle: "Canvas-Cursor-Rendering verwenden (Auf Canvas zeichnen)",
+            addScreenTitle: "Einen zweiten Bildschirm hinzufügen",
+            addScreenButton: "Bildschirm hinzufügen +",
         },
         stats: {
             title: "Statistiken",
@@ -1524,7 +1532,6 @@ const de = {
 // --- Turkish Translations ---
 const tr = {
     selkiesLogoAlt: "Selkies Logosu",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Temayı Değiştir",
     fullscreenTitle: "Tam Ekrana Gir",
     gamingModeTitle: "Oyun Modu",
@@ -1605,6 +1612,8 @@ const tr = {
             useNativeCursorStylesLabel: "CSS imleçlerini kullan",
             useNativeCursorStylesEnableTitle: "CSS imleç işlemeyi kullan (Sistem imleçlerini değiştir)",
             useNativeCursorStylesDisableTitle: "Kanvas imleç işlemeyi kullan (Kanvasa çiz)",
+            addScreenTitle: "İkinci bir ekran ekle",
+            addScreenButton: "Ekran Ekle +",
         },
         stats: {
             title: "İstatistikler",
@@ -1713,7 +1722,6 @@ const tr = {
 // --- Italian Translations ---
 const it = {
     selkiesLogoAlt: "Logo Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Cambia Tema",
     fullscreenTitle: "Entra in Schermo Intero",
     gamingModeTitle: "Modalità Gioco",
@@ -1794,6 +1802,8 @@ const it = {
             useNativeCursorStylesLabel: "Usa cursori CSS",
             useNativeCursorStylesEnableTitle: "Usa rendering del cursore CSS (Sostituisce i cursori di sistema)",
             useNativeCursorStylesDisableTitle: "Usa rendering del cursore su canvas (Disegna su canvas)",
+            addScreenTitle: "Aggiungi un secondo schermo",
+            addScreenButton: "Aggiungi Schermo +",
         },
         stats: {
             title: "Statistiche",
@@ -1902,7 +1912,6 @@ const it = {
 // --- Dutch Translations ---
 const nl = {
     selkiesLogoAlt: "Selkies Logo",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Thema wisselen",
     fullscreenTitle: "Volledig scherm openen",
     gamingModeTitle: "Gaming Modus",
@@ -1983,6 +1992,8 @@ const nl = {
             useNativeCursorStylesLabel: "CSS-cursors gebruiken",
             useNativeCursorStylesEnableTitle: "CSS-cursorweergave gebruiken (Vervangt systeemcursors)",
             useNativeCursorStylesDisableTitle: "Canvas-cursorweergave gebruiken (Tekenen op canvas)",
+            addScreenTitle: "Een tweede scherm toevoegen",
+            addScreenButton: "Scherm toevoegen +",
         },
         stats: {
             title: "Statistieken",
@@ -2091,7 +2102,6 @@ const nl = {
 // --- Arabic Translations ---
 const ar = {
     selkiesLogoAlt: "شعار Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "تبديل السمة",
     fullscreenTitle: "الدخول في وضع ملء الشاشة",
     gamingModeTitle: "وضع الألعاب",
@@ -2172,6 +2182,8 @@ const ar = {
             useNativeCursorStylesLabel: "استخدام مؤشرات CSS",
             useNativeCursorStylesEnableTitle: "استخدام عرض مؤشر CSS (استبدال مؤشرات النظام)",
             useNativeCursorStylesDisableTitle: "استخدام عرض مؤشر اللوحة (الرسم على اللوحة)",
+            addScreenTitle: "إضافة شاشة ثانية",
+            addScreenButton: "إضافة شاشة +",
         },
         stats: {
             title: "الإحصائيات",
@@ -2280,7 +2292,6 @@ const ar = {
 // --- Korean Translations ---
 const ko = {
     selkiesLogoAlt: "Selkies 로고",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "테마 전환",
     fullscreenTitle: "전체 화면 시작",
     gamingModeTitle: "게임 모드",
@@ -2361,6 +2372,8 @@ const ko = {
             useNativeCursorStylesLabel: "CSS 커서 사용",
             useNativeCursorStylesEnableTitle: "CSS 커서 렌더링 사용 (시스템 커서 대체)",
             useNativeCursorStylesDisableTitle: "캔버스 커서 렌더링 사용 (캔버스에 그리기)",
+            addScreenTitle: "두 번째 화면 추가",
+            addScreenButton: "화면 추가 +",
         },
         stats: {
             title: "통계",
@@ -2469,7 +2482,6 @@ const ko = {
 // --- Japanese Translations ---
 const ja = {
     selkiesLogoAlt: "Selkies ロゴ",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "テーマを切り替え",
     fullscreenTitle: "フルスクリーンに入る",
     gamingModeTitle: "ゲームモード",
@@ -2550,6 +2562,8 @@ const ja = {
             useNativeCursorStylesLabel: "CSS カーソルを使用",
             useNativeCursorStylesEnableTitle: "CSS カーソルレンダリングを使用 (システムカーソルを置換)",
             useNativeCursorStylesDisableTitle: "キャンバスカーソルレンダリングを使用 (キャンバスに描画)",
+            addScreenTitle: "2番目の画面を追加",
+            addScreenButton: "画面を追加 +",
         },
         stats: {
             title: "統計",
@@ -2658,7 +2672,6 @@ const ja = {
 // --- Vietnamese Translations ---
 const vi = {
     selkiesLogoAlt: "Logo Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Chuyển đổi Chủ đề",
     fullscreenTitle: "Vào Toàn màn hình",
     gamingModeTitle: "Chế độ Chơi game",
@@ -2739,6 +2752,8 @@ const vi = {
             useNativeCursorStylesLabel: "Sử dụng con trỏ CSS",
             useNativeCursorStylesEnableTitle: "Sử dụng kết xuất con trỏ CSS (Thay thế con trỏ hệ thống)",
             useNativeCursorStylesDisableTitle: "Sử dụng kết xuất con trỏ canvas (Vẽ lên canvas)",
+            addScreenTitle: "Thêm màn hình thứ hai",
+            addScreenButton: "Thêm Màn hình +",
         },
         stats: {
             title: "Thống kê",
@@ -2847,7 +2862,6 @@ const vi = {
 // --- Thai Translations ---
 const th = {
     selkiesLogoAlt: "โลโก้ Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "สลับธีม",
     fullscreenTitle: "เข้าสู่โหมดเต็มหน้าจอ",
     gamingModeTitle: "โหมดเกมมิ่ง",
@@ -2928,6 +2942,8 @@ const th = {
             useNativeCursorStylesLabel: "ใช้เคอร์เซอร์แบบ CSS",
             useNativeCursorStylesEnableTitle: "ใช้การแสดงผลเคอร์เซอร์แบบ CSS (แทนที่เคอร์เซอร์ของระบบ)",
             useNativeCursorStylesDisableTitle: "ใช้การแสดงผลเคอร์เซอร์บนแคนวาส (วาดลงบนแคนวาส)",
+            addScreenTitle: "เพิ่มหน้าจอที่สอง",
+            addScreenButton: "เพิ่มหน้าจอ +",
         },
         stats: {
             title: "สถิติ",
@@ -3036,7 +3052,6 @@ const th = {
 // --- Filipino Translations ---
 const fil = {
     selkiesLogoAlt: "Logo ng Selkies",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "I-toggle ang Tema",
     fullscreenTitle: "Pumasok sa Fullscreen",
     gamingModeTitle: "Gaming Mode",
@@ -3117,6 +3132,8 @@ const fil = {
             useNativeCursorStylesLabel: "Gamitin ang mga CSS cursor",
             useNativeCursorStylesEnableTitle: "Gamitin ang pag-render ng CSS cursor (Palitan ang mga cursor ng system)",
             useNativeCursorStylesDisableTitle: "Gamitin ang pag-render ng canvas cursor (Iguhit sa canvas)",
+            addScreenTitle: "Magdagdag ng pangalawang screen",
+            addScreenButton: "Magdagdag ng Screen +",
         },
         stats: {
             title: "Stats",
@@ -3225,7 +3242,6 @@ const fil = {
 // --- Danish Translations ---
 const da = {
     selkiesLogoAlt: "Selkies Logo",
-    selkiesTitle: "Selkies",
     toggleThemeTitle: "Skift tema",
     fullscreenTitle: "Start Fuldskærm",
     gamingModeTitle: "Spiltilstand",
@@ -3306,6 +3322,8 @@ const da = {
             useNativeCursorStylesLabel: "Brug CSS-markører",
             useNativeCursorStylesEnableTitle: "Brug CSS-markørgengivelse (Erstatter systemmarkører)",
             useNativeCursorStylesDisableTitle: "Brug lærredsmarkørgengivelse (Tegn på lærred)",
+            addScreenTitle: "Tilføj en anden skærm",
+            addScreenButton: "Tilføj Skærm +",
         },
         stats: {
             title: "Statistik",
