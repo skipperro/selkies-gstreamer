@@ -1127,7 +1127,7 @@ export class Input {
         this._cursorImageBitmap = null;
         this._rawHotspotX = 0;
         this._rawHotspotY = 0;
-        this.useBrowserCursors = false;
+        this.use_browser_cursors = false;
         this._latestMouseX = 0;
         this._latestMouseY = 0;
         this.useCssScaling = useCssScaling;
@@ -1213,7 +1213,7 @@ export class Input {
     }
 
     _handleOutsideClick(event) {
-        if (!this.useBrowserCursors && !this.element.contains(event.target)) {
+        if (!this.use_browser_cursors && !this.element.contains(event.target)) {
             this.cursorDiv.style.display = 'none';
         }
     }
@@ -1242,7 +1242,7 @@ export class Input {
             this._cursorImageBitmap = null;
             this._cursorBase64Data = null;
             this.cursorDiv.style.display = 'none';
-            if (this.useBrowserCursors) {
+            if (this.use_browser_cursors) {
                 this.element.style.cursor = 'none';
             }
             return;
@@ -1250,7 +1250,7 @@ export class Input {
         this._rawHotspotX = parseInt(cursorData.hotx) || 0;
         this._rawHotspotY = parseInt(cursorData.hoty) || 0;
         this._cursorBase64Data = cursorData.curdata;
-        if (this.useBrowserCursors) {
+        if (this.use_browser_cursors) {
             this.cursorDiv.style.display = 'none';
             this._updateBrowserCursor();
         } else {
@@ -1571,7 +1571,10 @@ export class Input {
     }
 
     _mouseButtonMovement(event) {
-        if (!this.useBrowserCursors) {
+        if (this.buttonMask === 0 && event.target !== this.element) {
+            return;
+        }
+        if (!this.use_browser_cursors) {
             this.cursorDiv.style.display = 'block';
             this.element.style.cursor = 'none';
         }
@@ -1585,7 +1588,7 @@ export class Input {
                 visualClientY = lastPredictedEvent.clientY;
             }
         }
-        if (!this.useBrowserCursors) {
+        if (!this.use_browser_cursors) {
             this._updateCursorPosition(visualClientX, visualClientY);
         }
         this._latestMouseX = visualClientX;
@@ -1617,7 +1620,7 @@ export class Input {
             this.y = Math.round(movementY_logical * dpr_for_input_coords);
 
         } else if (event.type === 'mousemove' || event.type === 'pointermove') {
-             if (window.isManualResolutionMode && canvas) {
+             if (window.is_manual_resolution_mode && canvas) {
                 const canvasRect = canvas.getBoundingClientRect(); // CSS logical size
                 if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
                     const mouseX_on_canvas_logical_css = event.clientX - canvasRect.left;
@@ -1825,7 +1828,7 @@ export class Input {
         const dpr_for_input_coords = this.useCssScaling ? 1 : client_dpr;
         let canvas = document.getElementById('videoCanvas');
 
-        if (window.isManualResolutionMode && canvas) {
+        if (window.is_manual_resolution_mode && canvas) {
             const canvasRect = canvas.getBoundingClientRect(); // CSS logical size
             if (canvasRect.width > 0 && canvasRect.height > 0 && canvas.width > 0 && canvas.height > 0) {
                 const touchX_on_canvas_logical_css = touchPoint.clientX - canvasRect.left;
@@ -1887,7 +1890,7 @@ export class Input {
             this._sendMouseState();
         }
 
-        if (this._trackpadMode || this.useBrowserCursors) {
+        if (this._trackpadMode || this.use_browser_cursors) {
             this.cursorDiv.style.display = 'none';
             this.element.style.cursor = 'default';
         } else {
@@ -1898,15 +1901,15 @@ export class Input {
 
     async setUseBrowserCursors(enabled) {
         const newMode = !!enabled;
-        if (this.useBrowserCursors === newMode) {
+        if (this.use_browser_cursors === newMode) {
             return;
         }
         console.log(`Input: Use browser cursors ${newMode ? 'enabled' : 'disabled'}.`);
-        this.useBrowserCursors = newMode;
+        this.use_browser_cursors = newMode;
         if (this._trackpadMode) {
             this.cursorDiv.style.display = 'none';
             this.element.style.cursor = 'none';
-        } else if (this.useBrowserCursors) {
+        } else if (this.use_browser_cursors) {
             this.cursorDiv.style.display = 'none';
             this._updateBrowserCursor();
         } else {
@@ -1940,7 +1943,7 @@ export class Input {
         const TAP_THRESHOLD_DISTANCE_SQ_LOGICAL = this._TAP_THRESHOLD_DISTANCE_SQ;
 
         if (type === 'touchstart') {
-            if (!this.useBrowserCursors) {
+            if (!this.use_browser_cursors) {
                 this.cursorDiv.style.display = 'block';
             }
             for (let i = 0; i < event.changedTouches.length; i++) {
@@ -1998,7 +2001,7 @@ export class Input {
             } else {
                 if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
                 if (touchCount === 2) {
-                    if (!this.useBrowserCursors) {
+                    if (!this.use_browser_cursors) {
                         this.cursorDiv.style.visibility = 'hidden';
                     }
                     this._isTwoFingerGesture = true; this._activeTouchIdentifier = null;
@@ -2106,7 +2109,7 @@ export class Input {
             if (!swipeDetected) {
                 const remainingTouchCount = this._activeTouches.size;
                 if (this._isTwoFingerGesture && remainingTouchCount < 2) {
-                    if (!this._trackpadMode && !this.useBrowserCursors) {
+                    if (!this._trackpadMode && !this.use_browser_cursors) {
                         this.cursorDiv.style.visibility = 'visible';
                     }
                     this._isTwoFingerGesture = false;
@@ -2292,7 +2295,7 @@ export class Input {
         const elementRelativeX = clientX - this.m.elementClientX;
         const viewportRelativeX = elementRelativeX - this.m.mouseOffsetX;
         let serverX = viewportRelativeX * this.m.mouseMultiX;
-        return Math.max(0, Math.min(this.m.frameW, Math.round(serverX)));
+        return Math.round(serverX);
     }
 
     _clientToServerY(clientY) {
@@ -2300,7 +2303,7 @@ export class Input {
         const elementRelativeY = clientY - this.m.elementClientY;
         const viewportRelativeY = elementRelativeY - this.m.mouseOffsetY;
         let serverY = viewportRelativeY * this.m.mouseMultiY;
-        return Math.max(0, Math.min(this.m.frameH, Math.round(serverY)));
+        return Math.round(serverY);
     }
 
     _gamepadConnected(event) {
@@ -2414,9 +2417,9 @@ export class Input {
             this.listeners_context.push(addListener(this.element, 'touchmove', this._handleTouchEvent, this, false));
             this.listeners_context.push(addListener(this.element, 'touchcancel', this._handleTouchEvent, this, false));
         }
-        this.listeners_context.push(addListener(this.element, 'mousemove', this._mouseButtonMovement, this));
         this.listeners_context.push(addListener(this.element, 'mousedown', this._mouseButtonMovement, this));
-        this.listeners_context.push(addListener(this.element, 'mouseup', this._mouseButtonMovement, this));
+        this.listeners_context.push(addListener(window, 'mousemove', this._mouseButtonMovement, this));
+        this.listeners_context.push(addListener(window, 'mouseup', this._mouseButtonMovement, this));
 
         if (document.fullscreenElement === this.element.parentElement) {
              if (document.pointerLockElement !== this.element) {
